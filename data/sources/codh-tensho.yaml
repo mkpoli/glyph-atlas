@@ -114,6 +114,33 @@ books:
     production: printed
     origin: japan
     text_scope: marked seal forms; the 親字 above them are not transcribed
+  # Title and author are the metadata of the manifest (https://kokusho.nijl.ac.jp/biblio/100250413/manifest,
+  # read 2026-11-24): Title 聯珠篆文, author 池永／栄春, attribution 新潟大学附属図書館 国文学研究資料館. The
+  # date and publishers are the 国書データベース record's (https://kokusho.nijl.ac.jp/api/biblioDetail/100250413,
+  # read 2026-11-24): 刊, 享和二序（1802）, 〈京都〉出雲寺文次郎 and five more booksellers of 大坂 and 江戸; the copy
+  # itself is undated, so `year` is the preface's. The
+  # holder's conditions (https://collections.lib.niigata-u.ac.jp/collections/, read 2026-11-24): Rights
+  # Statements "No Copyright - Contractual Restrictions"; free to use where 新潟大学附属図書館 is named as the
+  # provider and a changed image is said to be changed; a notice of use through its form is asked for.
+  - id: TE00003
+    title: 聯珠篆文
+    work: 聯珠篆文
+    author: 池永栄春
+    publisher: 出雲寺文次郎ほか
+    edition: 享和二序刊
+    year: 1802
+    holder: 新潟大学附属図書館
+    provider: 新日本古典籍総合データベース
+    url: https://kotenseki.nijl.ac.jp/biblio/100250413/
+    provider_urls:
+      - https://kotenseki.nijl.ac.jp/biblio/100250413/
+    manifest: https://kokusho.nijl.ac.jp/biblio/100250413/manifest
+    image_licence: RS-NOC-CR
+    zip_sha256: 4a988683b39e3808253f7e6704a15a7a365894b62d19d862e4be2b588618e558
+    crops: 6195
+    production: printed
+    origin: japan
+    text_scope: marked seal forms; the 親字 beside them are not transcribed
 notes:
   - Books TE00040 to TE00058 (選集漢印分韻, 朝陽閣字鑑) are CC BY-NC-SA 4.0 and are not imported; the others are CC BY-SA 4.0.
   - 派生した新たなデータセットやソフトウェアを公開する場合は、「原本画像公開元・所蔵者一覧ファイル」を配布物に含めてください (the dataset's page). Each imported book's line of that list (title, provider, holder, URL) is in its document's image attribution, which a release prints in ATTRIBUTION.md; the whole list is at `access.providers`.
@@ -121,4 +148,5 @@ notes:
   - "For TE00039 CODH cut the head of each entry and the 篆文 and 或体 below it, and left out the 古文 and 籀文 except those the book calls 篆文 (凡例 3). The coordinates are pixels of CODH's page images, which the dataset does not ship. The pages the 東方學デジタル圖書館 serves are 2390 pixels wide and 0.5815 of that size, with no offset. `codh_page_width`, 4110, is 2390 over that scale: with it every one of the 10,403 crop files, reduced and matched on its page, is found within one pixel of its box (2026-11-20)."
   - "For TE00024 to TE00026 the coordinates are pixels of the 国立国会図書館's full-size images (5,183 to 5,199 pixels wide), counted from one: every crop file, matched on its page, is found one to three pixels left of and above its box (2026-11-20), except on the page the library has replaced since (`replaced_pages`). Every row has Block ID B0001 and Char ID C0001, so the columns of a page are read from the boxes. TE00026 states one crop twice (U+5BFD on TE00026_0012_1), read once, and files one under 〓."
   - "新撰篆書字典 prints one or more seal forms under each 親字, without saying which is the small seal form. A crop is placed on a seal character of Unicode by the 親字 alone (`scripts/build_tensho_equivalents.py`), and only where the three volumes file no other crop under that 親字: 6,225 are so placed, and the 2,934 crops of the 1,099 親字 with several forms stay on the 親字."
+  - "For TE00003 the coordinates are pixels of the full-size images of 国書データベース (5,616 by 3,744): all 160 crop files of three openings, matched on their pages, lie exactly on their boxes (2026-11-24). The database numbers its canvases from zero and CODH's table from one, so a page is found by its image service. 聯珠篆文 prints two seal forms over each 親字 and does not mark which is the small seal form, so nearly every crop stays on its 親字 in seal style: 12 of 6,195 are placed on a seal character."
   - The first release is of 2021-03-31; version 2 of 2022-05-10 added this book, and 176 characters were corrected on 2022-08-11.
