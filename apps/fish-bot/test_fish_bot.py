@@ -2167,4 +2167,5 @@ def test_persona_asks_for_the_task_now_in_one_language():
     prompt = fish_bot.PERSONA_PROMPT
     assert "There is no later turn" in prompt
     assert "Keep each message in that one language and script" in prompt
-    assert "only when the chat or a lookup in this turn shows it" in prompt
+    assert "only when the chat, your memory or a lookup in this turn shows it" in prompt
+    assert "or as long as a translation or summary someone asked for needs" in fish_bot.LOOKUP_REMINDER

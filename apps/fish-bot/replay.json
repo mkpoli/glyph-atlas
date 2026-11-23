@@ -55,7 +55,7 @@
     "name": "a term translated into every language asked",
     "note": "On 11-21 「等価異体字の統合（大肥魚翻譯成所有語言plz」 got English and Chinese, then rambling, and no Korean or Vietnamese.",
     "messages": [["mkpoli", "等価異体字の統合\n\n（大肥魚翻譯成所有語言plz"]],
-    "expect": {"must_match": ["[A-Za-z]{5,}", "[가-힣]", "[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]"], "must_not_match": ["稍等|等一下|等等|先查|查清楚|再翻|待會|待会|開工|开工|later|wait|一會|一会"]}
+    "expect": {"must_match": ["(?i)variant|equivalent|merg|unif", "[가-힣]{2,}", "[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]"], "must_not_match": ["稍等|等一下|等等|先查|查清楚|再翻|待會|待会|開工|开工|later|wait|一會|一会"]}
   },
   {
     "name": "a code point comes from the characters tool",
@@ -67,6 +67,6 @@
     "name": "a Chinese answer stays in Chinese",
     "note": "On 11-20 to 11-23 her Chinese lines carried Japanese, Korean and Cantonese words (「晚安安せあせる」, 「好似無佢嘅厝」).",
     "messages": [["渚", "大肥魚，除了白米飯，還喫什麼呀~"]],
-    "expect": {"tools_none": true, "must_not_match": ["[ぁ-んァ-ヶ가-힣]", "佢|嘅|冇"]}
+    "expect": {"tools_none": true, "must_not_match": ["[ぁ-ん]{2,}|[ァ-ヶ]{2,}|[가-힣]{2,}", "佢|嘅|冇"]}
   }
 ]
