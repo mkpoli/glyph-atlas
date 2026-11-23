@@ -651,6 +651,12 @@ def test_reads_a_call_by_a_han_alias_inside_a_sentence():
     assert fish_bot.call_of(event("大肥魚さん、これ見て"), USER, "大肥魚", (), aliases) is not None
     assert fish_bot.call_of(event("大肥魚餓嗎？"), USER, "大肥魚", (), aliases) is not None
     assert fish_bot.call_of(event("大肥魚喫🍚"), USER, "大肥魚", (), aliases) is not None
+    nicknames = (*aliases, "肥魚", "肥鱼")
+    assert fish_bot.call_of(event("肥鱼，黄河呈什么字形"), USER, "大肥魚", (), nicknames) is not None
+    assert fish_bot.call_of(event("笨比肥鱼"), USER, "大肥魚", (), nicknames) is not None
+    assert fish_bot.call_of(event("肥魚吃飯去🍚"), USER, "大肥魚", (), nicknames) is not None
+    for prose in ("减肥鱼油有用吗", "減肥魚", "我在减肥鱼都不吃", "红烧肥鱼块"):
+        assert fish_bot.call_of(event(prose), USER, "大肥魚", (), nicknames) is None, prose
     for prose in ("今天吃鯨魚", "今晚吃了个大肥鱼头", "减肥鱼油有用吗", "大肥鱼V4发布了", "清蒸大肥魚片"):
         assert fish_bot.call_of(event(prose), USER, "大肥魚", (), aliases) is None, prose
     assert fish_bot.call_of(event("bigfatfishy"), USER, "Big Fat Fish") is None
