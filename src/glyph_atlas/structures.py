@@ -331,6 +331,15 @@ def for_name(name: str) -> Structure | None:
     return for_character(name[:1]) if name else None
 
 
+def for_shape(name: str, of: str) -> Structure | None:
+    """The structure of `name` as a regional shape of `of`: `of`'s own, since Unicode unified its
+    regional glyphs (臭's J shape ⿱自大 is 臭's ⿱自犬, though written alone it is 𦤀's). ValueError
+    when `name` is no regional shape of `of`."""
+    if name not in {shape["text"] for shape in refs.regional_shapes(of)}:
+        raise ValueError(f"{name} is no shape of {of}.")
+    return for_name(of)
+
+
 def for_representation(named: Representation) -> Structure | None:
     """The structure a representation names: a description's, a character's, an IVS's base's.
 

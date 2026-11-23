@@ -1634,12 +1634,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         """File a form under a 構形, or take back the reader's own claim, as the Worker does.
 
         The form is named by its id or by its written value, the structure by a character or
-        description that has it or by its id. A regional shape named with `of` is derived here like any
-        description. The answer names the structures the form stands under now.
+        description that has it, a regional shape of the character `of` (which has that character's),
+        or by its id. The answer names the structures the form stands under now.
         """
         key, request = f"{edit.client_id}:{edit.id}", {"form": form, "structure": edit.model_dump(mode="json")}
         return ledger_call(store.set_structure, key=key, actor=edit.client_id, request=request, form=form,
-                           char=edit.char, structure=edit.structure, remove=edit.remove, replace=edit.replace)
+                           char=edit.char, of=edit.of, structure=edit.structure, remove=edit.remove, replace=edit.replace)
 
     @api.post("/atlas/structures/folds")
     def set_fold(edit: FoldEdit) -> dict:
