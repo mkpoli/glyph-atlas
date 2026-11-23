@@ -227,17 +227,13 @@ describe('a part with a variation selector', () => {
     expect(composer.rec(key).s).toBeUndefined()
     expect(composer.rec('口\u{E0102}')).toBeNull()
   })
-  it('takes the cuts of its own shape alone, and leaves its base all of them', () => {
-    const entries = composer.hostsOf('口', 'R')
-    expect(entries.map(h => h.h)).toEqual(['杏', '可'])
-    expect(composer.variantCuts(key, '口', entries.map(h => [false, 0, h])).map(([, , h]) => h.h)).toEqual(['可'])
+  it('takes no cut of its base, which may draw another shape, and is drawn without a base of its own', () => {
+    expect(composer.hostsOf('口', 'R').map(h => h.h)).toEqual(['杏', '可'])
     expect(composer.hostsOf(key, 'R')).toEqual([])
-  })
-  it('reads only the first cuts, so a part held by hundreds loads few hosts', () => {
-    let read = 0
-    const counting = Object.assign(Object.create(composer), { pieceOf: h => { read++; return composer.pieceOf(h) } })
-    expect(counting.variantCuts(key, '口', Array.from({ length: 50 }, () => [false, 0, hosts['R\t口'][0]]))).toEqual([])
-    expect(read).toBe(12)
+    expect(composer.rec('帰\u{E0101}')).toBeNull()
+    const orphan = new Composer({ manifest: { constants, spelled: [] }, layout, rec: k => k === '帰' ? null : records[k] ?? null,
+      hosts: () => [], places: () => [], variant: k => k === '帰\u{E0101}' ? outline : null })
+    expect(orphan.compose('⿰木帰\u{E0101}').map(part => part.origin)).toContain('glyph 帰\u{E0101}')
   })
   it('reads its outline from the export of the variation sequences, and draws nothing without one', async () => {
     const asked = [], read = async name => { const body = files[name]; return body === undefined ? null : new Uint8Array(Buffer.from(body)).buffer }
