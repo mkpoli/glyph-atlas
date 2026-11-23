@@ -349,7 +349,7 @@ She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](http
 2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
 checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose
 image no longer matches is left out. Discord, Telegram and QQ show them; the QQ bridge sends a
-sticker as an image.
+sticker as an image. After she sends one in a room, she is offered none there for 15 minutes.
 
 When a person asks her to file something, she hands the discussion to the issue desk: it reads the
 latest messages, checks the open issues for duplicates, and files in `mkpoli/glyph-atlas` only when

@@ -1660,7 +1660,7 @@ CHAT_TASKS = {
     "ambient": ("Nobody called you; you are reading along. Most of the time stay quiet: empty `say`, no "
                 "react, no sticker. Join only when you have something fun, kind or helpful to add to the "
                 "last few messages: a short playful remark, a cute sticker, or an emoji on a message you "
-                "like. A reaction or a sticker usually beats words. Never bring up issues here."),
+                "like. A reaction, or a sticker when you have any, usually beats words. Never bring up issues here."),
 }
 
 
@@ -3678,8 +3678,9 @@ class Bot:
             facts = {}
         if self.lookup is not None:
             self.lookup.here = room_id
+        offered = self._stickers_now(room_id)
         act = self.gemini.act(room_name, room_topic, events, names, task=task, trigger=trigger,
-                              bot_user_id=self.user_id, stickers=self._stickers_now(room_id),
+                              bot_user_id=self.user_id, stickers=offered,
                               recent=self._recent_stickers.get(room_id, []), rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
                               images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
@@ -3687,6 +3688,8 @@ class Bot:
                               on_step=lambda: self.matrix.typing(room_id, self.user_id))
         if task == "ambient":
             act = dataclasses.replace(act, issue=False)
+        if act.sticker and act.sticker not in offered:
+            act = dataclasses.replace(act, sticker="")
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
         if act.say or act.react or act.sticker:
             self._spoke_at[room_id] = time.monotonic()
