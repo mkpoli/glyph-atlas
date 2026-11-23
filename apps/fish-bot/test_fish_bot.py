@@ -914,7 +914,120 @@ def test_waits_out_the_room_cooldown_after_speaking(tmp_path, monkeypatch):
         say_in_room(bot, "two", f"$b{round_number}")
         clock["now"] += 21
         bot.tick()
+    assert [turn[0] for turn in bot.gemini.turns].count("ambient") == 1
+
+
+def talking(tmp_path, monkeypatch, **overrides):
+    """A bot that has just answered @reader, with a clock and no random pauses."""
+    bot, matrix, store, clock = ambient_bot(tmp_path, monkeypatch, **overrides)
+    bot._random = lambda: 0.0
+    call = event("大肥魚, what did we talk about?", event_id="$call")
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+    bot.notice(ROOM, call)
+    return bot, matrix, store, clock
+
+
+def hear(bot, clock, body, event_id, *, sender="@reader:example", after=3.0, **content):
+    message = event(body, event_id=event_id, sender=sender, **content)
+    bot.ingest(ROOM, message, backfilled=False)
+    bot.answer(ROOM, message)
+    bot.notice(ROOM, message)
+    clock["now"] += after
+    bot.tick()
+
+
+QUIET = fish_bot.Act(say=(), react_to=None, react="", issue=False)
+
+
+def test_carries_on_a_conversation_without_being_named_again(tmp_path, monkeypatch):
+    bot, matrix, _, clock = talking(tmp_path, monkeypatch)
+    hear(bot, clock, "I mean the whole server!", "$more")
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow"]
+    assert bot.gemini.lookup is bot.lookup
+    assert len(matrix.sent) == 2 and "m.relates_to" not in matrix.sent[1][1]
+    hear(bot, clock, "thanks, and the last week?", "$again")
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow", "follow"]
+
+
+def test_waits_for_someone_to_finish_before_following(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    for number in range(3):
+        hear(bot, clock, f"part {number}", f"$p{number}", after=1.0)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    clock["now"] += 2
+    bot.tick()
+    assert [turn[:2] for turn in bot.gemini.turns][1:] == [("follow", 3)]
+
+
+def test_a_conversation_closes_with_time_or_silence(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot.gemini.act_value = QUIET
+    for number in range(5):
+        hear(bot, clock, "hm", f"$h{number}")
+    assert len(bot.gemini.turns) == 1 + fish_bot.TALK_QUIET_PARTNER
+    bot, _, _, clock = talking(tmp_path / "late", monkeypatch)
+    clock["now"] += fish_bot.TALK_SECONDS
+    hear(bot, clock, "anyway", "$late")
+    assert len(bot.gemini.turns) == 1 and bot._talks == {}
+
+
+def test_bystanders_get_fewer_looks_and_leave_the_partner_theirs(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot.gemini.act_value = QUIET
+    for number in range(4):
+        hear(bot, clock, "lunch?", f"$l{number}", sender="@other:example")
+    assert len(bot.gemini.turns) == 1 + fish_bot.TALK_QUIET_OTHERS
+    hear(bot, clock, "I mean the other one", "$more")
+    assert len(bot.gemini.turns) == 2 + fish_bot.TALK_QUIET_OTHERS
+
+
+def test_a_bystander_does_not_take_the_partners_turn(tmp_path, monkeypatch):
+    bot, matrix, _, clock = talking(tmp_path, monkeypatch)
+    hear(bot, clock, "I mean the whole server", "$more", after=1.0)
+    hear(bot, clock, "lunch?", "$lunch", sender="@other:example", after=2.0)
+    assert bot.gemini.turns[1][:2] == ("follow", 1)
+    assert matrix.sent[1][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$more"}}
+
+
+def test_a_reply_to_someone_else_is_not_followed(tmp_path, monkeypatch):
+    bot, _, _store, clock = talking(tmp_path, monkeypatch)
+    hear(bot, clock, "hi", "$hi", sender="@other:example", after=0.0)
+    bot._talks[ROOM].event_id = ""
+    hear(bot, clock, "yes, see you there", "$to-other", **{"m.relates_to": {"m.in_reply_to": {"event_id": "$hi"}}})
     assert len(bot.gemini.turns) == 1
+
+
+def test_follow_looks_are_capped_by_the_hour(tmp_path, monkeypatch):
+    monkeypatch.setattr(fish_bot, "FOLLOW_PER_HOUR", 2)
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    for number in range(4):
+        hear(bot, clock, "and then?", f"$t{number}")
+    assert [turn[0] for turn in bot.gemini.turns].count("follow") == 2
+
+
+def test_follow_ups_keep_to_the_chat_caps_and_end_after_enough_turns(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch, max_chats_per_user_per_hour=2)
+    for number in range(4):
+        hear(bot, clock, "and then?", f"$t{number}")
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow"]
+    monkeypatch.setattr(fish_bot, "TALK_TURNS", 2)
+    bot, _, _, clock = talking(tmp_path / "bots", monkeypatch)
+    for number in range(5):
+        hear(bot, clock, "beep", f"$b{number}", sender="@discord_bot:example")
+    assert [turn[0] for turn in bot.gemini.turns].count("follow") == 2
+
+
+def test_only_the_partner_can_have_an_issue_filed_by_a_follow_up(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot.gemini.act_value = act("ok", issue=True)
+    desk = []
+    bot._to_desk = lambda *args: desk.append(args)
+    hear(bot, clock, "file it", "$x", sender="@other:example")
+    assert desk == []
+    bot._listen(ROOM, "@reader:example")
+    hear(bot, clock, "please file that", "$y")
+    assert desk == [(ROOM, "$y", "please file that", "@reader:example")]
 
 
 def test_never_files_from_an_ambient_turn(tmp_path, monkeypatch):

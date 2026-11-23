@@ -277,6 +277,17 @@ and by its sender and opening text when it is older. She introduces herself
 only when asked (`!fish 自我介紹`, or 「大肥魚，自我介紹一下」), and only in the rooms listed in
 `bot.intro_rooms` (歡迎 · Welcome and 談話 · Chatting); elsewhere she points to them.
 
+She stays in a conversation. For four minutes after she speaks, she reads each new line in that room
+after a pause of a few seconds and decides whether it is for her: a follow-up, a correction such as
+"I mean the whole server!", or a thank-you gets an answer or an emoji without anyone naming her
+again. Replies to other people are theirs. Three silent looks at the person she was answering, or two
+at anyone else, close the conversation, and 40 looks an hour is the cap across rooms. A line she
+answers after others have spoken gets a reply mark. The window and caps sit outside the model because
+models asked without training when to speak judge it badly (Bhagtani et al.,
+[arXiv 2603.11409](https://arxiv.org/abs/2603.11409), 2026; on pauses in voice talk); MaiBot likewise
+lets its view frequency fall with each look
+(https://github.com/MaiM-with-u/MaiBot, `src/maisaka/turn_trigger`, read at b7f3682, 2026-11-19).
+
 She also reads along. When a room goes quiet after a few messages, she takes a look now and then
 (the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
 never files from these turns.
