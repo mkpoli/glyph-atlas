@@ -5,7 +5,9 @@
 // the regional description that holds in Japan (邦's ⿰丰阝 of GHTJKV). Those are set apart as
 // `alike`. A Japanese shape with a 構形 of its own (臭 as ⿱自大) is still offered, since filing a
 // crop under it files it under that 構形. Any other character is drawn from Plangothic or Jigmo,
-// whose glyphs follow no one region, and keeps every form.
+// whose glyphs follow no one region, and keeps every form. For every character, a regional shape
+// written as a figure's description is that figure (臭's ⿱自犬 is MJ030291), and the bar offers the
+// figure alone.
 
 /** Whether both site faces draw `char` from Noto CJK JP. */
 export const notoDraws = char => {
@@ -16,13 +18,14 @@ export const notoDraws = char => {
 }
 
 /** The figures and shapes of `char` the bar offers, and the `alike` ones it leaves out because
- *  they draw as the bare character. */
+ *  another form on the bar stands for them: the bare character, or a figure a shape describes. */
 export function sortForms(char, figures, shapes) {
-  if (!notoDraws(char)) return { figures, shapes, alike: { figures: [], shapes: [] } }
-  const same = shape => shape.regions.includes('J') && !('structure' in shape)
+  const described = new Set(figures.map(figure => figure.ids).filter(Boolean))
+  const drawn = notoDraws(char)
+  const same = shape => described.has(shape.text) || (drawn && shape.regions.includes('J') && !('structure' in shape))
   return {
-    figures: figures.filter(figure => !figure.default),
+    figures: drawn ? figures.filter(figure => !figure.default) : figures,
     shapes: shapes.filter(shape => !same(shape)),
-    alike: { figures: figures.filter(figure => figure.default), shapes: shapes.filter(same) },
+    alike: { figures: drawn ? figures.filter(figure => figure.default) : [], shapes: shapes.filter(same) },
   }
 }
