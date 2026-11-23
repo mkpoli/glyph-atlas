@@ -126,7 +126,7 @@ class FakeGemini:
         self.recaps = getattr(self, "recaps", []) + [(language, episodes, notes, request)]
         return "Welcome! Here is what we talked about."
 
-    def digest(self, language, room_name, room_lines, changes, other_rooms):
+    def digest(self, language, room_name, changes, other_rooms):
         self.digests.append((language, room_name, changes, other_rooms))
         return f"digest in {language}"
 
@@ -960,11 +960,18 @@ def test_digest_message_names_no_one(tmp_path):
     bot, _, store = digest_bot(tmp_path)
     bot.ingest(ROOM, event("secret plan", sender="@alice:example", event_id="$a"), backfilled=False)
     rows = store.since(0)
-    payload = json.loads(fish_bot.format_digest("日本語", [], [{"repo": "r", "merged": [], "released": []}],
+    payload = json.loads(fish_bot.format_digest("日本語", [{"repo": "r", "merged": [], "released": []}],
                                                 {"Test room": rows[ROOM]}))
     assert payload["changes"] == []
     assert payload["other_rooms"] == [{"room": "Test room", "messages": ["secret plan"]}]
     assert "@alice" not in json.dumps(payload)
+    assert "room_lines" not in payload
+
+
+def test_digest_task_holds_every_line_to_the_room_language():
+    task = fish_bot.DIGEST_TASK.format(language="English")
+    assert "Write every line in English" in task
+    assert "room_lines" not in task
 
 
 def test_config_reads_the_digest_table(tmp_path):

@@ -1768,16 +1768,15 @@ def format_recap(episodes: list[dict[str, str]], notes: list[str], request: str)
     return json.dumps({"request": request[:500], "episodes": episodes, "notes": notes}, ensure_ascii=False)
 
 
-DIGEST_TASK = """Write today's community digest for the room in the user message, in {language}, as 大肥魚.
+DIGEST_TASK = """Write today's community digest for the room in the user message, as 大肥魚. Write every line in {language}: the greeting, your name for yourself and the closing line too. The other rooms talk in other languages, so put what you take from them into {language}.
 - First, what changed in our projects since yesterday: the merged pull requests and releases in "changes", grouped by project, each in plain words a non-programmer follows. Name the significant ones; fold small fixes into a few words. Keep a PR number where it helps; no URLs except at most one per project.
-- Then, briefly, what the other rooms talked about ("other_rooms"), one short line per lively room, in {language}. Mention no one by name and quote nothing private.
+- Then, briefly, what the other rooms talked about ("other_rooms"), one short line per lively room. Mention no one by name and quote nothing private.
 - Leave out a part with nothing in it. Use only facts in the message; never guess what a change does beyond its title.
-- 4 to 12 short lines, plain text, one item per line; open with a cute one-line greeting and end with a short cheerful line. Match the script this room writes in ("room_lines").
+- 4 to 12 short lines, plain text, one item per line; open with a cute one-line greeting and end with a short cheerful line. Readers live in many time zones, so the greeting fits any time of day.
 Return only json: {{"text": "the digest"}}"""
 
 
-def format_digest(room_name: str, room_lines: list[sqlite3.Row], changes: list[dict[str, Any]],
-                  other_rooms: dict[str, list[sqlite3.Row]]) -> str:
+def format_digest(room_name: str, changes: list[dict[str, Any]], other_rooms: dict[str, list[sqlite3.Row]]) -> str:
     """The digest's user message: the day's changes and the other rooms' text, with no sender names."""
     others = []
     budget = MAX_CONTEXT_CHARS
@@ -1790,7 +1789,6 @@ def format_digest(room_name: str, room_lines: list[sqlite3.Row], changes: list[d
     payload = {
         "room": room_name[:200],
         "date": local_day(now_ms()),
-        "room_lines": [str(row["body"])[:200] for row in room_lines[-5:]],
         "changes": [change for change in changes if change["merged"] or change["released"]],
         "other_rooms": others,
     }
@@ -2254,13 +2252,13 @@ class Gemini:
                     body["input"] = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
         raise GeminiError(str(last or "no memory"))
 
-    def digest(self, language: str, room_name: str, room_lines: list[sqlite3.Row],
-               changes: list[dict[str, Any]], other_rooms: dict[str, list[sqlite3.Row]]) -> str:
+    def digest(self, language: str, room_name: str, changes: list[dict[str, Any]],
+               other_rooms: dict[str, list[sqlite3.Row]]) -> str:
         """The day's digest for one room, in its language."""
         body = {
             "model": self.model,
             "system_instruction": f"{PERSONA_PROMPT}\n\n{DIGEST_TASK.format(language=language)}",
-            "input": format_digest(room_name, room_lines, changes, other_rooms),
+            "input": format_digest(room_name, changes, other_rooms),
             "response_format": {"type": "text", "mime_type": "application/json"},
             "generation_config": {"thinking_level": DIGEST_THINKING, "max_output_tokens": 4096},
             "store": False,
@@ -3520,13 +3518,13 @@ class Bot:
                 except GitHubError as error:
                     log.warning("reading %s: %s", repo, error)
         text = self.store.since(since, exclude=(self.user_id, *self.config.ignored_senders))
-        room_lines = text.pop(room_id, [])
+        text.pop(room_id, None)
         others = {self._room(other)[0] or other: rows for other, rows in text.items() if other in self.active_rooms}
         if not any(change["merged"] or change["released"] for change in changes) and not others:
             self.store.mark_digested(day, room_id)
             return
         room_name, _ = self._room(room_id)
-        digest = self.gemini.digest(language, room_name, room_lines, changes, others)
+        digest = self.gemini.digest(language, room_name, changes, others)
         self._post(room_id, digest, "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:36])
         self.store.mark_digested(day, room_id)
 
