@@ -5,7 +5,8 @@ book by book, a character whose crops all lean to its variant is one decision. `
 `<similar>/written-forms.parquet` and writes one HTML page. Each section is a character and the
 variant it was scored against, and holds a row for every book with `MIN_BOOK` scored crops or
 more, the book leaning furthest to the variant first. A row shows the book's `PER_BOOK`
-highest-scored crops.
+highest-scored crops, and a character in many books shows the `LEANING` furthest-leaning and the
+`OPPOSITE` at the other end.
 
 Sections are ordered by their furthest-leaning book, the likeliest written variant first, and the
 page keeps `SECTIONS` of them. A character scored in one book only says nothing book by book and is
@@ -32,6 +33,8 @@ from .written_forms import FILE, MIN_BOOK
 #: Sections the page keeps, and crops shown for a book.
 SECTIONS = 40
 PER_BOOK = 14
+#: Books a section shows: the furthest-leaning `LEANING` and the `OPPOSITE` at the other end.
+LEANING, OPPOSITE = 8, 4
 #: A crop number is its page shifted by this many bits, then its slot on the page.
 PAGE_BITS = 24
 
@@ -97,14 +100,17 @@ def choose(rows: list[tuple[str, str, int, str, float]], *, sections: int = SECT
                 held.append({"book": book, "mean": sum(score for score, _ in crops) / len(crops), "crops": len(crops),
                              "ids": [identity for _, identity in crops[:per_book]]})
         if len(held) >= 2:
-            held.sort(key=lambda entry: -entry["mean"])
+            held.sort(key=lambda entry: (-entry["mean"], entry["book"]))
+            if len(held) > LEANING + OPPOSITE:
+                held = held[:LEANING] + held[-OPPOSITE:]
             found.append({"label": label, "other": other, "books": held})
     found.sort(key=lambda section: (-section["books"][0]["mean"], section["label"], section["other"]))
     return found[:sections]
 
 
-def render(sections: list[dict], titles: dict[int, str], pictures: dict[str, Path]) -> str:
-    """The page: a section for each label and variant, a row of crops for each book."""
+def render(sections: list[dict], titles: dict[int, str], pictures: dict[str, Path]) -> tuple[str, int]:
+    """The page, a section for each label and variant with a row of crops for each book, and the
+    number of sections it holds: one left with fewer than two books of pictures is not drawn."""
     parts = []
     for section in sections:
         books = []
@@ -120,7 +126,7 @@ def render(sections: list[dict], titles: dict[int, str], pictures: dict[str, Pat
         if len(books) >= 2:
             parts.append(f'<section><h2 lang="ja">{html.escape(section["label"])} → {html.escape(section["other"])}</h2>'
                          + "".join(books) + "</section>")
-    return PAGE.format(sections="\n".join(parts))
+    return PAGE.format(sections="\n".join(parts)), len(parts)
 
 
 def run(similar: Path, out: Path, *, mirror: Path, atlas: Path, pages: Path, media: Path,
@@ -145,6 +151,7 @@ def run(similar: Path, out: Path, *, mirror: Path, atlas: Path, pages: Path, med
     fetched = fetch(files, base, workers=2)
     pictures = {identity: Path(entry["path"]) for identity, entry in files.items() if Path(entry["path"]).is_file()}
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(sections, titles, pictures), encoding="utf-8")
-    return {"sections": len(sections), "scored": len(scored), "with_picture": len(named), "shown": len(shown),
+    page, drawn = render(sections, titles, pictures)
+    out.write_text(page, encoding="utf-8")
+    return {"sections": drawn, "scored": len(scored), "with_picture": len(named), "shown": len(shown),
             "pictures": len(pictures), **fetched}

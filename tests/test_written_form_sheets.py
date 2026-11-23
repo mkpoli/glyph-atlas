@@ -41,6 +41,13 @@ def test_the_page_shows_a_row_for_each_book_with_pictures(tmp_path):
     picture.write_bytes(b"RIFF")
     sections = [{"label": "時", "other": "时", "books": [
         {"book": 1, "mean": 0.16, "crops": 77, "ids": ["a"]}, {"book": 2, "mean": -0.2, "crops": 9, "ids": ["a", "gone"]}]}]
-    page = render(sections, {1: "北海随筆 <1>"}, {"a": picture})
+    page, drawn = render(sections, {1: "北海随筆 <1>"}, {"a": picture})
+    assert drawn == 1 and render(sections, {}, {}) == (render([], {}, {})[0], 0)
     assert page.count('<div class="book">') == 2 and page.count("<img") == 2
     assert "北海随筆 &lt;1&gt;" in page and "+0.16" in page and ">77<" in page and "時 → 时" in page
+
+
+def test_a_character_in_many_books_shows_both_ends():
+    rows = [row for book in range(30) for row in _rows("時", "时", book, [book / 100] * 5)]
+    books = [b["book"] for b in choose(rows)[0]["books"]]
+    assert books == [29, 28, 27, 26, 25, 24, 23, 22, 3, 2, 1, 0]
