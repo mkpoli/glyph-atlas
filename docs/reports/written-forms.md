@@ -63,3 +63,38 @@ A book's mean score for a label is kept. In the 古活字 print (`codh-omt:`) th
   Scored the same way across its sources, 158 characters with two rows give a median AUC of 0.51,
   several near 0. On sight the second row is not one shape across sources (of the five 國 crops on
   row `01639b`, one is 囯 and four are 國), so the rows as imported do not serve as a test of form.
+
+## A second reader: han2ids as a closed choice
+
+han2ids (v0.5, trained on rendered Mincho and Song faces only) reads almost no real crop when it
+decodes freely: 0 of 383 HI Lab crops and 2 of 148 HNG crops gave the label's description
+(2026-11-20). Asked instead which of two given descriptions a crop fits, it does much better. The
+choice is the log-likelihood of the variant's description less the label's, each less its
+likelihood on a blank image, on the crop fitted to its ink with an 8% margin.
+
+On the crops read by eye above (the highest-scored 18 under a label, written as the variant,
+against the lowest, written as the label):
+
+| pair | descriptions | written as the variant, prefers it | written as the label, prefers the variant | AUC |
+| --- | --- | ---: | ---: | ---: |
+| 国 / 國 | ⿴囗玉 / ⿴囗或 | 18 of 18 | 4 of 18 | 0.98 |
+| 島 / 嶋 | ⿹{47}山 / ⿰山鳥 | 11 of 18 | 0 of 5 | 0.98 |
+| 余 / 餘 | ⿱𠆢⿱一朩 / ⿰飠余 | 17 of 18 | 0 of 18 | 0.99 |
+| 与 / 與 | ⿹{22}一 / ⿳⿴𦥑{23}一八 | 6 of 6 | 5 of 18 | 0.96 |
+
+These crops are the extremes of the ranking above, so the figures say the two readers agree on
+plain cases and nothing about the middle. han2ids shares no training with the classifier.
+
+Over every HI Lab crop of six pairs (1,969 crops), read on sheets of its highest and lowest 18:
+
+- **国 → 國** (768 crops): the highest are written 國, and so are the highest among crops the
+  feature ranking put in its lower half. It finds 國 the first ranking missed. Rank correlation
+  with the feature score 0.34.
+- **余 → 餘** (98): the highest are written 餘; rank correlation 0.78.
+- **万 → 萬** (182): it prefers 萬 for 167 crops, and none is written 萬. Its zero is no threshold
+  either.
+- **時 → 时, 両 → 兩, 数 → 數**: no reading by eye settles what its order follows.
+
+Where the two forms are built differently (a frame around 或 against 玉, 食 on the left) the
+closed choice ranks them well and independently; its sign cannot be trusted. Nothing of this is in
+the command: it would bring han2ids and its checkpoint into the pass.
