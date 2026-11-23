@@ -2114,3 +2114,50 @@ def test_each_search_query_is_counted(tmp_path, monkeypatch):
     model.search("tangut")
     row = {row["kind"]: row for row in store.usage(1)}["grounding"]
     assert round(row["cost"], 6) == round(3 * fish_bot.PRICE_SEARCH_QUERY, 6)
+
+
+def test_a_reply_names_the_message_it_answers(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    start = fish_bot.now_ms() - 600_000
+    store.add_event("$old", ROOM, USER, start, "Glyph Atlas now draws seal script at the size of Han text.",
+                    "m.text", backfilled=False)
+    for number in range(3):
+        store.add_event(f"$m{number}", ROOM, "@a:example", start + 1000 + number, f"line {number}", "m.text",
+                        backfilled=False)
+    store.add_event("$near", ROOM, "@b:example", start + 2000, "請翻譯", "m.text", backfilled=False, reply_to="$m1")
+    store.add_event("$far", ROOM, "@b:example", start + 3000, "翻譯成英文", "m.text", backfilled=False)
+    store.add_event("$far", ROOM, "@b:example", start + 3000, "翻譯成英文", "m.text", backfilled=False,
+                    reply_to="$old")
+    events = store.context(ROOM, fish_bot.now_ms(), 5)
+    payload = json.loads(fish_bot.format_chat("Room", "", events, {"@b:example": "渚"}, task="called",
+                                              trigger=len(events) - 1, bot_user_id=USER))
+    by_body = {message["body"]: message for message in payload["messages"]}
+    assert by_body["請翻譯"]["reply_to"] == [row["event_id"] for row in events].index("$m1")
+    assert by_body["翻譯成英文"]["reply_to"] == {
+        "sender": "大肥魚 (you)", "body": "Glyph Atlas now draws seal script at the size of Han text."}
+    assert "reply_to" not in by_body["line 2"]
+
+
+def test_ingest_keeps_the_reply_target_and_skips_thread_fallbacks(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    reply = event("this one", event_id="$r")
+    reply["content"]["m.relates_to"] = {"m.in_reply_to": {"event_id": "$parent"}}
+    thread = event("in a thread", event_id="$t")
+    thread["content"]["m.relates_to"] = {"rel_type": "m.thread", "event_id": "$root", "is_falling_back": True,
+                                         "m.in_reply_to": {"event_id": "$root"}}
+    bot.ingest(ROOM, reply, backfilled=False)
+    bot.ingest(ROOM, thread, backfilled=False)
+    rows = {row["event_id"]: row["reply_to"] for row in store.context(ROOM, fish_bot.now_ms() + 1000, 5)}
+    assert rows == {"$r": "$parent", "$t": ""}
+
+
+def test_a_reply_to_a_line_cut_for_length_carries_its_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(fish_bot, "MAX_CONTEXT_CHARS", 400)
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    start = fish_bot.now_ms() - 600_000
+    store.add_event("$long", ROOM, "@a:example", start, "長" * 300, "m.text", backfilled=False)
+    store.add_event("$ask", ROOM, "@b:example", start + 1, "翻譯一下", "m.text", backfilled=False, reply_to="$long")
+    events = store.context(ROOM, fish_bot.now_ms(), 5)
+    payload = json.loads(fish_bot.format_chat("Room", "", events, {}, task="called", trigger=1, bot_user_id=USER))
+    assert [message["body"] for message in payload["messages"]] == ["翻譯一下"]
+    assert payload["messages"][0]["reply_to"] == {"sender": "a", "body": "長" * 300}

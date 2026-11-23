@@ -271,7 +271,9 @@ every hour, so a new public room needs no restart; a room is covered once it is 
 maid dress, after the fan nickname 大肥鱼 for DeepSeek's whale. She joins up to 200 rooms in the
 server's public directory, keeps their readable text in a local SQLite log, and answers anyone who
 calls her by name (大肥魚, 大肥鱼, 肥魚, 肥鱼, Big Fat Fish), by mention, or with `!fish`, and anyone who replies to one
-of her messages, which is how a reply from Discord or Telegram reaches her. She introduces herself
+of her messages, which is how a reply from Discord or Telegram reaches her. The log keeps what each
+message replies to, so she sees which message a reply answers: by its number when it is on screen,
+and by its sender and opening text when it is older. She introduces herself
 only when asked (`!fish 自我介紹`, or 「大肥魚，自我介紹一下」), and only in the rooms listed in
 `bot.intro_rooms` (歡迎 · Welcome and 談話 · Chatting); elsewhere she points to them.
 
