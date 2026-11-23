@@ -771,7 +771,7 @@ def review_written_form_sheets(
     media: Annotated[Path, typer.Option(help="cache of display crops fetched from the site")] = Path("work/similar/media"),
     base: Annotated[str, typer.Option(help="site that serves the display crops the cache lacks")] = "https://glyphatlas.org",
 ) -> None:
-    """Draw the written-forms ranking as rows of crops, one row for each book."""
+    """Draw the crops `written-forms` found as rows, one row for each book."""
     from .review import written_form_sheets
 
     typer.echo(json.dumps(written_form_sheets.run(similar.resolve(), out, mirror=mirror, atlas=atlas, pages=pages,

@@ -2,28 +2,33 @@
 
 A transcription writes 時 where the page has 时, and the crop is filed under 時. Its nearest crops
 are filed the same way, so neither the neighbours (`neighbour_agreement`) nor the classifier, which
-is trained on such labels, sees the difference. Some sources do keep the form, so for a pair of
-variants the index (`glyph_atlas.similar`) holds crops under both characters, and the crops of the
-label that lie among the variant's can be told from the rest.
+is trained on such labels, sees the difference. For a pair of variants the index
+(`glyph_atlas.similar`) often holds crops under both characters, and the crops of the label that lie
+among the variant's can be told from the rest. Labels on both sides come from sources, reviewers and
+model passes alike; the pass does not ask which.
 
 For each pair of characters that at least `SOURCES` variant tables give as variants of each other
 (`refs.variants`), with `MIN_CROPS` crops or more under each:
 
+- **twins.** A source may file one picture under both characters (HI Lab does). A crop with a
+  picture of the other character at `TWIN` or more is left out altogether;
 - **split.** The crops of both are divided in two by shape: each crop goes to the nearer of two
-  means, which start as the means of the two labels and are taken again until nothing moves. The
-  labels only start it, so a label half of whose crops are written as the variant still parts.
-  Crops marked suspect on the site (cut badly, or another character) take no part in the means;
+  means, which start as the means of the two labels and are taken again until nothing moves. Crops
+  marked suspect on the site under the label they still carry take no part in the means;
 - **told apart.** The pair counts only when at most one crop filed under the variant, or `STRAYS`
-  of them, falls on the label's side. A source that kept the form wrote it: where its crops scatter, the two
-  sides are hands, scans or cursive and no forms (島 and 嶋, 国 and 國 fail here);
+  of them, falls on the label's side, suspects included, and at most `MOST` of the label's crops
+  fall on the variant's. Otherwise the two sides are hands, scans or cursive, or one shape filed
+  under both, and no forms (島 and 嶋, 国 and 國 fail here);
 - **written.** A crop of the label on the variant's side is `written` when its mean similarity to
   its `NEAREST` nearest crops on that side filed under the variant is `NEAR` or more, and `MARGIN`
   more than to those on the label's side, and its box holds one whole character
   (`consensus_relabel.gate`, against the boxes of its page). A stroke, a joined cut or another
-  character falls on one side as well, and is near neither.
+  character falls on one side as well, and is near neither. A glyph cut by its source has no box on
+  a page and is not judged by one (`gate` is `unboxed`).
 
 The pair's label is the character with more crops. The tables also pair look-alikes (陣 and 陳),
-where a crop found is one of the other character; the report names each pair's tables.
+where a crop found is one of the other character; the report names each pair's tables. What is found
+is for a person to read: the rule has been checked by eye alone (docs/reports/written-forms.md).
 
 `run` writes `<similar>/written-forms.parquet`, a row for every crop of the label on the variant's
 side in the pairs told apart: `id`, `label`, `other`, `book`, `near`, `own`, `gate`, `written`.
@@ -54,6 +59,12 @@ STRAYS = 0.03
 #: Crops a similarity is the mean over, the least similarity to the variant's side, and the least
 #: lead over the label's.
 NEAREST, NEAR, MARGIN = 10, 0.8, 0.1
+#: Most of the label's crops that may fall on the variant's side.
+MOST = 0.5
+#: Similarity at which two crops are one picture.
+TWIN = 0.999
+#: `gate` of a crop with no box on a page.
+UNBOXED = "unboxed"
 #: Rounds of the split.
 ROUNDS = 50
 #: A crop number is its page shifted by this many bits, then its slot on the page.
@@ -103,21 +114,44 @@ def nearness(vectors: np.ndarray, others: np.ndarray, k: int = NEAREST) -> np.nd
     return np.sort(found, axis=1)[:, -k:].mean(1)
 
 
+def twins(vectors: np.ndarray, own: np.ndarray) -> np.ndarray:
+    """Which crops are the picture of a crop filed under the other character."""
+    found = np.zeros(len(vectors), dtype=bool)
+    ours, theirs = np.flatnonzero(own), np.flatnonzero(~own)
+    for start in range(0, len(ours), 2048):
+        part = ours[start:start + 2048]
+        same = vectors[part] @ vectors[theirs].T >= TWIN
+        found[part] |= same.any(1)
+        found[theirs] |= same.any(0)
+    return found
+
+
 def judge(vectors: np.ndarray, own: np.ndarray, suspect: np.ndarray) -> dict | None:
-    """The pair's strays, and the label's crops on the variant's side with their similarity to each
-    side (`rows`, `near`, `own`). None where either side keeps too few crops of its own character."""
+    """What the split of a pair says: the variant's crops and how many stray to the label's side, the
+    label's crops and how many fall on the variant's, whether that tells the pair apart, and the
+    rows of the latter with their similarity to each side. None where a side keeps too few crops of
+    its own character."""
     vectors = np.asarray(vectors, dtype=np.float32)
+    kept = np.flatnonzero(~twins(vectors, own))
+    vectors, own, suspect = vectors[kept], own[kept], suspect[kept]
+    if own.sum() < MIN_SIDE or (~own).sum() < MIN_SIDE:
+        return None
     side = split(vectors, own, suspect)
     ours, theirs = own & side & ~suspect, ~own & ~side & ~suspect
     if ours.sum() < MIN_SIDE or theirs.sum() < MIN_SIDE:
         return None
-    filed = ~own & ~suspect
     rows = np.flatnonzero(own & ~side)
-    if len(rows):
-        near, label = nearness(vectors[rows], vectors[theirs]), nearness(vectors[rows], vectors[ours])
-    else:
-        near = label = np.zeros(0, dtype=np.float32)
-    return {"strays": int((filed & side).sum()), "filed": int(filed.sum()), "rows": rows, "near": near, "own": label}
+    near = nearness(vectors[rows], vectors[theirs]) if len(rows) else np.zeros(0, dtype=np.float32)
+    mine = nearness(vectors[rows], vectors[ours]) if len(rows) else np.zeros(0, dtype=np.float32)
+    strays, filed, labelled = int((~own & side).sum()), int((~own).sum()), int(own.sum())
+    return {"strays": strays, "filed": filed, "over": len(rows), "labelled": labelled,
+            "told_apart": strays <= max(1, STRAYS * filed) and len(rows) <= MOST * labelled,
+            "rows": kept[rows], "near": near, "own": mine}
+
+
+def written(near: float, own: float, reason: str | None) -> bool:
+    """Whether a crop on the variant's side is written as the variant."""
+    return near >= NEAR and near - own >= MARGIN and reason in (None, UNBOXED)
 
 
 def whole(crops: dict[str, int], pages: Path) -> dict[str, str | None]:
@@ -143,7 +177,7 @@ def whole(crops: dict[str, int], pages: Path) -> dict[str, str | None]:
 
 def _held(ids: Sequence[str], mirror: Path, atlas: Path) -> tuple[list[int | None], dict[int, tuple[int, str]], set[int]]:
     """Each crop's number, the book and character of those the site holds under one, and the numbers
-    marked suspect."""
+    marked suspect under the character they still carry."""
     with sqlite3.connect(f"file:{mirror}?mode=ro", uri=True) as db:
         known = dict(db.execute("SELECT text, id FROM ids"))
     numbers = [known.get(identity) for identity in ids]
@@ -151,7 +185,8 @@ def _held(ids: Sequence[str], mirror: Path, atlas: Path) -> tuple[list[int | Non
     with sqlite3.connect(f"file:{atlas}?mode=ro", uri=True) as db:
         held = {row[crop]: (book, unicodedata.normalize("NFC", text)) for crop, book, text in db.execute(
             "SELECT c.id, c.book, g.text FROM crops c JOIN graphemes g ON g.id = c.char") if crop in row}
-        suspects = {crop for crop, in db.execute("SELECT crop FROM suspects")}
+        suspects = {crop for crop, label in db.execute("SELECT crop, label FROM suspects")
+                    if crop in row and held.get(row[crop], (0, None))[1] == unicodedata.normalize("NFC", label)}
     return numbers, held, suspects
 
 
@@ -174,8 +209,8 @@ def run(similar: Path, *, mirror: Path, atlas: Path, pages: Path) -> dict:
         judged = judge(vectors[members], own, np.array([numbers[n] in suspects for n in members]))
         entry = {"label": label, "other": other, "tables": list(stated[label, other]),
                  "crops": [int(own.sum()), int((~own).sum())],
-                 "strays": None if judged is None else [judged["strays"], judged["filed"]],
-                 "told_apart": judged is not None and judged["strays"] <= max(1, STRAYS * judged["filed"])}
+                 **({"told_apart": False} if judged is None else
+                    {name: judged[name] for name in ("strays", "filed", "over", "labelled", "told_apart")})}
         report.append(entry)
         if entry["told_apart"]:
             for n, near, mine in zip(members[judged["rows"]], judged["near"], judged["own"], strict=True):
@@ -183,9 +218,8 @@ def run(similar: Path, *, mirror: Path, atlas: Path, pages: Path) -> dict:
                               "near": float(near), "own": float(mine), "number": numbers[n]})
     gates = whole({crop["id"]: crop["number"] for crop in crops}, pages)
     for crop in crops:
-        crop["gate"] = gates.get(crop["id"])
-        crop["written"] = (crop["near"] >= NEAR and crop["near"] - crop["own"] >= MARGIN
-                           and crop["gate"] is None)
+        crop["gate"] = gates.get(crop["id"], UNBOXED)
+        crop["written"] = written(crop["near"], crop["own"], crop["gate"])
         del crop["number"]
     for entry in report:
         entry["written"] = sum(crop["written"] for crop in crops
