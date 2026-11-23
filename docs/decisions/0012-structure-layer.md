@@ -67,7 +67,7 @@ character's structure, where the 異体字 graph gives the two as one character 
 CJKVI's duplicates, or a stated equivalence) and CJKVI never gives them as non-cognate. 𦤀 `⿱自大` is
 臭's J shape and has 臭's `⿱自犬`; 𠾖 `⿳吅大吅` has 器's `⿳吅犬吅`. 柿 `⿰木市` is the K shape of 杮
 `⿰木巿` and keeps its own: CJKVI gives the two as characters that only look alike. A group of such
-characters has the structure of its lowest code point: 34 characters form 16 groups. An id still
+characters has the structure of its lowest code point: 34 characters form 17 groups. An id still
 names its canonical text, so the policy is unchanged; `⿱自大` keeps its id, and no character has it.
 
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
