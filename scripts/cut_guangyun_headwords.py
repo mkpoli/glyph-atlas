@@ -11,9 +11,10 @@ the table's repository at the commit that file pins; `--images` is the copy's im
 its repository at the pinned commit, or the folder holding its PDF files as Wikimedia Commons names
 them. Each opening is enlarged as the copy asks, run through the character detector at the copy's
 scale, split at its gutter, and each half-leaf's headwords placed by `glyph_atlas.leaf_text.place` from
-the columns, positions and gloss lengths the tables give. The atlas classifier judges a headword
-on its box; where it does not read the headword there, NDLkotenOCR is asked, and its reading stands
-if it is the headword. Their verdicts steer the pairing.
+the columns, positions and gloss lengths the tables give. The atlas classifier reads a headword
+on its box when it is its first choice there, and refuses it when it is not among its first five;
+where the classifier does not read it, NDLkotenOCR is asked, and its reading stands if it is the
+headword. Their verdicts steer the pairing.
 
 A headword is kept when a detected box stands at its place and a reader reads it there, or no
 reader judges it and its gaps to its paired neighbours fit the text within the copy's `fit` rows
@@ -74,6 +75,8 @@ COLUMNS = 10
 #: A half-leaf is borne out when the readers judge at least this many of its headwords (a copy may ask for fewer) and read this share of them.
 CONFIRM = 3
 AGREED = 0.6
+#: An opening is read as other leaves than its offset gives only when at least this many headwords are read there.
+MOVED = 3
 SEGMENTATION = ("columns found from the detector's headword-sized boxes; each column's headwords paired in order with "
                 "its boxes by the gaps their gloss lengths predict, steered by the classifier and NDLkotenOCR")
 
@@ -98,9 +101,12 @@ def readers(classifier: Classifier, second: Recognizer):
             key = (box.x, box.y, box.w, box.h)
             if key not in top or len(char) != 1:
                 return None  # a box too small to judge, or a headword Unicode lacks
-            said = agrees(Glyph(char), top[key], codes)
-            if said:
+            glyph = Glyph(char)
+            if agrees(glyph, top[key][:1], codes):
                 return True
+            # Among its next choices the classifier neither reads the headword nor refuses it: a headword's
+            # neighbours share its phonetic (曝 瀑, 倭 委), and look as like it as it does.
+            said = None if agrees(glyph, top[key], codes) else agrees(glyph, [], codes)
             written = forms(char)
             if not written & alphabet:
                 return said
@@ -110,7 +116,7 @@ def readers(classifier: Classifier, second: Recognizer):
                 text[key] = decoded[0]["text"] if decoded else ""
             if len(text[key]) == 1 and text[key] in written:
                 return True
-            return said if said is not None else (False if len(text[key]) == 1 else None)
+            return said
 
         return reads, top
 
@@ -288,7 +294,8 @@ def main() -> int:
             if not read:
                 for other in leaves[1:]:
                     found_read, found_sides = attempt(other)
-                    if found_read > read:
+                    # One chance reading does not move the leaf.
+                    if found_read > max(read, MOVED - 1):
                         read, sides, leaf = found_read, found_sides, other
                 drift += leaf - base
             page = Page(id=f"{prefix}:{number}:{opening}", document_id=document.id, seq=opening - 1, image=url,
