@@ -93,7 +93,7 @@ def crop_name(row: dict[str, str]) -> str:
 
 def collect(
     books: Sequence[str],
-    out: Path = Path("work/tensho"),
+    out: Path = Path("work/codh-tensho"),
     *,
     scans: Path | None = None,
     data: Path | None = None,
@@ -322,8 +322,9 @@ def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
         origin=book["origin"],
         style="mixed",
         genre=["dictionary"],
+        # `year` is the printing's; a book whose printing no source dates has none.
         dating=[Dating(literal=book["edition"], start=int(book["year"]), end=int(book["year"]), kind="publication",
-                       evidence=book.get("manifest") or book["url"])],
+                       evidence=book.get("manifest") or book["url"])] if "year" in book else [],
         image_rights=rights,
         text_rights=text_rights,
         meta={
