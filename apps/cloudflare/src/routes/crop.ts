@@ -198,21 +198,28 @@ async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name:
 // it now, label and box, so a review or a redrawn box shows on the page once the catalogue version moves. The
 // record names its crops by source id in its order, which its bundle maps to slots; a crop retired or not on
 // the page is left out. The photo is a request of the holder's IIIF image service, its longer side at most
-// PAGE_IMAGE pixels, laid over the page pixels the boxes are given in; a page no service serves is shown
+// PAGE_IMAGE pixels and named alone (`w,` or `,h`), the one size request a level 1 service must answer, laid over the page pixels the boxes are given in; a page no service serves is shown
 // from the site's own copy when its record names one (`photo`, an image of the key map), else as its
 // boxes alone. Beside the record's own source fields (its manifest, canvas and the holder's catalogue
 // record), a page carries its book's dates and its page on みんなで翻刻. A page is named by its key.
 const PAGE_IMAGE = 3000;
 // Part of the edge key of a page's answer: moves when the answer gains or changes a field.
-const PAGE_SHAPE = 2;
+const PAGE_SHAPE = 3;
 // A hosted photo is named by its path among the site's images and by nothing else.
 const hostedPhoto = (photo: unknown) => typeof photo === 'string' && /^\/atlas\/media\/[a-f0-9]{64}\.webp$/.test(photo) ? photo : null;
+function photoRequest(service: string, width: unknown, height: unknown) {
+  const [w, h] = [Number(width), Number(height)];
+  // A page whose size is not recorded can only be asked for as a box to fit, which level 2 services answer.
+  if (!(w > 0 && h > 0)) return `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg`;
+  const side = Math.min(PAGE_IMAGE, Math.max(w, h));
+  return `${service}/full/${w >= h ? `${side},` : `,${side}`}/0/default.jpg`;
+}
 export function pageView(record: Json, crops: { row: Listed; entry: Json }[]): Json {
   const { crops: _, service, photo, page_number, document, title, ...rest } = record;
   const honkoku = honkokuPage({ page_number }, document);
   return { ...rest, document_id: document, document_title: title, seq: page_number - 1, service: service ?? null,
     ...(honkoku ? { honkoku_url: honkoku } : {}),
-    image_url: service ? `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg` : hostedPhoto(photo), drawable: false,
+    image_url: service ? photoRequest(service, record.width, record.height) : hostedPhoto(photo), drawable: false,
     units: crops.map(({ row, entry }) => ({ id: publicId(row.id), line_id: entry.line_id ?? null, box: boxOf(row, entry), character: row.char,
       code_point: null, image: entry.image ?? null, state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null })) };
 }
