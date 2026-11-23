@@ -148,6 +148,14 @@ def test_a_book_with_no_title_takes_the_one_its_pages_state_and_nothing_else_mov
     stamps = live.execute("SELECT count(*) FROM imports").fetchone()
     books(remote, monkeypatch, "--titles", "--send")
     assert live.execute("SELECT count(*) FROM imports").fetchone() == stamps
+    # A title cleared after it was loaded is the same part, which D1 takes once; the run says it is still missing.
+    for held in (live, local):
+        held.execute("UPDATE books SET title=NULL WHERE key='book:a'")
+        held.commit()
+    with pytest.raises(SystemExit, match="1 titles are still missing"):
+        books(remote, monkeypatch, "--titles", "--send")
+    with pytest.raises(SystemExit):
+        books(remote, monkeypatch, "--titles", "--documents", "book:a")
 
 
 def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F811

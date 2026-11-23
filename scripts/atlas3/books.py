@@ -266,9 +266,10 @@ def statements(books, atlas, only=None):
 
 def missing_titles(atlas):
     """The statements that give each book the site holds with no title the one its first page bundle
-    states, and what they change. A title already there is kept."""
-    found = titles(atlas, {})
-    rows = [[f"UPDATE books SET title = {lit(found[b][1])} WHERE id = {b} AND title IS NULL;"]
+    states, and what they change. A title already there is kept, and a crop's source, which may be a file
+    name, names no book here."""
+    found = {book: title for book, (origin, title) in titles(atlas, {}).items() if origin == "pages"}
+    rows = [[f"UPDATE books SET title = {lit(found[b])} WHERE id = {b} AND title IS NULL;"]
             for b, in atlas.execute("SELECT id FROM books WHERE title IS NULL ORDER BY id") if b in found]
     return ([[s for r in rows[i:i + GROUP] for s in r] for i in range(0, len(rows), GROUP)],
             {"books": {"removed": 0, "added": 0, "changed": len(rows), "written": len(rows)}})
@@ -471,6 +472,8 @@ def main():
     parser.add_argument("--titles", action="store_true", help="give the books the site holds with no title the one their page "
                         "bundles state, and load nothing else; reads no input")
     args = parser.parse_args()
+    if args.titles and args.documents:
+        parser.error("--titles loads nothing of --documents; run them apart")
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -484,11 +487,12 @@ def main():
         migrate(atlas)
         catch_up(atlas)
     if args.titles:
-        if args.documents:
-            parser.error("--titles loads nothing of --documents; run them apart")
         groups, changes = missing_titles(atlas)
         print("".join(f"{table}: {held}\n" for table, held in changes.items()), end="", flush=True)
         finish(groups, atlas, args.send)
+        # The same titles filled before are the same parts, whose stamps the site holds, so they are not sent again.
+        if args.send and (left := len([s for g in missing_titles(atlas)[0] for s in g])):
+            sys.exit(f"{left} titles are still missing: these parts were loaded before and are not sent twice")
         return
     named = set(args.documents) if args.documents else None
     if named:
