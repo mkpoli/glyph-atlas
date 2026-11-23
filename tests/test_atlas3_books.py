@@ -124,6 +124,32 @@ def test_named_documents_take_their_dates_and_leave_every_other_fact(layout, mon
         books(remote, monkeypatch, "--documents", "nowhere")
 
 
+def test_a_book_with_no_title_takes_the_one_its_pages_state_and_nothing_else_moves(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch, "--send")
+    live, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
+    pid, rev = local.execute("SELECT p.id, p.rev FROM books b JOIN pages p ON p.book=b.id WHERE b.key='book:a' ORDER BY p.id").fetchone()
+    for held in (live, local):
+        held.execute("UPDATE books SET title=NULL WHERE key='book:a'")
+        held.execute("UPDATE books SET title='given by hand' WHERE key='codh:b'")
+        held.commit()
+    path = root / "out" / "pages" / f"{pid}-{rev}.json.gz"
+    path.write_bytes(gzip.compress(json.dumps({**json.loads(gzip.decompress(path.read_bytes())), "page": {"title": "聯珠篆文"}}).encode()))
+    before = facts(live)
+    # No input is read: the titles are the pages'.
+    (root / "book-facts-input.sqlite").unlink()
+    books(remote, monkeypatch, "--titles", "--send")
+    got = facts(live)
+    assert dict(live.execute("SELECT key, title FROM books"))["book:a"] == "聯珠篆文"
+    assert dict(live.execute("SELECT key, title FROM books"))["codh:b"] == "given by hand"
+    assert {k: got[k] for k in ("dates", "characters", "site")} == {k: before[k] for k in ("dates", "characters", "site")}
+    # A rerun has nothing to send.
+    stamps = live.execute("SELECT count(*) FROM imports").fetchone()
+    books(remote, monkeypatch, "--titles", "--send")
+    assert live.execute("SELECT count(*) FROM imports").fetchone() == stamps
+
+
 def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root)
