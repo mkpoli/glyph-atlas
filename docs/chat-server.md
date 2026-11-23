@@ -410,15 +410,16 @@ Copy the program, the stickers, the example configuration and the unit in, then 
 service's group:
 
 ```sh
-scp -r apps/fish-bot/fish_bot.py apps/fish-bot/stickers apps/fish-bot/config.example.toml \
-  apps/fish-bot/fish-bot.service root@glyphatlas-matrix:/tmp/
-ssh root@glyphatlas-matrix '
+scp apps/fish-bot/fish_bot.py apps/fish-bot/config.example.toml apps/fish-bot/fish-bot.service \
+  root@glyphatlas-matrix:/tmp/
+scp apps/fish-bot/stickers/*.png root@glyphatlas-matrix:/opt/fish-bot/stickers/
+ssh root@glyphatlas-matrix 'set -e
   install -o root -g fish-bot -m 640 /tmp/fish_bot.py /opt/fish-bot/fish_bot.py
-  install -d -o root -g fish-bot /opt/fish-bot/stickers
-  install -o root -g fish-bot -m 640 /tmp/stickers/*.png /opt/fish-bot/stickers/
+  chown root:fish-bot /opt/fish-bot/stickers/*.png
+  chmod 640 /opt/fish-bot/stickers/*.png
   install -o root -g fish-bot -m 640 /tmp/config.example.toml /etc/fish-bot/config.toml
   install -o root -g root -m 644 /tmp/fish-bot.service /etc/systemd/system/fish-bot.service
-  rm -rf /tmp/fish_bot.py /tmp/stickers /tmp/config.example.toml /tmp/fish-bot.service'
+  rm /tmp/fish_bot.py /tmp/config.example.toml /tmp/fish-bot.service'
 ```
 
 Create the three secret files, owned by `root:fish-bot` and readable only by that group:
