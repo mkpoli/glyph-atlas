@@ -309,9 +309,10 @@ Red-DiscordBot's `mydata forgetme` (https://docs.discord.red/en/latest/red_core_
 are the group-bot precedents.
 
 When someone calls her with a question she cannot answer from the chat, she can look it up first:
-the web through DeepSeek's Search and Fetch APIs (run on DeepSeek's side, so the homeserver's
-loopback address is out of reach; $0.75 per 1,000 requests,
-https://api-docs.deepseek.com/guides/search/), code, issues, pull requests and commits in the
+the web through Gemini's Google Search grounding (5,000 free queries a month on the paid tier) and
+URL context tool (run on Google's side, so the homeserver's loopback address is out of reach;
+https://ai.google.dev/gemini-api/docs/google-search and
+https://ai.google.dev/gemini-api/docs/url-context), code, issues, pull requests and commits in the
 community's repositories through GitHub, and her own memory of the rooms she reads. She gets up to four
 rounds of lookups per answer and `[lookup] per_hour` (120) across the bot; unasked turns never look
 anything up. MemGPT lets a model page through its memory with tools and reports that it often stops
@@ -336,8 +337,8 @@ runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/
 
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
 the newest few among its last lines (four when called, two when reading along) to the model as the
-homeserver's 1,024-pixel thumbnails; deepseek-flash reads JPEG, PNG, GIF and WebP at up to 1,024
-tokens an image (https://api-docs.deepseek.com/guides/vision). A posted picture also counts as a
+homeserver's 1,024-pixel thumbnails; `gemini-4-hydrogen` reads JPEG, PNG, GIF and WebP inline
+(https://ai.google.dev/gemini-api/docs/image-understanding). A posted picture also counts as a
 lively moment for reading along, and memory sees up to four pictures of each stretch it summarizes.
 
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
@@ -379,7 +380,7 @@ Create the three secret files, owned by `root:fish-bot` and readable only by tha
 
 ```sh
 install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/matrix-token
-install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/deepseek-key
+install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/gemini-key
 install -m 640 -o root -g fish-bot /dev/null /etc/fish-bot/github-token
 ```
 
@@ -388,7 +389,9 @@ Fill them:
 - `matrix-token` — the account's access token. In `#admins`, `!admin users create bigfatfish` makes
   the account and prints a password; `!admin users issue-token bigfatfish <password>` prints a token.
   Set the account's display name to `大肥魚`.
-- `deepseek-key` — the API key for the model, starting `sk-`.
+- `gemini-key` — the paid Google AI Studio API key for `gemini-4-hydrogen`. Background memory and
+  daily digest calls try Gemini Flex inference (50% off) first and fall back to Standard when Flex
+  capacity is unavailable.
 - `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
   **Metadata: read-only**. No other repository or permission is needed: the same token reads the
   public repositories for lookups. Without this file the bot still chats and looks up the web, but it
@@ -417,7 +420,8 @@ journalctl -u fish-bot -f
 ```
 
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
-estimated cost from DeepSeek's price table, logged once a day and printed for the last week by
+estimated cost from Gemini 4 Hydrogen's price table (Standard and Flex), logged once a day and
+printed for the last week by
 
 ```sh
 runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --db /var/lib/fish-bot/chat.sqlite3 --usage
