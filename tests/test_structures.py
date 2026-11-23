@@ -174,6 +174,18 @@ def test_a_description_that_is_a_characters_own_structure_names_it():
     assert structures.for_ids("⿱里火") == structures.for_character("𭴬")
 
 
+def test_a_character_encoded_twice_joins_the_one_whose_regional_shape_it_is():
+    # 𦤀 ⿱自大 is 臭's J shape, and Unihan and CJKVI give the two as one character.
+    assert structures.for_character("𦤀") == structures.for_character("臭")
+    assert structures.for_character("臭").label == "⿱自犬"
+    assert structures.for_ids("⿱自大") == structures.for_character("臭")
+    assert structures.for_character("𠾖") == structures.for_character("器")
+    # 柿 ⿰木市 is 杮's K shape, and CJKVI gives the two as characters that only look alike.
+    assert structures.for_character("柿") != structures.for_character("杮")
+    assert structures.for_ids("⿰木市") == structures.for_character("柿")
+    assert structures.for_character("𠮟") != structures.for_character("叱")
+
+
 def test_the_policy_names_the_tables_it_reads():
     for name, digest in structures.TABLES.items():
         assert hashlib.sha256((ROOT / "data/vocab" / name).read_bytes()).hexdigest()[:16] == digest, name

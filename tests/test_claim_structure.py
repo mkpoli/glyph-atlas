@@ -66,15 +66,15 @@ def test_a_filing_refuses_what_names_nothing(dataset):  # noqa: F811
 
 
 def test_a_regional_shape_has_its_characters_structure(dataset):  # noqa: F811
-    """臭's J shape ⿱自大 stands under 臭's ⿱自犬; written alone it is 𦤀's."""
+    """杮's K shape ⿰木市 stands under 杮's ⿰木巿; written alone it is 柿's."""
     client = TestClient(create_app(dataset))
-    smell, alone = structures.for_character("臭"), structures.for_ids("⿱自大")
-    assert smell.id != alone.id
-    assert client.get("/layers/structures", params={"c": "⿱自大", "of": "臭"}).json()["items"] == [
-        {"id": smell.id, "label": smell.label, "chars": ["⿱自大"]}]
-    assert groups(client, "⿱自大")[0]["id"] == alone.id
-    assert file(client, "⿱自大", char="⿱自大", of="臭")["structures"][0]["structure"] == smell.id
-    file(client, "⿱自大", char="⿱山夆", of="臭", status=422)
+    shingle, alone = structures.for_character("杮"), structures.for_ids("⿰木市")
+    assert shingle.id != alone.id
+    assert client.get("/layers/structures", params={"c": "⿰木市", "of": "杮"}).json()["items"] == [
+        {"id": shingle.id, "label": shingle.label, "chars": ["⿰木市"]}]
+    assert groups(client, "⿰木市")[0]["id"] == alone.id
+    assert file(client, "⿰木市", char="⿰木市", of="杮")["structures"][0]["structure"] == shingle.id
+    file(client, "⿰木市", char="⿱山夆", of="杮", status=422)
 
 
 def fold(client: TestClient, source: dict, into: dict | None, *, reviewer: str = "ann", status: int = 200) -> dict:
