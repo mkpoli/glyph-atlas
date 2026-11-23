@@ -2,10 +2,12 @@ import { structures as readStructures } from './layers.js'
 import { isDescription } from './ids.js'
 
 const HAN = /^\p{Script=Han}/u
+// Unicode's Seal block: a seal character has the 構形 of the Han character it transcribes.
+const SEAL = /^[\u{3D000}-\u{3FC3F}]/u
 /** How many written values one reading asks for. */
 export const NAMES = 48
-/** A written value that can have a 構形: a Han character or a description. */
-export const composable = char => HAN.test(char ?? '') || isDescription(char)
+/** A written value that can have a 構形: a Han or small seal character, or a description. */
+export const composable = char => HAN.test(char ?? '') || SEAL.test(char ?? '') || isDescription(char)
 
 /**
  * The 構形 each written value stands under, by its text: `{ id, label, by, others, part }`, `by` who
