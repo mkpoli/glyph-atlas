@@ -884,6 +884,31 @@ def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path)
     assert pages[ids(root)["codh:x1"] // PAGE] == "corpus:codh:codh:b:x:0"
 
 
+def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    path = tmp_path / "corpus.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute(f"INSERT INTO corpus_units VALUES('gy:x1','き',NULL,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','gy:1',NULL)")
+    db.execute("CREATE TABLE corpus_documents(document PRIMARY KEY, n, title)")
+    db.execute("INSERT INTO corpus_documents VALUES('gy:1', 0, '廣韻 卷一')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    titles = lambda: dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, title FROM books"))  # noqa: E731
+    assert titles()["gy:1"] == "廣韻 卷一"
+    # A book the site holds with no title takes the catalogue's on the next publish; one it has keeps its own.
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title=NULL WHERE key='gy:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["gy:1"] == "廣韻 卷一"
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title='given by hand' WHERE key='gy:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["gy:1"] == "given by hand"
+
+
 def test_two_new_boxes_on_one_glyph_stop_the_publish(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     with pytest.raises(SystemExit):

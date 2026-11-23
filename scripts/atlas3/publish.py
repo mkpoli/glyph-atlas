@@ -649,7 +649,9 @@ class Mirror:
             self.emit("codes", ("field", "code", "key"), (field, code, key))
         return code
 
-    def book(self, key):
+    def book(self, key, title=None):
+        """A book's id, the book added where the site lacks it. `title` is the one the catalogue gives
+        the book: a new book takes it, and a book the site holds with no title takes it once."""
         key = key or "unknown"
         row = self.ids.execute("SELECT id FROM books WHERE key=?", (key,)).fetchone()
         if row:
@@ -658,7 +660,10 @@ class Mirror:
             bid = (self.ids.execute("SELECT max(id) FROM books").fetchone()[0] or 0) + 1
             self.ids.execute("INSERT INTO books VALUES(?,?)", (key, bid))
         if not self.has("books", "id", bid):
-            self.emit("books", ("id", "key"), (bid, key))
+            self.emit("books", ("id", "key", "title"), (bid, key, title))
+        elif title and self.atlas.execute("SELECT title FROM books WHERE id=?", (bid,)).fetchone()[0] is None:
+            self.head.append(f"UPDATE books SET title={lit(title)} WHERE id={bid} AND title IS NULL;")
+            self.atlas.execute("UPDATE books SET title=? WHERE id=? AND title IS NULL", (title, bid))
         return bid
 
     def grapheme(self, text):
@@ -1668,6 +1673,8 @@ def main():
         n += 1
 
     if "corpus_units" in tables:
+        # The titles the corpus export gives its documents, which the site lists its books by.
+        titled = dict(src.execute("SELECT document, title FROM corpus_documents WHERE title IS NOT NULL")) if "corpus_documents" in tables else {}
         for r in src.execute("SELECT * FROM corpus_units ORDER BY id"):
             source = r["id"].split("|")[0].split(":")[0]
             cid = m.known(r["id"])
@@ -1684,7 +1691,7 @@ def main():
             # An upstream glyph speaks for the review columns only through its review overlay.
             char = m.grapheme((o["character"] if o else None) or r["character"])
             filed = o["family"] if o and with_family else r["family"]
-            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source), "char": char,
+            given = {"id": cid, "kind": 1, "book": m.book(r["document"] or source, titled.get(r["document"])), "char": char,
                      "family": m.grapheme(filed),
                      "visual_group": m.code("visual_group", r["visual_group"]), "production": m.production(r["production"]),
                      "style": m.code("style", (o["style"] if o else None) or r["style"] or "unassessed"),
