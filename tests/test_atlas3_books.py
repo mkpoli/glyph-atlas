@@ -107,6 +107,23 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert "variant_sources" in facts(db)["site"]
 
 
+def test_named_documents_take_their_dates_and_leave_every_other_fact(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch, "--send")
+    before = facts(remote.dbs["glyph-atlas-v3"])
+    # The input states another date for both books, and lacks the characters and titles a whole run would load.
+    sources(root, dating=[dated("book:a", start=1801), dated("codh:b", "composed", 1600)], titles=[], characters=[], metadata=[])
+    translation = (root / "out" / "books.sqlite").read_bytes()
+    books(remote, monkeypatch, "--documents", "codh:b", "--send")
+    got = facts(remote.dbs["glyph-atlas-v3"])
+    assert sorted(got["dates"]) == [("book:a", "witness", 1700, "gregorian"), ("codh:b", "composed", 1600, "gregorian")]
+    assert {k: got[k] for k in ("titles", "characters", "site")} == {k: before[k] for k in ("titles", "characters", "site")}
+    assert (root / "out" / "books.sqlite").read_bytes() == translation
+    with pytest.raises(SystemExit, match="not books of the site: nowhere"):
+        books(remote, monkeypatch, "--documents", "nowhere")
+
+
 def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root)
@@ -271,6 +288,24 @@ def test_a_date_no_source_states_is_retracted_and_a_claim_that_returns_is_assert
     assert ("dt:1@2026-10-22T00:00:00Z", "source", "kokusho", "kokusho#printed") in got["evidence"]
     assert sorted(json.loads(c[3]) for c in got["current"]) == [["dt:1@2026-10-22T00:00:00Z"], ["dt:2"]]
     assert ledger(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
+
+
+def test_named_documents_take_their_claims_and_no_other_claim_is_retracted(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, claims=[claim("dt:1"), claim("dt:2", "nowhere", 1500), claim("dt:3", "codh:b", 1600)])
+    books(remote, monkeypatch, "--send")
+    # The input no longer states dt:1 and dt:2, states dt:3 under another id, and holds a new claim on book:a.
+    sources(root, claims=[claim("dt:4", "codh:b", 1601), claim("dt:5", "book:a", 1777)], stamp="2026-10-21T00:00:00Z")
+    books(remote, monkeypatch, "--documents", "codh:b", "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    got = ledger(db)
+    assert [r[0] for r in got["assertions"]] == ["dt:1", "dt:2", "dt:3", "dt:4"]
+    assert [r[1] for r in got["actions"]] == ["dt:3"], "only the named document's own claim is retracted"
+    assert {(c[0], c[2]) for c in got["current"] if c[1] == "asserted"} == {("book:a", 1700), ("nowhere", 1500), ("codh:b", 1601)}
+    assert ledger(sqlite3.connect(root / "out" / "atlas.sqlite")) == got
+    stamps = db.execute("SELECT count(*) FROM imports").fetchone()[0]
+    books(remote, monkeypatch, "--documents", "codh:b", "--send")
+    assert db.execute("SELECT count(*) FROM imports").fetchone()[0] == stamps, "a rerun finds nothing to send"
 
 
 def test_a_slot_is_resolved_from_the_verdicts_glyph_atlas_v3_holds(layout, monkeypatch):  # noqa: F811
