@@ -250,10 +250,12 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
   }
   return { items: [...groups.values()], ...(Object.keys(filed).length ? { filed } : {}) };
 }
+// Raised when derivedStructures answers differently for the same catalogue, so no older answer is served.
+const DERIVED_SHAPE = 2;
 // The structure each name's description gives, by name; a name with none is left out. A name that is
 // a regional shape of `of` has that character's structure.
 async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[], of: string): Promise<Record<string, { id: string; label: string }>> {
-  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of)}&v=${encodeURIComponent(`${DERIVED_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const [whole, ...described] = await Promise.all([of ? characterIds(env, structureKey(of), ctx) : null,

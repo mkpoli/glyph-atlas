@@ -497,11 +497,13 @@ STRUCTURE_CHARS = 48
 
 
 def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
-                     folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None) -> dict[str, Any]:
+                     folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None,
+                     of: str = "") -> dict[str, Any]:
     """The 構形 of each character or description named, as groups of those that share one, in the
     order named, as the Worker's `/layers/structures` answers. A name stands under the structure
     readers filed its form under (`claimed`, by name: `{id, label, by}` each, the one that holds first),
-    and the group names who says so; with no claim it stands under the one its description gives. A
+    and the group names who says so; with no claim it stands under the one its description gives, and a
+    regional shape of `of` under that character's. A
     structure a reader folded into another (`folds`, by id: `{head, by}`) stands under that one, and
     the group lists it in `folded` with the names built as it. A name with no structure is in no
     group. `filed` lists the other structures a name was filed under."""
@@ -510,6 +512,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
 
     built: dict[str, dict[str, Any]] = {}
     filed: dict[str, list[dict[str, Any]]] = {}
+    shapes = {shape["text"] for shape in regional_shapes(of)} if of else set()
     for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
         claims = list((claimed or {}).get(name, ()))
         if claims:
@@ -518,7 +521,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
                 filed[name] = [dict(other) for other in claims[1:]]
             continue
         try:
-            structure = structures.for_name(name)
+            structure = structures.for_name(of) if name in shapes else structures.for_name(name)
         except ValueError:
             continue
         if structure:
