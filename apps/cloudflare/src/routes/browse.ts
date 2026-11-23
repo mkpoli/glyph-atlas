@@ -326,13 +326,27 @@ function conditions(f: Filter, skip: { chars?: boolean; book?: boolean; category
   return { sql: where.map(w => ` AND ${w}`).join(''), values };
 }
 
-// How many corpus glyphs of a book a filter keeps, read from the book's own index range and no further
-// than `BOOK_GLYPHS` of them: the publication counts a book's glyphs, but not by state or character.
-export const BOOK_GLYPHS = 50000;
+// How many corpus glyphs of a book a filter keeps. The publication counts a book's glyphs, but not by
+// state, character or withheld flag, so they are counted from the book's own index range: its first
+// `BOOK_ROWS` rows are read and no more, whatever the filter, so a book larger than that is not counted
+// this way (`glyphsOf`).
+export const BOOK_ROWS = 40000;
 export function bookGlyphsQuery(f: Filter) {
   const rest = conditions(f, { book: true });
-  return { sql: `SELECT count(*) AS n FROM (SELECT 1 FROM crops INDEXED BY crop_book WHERE book=? AND kind<2 AND kind=1${rest.sql} LIMIT ${BOOK_GLYPHS})`,
+  return { sql: `SELECT count(*) AS n FROM (SELECT kind,char,category,state,quiz,production FROM crops INDEXED BY crop_book WHERE book=? AND kind<2 LIMIT ${BOOK_ROWS}) WHERE kind=1${rest.sql}`,
     values: [f.book!, ...rest.values] };
+}
+/** The corpus glyphs of a book that a browse filter keeps: counted where the book is small enough to read,
+ *  else no more than the publication counts in it and, for the characters named, in the whole corpus. */
+async function glyphsOf(env: Env, f: Filter, [collected, corpus]: [number, number], version: string): Promise<number> {
+  if (collected + corpus <= BOOK_ROWS) {
+    const counting = bookGlyphsQuery(f);
+    return (await env.ATLAS.prepare(counting.sql).bind(...counting.values).first<{ n: number }>())?.n ?? 0;
+  }
+  if (f.chars === null) return corpus;
+  let named = 0;
+  for (const c of (await corpusCounts(env, version)).cells) if (matches({ ...f, book: null, category: null }, { ...c, book: -1, category: null })) named += c.n;
+  return Math.min(corpus, named);
 }
 
 // One index range of a listing, in shuffle order: one per character and priority named, else the book's,
@@ -342,8 +356,9 @@ export type Range = { from: string; values: (number | string)[] };
 export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false, glyphs = false): Range[] {
   if (f.chars !== null) {
     const rest = conditions(f, { chars: true });
-    return [...f.chars].sort((a, b) => a - b).flatMap(char => priorities.map(priority => ({
-      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}`, values: [char, kind, priority, ...rest.values] })));
+    // Browsing a book by character deals its corpus glyphs of that character after its collected crops.
+    return [...f.chars].sort((a, b) => a - b).flatMap(char => (glyphs ? [0, 1] : [kind]).flatMap(k => priorities.map(priority => ({
+      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}`, values: [char, k, priority, ...rest.values] }))));
   }
   const only = tier ? { sql: ' AND priority=?', values: priorities } : { sql: '', values: [] };
   if (f.book !== null) {
@@ -635,7 +650,8 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     for (const id of [...away, ...claimed.map(row => row.id)]) exclude.add(id);
     const tiered = review && seed % 5 !== 0;
     // A book's corpus glyphs are browsed with its collected crops, where the publication counts it any.
-    const bookGlyphs = !review && book !== null && ((await bookCounts(env)).books.get(book)?.[1] ?? 0) > 0;
+    const inBook = !review && book !== null ? (await bookCounts(env)).books.get(book) ?? null : null;
+    const bookGlyphs = inBook !== null && inBook[1] > 0;
     stages = [{ ids: head.map(row => row.id) },
       ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true) }))
         : [{ list: ranges(filter, 0, categoryCodes, priorities, false, bookGlyphs) }]),
@@ -645,8 +661,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     const skippedOrHead = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;
     let glyphTotal = 0;
     if (corpus) for (const c of glyphs!.cells) if (matches(corpusFilter, { ...c, book: -1, category: null })) glyphTotal += c.n;
-    if (bookGlyphs) { const counting = bookGlyphsQuery(filter);
-      glyphTotal += (await env.ATLAS.prepare(counting.sql).bind(...counting.values).first<{ n: number }>())?.n ?? 0; }
+    if (bookGlyphs) glyphTotal += await glyphsOf(env, filter, inBook!, version);
     total = head.length + claimed.length + listedCount(filter) - left - skippedOrHead(0, filter) + (corpus ? glyphTotal - skippedOrHead(1, corpusFilter) : bookGlyphs ? glyphTotal : 0);
   }
   const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
@@ -739,8 +754,9 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
     count(found.text, r.head, state, 1);
   }
   // Every book is listed: one of corpus glyphs counts those, which the publication counts by book alone,
-  // so they add to its total and to no state.
-  if (books) for (const [book, [, corpus]] of books) if (corpus > 0) {
+  // so they add to its total and to no state. Under a choice of material the count is not known by
+  // book, and the books of corpus glyphs are left out.
+  if (books && counted.productions === null) for (const [book, [, corpus]] of books) if (corpus > 0) {
     const entry = documents.get(book) ?? { id: '', title: null, ...empty() };
     entry.total += corpus; documents.set(book, entry);
   }
