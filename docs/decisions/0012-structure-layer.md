@@ -63,12 +63,15 @@ unless the list gives the two as encoded apart (丷 and 八 are one component in
 characters on their own).
 
 A character encoded apart whose own description is a regional shape of another character joins that
-character's structure, where the 異体字 graph gives the two as one character (Unihan's kZVariant,
-CJKVI's duplicates, or a stated equivalence) and CJKVI never gives them as non-cognate. 𦤀 `⿱自大` is
-臭's J shape and has 臭's `⿱自犬`; 𠾖 `⿳吅大吅` has 器's `⿳吅犬吅`. 柿 `⿰木市` is the K shape of 杮
-`⿰木巿` and keeps its own: CJKVI gives the two as characters that only look alike. A group of such
-characters has the structure of its lowest code point: 34 characters form 17 groups. An id still
-names its canonical text, so the policy is unchanged; `⿱自大` keeps its id, and no character has it.
+character's structure, where the 異体字 graph gives the two as one character encoded twice (Unihan's
+kZVariant, CJKVI's duplicates) and CJKVI never gives them as non-cognate. 𦤀 `⿱自大` is 臭's J shape
+and has 臭's `⿱自犬`; 𠾖 `⿳吅大吅` has 器's `⿳吅犬吅`. 柿 `⿰木市` is the K shape of 杮 `⿰木巿` and
+keeps its own: CJKVI gives the two as characters that only look alike. A stated equivalence is not
+enough, since yitizi's equivalences join 新字体 to 旧字体 (㠀 and 島). 30 characters form 15 groups,
+each with the structure of the character whose shape the other is. An id still names its canonical
+text, so the policy is unchanged; `⿱自大` keeps its id, and no character has it. The groups follow
+the 異体字 graph, which the policy does not pin; a test lists them, so a rebuilt graph that changes
+one is met with a decision.
 
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟
