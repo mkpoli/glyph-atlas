@@ -303,7 +303,8 @@ wholly in the language set there, whatever the room's recent messages are writte
 repositories in `[digest] repos` merged and released in the last day, and a line for each other
 room's discussion, with no one named. A quiet day gets no digest.
 
-She remembers. Once a stretch of a room has ended (a pause of six hours, or half an hour of quiet),
+She remembers. Once a stretch of a room has ended (a pause of six hours, or half an hour of quiet,
+or a minute of quiet after a turn in which she chose to remember it),
 the model summarizes it into an episode and edits a set of short notes about the people in it, the
 community and herself: it adds, updates or deletes a note against the ones it already holds. A turn
 brings in the notes about the people talking and the notes and earlier episodes, from any room, that

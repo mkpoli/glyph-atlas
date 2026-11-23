@@ -1236,6 +1236,18 @@ def test_remembers_a_finished_stretch_and_moves_on(tmp_path):
     assert len(bot.gemini.memories) == 1, "the open stretch waits until the room goes quiet"
 
 
+def test_remembers_a_stretch_sooner_when_she_chose_to(tmp_path):
+    bot, _, _store = memory_bot(tmp_path)
+    say(bot, "we settled on the name 珍字集覽", event_id="$a", ts=fish_bot.now_ms() - 90_000)
+    bot.consolidate()
+    assert bot.gemini.memories == []
+    bot.gemini.act_value = fish_bot.parse_act('{"say": "", "interest": 0, "remember": true}', 1)
+    bot.turn(ROOM, "$a", task="visit")
+    bot._memory_due = 0
+    bot.consolidate()
+    assert bot.gemini.memories[0][0] == ["$a"] and bot._remember_now == set()
+
+
 def test_a_stretch_with_nothing_to_keep_leaves_no_episode(tmp_path):
     bot, _, store = memory_bot(tmp_path)
     bot.gemini.memory_value = fish_bot.Memory(summary="", keywords=(), edits=())
