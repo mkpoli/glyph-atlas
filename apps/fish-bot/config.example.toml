@@ -8,9 +8,6 @@ token_file = "/etc/fish-bot/matrix-token"
 [gemini]
 api_key_file = "/etc/fish-bot/gemini-key"
 model = "gemini-4-hydrogen"
-# Use Gemini Flex inference (50% off, best-effort) for background memory and daily digests, falling
-# back to standard when Flex capacity is unavailable.
-flex = true
 
 [github]
 # A fine-grained token with Issues read/write on this repository only, and Metadata read-only.

@@ -337,7 +337,8 @@ runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/
 
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
 the newest few among its last lines (four when called, two when reading along) to the model as the
-homeserver's 1,024-pixel thumbnails; `gemini-4-hydrogen` reads JPEG, PNG, GIF and WebP inline
+homeserver's 1,024-pixel thumbnails; `gemini-4-hydrogen` reads PNG, JPEG and WebP inline and no GIF, so an animated sticker is
+marked as not shown
 (https://ai.google.dev/gemini-api/docs/image-understanding). A posted picture also counts as a
 lively moment for reading along, and memory sees up to four pictures of each stretch it summarizes.
 
@@ -389,9 +390,7 @@ Fill them:
 - `matrix-token` — the account's access token. In `#admins`, `!admin users create bigfatfish` makes
   the account and prints a password; `!admin users issue-token bigfatfish <password>` prints a token.
   Set the account's display name to `大肥魚`.
-- `gemini-key` — the paid Google AI Studio API key for `gemini-4-hydrogen`. Background memory and
-  daily digest calls try Gemini Flex inference (50% off) first and fall back to Standard when Flex
-  capacity is unavailable.
+- `gemini-key` — the paid Google AI Studio API key for `gemini-4-hydrogen`.
 - `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
   **Metadata: read-only**. No other repository or permission is needed: the same token reads the
   public repositories for lookups. Without this file the bot still chats and looks up the web, but it
@@ -420,7 +419,9 @@ journalctl -u fish-bot -f
 ```
 
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
-estimated cost from Gemini 4 Hydrogen's price table (Standard and Flex), logged once a day and
+estimated cost from Gemini 4 Hydrogen's Standard price table, with each Google Search query at
+$14 per 1,000 (the free 5,000 a month are shared with the account's other projects), logged once a
+day and
 printed for the last week by
 
 ```sh

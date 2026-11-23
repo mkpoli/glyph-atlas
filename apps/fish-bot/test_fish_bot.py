@@ -602,7 +602,6 @@ token_file = "matrix-token"
 [gemini]
 api_key_file = "gemini-key"
 model = "gemini-4-hydrogen"
-flex = false
 
 [github]
 repo = "mkpoli/glyph-atlas"
@@ -620,7 +619,6 @@ min_confidence = 0.8
     assert config.token_file == tmp_path / "matrix-token"
     assert config.gemini_key_file == tmp_path / "gemini-key"
     assert config.gemini_model == "gemini-4-hydrogen"
-    assert config.gemini_flex is False
     assert config.github_repo == "mkpoli/glyph-atlas"
     assert config.room_ids == ("!one:example",)
     assert config.context_messages == 80
@@ -1606,8 +1604,8 @@ def test_an_old_log_gains_the_media_column(tmp_path):
 
 def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     matrix = FakeMatrix()
-    matrix.pictures = {"mxc://example/1": PNG, "mxc://example/2": b"GIF89a....", "mxc://example/own": PNG,
-                       "mxc://example/odd": b"not an image"}
+    matrix.pictures = {"mxc://example/1": PNG, "mxc://example/2": b"RIFF....WEBPVP8 ", "mxc://example/own": PNG,
+                       "mxc://example/odd": b"not an image", "mxc://example/gif": b"GIF89a...."}
     bot, _, _ = make_bot(tmp_path, matrix=matrix)
     start = fish_bot.now_ms() - 60_000
     bot.ingest(ROOM, picture("$1", url="mxc://example/1", ts=start), backfilled=False)
@@ -1615,12 +1613,13 @@ def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     bot.ingest(ROOM, picture("$odd", url="mxc://example/odd", ts=start + 2), backfilled=False)
     bot.ingest(ROOM, picture("$gone", url="mxc://example/gone", ts=start + 3), backfilled=False)
     bot.ingest(ROOM, picture("$2", url="mxc://example/2", sticker=True, ts=start + 4), backfilled=False)
-    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 5)
+    bot.ingest(ROOM, picture("$gif", url="mxc://example/gif", sticker=True, ts=start + 5), backfilled=False)
+    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 6)
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
     images = bot.gemini.images
     assert [index for index, _ in images] == [0, 4]
-    assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/gif;base64,")
+    assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/webp;base64,")
 
 
 def test_the_model_gets_pictures_after_the_json(monkeypatch):
@@ -1817,12 +1816,11 @@ def test_a_picture_logged_without_its_link_gets_it_when_read_again(tmp_path):
     assert store.context(ROOM, fish_bot.now_ms() + 1000, 5)[0]["media"] == "mxc://example/old"
 
 
-def test_model_cost_follows_the_gemini_price_table_for_standard_and_flex():
+def test_model_cost_follows_the_gemini_price_table():
     usage = {"total_input_tokens": 3_000_000, "total_cached_tokens": 1_000_000, "total_tool_use_tokens": 500_000,
              "total_output_tokens": 400_000, "total_thought_tokens": 600_000}
     standard = 1 * 0.075 + 2.5 * 1.50 + 1.0 * 7.50
-    assert round(fish_bot.model_cost(usage, tier="standard"), 6) == round(standard, 6)
-    assert round(fish_bot.model_cost(usage, tier="flex"), 6) == round(standard * 0.5, 6)
+    assert round(fish_bot.model_cost(usage), 6) == round(standard, 6)
     assert fish_bot.usage_tokens(usage) == (3_500_000, 1_000_000)
     assert fish_bot.model_cost(None) == 0.0
 
@@ -1854,6 +1852,7 @@ def test_every_call_is_counted_with_its_tokens_failures_and_cost(tmp_path, monke
     rows = {row["kind"]: row for row in store.usage(1)}
     assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 30)
     assert rows["chat"]["cost"] > 0 and rows["search"]["cost"] > 0
+    assert "grounding" not in rows
     assert (rows["fetch"]["calls"], rows["fetch"]["failures"], rows["fetch"]["cost"]) == (1, 1, 0)
     report = fish_bot.usage_report(store.usage(1))
     assert "chat 1" in report and "fetch 1 (1 failed)" in report and "210 tokens" in report
@@ -1880,30 +1879,63 @@ def test_a_failed_count_never_costs_the_answer(monkeypatch):
     assert act.say == ("still here",)
 
 
-def test_memory_and_digest_try_flex_and_fall_back_to_standard(tmp_path, monkeypatch):
-    store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    model = fish_bot.Gemini("key", flex=True)
-    model.meter = store.count_usage
+def test_memory_and_digest_run_on_the_standard_tier(monkeypatch):
+    model = fish_bot.Gemini("key")
     seen = []
 
     def send(body, **_):
         seen.append(body.get("service_tier"))
-        if len(seen) == 1:
-            return answer('{"summary": "Talked.", "facts": []}', tier="flex",
-                          usage={"total_input_tokens": 1_000_000, "total_output_tokens": 0, "total_thought_tokens": 0})
-        if body.get("service_tier") == "flex":
-            raise fish_bot.GeminiError("Gemini answered 503: busy", status=503)
-        return answer('{"text": "Today in Glyph Atlas."}', tier="standard",
-                      usage={"total_input_tokens": 1_000_000, "total_output_tokens": 0, "total_thought_tokens": 0})
+        text = '{"summary": "Talked.", "facts": []}' if len(seen) == 1 else '{"text": "Today in Glyph Atlas."}'
+        return answer(text)
 
     monkeypatch.setattr(model, "_send", send)
-    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER)
-    digest = model.digest("English", "Room", [], [{"repo": "mkpoli/glyph-atlas", "merged": ["x"], "released": []}], {})
-    assert memory.summary == "Talked." and digest == "Today in Glyph Atlas."
-    assert seen == ["flex", "flex", None]
-    rows = {row["kind"]: row for row in store.usage(1)}
-    assert round(rows["memory"]["cost"], 4) == 0.75
-    assert round(rows["digest"]["cost"], 4) == 1.5 and rows["digest"]["failures"] == 0
+    model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER)
+    model.digest("English", "Room", [], [{"repo": "mkpoli/glyph-atlas", "merged": ["x"], "released": []}], {})
+    assert seen == [None, None]
+
+
+def test_every_tool_call_gets_a_result_past_the_limit(monkeypatch):
+    model = fish_bot.Gemini("key")
+    calls = [{"type": "function_call", "id": f"c{n}", "name": "characters", "arguments": {"text": "字"}}
+             for n in range(fish_bot.LOOKUP_CALLS + 2)]
+    bodies = []
+
+    def send(body, **_):
+        bodies.append(body)
+        if len(bodies) == 1:
+            return {"id": "v1_a", "status": "requires_action", "steps": [{"type": "function_call", **call} for call in calls]}
+        return answer('{"say": "ok"}')
+
+    class Lookup:
+        ran = 0
+
+        def specs(self):
+            return []
+
+        def run(self, name, arguments):
+            Lookup.ran += 1
+            return {"ok": True}
+
+    monkeypatch.setattr(model, "_send", send)
+    model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER, lookup=Lookup())
+    results = bodies[1]["input"]
+    assert [item["call_id"] for item in results] == [f"c{n}" for n in range(fish_bot.LOOKUP_CALLS + 2)]
+    assert Lookup.ran == fish_bot.LOOKUP_CALLS
+    assert "not run" in results[-1]["result"][0]["text"]
+
+
+def test_search_without_sources_is_no_result(monkeypatch):
+    model = fish_bot.Gemini("key")
+    monkeypatch.setattr(model, "_send", lambda body, **_: answer("I could not find anything useful."))
+    with pytest.raises(fish_bot.GeminiError):
+        model.search("tangut")
+
+
+def test_fetch_without_a_retrieved_page_is_no_result(monkeypatch):
+    model = fish_bot.Gemini("key")
+    monkeypatch.setattr(model, "_send", lambda body, **_: answer("The page talks about Tangut."))
+    with pytest.raises(fish_bot.GeminiError):
+        model.fetch("https://example.org")
 
 
 def test_fetch_refuses_a_url_context_error(monkeypatch):
@@ -2054,3 +2086,18 @@ def test_a_message_that_is_all_quote_is_kept_and_a_reply_fallback_is_not(tmp_pat
 
 def test_line_endings_are_normalised_outside_replies():
     assert fish_bot._clean_body("a\r\nb\r\n\r\n\r\n\r\nc") == "a\nb\n\nc"
+
+
+def test_each_search_query_is_counted(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    model = fish_bot.Gemini("key")
+    model.meter = store.count_usage
+    found = {"id": "v1_g", "status": "completed", "steps": [
+        {"type": "google_search_call", "arguments": {"queries": ["tangut", "西夏文"]}},
+        {"type": "google_search_call", "arguments": {"queries": ["tangut script"]}},
+        {"type": "model_output", "content": [{"type": "text", "text": "Tangut is a script.", "annotations": [
+            {"type": "url_citation", "title": "Tangut", "url": "https://example.org/tangut"}]}]}]}
+    monkeypatch.setattr(model, "_send", lambda body, **_: found)
+    model.search("tangut")
+    row = {row["kind"]: row for row in store.usage(1)}["grounding"]
+    assert round(row["cost"], 6) == round(3 * fish_bot.PRICE_SEARCH_QUERY, 6)

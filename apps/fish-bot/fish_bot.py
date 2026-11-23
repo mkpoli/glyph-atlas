@@ -165,14 +165,18 @@ TERM = re.compile(rf"[{SPACELESS}]+|[^\W_{SPACELESS}]+")
 # up front.
 LOOKUP_ROUNDS = 4
 # What the model costs, to count each day's spend: gemini-4-hydrogen per million tokens on Google
-# AI Studio paid tier (Standard: $1.50 input, $0.075 implicit cache read, $7.50 output including
-# thinking tokens; Flex: 50% off for latency-tolerant background work). Google Search grounding
-# includes 5,000 free queries/month shared across the account, well above the bot's volume. Source:
-# https://ai.google.dev/gemini-api/docs/pricing (read 2026-11-23).
+# AI Studio's paid tier, Standard: $1.50 input, $0.075 implicit cache read, $7.50 output including
+# thinking tokens. Grounding with Google Search is free for 5,000 queries a month shared by every
+# Gemini 3 and newer model on the account, then $14 per 1,000; other projects can use up that
+# allowance, so each query is counted at $14 per 1,000, an upper bound. Flex inference costs half,
+# but Google expects 1-15 minutes per call and advises client timeouts of 600 s or more; the bot
+# answers chat on the same thread, so every call is Standard. Sources:
+# https://ai.google.dev/gemini-api/docs/pricing and
+# https://ai.google.dev/gemini-api/docs/flex-inference (read 2026-11-23).
 PRICE_INPUT = 1.50
 PRICE_CACHE_READ = 0.075
 PRICE_OUTPUT = 7.50
-FLEX_DISCOUNT = 0.5
+PRICE_SEARCH_QUERY = 0.014
 # What the homeserver knows about a room and its people, read again after this long. Bridged people
 # carry their network in their Matrix ID; the QQ bridge makes a QQ member's account the first time
 # they speak, since QQ's bot API cannot list a group, so QQ counts only people who have spoken.
@@ -184,8 +188,9 @@ MEMBER_COVERAGE = ("Counts and lists come from Matrix. Every QQ person here has 
                    "has seen them. Joins and dates are the Matrix room's; each group's own history "
                    "before it was bridged is not here. created_by is the Matrix account that made the "
                    "room, usually the server's admin account.")
-# Seeing images: gemini-4-hydrogen takes images inline as base64 image blocks (JPEG, PNG, GIF,
-# WebP), https://ai.google.dev/gemini-api/docs/image-understanding (read 2026-11-23).
+# Seeing images: gemini-4-hydrogen takes images inline as base64 image blocks in PNG, JPEG, WebP,
+# HEIC or HEIF, and no GIF, https://ai.google.dev/gemini-api/docs/image-understanding (read
+# 2026-11-23). The homeserver's thumbnail of a GIF is still a GIF, so a GIF counts as not shown.
 # A turn sees the newest pictures and stickers people posted among its last lines, as the
 # homeserver's thumbnails.
 IMAGES_CALLED = 4
@@ -201,7 +206,7 @@ MAX_IMAGE_BYTES = 1_500_000
 IMAGE_TIMEOUT = 15.0
 # Pictures kept in memory, by total size of their data URLs.
 IMAGE_CACHE_BYTES = 24_000_000
-IMAGE_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"GIF8": "image/gif", b"RIFF": "image/webp"}
+IMAGE_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "image/webp"}
 # After reading code or a page the model tends to answer in prose, which JSON mode blanks out, so
 # each round of results ends with the answer's shape again.
 LOOKUP_REMINDER = ('Now answer the chat as 大肥魚, in one or two short lines in the language of the message '
@@ -328,8 +333,8 @@ def usage_tokens(usage: Any) -> tuple[int, int]:
     return max(0, tokens_in), max(0, tokens_out)
 
 
-def model_cost(usage: Any, *, tier: str = "standard") -> float:
-    """The dollar cost of one Gemini 4 Hydrogen call from its usage block and service tier."""
+def model_cost(usage: Any) -> float:
+    """The dollar cost of one Gemini 4 Hydrogen call from its usage block."""
     if not isinstance(usage, dict):
         return 0.0
     inp = usage.get("total_input_tokens")
@@ -343,8 +348,7 @@ def model_cost(usage: Any, *, tier: str = "standard") -> float:
     uncached = max(0, inp - cached) + max(0, tool_use)
     output = max(0, (out if isinstance(out, int) and not isinstance(out, bool) else 0)
                  + (thoughts if isinstance(thoughts, int) and not isinstance(thoughts, bool) else 0))
-    factor = FLEX_DISCOUNT if tier == "flex" else 1.0
-    return (cached * PRICE_CACHE_READ + uncached * PRICE_INPUT + output * PRICE_OUTPUT) / 1_000_000 * factor
+    return (cached * PRICE_CACHE_READ + uncached * PRICE_INPUT + output * PRICE_OUTPUT) / 1_000_000
 
 
 def usage_report(rows: Iterable[sqlite3.Row]) -> str:
@@ -390,7 +394,6 @@ class Config:
     gemini_key_file: Path = Path("/etc/fish-bot/gemini-key")
     gemini_model: str = GEMINI_MODEL
     gemini_url: str = GEMINI_URL
-    gemini_flex: bool = True
     github_token_file: Path | None = Path("/etc/fish-bot/github-token")
     github_repo: str = "mkpoli/glyph-atlas"
     user_id: str = "@bigfatfish:glyphatlas.org"
@@ -461,9 +464,6 @@ class Config:
             raise ValueError("digest.repos must be a list of owner/name")
         if not isinstance(matrix, dict) or not isinstance(gemini, dict) or not isinstance(github, dict):
             raise TypeError("matrix, gemini and github must be tables")
-        gemini_flex = gemini.get("flex", cls.gemini_flex)
-        if not isinstance(gemini_flex, bool):
-            raise TypeError("gemini.flex must be true or false")
         if not isinstance(bot, dict) or not isinstance(limits, dict):
             raise TypeError("bot and limits must be tables")
 
@@ -518,7 +518,6 @@ class Config:
             gemini_key_file=key_file,
             gemini_model=str(field(gemini, "model", cls.gemini_model)),
             gemini_url=str(field(gemini, "url", cls.gemini_url)),
-            gemini_flex=gemini_flex,
             github_token_file=github_token,
             github_repo=repo,
             user_id=user_id,
@@ -1895,6 +1894,17 @@ def _interaction_calls(answer: dict[str, Any]) -> list[dict[str, Any]]:
             if isinstance(step, dict) and step.get("type") == "function_call"]
 
 
+def _search_queries(answer: dict[str, Any]) -> int:
+    """How many Google Search queries an interaction ran, each billed on its own."""
+    count = 0
+    for step in answer.get("steps") or []:
+        if isinstance(step, dict) and step.get("type") == "google_search_call":
+            arguments = step.get("arguments")
+            queries = arguments.get("queries") if isinstance(arguments, dict) else None
+            count += len(queries) if isinstance(queries, list) and queries else 1
+    return count
+
+
 def _interaction_citations(answer: dict[str, Any]) -> list[tuple[str, str]]:
     """Unique (title, url) citations returned in a grounded Gemini interaction."""
     seen: set[str] = set()
@@ -1949,46 +1959,29 @@ def _resolve_grounding_url(url: str, *, timeout: float = 5.0) -> str:
 
 
 class Gemini:
-    """Calls Gemini 4 Hydrogen through the Interactions API, with Flex for background jobs."""
+    """Calls Gemini 4 Hydrogen through the Interactions API."""
 
     def __init__(self, api_key: str, model: str = GEMINI_MODEL, url: str = GEMINI_URL,
-                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0, *, flex: bool = True):
+                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0):
         self.api_key = api_key
         self.model = model
         self.url = url
         self.repo = repo
         self.timeout = timeout
-        self.flex = flex
         self.meter: Any = None
 
     def _post(self, body: dict[str, Any], *, timeout: float | None = None,
-              kind: str = "chat", flex: bool = False) -> dict[str, Any]:
+              kind: str = "chat") -> dict[str, Any]:
         """One request, counted by kind with its tokens and cost when a meter is attached. Counting
-        is best effort: a call already paid for is never lost to a failed count. When `flex` is set
-        and enabled, tries Gemini Flex inference (50% off) first and falls back to standard if Flex
-        capacity is shed or times out."""
-        use_flex = flex and self.flex
-        used_body = {**body, "service_tier": "flex"} if use_flex else body
+        is best effort: a call already paid for is never lost to a failed count."""
         try:
-            answer = self._send(used_body, timeout=timeout)
-        except GeminiError as error:
-            if use_flex and (error.status in (429, 503) or error.status is None):
-                log.info("flex tier unavailable for %s (%s); falling back to standard", kind, error)
-                used_body = body
-                try:
-                    answer = self._send(used_body, timeout=timeout)
-                except GeminiError:
-                    self._count(kind, failed=True)
-                    raise
-            else:
-                self._count(kind, failed=True)
-                raise
+            answer = self._send(body, timeout=timeout)
+        except GeminiError:
+            self._count(kind, failed=True)
+            raise
         usage = answer.get("usage") if isinstance(answer, dict) else None
         tokens_in, tokens_out = usage_tokens(usage)
-        tier = str((answer.get("service_tier") if isinstance(answer, dict) else None)
-                   or used_body.get("service_tier") or "standard")
-        self._count(kind, tokens_in=tokens_in, tokens_out=tokens_out,
-                    cost=model_cost(usage, tier=tier))
+        self._count(kind, tokens_in=tokens_in, tokens_out=tokens_out, cost=model_cost(usage))
         return answer
 
     def _count(self, kind: str, **tally: Any) -> None:
@@ -2098,15 +2091,19 @@ class Gemini:
         while failures < 2:
             try:
                 answer = self._post(body, kind="chat")
-                calls = _interaction_calls(answer)[:LOOKUP_CALLS]
+                calls = _interaction_calls(answer)
                 if lookup is not None and calls and rounds < LOOKUP_ROUNDS:
                     interaction_id = answer.get("id")
                     if not isinstance(interaction_id, str) or not interaction_id:
                         raise TypeError("the interaction has no id")
                     rounds += 1
                     results: list[dict[str, Any]] = []
-                    for call in calls:
-                        if time.monotonic() > deadline:
+                    # The stored interaction holds every call it made, so each gets a result, those
+                    # past the limit an error, or the next round is refused.
+                    for number, call in enumerate(calls):
+                        if number >= LOOKUP_CALLS:
+                            result = {"error": f"at most {LOOKUP_CALLS} lookups at once; this one was not run"}
+                        elif time.monotonic() > deadline:
                             result = {"error": "out of time; answer with what you have"}
                         else:
                             if on_step is not None:
@@ -2177,12 +2174,14 @@ class Gemini:
         answer = self._post(body, timeout=LOOKUP_TIMEOUT, kind="search")
         text = _interaction_text(answer).strip()
         citations = [(title, _resolve_grounding_url(url)) for title, url in _interaction_citations(answer)[:count]]
-        if not text and not citations:
-            raise GeminiError("the search answer has no results")
-        if citations:
-            return [{"title": title[:200], "url": url, "summary": text[:2000] if index == 0 else ""}
-                    for index, (title, url) in enumerate(citations)]
-        return [{"title": "", "url": "", "summary": text[:2000]}]
+        queries = _search_queries(answer)
+        if queries:
+            self._count("grounding", cost=queries * PRICE_SEARCH_QUERY)
+        if not citations:
+            # A summary without sources is the model's own words, not a search result.
+            raise GeminiError("the search found no sources")
+        return [{"title": title[:200], "url": url, "summary": text[:2000] if index == 0 else ""}
+                for index, (title, url) in enumerate(citations)]
 
     def fetch(self, url: str) -> dict[str, Any]:
         """Read a web page on Google's side through Gemini's URL context tool."""
@@ -2201,7 +2200,9 @@ class Gemini:
                 for item in step.get("result") or []:
                     if isinstance(item, dict) and isinstance(item.get("status"), str):
                         statuses.append(item["status"].lower())
-        if statuses and all(status != "success" for status in statuses):
+        if not statuses:
+            raise GeminiError(f"could not read {url}: the page was not retrieved")
+        if all(status != "success" for status in statuses):
             raise GeminiError(f"could not read {url} ({statuses[0]})")
         text = _interaction_text(answer).strip()
         if not text:
@@ -2236,7 +2237,7 @@ class Gemini:
         failures = 0
         while failures < 2:
             try:
-                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory", flex=True)
+                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory")
                 text = _interaction_text(answer)
                 if not text.strip():
                     raise TypeError("the answer has no message content")
@@ -2267,7 +2268,7 @@ class Gemini:
         last: Exception | None = None
         for _ in range(2):
             try:
-                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="digest", flex=True)
+                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="digest")
                 content = _interaction_text(answer)
                 text = _json_object(content).get("text") if content.strip() else None
                 if not isinstance(text, str) or not text.strip():
@@ -4027,7 +4028,7 @@ def main(argv: list[str] | None = None) -> None:
         config = Config.load(args.config, dry_run=args.dry_run)
         matrix = Matrix(config.homeserver, _secret(config.token_file))
         gemini = Gemini(_secret(config.gemini_key_file), config.gemini_model, config.gemini_url,
-                        config.github_repo, flex=config.gemini_flex)
+                        config.github_repo)
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from None
     if args.check:
