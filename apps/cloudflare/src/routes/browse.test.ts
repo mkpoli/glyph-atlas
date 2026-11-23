@@ -4,7 +4,7 @@ import { bundle, bundleKey, cropId, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, groupStats, page, type Stage,
-  catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter } from './browse';
+  catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery } from './browse';
 import { Timing } from '../timing';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
 
@@ -216,14 +216,15 @@ describe('the browse page', () => {
     expect(body.categories.slice(0, 3).map((c: any) => [c.label, c.grapheme, c.total])).toEqual([['は', 'U+306F', 5], ['所', 'U+6240', 5], ['ハ', 'U+306F', 2]]);
     expect(body.categories.slice(3).map((c: any) => [c.label, c.grapheme, c.total]).sort()).toEqual([['処', 'U+51E6', 1], ['𛂞', 'U+306F', 1]]);
     expect(body.categories[0]).toEqual({ label: 'は', grapheme: 'U+306F', total: 5, pending: 4, seen: 0, checked: 1, flagged: 0, hard: 0, skipped: 0 });
-    expect(body.documents.map((d: any) => [d.id, d.title, d.total, d.pending])).toEqual([['hk:a', 'Book A', 10, 6], ['hk:b', 'Book B', 5, 4]]);
+    // Every book is listed, the one of corpus glyphs by how many it holds, which count toward no state.
+    expect(body.documents.map((d: any) => [d.id, d.title, d.total, d.pending])).toEqual([['hk:a', 'Book A', 10, 6], ['codh:c', 'Corpus C', 10, 0], ['hk:b', 'Book B', 5, 4]]);
     expect(body.withheld_count).toBe(3);
     expect(body.review_epoch).toBe(3);
     // Asked for its rows alone, a page keeps the counts by state and leaves out those by character and work.
     const light = await get(env, '/atlas?seed=5&limit=2&facets=counts');
     expect([light.counts, light.categories, light.documents, light.items.length]).toEqual([body.counts, [], [], 2]);
     const shown = await get(env, '/atlas?limit=0&withheld=show');
-    expect(shown.documents.map((d: any) => d.total)).toEqual([12, 6]);
+    expect(shown.documents.map((d: any) => d.total)).toEqual([12, 10, 6]);
     expect(shown.withheld_count).toBeNull();
   });
 
@@ -288,6 +289,13 @@ describe('the browse page', () => {
     expect(narrowed.total).toBe(6);
     expect(narrowed.withheld_count).toBeNull();
     expect((await get(env, '/atlas?character=は&limit=1')).withheld_count).toBe(1);
+    // A book of corpus glyphs is browsed like any other: its glyphs, less the one this site may not serve.
+    const glyphs = await get(env, '/atlas?seed=5&document=codh:c&limit=20');
+    expect([glyphs.total, glyphs.items.length, new Set(glyphs.items.map((item: any) => item.origin))]).toEqual([10, 9, new Set(['corpus'])]);
+    expect((await get(env, '/atlas?seed=5&document=codh:c&character=は&limit=20')).total).toBe(4);
+    expect((await get(env, '/atlas?seed=5&document=codh:c&state=checked&limit=20')).total).toBe(1);
+    // A round narrowed to a book deals its collected crops alone.
+    expect((await get(env, '/atlas?purpose=review&seed=5&document=codh:c&limit=5')).items).toEqual([]);
     expect((await get(env, '/atlas?document=nowhere&limit=5')).items).toEqual([]);
     expect((await get(env, '/atlas?character=X&limit=5')).total).toBe(0);
   });
@@ -540,14 +548,18 @@ describe('the queries', () => {
     const base: Filter = { chars: null, book: null, category: null, state: null, withheld: false, productions: new Set([2, 4]), named: false };
     for (const [filter, kind, index, tier] of [[base, 0, 'crop_listing', false], [{ ...base, category: 2 }, 0, 'crop_listing', false],
       [{ ...base, state: 1, named: true }, 0, 'crop_listing', false], [{ ...base, chars: new Set([1, 2]) }, 0, 'crop_deal', false],
-      [{ ...base, chars: new Set([1]), state: 0, named: true }, 1, 'crop_deal', true], [{ ...base, book: 1 }, 0, 'crop_book', false]] as [Filter, 0 | 1, string, boolean][]) {
-      for (const range of ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier)) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
+      [{ ...base, chars: new Set([1]), state: 0, named: true }, 1, 'crop_deal', true], [{ ...base, book: 1 }, 0, 'crop_book', false],
+      [{ ...base, book: 3 }, 0, 'crop_book', false]] as [Filter, 0 | 1, string, boolean][]) {
+      for (const range of ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier, filter.book === 3)) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
         const detail = plan(sideQuery(range, side, after), [...range.values, 0, ...(after ? [5, 9] : []), 10]);
         expect(detail).toContain(`USING ${index === 'crop_book' ? 'INDEX' : 'COVERING INDEX'} ${index}`);
         expect(detail).not.toContain('TEMP B-TREE');
         expect(detail).not.toMatch(/SCAN crops(?! USING)/);
       }
     }
+    const counting = bookGlyphsQuery({ ...base, book: 3, state: 1 });
+    expect(plan(counting.sql, counting.values)).toContain('USING INDEX crop_book');
+    expect(plan(counting.sql, counting.values)).not.toMatch(/SCAN crops(?! USING)/);
     const flagged = flaggedQuery({ ...base, withheld: true, chars: new Set([4]) });
     expect(plan(flagged.sql, flagged.values)).toContain('crop_flagged');
     expect(plan(flagged.sql, flagged.values)).toContain('event_crop');
