@@ -2161,3 +2161,10 @@ def test_a_reply_to_a_line_cut_for_length_carries_its_text(tmp_path, monkeypatch
     payload = json.loads(fish_bot.format_chat("Room", "", events, {}, task="called", trigger=1, bot_user_id=USER))
     assert [message["body"] for message in payload["messages"]] == ["翻譯一下"]
     assert payload["messages"][0]["reply_to"] == {"sender": "a", "body": "長" * 300}
+
+
+def test_persona_asks_for_the_task_now_in_one_language():
+    prompt = fish_bot.PERSONA_PROMPT
+    assert "There is no later turn" in prompt
+    assert "Keep each message in that one language and script" in prompt
+    assert "only when the chat or a lookup in this turn shows it" in prompt
