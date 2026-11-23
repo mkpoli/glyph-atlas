@@ -1092,6 +1092,124 @@ def test_only_the_partner_can_have_an_issue_filed_by_a_follow_up(tmp_path, monke
     assert desk == [(ROOM, "$y", "please file that", "@reader:example")]
 
 
+def joins(user_id, *, name="Nagisa", room=ROOM, before=None, ts=None):
+    return {"type": "m.room.member", "state_key": user_id, "sender": user_id, "event_id": f"$m{user_id}", "room_id": room,
+            "origin_server_ts": ts if ts is not None else fish_bot.now_ms(),
+            "content": {"membership": "join", "displayname": name},
+            **({"unsigned": {"prev_content": {"membership": before}}} if before else {})}
+
+
+def door(tmp_path, monkeypatch, **overrides):
+    """A bot that has met its rooms, where @reader is already a member."""
+    matrix = FakeMatrix()
+    matrix.room_state = [joins("@reader:example", name="Alice")]
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, intro_rooms=("#welcome:example",), **overrides)
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
+    bot, _, store = make_bot(tmp_path, config=config, matrix=matrix)
+    bot._random = lambda: 0.0
+    bot.active_rooms = {ROOM, "!welcome:example"}
+    bot.meet_rooms()
+    return bot, matrix, store, clock
+
+
+def arrive(bot, *events, room=ROOM):
+    bot.process({"rooms": {"join": {room: {"timeline": {"events": list(events)}}}}})
+
+
+def welcomes(bot):
+    return [turn for turn in bot.gemini.turns if turn[0] == "welcome"]
+
+
+def test_welcomes_a_newcomer_once_after_a_wait(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@new:example"))
+    bot.tick()
+    assert welcomes(bot) == []
+    clock["now"] += 41
+    bot.tick()
+    assert len(welcomes(bot)) == 1 and len(matrix.sent) == 1 and "m.relates_to" not in matrix.sent[0][1]
+    arrive(bot, joins("@new:example"), room="!welcome:example")
+    arrive(bot, event("hello", sender="@new:example", event_id="$hello"))
+    clock["now"] += 100
+    bot.tick()
+    assert len(welcomes(bot)) == 1
+
+
+def test_a_join_and_a_first_line_make_one_welcome_that_answers_the_line(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@new:example"), room="!welcome:example")
+    arrive(bot, joins("@new:example"), event("hi, I collect Tangut", sender="@new:example", event_id="$hi"))
+    clock["now"] += 41
+    bot.tick()
+    assert len(welcomes(bot)) == 1
+    assert matrix.sent[0][0] == ROOM and matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$hi"}}
+
+
+def test_a_silent_join_of_many_rooms_is_welcomed_in_the_welcome_room(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@new:example"))
+    arrive(bot, joins("@new:example"), room="!welcome:example")
+    clock["now"] += 41
+    bot.tick()
+    assert [room for room, *_ in matrix.sent] == ["!welcome:example"]
+
+
+def test_discord_is_met_by_its_join_notice_and_qq_by_its_first_line(tmp_path, monkeypatch):
+    bot, _, _, _clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@discord_5:example"), joins("@qq_5:example"))
+    assert bot._newcomers == {}
+    arrive(bot, event("joined the server", sender="@discord_5:example", event_id="$d", msgtype="m.emote"))
+    arrive(bot, event("大家好", sender="@qq_5:example", event_id="$q"))
+    assert [(w["how"], w["line"]) for w in bot._newcomers.values()] == [("joined", ""), ("first line", "大家好")]
+
+
+def test_people_already_there_renamed_bridged_twice_or_forgotten_are_not_new(tmp_path, monkeypatch):
+    bot, _, store, _clock = door(tmp_path, monkeypatch)
+    store.forget_person("@gone:example")
+    arrive(bot, joins("@reader:example"), joins("@new:example", before="join"), joins("@gone:example", name="Gone"),
+           joins("@telegram_7:example", name="alice"), joins("@late:example", name="Late", ts=fish_bot.now_ms() - 7 * HOUR))
+    assert bot._newcomers == {}
+    arrive(bot, joins("@idsbot:glyphatlas.org", name="IDS bot"))
+    assert bot._newcomers == {}
+
+
+def test_a_member_sync_is_no_crowd_of_newcomers(tmp_path, monkeypatch):
+    bot, _, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, *[joins(f"@telegram_{number}:example", name=f"Person {number}") for number in range(40)])
+    clock["now"] += 41
+    bot.tick()
+    assert welcomes(bot) == [] and bot._newcomers == {}
+
+
+def test_a_restart_still_meets_those_who_came_meanwhile(tmp_path, monkeypatch):
+    bot, matrix, _, _ = door(tmp_path, monkeypatch)
+    matrix.room_state = [*matrix.room_state, joins("@new:example")]
+    bot._rooms_met = set()
+    bot.meet_rooms()
+    arrive(bot, joins("@new:example"))
+    assert list(bot._newcomers) == ["@new:example"]
+
+
+def test_welcoming_can_be_turned_off(tmp_path, monkeypatch):
+    bot, _, _, _ = door(tmp_path, monkeypatch, welcome=False)
+    arrive(bot, joins("@new:example"))
+    assert bot._newcomers == {}
+
+
+def test_forgetting_cancels_a_welcome_and_a_call_keeps_its_own_words(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, event("hi, I am Nagisa", sender="@new:example", event_id="$hi"))
+    arrive(bot, event("!fish forget me", sender="@new:example", event_id="$forget"))
+    clock["now"] += 41
+    bot.tick()
+    assert welcomes(bot) == []
+    arrive(bot, event("大肥魚你好", sender="@other:example", event_id="$call"))
+    clock["now"] += 41
+    bot.tick()
+    assert len(welcomes(bot)) == 1 and len(set(matrix.transactions)) == len(matrix.transactions)
+
+
 def test_never_files_from_a_visit(tmp_path, monkeypatch):
     github = FakeGitHub()
     bot, _, _, clock = reading_bot(tmp_path, monkeypatch, act_value=act("x", issue=True, interest=5))
