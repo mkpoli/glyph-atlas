@@ -22,6 +22,11 @@ borne out: at least `CONFIRM`
 of its headwords judged, and `AGREED` of those read. The label always comes from the table: the character as printed, with the editors'
 correction kept beside it, and an IDS for a headword Unicode lacks.
 
+An opening whose leaves the readers do not bear out is tried as the leaves next to them, as far
+as the copy's `search` reaches, and read as those the readers read most of; the openings after it
+follow from there, since a scan that skips or repeats an opening stays so far off. A headword the
+scan shows twice is cut from the first opening that shows it.
+
 `OUTPUT` becomes a dataset: one document per volume, a page per opening with a kept headword, a
 line and a unit per headword, their boxes on the opening's image at its own size. `--volumes` and
 `--openings` bound a run.
@@ -66,7 +71,7 @@ RUN = Path("models/align/runs/collection-v2.yaml")
 SOURCE = "guangyun-zecuntang"
 CORPUS = "guangyun"
 COLUMNS = 10
-#: A half-leaf is borne out when the readers judge at least this many of its headwords and read this share of them.
+#: A half-leaf is borne out when the readers judge at least this many of its headwords (a copy may ask for fewer) and read this share of them.
 CONFIRM = 3
 AGREED = 0.6
 SEGMENTATION = ("columns found from the detector's headword-sized boxes; each column's headwords paired in order with "
@@ -211,11 +216,14 @@ def main() -> int:
     reader_of = readers(classifier, second)
 
     documents, pages, lines, units, report = [], [], [], [], {}
+    cut: set[str] = set()
     totals = defaultdict(int)
     enlarge = int(copy["enlarge"]) if args.enlarge is None else args.enlarge
     scale = float(copy["scale"]) if args.scale is None else args.scale
     fit = float(copy["fit"]) if args.fit is None else args.fit
     anchored = bool(copy.get("anchored"))
+    confirm = int(copy.get("confirm", CONFIRM))
+    search = int(copy.get("search", 0))
     prefix = f"{CORPUS}-{copy['id']}"
     for volume in copy["volumes"]:
         number = volume["volume"]
@@ -223,16 +231,16 @@ def main() -> int:
             continue
         document = document_of(source, copy, volume)
         kept_in_volume = 0
+        drift = 0  # how far the volume's leaves have run from its offset, as the openings so far showed
         for opening, url, image in openings(copy, volume, args.images):
-            leaf = opening - volume["offset"]
             if only is not None and opening not in only:
                 continue
-            sides = {"right": (number, leaf, "b"), "left": (number, leaf + 1, "a")}
-            if not any(entries.get(key) for key in sides.values()):
+            base = opening - volume["offset"] + drift
+            # The leaf the offset gives, then its neighbours either way: a scan may skip or repeat an opening.
+            leaves = [base, *(base + sign * step for step in range(1, search + 1) for sign in (1, -1))]
+            if not any(entries.get((number, leaf + turn, side)) for leaf in leaves for turn, side in ((0, "b"), (1, "a"))):
                 continue
-            page = Page(id=f"{prefix}:{number}:{opening}", document_id=document.id, seq=opening - 1, image=url,
-                        width=image.width, height=image.height, image_kind=copy["image_kind"],
-                        transcription={"source": SOURCE, "entry": f"{number}:{leaf}b,{leaf + 1}a", "revision": source["revision"]})
+            width, height = image.width, image.height
             # The detector and the readers see the opening enlarged; a kept box is written at the image's own size.
             if enlarge != 1:
                 image = image.resize((image.width * enlarge, image.height * enlarge), Image.Resampling.LANCZOS)
@@ -241,32 +249,56 @@ def main() -> int:
             found = leaf_text.axes(leaf_text.big(boxes, unit), unit) if boxes else []
             even = leaf_text.flat(found, COLUMNS, image.width) if copy["image_kind"] == "flat-reproduction" else None
             middle = even[0] if even else leaf_text.gutter(found, image.width, COLUMNS) if found else None
+            halves = {}
+            if middle is not None:
+                for name in ("right", "left"):
+                    half = leaf_text.bold(image, [b for b in boxes if (b.x + b.w / 2 > middle) == (name == "right")], unit)
+                    halves[name] = (half, *reader_of(image, half, unit),
+                                    leaf_text.ruled(middle, even[1], COLUMNS, name == "right") if even else None)
+
+            def attempt(leaf: int, halves=halves, middle=middle, number=number) -> tuple[int, dict]:
+                """The opening read as `leaf` verso and the next recto: how many headwords the readers read, and each side's outcome."""
+                sides, read = {}, 0
+                for name, key in (("right", (number, leaf, "b")), ("left", (number, leaf + 1, "a"))):
+                    columns = {column: [entry.head for entry in rows] for column, rows in (entries.get(key) or {}).items()}
+                    count = sum(len(heads) for heads in columns.values())
+                    if not count:
+                        continue
+                    if middle is None:
+                        sides[name] = (key, {"skipped": "no gutter found", "headwords": count}, None, None, None)
+                        continue
+                    half, reads, top, axes = halves[name]
+                    placed = leaf_text.place(half, columns, COLUMNS, reads, axes)
+                    if placed is None:
+                        sides[name] = (key, {"skipped": "columns not found", "headwords": count}, None, None, None)
+                        continue
+                    verdicts = {(column, k): reads(cell.head.char, cell.box)
+                                for column, (cells, _) in placed.items() for k, cell in enumerate(cells) if cell.detected}
+                    judged = [v for v in verdicts.values() if v is not None]
+                    counts = {"headwords": count, "detected": len(verdicts), "judged": len(judged), "read": sum(judged), "kept": 0}
+                    if not (len(judged) >= confirm and sum(judged) / len(judged) >= AGREED):
+                        counts["skipped"] = "not borne out by the readers"
+                    else:
+                        read += sum(judged)
+                    sides[name] = (key, counts, placed, verdicts, top)
+                return read, sides
+
+            read, sides = attempt(base)
+            leaf = base
+            if not read:
+                for other in leaves[1:]:
+                    found_read, found_sides = attempt(other)
+                    if found_read > read:
+                        read, sides, leaf = found_read, found_sides, other
+                drift += leaf - base
+            page = Page(id=f"{prefix}:{number}:{opening}", document_id=document.id, seq=opening - 1, image=url,
+                        width=width, height=height, image_kind=copy["image_kind"],
+                        transcription={"source": SOURCE, "entry": f"{number}:{leaf}b,{leaf + 1}a", "revision": source["revision"]})
             kept_here = 0
             report[page.id] = {}
-            for name, key in sides.items():
-                columns = {column: [entry.head for entry in rows] for column, rows in (entries.get(key) or {}).items()}
-                count = sum(len(heads) for heads in columns.values())
-                if not count:
-                    continue
-                totals["headwords"] += count
-                label = f"{key[1]}{key[2]}"
-                if middle is None:
-                    report[page.id][label] = {"skipped": "no gutter found", "headwords": count}
-                    continue
-                half = [b for b in boxes if (b.x + b.w / 2 > middle) == (name == "right")]
-                half = leaf_text.bold(image, half, unit)
-                reads, top = reader_of(image, half, unit)
-                axes = leaf_text.ruled(middle, even[1], COLUMNS, name == "right") if even else None
-                placed = leaf_text.place(half, columns, COLUMNS, reads, axes)
-                if placed is None:
-                    report[page.id][label] = {"skipped": "columns not found", "headwords": count}
-                    continue
-                verdicts = {(column, k): reads(cell.head.char, cell.box)
-                            for column, (cells, _) in placed.items() for k, cell in enumerate(cells) if cell.detected}
-                judged = [v for v in verdicts.values() if v is not None]
-                borne = len(judged) >= CONFIRM and sum(judged) / len(judged) >= AGREED
-                counts = {"headwords": count, "detected": len(verdicts), "judged": len(judged), "read": sum(judged), "kept": 0}
-                if borne:
+            for key, counts, placed, verdicts, top in sides.values():
+                totals["headwords"] += counts["headwords"]
+                if "skipped" not in counts:
                     for column, (cells, _) in sorted(placed.items()):
                         if anchored and not any(verdicts.get((column, k)) for k in range(len(cells))):
                             continue  # no headword of the column was read where it stands
@@ -276,6 +308,10 @@ def main() -> int:
                             if not cell.detected or verdict is False or (not verdict and cell.error >= fit):
                                 continue
                             line_id = f"gy-{copy['id']}:{entry.entry_id}"
+                            if line_id in cut:
+                                counts["repeated"] = counts.get("repeated", 0) + 1
+                                continue  # the scan shows this leaf on an earlier opening too
+                            cut.add(line_id)
                             box = shrunk(cell.box, enlarge)
                             row = entry.row
                             lines.append(Line(id=line_id, page_id=page.id, seq=kept_here + counts["kept"], vertical=True, box=box,
@@ -295,15 +331,13 @@ def main() -> int:
                                 script=Script.HAN, method="detect-align", review=ReviewState.MACHINE,
                                 upstream={"source": SOURCE, "entry_id": entry.entry_id, "copy": copy["id"]}, meta=meta))
                             counts["kept"] += 1
-                else:
-                    counts["skipped"] = "not borne out by the readers"
-                report[page.id][label] = counts
-                kept_here += counts["kept"]
+                report[page.id][f"{key[1]}{key[2]}"] = counts
+                kept_here += counts.get("kept", 0)
             if kept_here:
                 pages.append(page)
                 kept_in_volume += kept_here
             totals["kept"] += kept_here
-            print(json.dumps({"page": page.id, "kept": kept_here}, ensure_ascii=False), flush=True)
+            print(json.dumps({"page": page.id, "leaf": leaf, "kept": kept_here}, ensure_ascii=False), flush=True)
         if kept_in_volume:
             documents.append(document)
 

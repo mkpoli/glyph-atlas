@@ -53,6 +53,10 @@ copies:
     # A bitonal scan with a reader's notes in the margins: only columns a reader anchors, fitting closely.
     fit: 0.3
     anchored: true
+    # One read headword bears a half-leaf out, since every kept column needs one of its own; the scan's
+    # pages run off the leaf count in places, so an opening is tried up to three leaves either way.
+    confirm: 1
+    search: 3
     dating:
       - literal: 康熙四十三年（1704）序
         start: 1704
@@ -63,6 +67,7 @@ copies:
       - {volume: "1", label: 上平聲卷第一, files: "IOC.UTokyo-000146 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷一.pdf", offset: -4}
       - {volume: "2", label: 下平聲卷第二, files: "IOC.UTokyo-000147 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷二.pdf", offset: 3}
       - {volume: "3", label: 上聲卷第三, files: "IOC.UTokyo-000148 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷三.pdf", offset: 4}
+      - {volume: "4", label: 去聲卷第四, files: "IOC.UTokyo-000149 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷四.pdf", offset: 2}
       - {volume: "5", label: 入聲卷第五, files: "IOC.UTokyo-000150 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷五.pdf", offset: 2}
 dating:
   - literal: 大中祥符元年（1008）
@@ -74,4 +79,4 @@ notes:
   - The photographs are 2592 px openings, one leaf's verso on the right and the next leaf's recto on the left. Which library's copy they show is stated nowhere in the repository, so the image licence is unknown and the crops cut from them stay out of every publication until the holder is known.
   - The photographs carry only the work's date: nothing states which impression of the 澤存堂 printing that copy is.
   - The photographs' volume offsets were found by fitting (2026-11-20), each confirmed by the readers on six openings of its volume.
-  - The 東文研 copy is a bitonal scan at 1415 px an opening, with a reader's handwritten notes; Commons marks the files public domain. The offsets of volumes 1, 2, 3 and 5 were found on one or two openings each (2026-11-20). Volume 4 (IOC.UTokyo-000149) is not placed: no gutter was found on the two openings tried.
+  - The 東文研 copy is a bitonal scan at 1415 px an opening, with a reader's handwritten notes; Commons marks the files public domain. Its pages run off the leaf count in places (volume 2 opens one leaf from where its middle stands), so each volume's offset is where the search starts: those of volumes 1, 2, 3 and 5 were found on one or two openings each (2026-11-20), and volume 4's on four openings (2026-11-23).
