@@ -237,6 +237,8 @@ IMAGE_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": 
 LOOKUP_REMINDER = ('Now answer the chat as 大肥魚 in the language of the message you answer, from what you '
                    'found: one or two short lines, or as long as a translation or summary someone asked for needs. Return only the json object: {"say": "...", "react": null, '
                    '"sticker": null, "issue": false}')
+REPAIR = ('Your last answer was not the json object the chat needs. Answer the chat now with only that object, '
+          'keeping what you already wrote: {"say": "...", "react": null, "sticker": null, "issue": false}')
 LOOKUP_CALLS = 4
 # The bot answers one thing at a time, so a turn stops looking things up after this long, and each
 # lookup gives up sooner than a chat call.
@@ -2300,6 +2302,7 @@ class Gemini:
         rounds = failures = 0
         deadline = time.monotonic() + LOOKUP_DEADLINE_SECONDS
         while failures < 2:
+            answer: dict[str, Any] | None = None
             try:
                 answer = self._post(body, kind="chat")
                 calls = _interaction_calls(answer)
@@ -2345,7 +2348,21 @@ class Gemini:
             except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("chat answer unusable: %s", error)
-                if not images:
+                spoiled = answer.get("id") if answer is not None else None
+                if answer is not None and lookup is not None and isinstance(spoiled, str) and not _interaction_calls(answer):
+                    # The stored answer holds the words already; asking for their shape is quicker than
+                    # the same turn over again, and a repeat often drifts into prose the same way.
+                    failures += 1
+                    body = {
+                        "model": self.model,
+                        "system_instruction": f"{PERSONA_PROMPT}\n\n{LOOKUP_REMINDER}",
+                        "previous_interaction_id": spoiled,
+                        "input": REPAIR,
+                        "response_format": {"type": "text", "mime_type": "application/json"},
+                        "generation_config": {"thinking_level": CHAT_THINKING, "max_output_tokens": 4096},
+                        "store": True,
+                    }
+                elif not images:
                     failures += 1
                 else:
                     # A picture the model refuses, or a body too large with them, must not cost the

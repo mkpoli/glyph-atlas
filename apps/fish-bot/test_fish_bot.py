@@ -1452,6 +1452,18 @@ def scripted(monkeypatch, answers):
     return model, bodies
 
 
+def test_an_answer_in_prose_is_asked_for_again_in_its_shape(tmp_path, monkeypatch):
+    prose = answer("The whole server talked about Tangut.")
+    prose["id"] = "prose-1"
+    model, bodies = scripted(monkeypatch, [prose, answer('{"say": "The whole server talked about Tangut."}')])
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    turn = model.act("Room", "", [message_row("the whole server!")], {}, task="called", trigger=0, bot_user_id=USER,
+                     lookup=lookup, images=[(0, "data:image/png;base64,AA")])
+    assert turn.say == ("The whole server talked about Tangut.",)
+    assert bodies[1]["previous_interaction_id"] == "prose-1" and "tools" not in bodies[1]
+    assert bodies[1]["input"] == fish_bot.REPAIR
+
+
 def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatch):
     web = FakeWeb()
     lookup = fish_bot.Lookup(web, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
