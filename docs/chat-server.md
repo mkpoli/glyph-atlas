@@ -279,9 +279,10 @@ She also reads along. When a room goes quiet after a few messages, she takes a l
 (the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
 never files from these turns.
 
-Every evening from 21:00 JST she posts a digest in each language room listed in `[digest.rooms]`, in
-that room's language: what the repositories in `[digest] repos` merged and released in the last day,
-and a line for each other room's discussion, with no one named. A quiet day gets no digest.
+Every evening from 21:00 JST she posts a digest in each language room listed in `[digest.rooms]`,
+wholly in the language set there, whatever the room's recent messages are written in: what the
+repositories in `[digest] repos` merged and released in the last day, and a line for each other
+room's discussion, with no one named. A quiet day gets no digest.
 
 She remembers. Once a stretch of a room has ended (a pause of six hours, or half an hour of quiet),
 the model summarizes it into an episode and edits a set of short notes about the people in it, the

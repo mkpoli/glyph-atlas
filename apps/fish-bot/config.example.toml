@@ -45,8 +45,9 @@ ambient_room_cooldown_seconds = 900
 ambient_per_hour = 12
 
 [digest]
-# From this hour (JST) each day, one digest per room below, in its language: what the repositories
-# merged and released in the last day, and what the other rooms talked about. A quiet day gets none.
+# From this hour (JST) each day, one digest per room below, written wholly in the language named
+# there (with its script where that matters): what the repositories merged and released in the
+# last day, and what the other rooms talked about. A quiet day gets none.
 hour = 21
 repos = [
   "mkpoli/glyph-atlas", "mkpoli/han-compose", "mkpoli/ids-input", "mkpoli/unencoded-db",
@@ -56,7 +57,7 @@ repos = [
 
 [digest.rooms]
 "#en:glyphatlas.org" = "English"
-"#zh:glyphatlas.org" = "Chinese"
+"#zh:glyphatlas.org" = "Chinese in traditional characters"
 "#ja:glyphatlas.org" = "Japanese"
 "#ko:glyphatlas.org" = "Korean"
 "#vi:glyphatlas.org" = "Vietnamese"
