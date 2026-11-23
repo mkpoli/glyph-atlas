@@ -326,20 +326,45 @@ function conditions(f: Filter, skip: { chars?: boolean; book?: boolean; category
   return { sql: where.map(w => ` AND ${w}`).join(''), values };
 }
 
+// How many corpus glyphs of a book a filter keeps. The publication counts a book's glyphs, but not by
+// state, character or withheld flag, so they are counted from the book's own index range: its first
+// `BOOK_ROWS` rows are read and no more, whatever the filter, so a book larger than that is not counted
+// this way (`glyphsOf`).
+export const BOOK_ROWS = 40000;
+export function bookGlyphsQuery(f: Filter) {
+  const rest = conditions(f, { book: true });
+  return { sql: `SELECT count(*) AS n FROM (SELECT kind,char,category,state,quiz,production FROM crops INDEXED BY crop_book WHERE book=? AND kind<2 LIMIT ${BOOK_ROWS}) WHERE kind=1${rest.sql}`,
+    values: [f.book!, ...rest.values] };
+}
+/** The corpus glyphs of a book that a browse filter keeps: counted where the book is small enough to read,
+ *  else no more than the publication counts in it and, for the characters named, in the whole corpus. */
+async function glyphsOf(env: Env, f: Filter, [collected, corpus]: [number, number], version: string): Promise<number> {
+  if (collected + corpus <= BOOK_ROWS) {
+    const counting = bookGlyphsQuery(f);
+    return (await env.ATLAS.prepare(counting.sql).bind(...counting.values).first<{ n: number }>())?.n ?? 0;
+  }
+  if (f.chars === null) return corpus;
+  let named = 0;
+  for (const c of (await corpusCounts(env, version)).cells) if (matches({ ...f, book: null, category: null }, { ...c, book: -1, category: null })) named += c.n;
+  return Math.min(corpus, named);
+}
+
 // One index range of a listing, in shuffle order: one per character and priority named, else the book's,
 // else one per script category. `priorities` narrows a range with no character to one priority, which
 // the crops' row then gives.
 export type Range = { from: string; values: (number | string)[] };
-export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false): Range[] {
+export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false, glyphs = false): Range[] {
   if (f.chars !== null) {
     const rest = conditions(f, { chars: true });
-    return [...f.chars].sort((a, b) => a - b).flatMap(char => priorities.map(priority => ({
-      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}`, values: [char, kind, priority, ...rest.values] })));
+    // Browsing a book by character deals its corpus glyphs of that character after its collected crops.
+    return [...f.chars].sort((a, b) => a - b).flatMap(char => (glyphs ? [0, 1] : [kind]).flatMap(k => priorities.map(priority => ({
+      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}`, values: [char, k, priority, ...rest.values] }))));
   }
   const only = tier ? { sql: ' AND priority=?', values: priorities } : { sql: '', values: [] };
   if (f.book !== null) {
     const rest = conditions(f, { book: true });
-    return [{ from: `crops INDEXED BY crop_book WHERE book=? AND kind<2 AND kind=0${rest.sql}${only.sql}`, values: [f.book, ...rest.values, ...only.values] }];
+    // Browsing a book shows its corpus glyphs with its collected crops (`glyphs`); a round deals the collected ones.
+    return [{ from: `crops INDEXED BY crop_book WHERE book=? AND kind<2${glyphs ? '' : ' AND kind=0'}${rest.sql}${only.sql}`, values: [f.book, ...rest.values, ...only.values] }];
   }
   const rest = conditions(f, { category: true });
   return (f.category !== null ? [f.category] : [...categories, -1]).map(code => ({
@@ -575,7 +600,8 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     withheld ? 'show' : 'hide'}&v=${encodeURIComponent(version)}`);
   const hit = facetsKey ? await caches.default.match(facetsKey) : undefined;
   const facets: { counts: Record<StateName, number>; categories: Category[]; documents: Book[] } = hit ? await hit.json()
-    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review, claims: review ? [] : await claimsRead() });
+    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review, claims: review ? [] : await claimsRead(),
+      books: review ? null : (await bookCounts(env)).books });
   timing.step(hit ? 'facets-hit' : 'facets');
   if (facetsKey && !hit) ctx.waitUntil(caches.default.put(facetsKey, Response.json(facets, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
 
@@ -623,16 +649,20 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
       && matches(filter, { ...row, state: row.state, quiz: row.quiz })).length;
     for (const id of [...away, ...claimed.map(row => row.id)]) exclude.add(id);
     const tiered = review && seed % 5 !== 0;
+    // A book's corpus glyphs are browsed with its collected crops, where the publication counts it any.
+    const inBook = !review && book !== null ? (await bookCounts(env)).books.get(book) ?? null : null;
+    const bookGlyphs = inBook !== null && inBook[1] > 0;
     stages = [{ ids: head.map(row => row.id) },
       ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true) }))
-        : [{ list: ranges(filter, 0, categoryCodes, priorities) }]),
+        : [{ list: ranges(filter, 0, categoryCodes, priorities, false, bookGlyphs) }]),
       ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities) }] : []),
       // Last, so a claim saved between two pages leaves every earlier stage where its cursor names it.
       ...(claimed.length ? [{ ids: claimed.map(row => row.id) }] : [])];
     const skippedOrHead = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;
     let glyphTotal = 0;
     if (corpus) for (const c of glyphs!.cells) if (matches(corpusFilter, { ...c, book: -1, category: null })) glyphTotal += c.n;
-    total = head.length + claimed.length + listedCount(filter) - left - skippedOrHead(0, filter) + (corpus ? glyphTotal - skippedOrHead(1, corpusFilter) : 0);
+    if (bookGlyphs) glyphTotal += await glyphsOf(env, filter, inBook!, version);
+    total = head.length + claimed.length + listedCount(filter) - left - skippedOrHead(0, filter) + (corpus ? glyphTotal - skippedOrHead(1, corpusFilter) : bookGlyphs ? glyphTotal : 0);
   }
   const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
   timing.step('page');
@@ -665,10 +695,11 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 // glyphs nothing has decided, as pending, under the grapheme its family files it under. Browsing, a
 // crop a grapheme claim reads as another grapheme counts with its character under that grapheme's
 // family, as the family's gallery lists it (`filedClaims`); a round deals by character, and counts so.
-async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims }: {
+async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims, books }: {
   cells: Awaited<ReturnType<typeof collectedCounts>>['cells']; chars: Awaited<ReturnType<typeof collectedCounts>>['chars'];
   glyphs: Awaited<ReturnType<typeof corpusCounts>> | null; own: (Row & { id: number; kind: number })[]; counted: Filter;
-  stateOf: Map<number, StateName>; review: boolean; claims: Awaited<ReturnType<typeof filedClaims>> }) {
+  stateOf: Map<number, StateName>; review: boolean; claims: Awaited<ReturnType<typeof filedClaims>>;
+  books: Map<number, [number, number]> | null }) {
   const counts = Object.fromEntries(STATE_NAMES.map(s => [s, 0])) as Record<StateName, number>;
   const categories = new Map<string, Category>(), documents = new Map<number, Book>();
   const info = (char: number) => chars.get(char) ?? glyphs?.chars.get(char) ?? null;
@@ -721,6 +752,13 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
     if (!((categories.get(`${found.text} ${found.grapheme}`)?.[state] ?? 0) > 0)) continue;
     count(found.text, found.grapheme, state, -1);
     count(found.text, r.head, state, 1);
+  }
+  // Every book is listed: one of corpus glyphs counts those, which the publication counts by book alone,
+  // so they add to its total and to no state. Under a choice of material the count is not known by
+  // book, and the books of corpus glyphs are left out.
+  if (books && counted.productions === null) for (const [book, [, corpus]] of books) if (corpus > 0) {
+    const entry = documents.get(book) ?? { id: '', title: null, ...empty() };
+    entry.total += corpus; documents.set(book, entry);
   }
   for (const [at, entry] of categories) if (entry.total <= 0) categories.delete(at);
   if (documents.size) for (const row of (await env.ATLAS.prepare(booksQuery()).bind(JSON.stringify([...documents.keys()]))
