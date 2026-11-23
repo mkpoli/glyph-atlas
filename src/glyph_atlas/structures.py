@@ -20,8 +20,8 @@ A character has one structure, that of its first description: Unicode unified it
 so the other descriptions (納 is ⿰糹内 in one region and ⿰糹內 in another) are spellings of the
 same structure, and a written description that matches one names it (`for_ids`). A regional
 difference Unicode unified cannot be told apart here. A character encoded twice joins the one whose
-regional shape it is, where the 異体字 graph gives them as one character (𦤀 ⿱自大 has 臭's ⿱自犬). A character whose descriptions name no
-composition (七 is 〾⿻一乚, 𠇇 is ⿰亻？) is one component, itself; a written ⿰亻？ is 亻 beside a
+regional shape it is, where the 異体字 graph gives them as one character (𦤀 ⿱自大 has 臭's
+⿱自犬). A character whose descriptions name no composition (七 is 〾⿻一乚, 𠇇 is ⿰亻？) is one component, itself; a written ⿰亻？ is 亻 beside a
 part no character names, and stays apart from 𠇇.
 
 The identity is the canonical text, the scheme and the policy, never the description as written. A
@@ -56,10 +56,11 @@ POSITIONS = frozenset({"left", "right", "top", "bottom", "middle", "partial"})
 #: The operators whose parts have a position, and each part's position.
 SLOTS = {"⿰": ("left", "right"), "⿱": ("top", "bottom"),
          "⿲": ("left", "middle", "right"), "⿳": ("top", "middle", "bottom")}
-#: The relations of the 異体字 graph that make two characters one: the same character encoded twice
-#: (Unihan's kZVariant, CJKVI's duplicates) or stated equivalent. CJKVI's non-cognate gives two
-#: characters that only look alike, and keeps them apart whatever else is stated (杮 and 柿).
-SAME = frozenset({"z", "equivalent"})
+#: The relation of the 異体字 graph that makes two characters one: the same character encoded twice
+#: (Unihan's kZVariant, CJKVI's duplicates). A stated equivalence is not enough: yitizi's joins
+#: 新字体 to 旧字体 (㠀 and 島). CJKVI's non-cognate gives two characters that only look alike, and
+#: keeps them apart whatever else is stated (杮 and 柿).
+SAME = frozenset({"z"})
 APART = "non-cognate"
 #: The level of the IRG's unifiable list this layer reads. A level-2 entry lists characters its
 #: variation tells apart (壬 and 王: 任 and 仼).
@@ -302,20 +303,24 @@ def for_character(char: str) -> Structure | None:
 
 
 @cache
-def _labels() -> tuple[dict[str, str], dict[str, str]]:
-    """The character whose own structure each canonical description is (the lowest code point), and
-    the character each other canonical description spells: a first description before another,
-    then the lowest code point."""
-    owners: dict[str, str] = {}
+def _labels() -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+    """The characters whose own structure each canonical description is, lowest code point first,
+    and the character each other canonical description spells: a first description before another,
+    then the lowest code point. A character whose reading does not settle names nothing here."""
+    owners: dict[str, list[str]] = {}
     first: dict[str, str] = {}
     other: dict[str, str] = {}
     for char in sorted(han_components._sequences(), key=ord):
-        texts = [text(canonical(tree)) for tree in _descriptions(char)]
+        try:
+            texts = [text(canonical(tree)) for tree in _descriptions(char)]
+        except ValueError:
+            continue
         if texts and _whole(char) == char:
-            owners.setdefault(texts[0], char)
+            owners.setdefault(texts[0], []).append(char)
         for index, spelled in enumerate(texts):
             (other if index else first).setdefault(spelled, char)
-    return owners, {spelled: char for spelled, char in (other | first).items() if spelled not in owners}
+    return ({label: tuple(chars) for label, chars in owners.items()},
+            {spelled: char for spelled, char in (other | first).items() if spelled not in owners})
 
 
 def _same(a: str, b: str) -> bool:
@@ -327,12 +332,15 @@ def _same(a: str, b: str) -> bool:
 
 @cache
 def _joined() -> dict[str, str]:
-    """Characters encoded apart for one character, each by the character its group joins: the lowest
-    code point. Two join when one's own structure is a regional shape of the other and `_same` holds:
-    𦤀 (⿱自大) is the J shape of 臭 and joins it, as 𠾖 (⿳吅大吅) joins 器. 柿 (⿰木市) is the K
-    shape of 杮 and stays apart: the graph gives them as two characters that look alike."""
+    """Characters encoded apart for one character, each by the character it joins. B joins A when B's
+    own structure is a regional shape of A and `_same` holds: 𦤀 (⿱自大) is the J shape of 臭 and
+    joins it, as 𠾖 (⿳吅大吅) joins 器. 柿 (⿰木市) is the K shape of 杮 and stays apart: the graph
+    gives them as two characters that look alike. A group has the structure of its lowest code
+    point among the characters whose shape another joins. A reading that does not settle joins
+    nothing."""
     owners = _labels()[0]
     parent: dict[str, str] = {}
+    shaped: set[str] = set()
 
     def find(char: str) -> str:
         while parent.setdefault(char, char) != char:
@@ -340,19 +348,28 @@ def _joined() -> dict[str, str]:
         return char
 
     for char, sequences in han_components._sequences().items():
-        if len(sequences) < 2 or not (own := _own(char)):
+        try:
+            own = _own(char) if len(sequences) > 1 else None
+        except ValueError:
             continue
-        for shape in refs.regional_shapes(char):
+        for shape in refs.regional_shapes(char) if own else ():
             if set(shape["text"]) & han_component_variants.SKIPPED:
                 continue
-            label = text(canonical(han_component_variants.parse(SELECTORS.sub("", shape["text"]))))
-            other = owners.get(label)
-            if other and other != char and label != own.label and _same(char, other):
-                parent[find(other)] = find(char)
+            try:
+                label = text(canonical(han_component_variants.parse(SELECTORS.sub("", shape["text"]))))
+            except ValueError:
+                continue
+            if label == own.label:
+                continue
+            for other in owners.get(label, ()):
+                if other != char and _same(char, other):
+                    shaped.add(char)
+                    parent[find(other)] = find(char)
     groups: dict[str, list[str]] = {}
     for char in parent:
         groups.setdefault(find(char), []).append(char)
-    return {char: min(group, key=ord) for group in groups.values() if len(group) > 1 for char in group}
+    return {char: min([c for c in group if c in shaped] or group, key=ord)
+            for group in groups.values() if len(group) > 1 for char in group}
 
 
 def for_ids(sequence: str) -> Structure:
@@ -370,7 +387,7 @@ def for_ids(sequence: str) -> Structure:
         raise ValueError("An approximate or subtracting description names no structure.")
     written = from_tree(han_component_variants.parse(SELECTORS.sub("", sequence)))
     owners, spellings = _labels()
-    if (owner := owners.get(written.label)) and owner in _joined():
+    if (owner := next(iter(owners.get(written.label, ())), None)) and owner in _joined():
         return for_character(owner) or written
     spelled = spellings.get(written.label)
     return for_character(spelled) or written if spelled else written

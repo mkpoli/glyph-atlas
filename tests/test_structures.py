@@ -184,6 +184,21 @@ def test_a_character_encoded_twice_joins_the_one_whose_regional_shape_it_is():
     assert structures.for_character("柿") != structures.for_character("杮")
     assert structures.for_ids("⿰木市") == structures.for_character("柿")
     assert structures.for_character("𠮟") != structures.for_character("叱")
+    # ⿱梄灬, 槱's J and K shape, is the own description of 𤍕 and of 𪳝; only 𪳝 is 槱 encoded twice.
+    assert structures.for_character("𪳝") == structures.for_character("槱") != structures.for_character("𤍕")
+    # A stated equivalence alone joins nothing: 樣 and 様 keep their structures.
+    assert structures.for_character("樣") != structures.for_character("様")
+
+
+def test_the_characters_encoded_twice_are_these():
+    """The joins follow the 異体字 graph, which the policy does not pin: a rebuilt graph that changes
+    one fails here."""
+    groups: dict[str, set[str]] = {}
+    for char, head in structures._joined().items():
+        groups.setdefault(head, set()).add(char)
+    assert {head: "".join(sorted(chars - {head})) for head, chars in groups.items()} == {
+        "臭": "𦤀", "器": "𠾖", "巽": "𢁉", "槱": "𪳝", "欄": "𣟬", "獡": "𤡯", "琢": "𤥨", "疉": "𤴁",
+        "眔": "𥄳", "稽": "𥡴", "篹": "𥲻", "簆": "𥲃", "逸": "𨓜", "隆": "𨺓", "類": "𩔖"}
 
 
 def test_the_policy_names_the_tables_it_reads():
