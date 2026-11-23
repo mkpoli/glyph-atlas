@@ -821,7 +821,13 @@ def test_sends_the_sticker_the_model_picks_after_its_line(tmp_path):
     trigger = event("大肥魚 again!", event_id="$again")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.gemini.sticker_offers[1] == ("yay",)
+    assert bot.gemini.sticker_offers == ((), ("yay",))
+    assert [kind for _, kind, _ in matrix.events].count("m.sticker") == 1
+    bot._sticker_at[ROOM] -= fish_bot.STICKER_GAP_SECONDS
+    trigger = event("大肥魚 later!", event_id="$later")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.gemini.sticker_offers[0] == ("yay",)
 
 
 def test_parse_act_drops_a_sticker_it_does_not_have():

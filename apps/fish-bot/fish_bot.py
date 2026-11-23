@@ -667,6 +667,10 @@ STICKERS = (
             "a300a01c8be5a60054057e1187a6ae93003bf18f75bf144afaaa0a4b9fd3f6cc"),
 )
 STICKER_SIZE = 240
+# After she sends a sticker in a room, her next turns there are offered none for this long. Asked
+# for "now and then, not in every turn", she still ended 47 of 85 chat turns with one (11-21 to
+# 11-23), so the pace is kept in code.
+STICKER_GAP_SECONDS = 900
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1656,7 +1660,7 @@ CHAT_TASKS = {
     "ambient": ("Nobody called you; you are reading along. Most of the time stay quiet: empty `say`, no "
                 "react, no sticker. Join only when you have something fun, kind or helpful to add to the "
                 "last few messages: a short playful remark, a cute sticker, or an emoji on a message you "
-                "like. A reaction or a sticker usually beats words. Never bring up issues here."),
+                "like. A reaction, or a sticker when you have any, usually beats words. Never bring up issues here."),
 }
 
 
@@ -3121,6 +3125,7 @@ class Bot:
         self._user_chats: dict[str, list[float]] = {}
         self._room_chats: dict[str, list[float]] = {}
         self._recent_stickers: dict[str, list[str]] = {}
+        self._sticker_at: dict[str, float] = {}
         self._ambient: dict[str, dict[str, Any]] = {}
         self._spoke_at: dict[str, float] = {}
         self._ambient_turns: list[float] = []
@@ -3673,8 +3678,9 @@ class Bot:
             facts = {}
         if self.lookup is not None:
             self.lookup.here = room_id
+        offered = self._stickers_now(room_id)
         act = self.gemini.act(room_name, room_topic, events, names, task=task, trigger=trigger,
-                              bot_user_id=self.user_id, stickers=self.store.stickers(),
+                              bot_user_id=self.user_id, stickers=offered,
                               recent=self._recent_stickers.get(room_id, []), rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
                               images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
@@ -3682,6 +3688,8 @@ class Bot:
                               on_step=lambda: self.matrix.typing(room_id, self.user_id))
         if task == "ambient":
             act = dataclasses.replace(act, issue=False)
+        if act.sticker and act.sticker not in offered:
+            act = dataclasses.replace(act, sticker="")
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
         if act.say or act.react or act.sticker:
             self._spoke_at[room_id] = time.monotonic()
@@ -3761,8 +3769,16 @@ class Bot:
             try:
                 self.matrix.send(room_id, content, f"fish-k-{key}", "m.sticker")
                 self._recent_stickers[room_id] = [*self._recent_stickers.get(room_id, [])[-2:], act.sticker]
+                self._sticker_at[room_id] = time.monotonic()
             except MatrixError as error:
                 log.warning("sticker in %s: %s", room_id, error)
+
+    def _stickers_now(self, room_id: str) -> dict[str, tuple[str, int]]:
+        """The stickers she may send in a room this turn: none while her last one there is recent."""
+        sent = self._sticker_at.get(room_id)
+        if sent is not None and time.monotonic() - sent < STICKER_GAP_SECONDS:
+            return {}
+        return self.store.stickers()
 
     def ensure_stickers(self, fetch: Any = None) -> None:
         """Upload the stickers the homeserver does not hold yet, each checked against its hash."""
