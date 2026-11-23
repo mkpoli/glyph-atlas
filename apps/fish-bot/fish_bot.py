@@ -30,12 +30,14 @@ import os
 import random
 import re
 import sqlite3
+import struct
 import time
 import tomllib
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -191,7 +193,8 @@ MEMBER_COVERAGE = ("Counts and lists come from Matrix. Every QQ person here has 
                    "room, usually the server's admin account.")
 # Seeing images: gemini-4-hydrogen takes images inline as base64 image blocks in PNG, JPEG, WebP,
 # HEIC or HEIF, and no GIF, https://ai.google.dev/gemini-api/docs/image-understanding (read
-# 2026-11-23). The homeserver's thumbnail of a GIF is still a GIF, so a GIF counts as not shown.
+# 2026-11-23). The homeserver's thumbnail of a GIF is still a GIF, so the model gets its first frame
+# as a PNG.
 # A turn sees the newest pictures and stickers people posted among its last lines, as the
 # homeserver's thumbnails.
 IMAGES_CALLED = 4
@@ -1909,6 +1912,113 @@ def parse_act(raw: str, count: int, stickers: Iterable[str] = ()) -> Act:
     sticker = data.get("sticker")
     sticker = sticker if isinstance(sticker, str) and sticker in set(stickers) else ""
     return Act(say=bubbles, react_to=react_to, react=react, issue=data.get("issue") is True, sticker=sticker)
+
+
+def _lzw(data: bytes, min_size: int, count: int) -> bytes:
+    """The first `count` colour indexes of a GIF image's LZW data (GIF89a spec, appendix F,
+    https://www.w3.org/Graphics/GIF/spec-gif89a.txt)."""
+    if not 2 <= min_size <= 11:
+        raise ValueError("bad LZW code size")
+    clear, end = 1 << min_size, (1 << min_size) + 1
+    base = [bytes((value,)) for value in range(clear)] + [b"", b""]
+    table, size, prev = list(base), min_size + 1, b""
+    out = bytearray()
+    bits = held = 0
+    for byte in data:
+        bits |= byte << held
+        held += 8
+        while held >= size:
+            code = bits & ((1 << size) - 1)
+            bits >>= size
+            held -= size
+            if code == clear:
+                table, size, prev = list(base), min_size + 1, b""
+                continue
+            if code == end:
+                return bytes(out[:count])
+            if code < len(table):
+                entry = table[code]
+                if prev and len(table) < 4096:
+                    table.append(prev + entry[:1])
+            elif code == len(table) and prev:
+                entry = prev + prev[:1]
+                table.append(entry)
+            else:
+                raise ValueError("bad LZW code")
+            out += entry
+            prev = entry
+            if len(out) >= count:
+                return bytes(out[:count])
+            if len(table) == 1 << size and size < 12:
+                size += 1
+    return bytes(out[:count])
+
+
+def _png(width: int, height: int, rows: list[bytes], palette: bytes, transparent: int | None) -> bytes:
+    """A palette PNG of the rows (https://www.w3.org/TR/png/)."""
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    entries = len(palette) // 3
+    out = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 3, 0, 0, 0))
+    out += chunk(b"PLTE", palette[:entries * 3])
+    if transparent is not None and transparent < entries:
+        out += chunk(b"tRNS", b"\xff" * transparent + b"\x00")
+    out += chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + row for row in rows)))
+    return out + chunk(b"IEND", b"")
+
+
+def gif_still(data: bytes) -> bytes:
+    """The first frame of a GIF as a PNG, its transparent colour kept."""
+    if data[:6] not in (b"GIF87a", b"GIF89a") or len(data) < 13:
+        raise ValueError("not a GIF")
+    flags = data[10]
+    at = 13
+    palette = b""
+    if flags & 0x80:
+        palette = data[at:at + 3 * (2 << (flags & 7))]
+        at += len(palette)
+    transparent = None
+    try:
+        while at < len(data):
+            if data[at] == 0x21:
+                label = data[at + 1]
+                at += 2
+                if label == 0xF9 and data[at] >= 4 and data[at + 1] & 1:
+                    transparent = data[at + 4]
+                while data[at]:
+                    at += data[at] + 1
+                at += 1
+            elif data[at] == 0x2C:
+                width, height = struct.unpack_from("<HH", data, at + 5)
+                flags = data[at + 9]
+                at += 10
+                if flags & 0x80:
+                    palette = data[at:at + 3 * (2 << (flags & 7))]
+                    at += len(palette)
+                if not palette or not width or not height:
+                    raise ValueError("no colour table or no pixels")
+                min_size = data[at]
+                at += 1
+                packed = bytearray()
+                while data[at]:
+                    packed += data[at + 1:at + 1 + data[at]]
+                    at += data[at] + 1
+                pixels = _lzw(bytes(packed), min_size, width * height)
+                pixels += bytes(width * height - len(pixels))
+                rows = [pixels[row * width:(row + 1) * width] for row in range(height)]
+                if flags & 0x40:
+                    order = [row for start, step in ((0, 8), (4, 8), (2, 4), (1, 2))
+                             for row in range(start, height, step)]
+                    placed = [b""] * height
+                    for row, line in zip(order, rows):
+                        placed[row] = line
+                    rows = placed
+                return _png(width, height, rows, palette, transparent)
+            else:
+                break
+    except (IndexError, struct.error):
+        raise ValueError("the GIF is cut short") from None
+    raise ValueError("no image in the GIF")
 
 
 def _image_block(url: str) -> dict[str, Any]:
@@ -3742,6 +3852,12 @@ class Bot:
         except MatrixError as error:
             log.info("picture %s: %s", media, error)
             return ""
+        if data.startswith(b"GIF8"):
+            try:
+                data = gif_still(data)
+            except ValueError as error:
+                log.info("picture %s: %s", media, error)
+                return ""
         kind = next((kind for magic, kind in IMAGE_TYPES.items() if data.startswith(magic)), None)
         if kind is None or (kind == "image/webp" and data[8:12] != b"WEBP"):
             return ""

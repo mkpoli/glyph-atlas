@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import io
 import json
 import sqlite3
 import urllib.parse
+import zlib
 
 import fish_bot
 import pytest
@@ -1627,7 +1629,8 @@ def test_an_old_log_gains_the_media_column(tmp_path):
 def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     matrix = FakeMatrix()
     matrix.pictures = {"mxc://example/1": PNG, "mxc://example/2": b"RIFF....WEBPVP8 ", "mxc://example/own": PNG,
-                       "mxc://example/odd": b"not an image", "mxc://example/gif": b"GIF89a...."}
+                       "mxc://example/odd": b"not an image", "mxc://example/gif": b"GIF89a....",
+                       "mxc://example/moving": STRIPED_GIF}
     bot, _, _ = make_bot(tmp_path, matrix=matrix)
     start = fish_bot.now_ms() - 60_000
     bot.ingest(ROOM, picture("$1", url="mxc://example/1", ts=start), backfilled=False)
@@ -1636,12 +1639,35 @@ def test_a_turn_sees_the_newest_pictures_people_posted(tmp_path):
     bot.ingest(ROOM, picture("$gone", url="mxc://example/gone", ts=start + 3), backfilled=False)
     bot.ingest(ROOM, picture("$2", url="mxc://example/2", sticker=True, ts=start + 4), backfilled=False)
     bot.ingest(ROOM, picture("$gif", url="mxc://example/gif", sticker=True, ts=start + 5), backfilled=False)
-    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 6)
+    bot.ingest(ROOM, picture("$moving", url="mxc://example/moving", sticker=True, ts=start + 6), backfilled=False)
+    trigger = event("大肥魚，這是你嗎？", event_id="$call", ts=start + 7)
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
     images = bot.gemini.images
-    assert [index for index, _ in images] == [0, 4]
+    assert [index for index, _ in images] == [0, 4, 6]
     assert images[0][1].startswith("data:image/png;base64,") and images[1][1].startswith("data:image/webp;base64,")
+    assert images[2][1].startswith("data:image/png;base64,")
+
+
+# 5x17, interlaced, four colours, the last transparent; its pixels are (x + y) % 4.
+STRIPED_GIF = base64.b64decode("R0lGODlhBQARAIEAAAAAAP8AAAD/AAAA/yH5BAEAAAMALAAAAAAFABEAQAgmAAEEEDAAgECCBgcWPLhQIQCEAyEKkCjRYYCCCi1iJKiRYUeFAQEAOw==")
+
+
+def test_a_gif_becomes_a_png_of_its_first_frame():
+    png = fish_bot.gif_still(STRIPED_GIF)
+    chunks, at = {}, 8
+    while at < len(png):
+        size = int.from_bytes(png[at:at + 4], "big")
+        chunks[png[at + 4:at + 8]] = png[at + 8:at + 8 + size]
+        at += size + 12
+    assert STRIPED_GIF[33 + 9] & 0x40  # interlaced
+    assert chunks[b"IHDR"][:10] == (5).to_bytes(4, "big") + (17).to_bytes(4, "big") + bytes((8, 3))
+    assert chunks[b"PLTE"][:12] == bytes((0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255))
+    assert chunks[b"tRNS"] == b"\xff\xff\xff\x00"
+    raw = zlib.decompress(chunks[b"IDAT"])
+    assert [list(raw[row * 6 + 1:row * 6 + 6]) for row in range(17)] == [[(x + y) % 4 for x in range(5)] for y in range(17)]
+    with pytest.raises(ValueError):
+        fish_bot.gif_still(STRIPED_GIF[:40])
 
 
 def test_the_model_gets_pictures_after_the_json(monkeypatch):
