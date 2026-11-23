@@ -32,7 +32,7 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
     return cases
 
 
-def check(case: dict[str, Any], said: str, tools: list[str]) -> list[str]:
+def check(case: dict[str, Any], said: str, tools: list[str], recap: bool = False) -> list[str]:
     """The rules an answer broke, empty when it kept them all."""
     broken = []
     rules = case.get("expect", {})
@@ -46,6 +46,8 @@ def check(case: dict[str, Any], said: str, tools: list[str]) -> list[str]:
     for pattern in rules.get("must_not_match", []):
         if re.search(pattern, said, re.IGNORECASE):
             broken.append(f"says /{pattern}/")
+    if "recap" in rules and rules["recap"] != recap:
+        broken.append("did not turn to the catch-up" if rules["recap"] else "turned to the catch-up")
     if rules.get("quiet") and said:
         broken.append("spoke where she should stay quiet")
     if rules.get("max_chars") and len(said) > rules["max_chars"]:
@@ -54,7 +56,7 @@ def check(case: dict[str, Any], said: str, tools: list[str]) -> list[str]:
 
 
 def run_case(case: dict[str, Any], gemini: fb.Gemini, lookup: fb.Lookup, community: fb.Community,
-             room_id: str, user_id: str) -> tuple[str, list[str]]:
+             room_id: str, user_id: str) -> tuple[str, list[str], bool]:
     """One case's answer and the tools used, from a scratch log that holds only the case's lines."""
     with tempfile.TemporaryDirectory() as scratch:
         log = fb.Store(Path(scratch) / "replay.sqlite3")
@@ -82,7 +84,7 @@ def run_case(case: dict[str, Any], gemini: fb.Gemini, lookup: fb.Lookup, communi
                          bot_user_id=user_id, lookup=lookup, room_facts=community.summary(room_id))
     finally:
         lookup.run = original  # type: ignore[method-assign]
-    return "\n".join(act.say), used
+    return "\n".join(act.say), used, act.recap
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,8 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         room_id = matrix.resolve(case["room_alias"]) if case.get("room_alias") else next(iter(sorted(rooms)))
         started = time.monotonic()
         try:
-            said, tools = run_case(case, gemini, lookup, community, room_id, config.user_id)
-            broken = check(case, said, tools)
+            said, tools, recap = run_case(case, gemini, lookup, community, room_id, config.user_id)
+            broken = check(case, said, tools, recap)
         except (fb.GeminiError, fb.MatrixError, fb.GitHubError) as error:
             said, tools, broken = "", [], [f"error: {error}"]
         failed += bool(broken)

@@ -937,6 +937,33 @@ def hear(bot, clock, body, event_id, *, sender="@reader:example", after=3.0, **c
     bot.tick()
 
 
+def test_asking_for_the_whole_server_gets_the_catch_up(tmp_path, monkeypatch):
+    bot, matrix, store, clock = talking(tmp_path, monkeypatch)
+    bot.active_rooms = {ROOM}
+    monkeypatch.setattr(store, "recap_material", lambda rooms: (
+        [{"room_id": ROOM, "end_ts": 1, "summary": "They built a glyph atlas."}], []))
+    bot.gemini.act_value = fish_bot.Act(say=(), react_to=None, react="", issue=False, recap=True)
+    hear(bot, clock, "I mean the whole server!", "$more")
+    assert matrix.sent[-1][1]["body"] == "Welcome! Here is what we talked about."
+    assert bot.gemini.recaps[0][3] == "大肥魚, what did we talk about?\nI mean the whole server!"
+    hear(bot, clock, "shorter?", "$short")
+    assert len(bot.gemini.recaps) == 2
+    monkeypatch.setattr(store, "recap_material", lambda rooms: ([], []))
+    hear(bot, clock, "and now?", "$now")
+    assert "don't remember enough yet" in matrix.sent[-1][1]["body"]
+
+
+def test_a_catch_up_counts_as_a_turn_of_the_conversation(tmp_path, monkeypatch):
+    bot, _matrix, store, clock = talking(tmp_path, monkeypatch, max_chats_per_user_per_hour=3)
+    bot.active_rooms = {ROOM}
+    monkeypatch.setattr(store, "recap_material", lambda rooms: (
+        [{"room_id": ROOM, "end_ts": 1, "summary": "They built a glyph atlas."}], []))
+    bot.gemini.act_value = fish_bot.Act(say=(), react_to=None, react="", issue=False, recap=True)
+    for number in range(5):
+        hear(bot, clock, "the whole server!", f"$w{number}")
+    assert len(bot.gemini.recaps) == 2 and bot._talks[ROOM].turns == 2
+
+
 QUIET = fish_bot.Act(say=(), react_to=None, react="", issue=False)
 
 

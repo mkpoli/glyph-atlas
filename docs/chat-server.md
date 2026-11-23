@@ -339,7 +339,8 @@ list the public rooms, read a room's creator and first joins, and list its membe
 homeserver. QQ members appear only once they have spoken, because QQ's bot API cannot list a group,
 so the QQ group has more people than she sees.
 
-She catches newcomers up. `!fish recap` (or 「大肥魚，前情提要」, 「我錯過了什麼？」, 「これまでの話」, 「지금까지 요약해 줘」)
+She catches newcomers up. `!fish recap`, asking her for the whole server in plain words, or a set phrase
+(「大肥魚，前情提要」, 「我錯過了什麼？」, 「これまでの話」, 「지금까지 요약해 줘」)
 answers with a brief of everything she remembers from every room she reads: what the community is
 building, the subjects that keep coming back, decisions and recent news, in the language of the
 request. The same brief can be posted once from the server, for example to the welcome room:
