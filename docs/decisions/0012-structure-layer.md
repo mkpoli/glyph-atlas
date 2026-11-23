@@ -62,6 +62,14 @@ structure. A character the IRG unifies with another has that character's structu
 unless the list gives the two as encoded apart (丷 and 八 are one component inside 兌 and two
 characters on their own).
 
+A character encoded apart whose own description is a regional shape of another character joins that
+character's structure, where the 異体字 graph gives the two as one character (Unihan's kZVariant,
+CJKVI's duplicates, or a stated equivalence) and CJKVI never gives them as non-cognate. 𦤀 `⿱自大` is
+臭's J shape and has 臭's `⿱自犬`; 𠾖 `⿳吅大吅` has 器's `⿳吅犬吅`. 柿 `⿰木市` is the K shape of 杮
+`⿰木巿` and keeps its own: CJKVI gives the two as characters that only look alike. A group of such
+characters has the structure of its lowest code point: 34 characters form 16 groups. An id still
+names its canonical text, so the policy is unchanged; `⿱自大` keeps its id, and no character has it.
+
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟
 and 饣 with 言, 金, 糸 and 食 (說, 説 and 说 are one structure). Characters the IRG lists as
@@ -78,8 +86,8 @@ encoded apart share a structure when only a unified component separates them (�
 - A description two characters hold names one of them: the character whose own structure it is,
   else the lowest code point.
 - A character's regional shape, chosen as a form, is a spelling of that character's structure,
-  even where the same description written alone is another character's: 臭's J shape `⿱自大`
-  stands under 臭's `⿱自犬`, and written alone it names 𦤀.
+  even where the same description written alone is another character's: 杮's K shape `⿰木市`
+  stands under 杮's `⿰木巿`, and written alone it names 柿.
 - A label can hold BabelStone's number for an unencoded component (即 is `⿰{18}卩`); such a
   structure has no written IDS.
 - The id does not carry the versions of the two component tables. `structures.TABLES` pins their
