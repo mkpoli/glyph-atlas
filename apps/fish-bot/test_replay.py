@@ -22,3 +22,9 @@ def test_small_talk_must_not_look_anything_up():
     case = {"expect": {"tools_none": True}}
     assert replay.check(case, "晚安～", []) == []
     assert replay.check(case, "晚安～", ["web_search"]) == ["looked something up for small talk (['web_search'])"]
+
+
+def test_a_case_can_ask_for_silence():
+    case = {"expect": {"quiet": True}}
+    assert replay.check(case, "", []) == []
+    assert replay.check(case, "嗨～", []) == ["spoke where she should stay quiet"]

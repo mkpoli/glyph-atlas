@@ -1,7 +1,8 @@
 """Replays a fixed set of chat situations against the live model and checks 大肥魚's answers.
 
-Each case in replay.json is a short room log ending with a message that calls her, and rules her
-answer must keep: tools she must or must not use, and patterns her words must or must not match.
+Each case in replay.json is a short room log ending with a message that calls her, or one she reads
+in another task ("task"), and rules her answer must keep: tools she must or must not use, patterns
+her words must or must not match, and whether she must stay quiet.
 The cases come from answers that went wrong in the community chat (an invented reading, a wrong
 era name, a question answered from old chat instead of the homeserver) and from ones that must
 stay cheap (small talk without lookups). Run it on the chat server after a prompt change; it reads
@@ -45,6 +46,8 @@ def check(case: dict[str, Any], said: str, tools: list[str]) -> list[str]:
     for pattern in rules.get("must_not_match", []):
         if re.search(pattern, said, re.IGNORECASE):
             broken.append(f"says /{pattern}/")
+    if rules.get("quiet") and said:
+        broken.append("spoke where she should stay quiet")
     if rules.get("max_chars") and len(said) > rules["max_chars"]:
         broken.append(f"{len(said)} characters, more than {rules['max_chars']}")
     return broken
@@ -74,7 +77,8 @@ def run_case(case: dict[str, Any], gemini: fb.Gemini, lookup: fb.Lookup, communi
     lookup.run = recording  # type: ignore[method-assign]
     lookup.here = room_id
     try:
-        act = gemini.act(case.get("room", "中文"), "", events, names, task="called", trigger=len(events) - 1,
+        act = gemini.act(case.get("room", "中文"), "", events, names, task=case.get("task", "called"),
+                         trigger=len(events) - 1,
                          bot_user_id=user_id, lookup=lookup, room_facts=community.summary(room_id))
     finally:
         lookup.run = original  # type: ignore[method-assign]

@@ -91,6 +91,21 @@ CHAT_WINDOW_SECONDS = 600
 DEFAULT_ALIASES = ("大肥魚", "大肥鱼", "肥魚", "肥鱼", "Big Fat Fish")
 # Chat turns answered in one room in an hour, whoever calls.
 CHAT_ROOM_PER_HOUR = 30
+# A conversation stays open this long after she speaks. While it is, she reads each new line after a
+# short pause and decides whether it is for her; people rarely name the person they are already
+# talking to. Looks that end in silence close it: fewer for bystanders than for the person she was
+# answering, and the per-hour cap bounds the calls. Zero-shot models misjudge when to speak (Bhagtani
+# et al., arXiv 2603.11409, 2026; voice pauses), so the window and caps stay outside the model, as in
+# MaiBot's decaying view frequency (https://github.com/MaiM-with-u/MaiBot src/maisaka/turn_trigger,
+# read at b7f3682, 2026-11-19).
+TALK_SECONDS = 240
+TALK_PAUSE = (2.0, 5.0)
+TALK_PAUSE_LIMIT = 12.0
+TALK_QUIET_PARTNER = 3
+TALK_QUIET_OTHERS = 2
+# Answers in one conversation before she needs to be called again, so two bots cannot keep it going.
+TALK_TURNS = 12
+FOLLOW_PER_HOUR = 40
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
@@ -590,6 +605,23 @@ class Decision:
     reply: str
     reason: str
     duplicate_of: int | None
+
+
+@dataclasses.dataclass
+class Talk:
+    """A conversation she is in: whom she last answered, how long it stays open, and the newest line
+    she has not looked at yet."""
+
+    partner: str
+    until: float
+    quiet_partner: int = 0
+    quiet_others: int = 0
+    turns: int = 0
+    event_id: str = ""
+    sender: str = ""
+    body: str = ""
+    since: float = 0.0
+    due: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1658,6 +1690,13 @@ CHAT_TASKS = {
     "called": ("Message {trigger} talks to you. Answer that person as yourself; `say` must not be empty. "
                "Answer that message itself, even if the log shows the same question answered before: when "
                "it needs facts and you have tools, look them up now."),
+    "follow": ("You spoke in this room moments ago and are still in the conversation. Message {trigger} is "
+               "the newest line, and it does not name you. Work out from the lines before it whom it is "
+               "for. When it carries on with you (an answer, a follow-up question, a correction, a new "
+               "request), answer it as yourself, with everything said before as its context: \"I mean …\", "
+               "\"no, the other one\" or \"shorter\" corrects your last answer, so do that request again the "
+               "way they meant. For plain thanks or a laugh, an emoji is enough. When it is for someone "
+               "else, or needs nothing from you, stay quiet: empty `say`, no react, no sticker."),
     "intro": ("Message {trigger} asks you to introduce yourself. Do it in two or three short lines in that "
               "message's language: who you are, that anyone can talk to you by calling you 大肥魚, "
               "that you remember what people talk about (`!fish forget me` makes you forget someone), "
@@ -3265,6 +3304,8 @@ class Bot:
         self._recent_stickers: dict[str, list[str]] = {}
         self._sticker_at: dict[str, float] = {}
         self._ambient: dict[str, dict[str, Any]] = {}
+        self._talks: dict[str, Talk] = {}
+        self._follows: list[float] = []
         self._spoke_at: dict[str, float] = {}
         self._ambient_turns: list[float] = []
         self._random = random.random
@@ -3459,6 +3500,7 @@ class Bot:
                 elif call.mode == "recap":
                     self.post_recap(room_id, reply_to=event_id,
                                     request=human_message(event, self.user_id, self.config.ignored_senders) or "")
+                    self._listen(room_id, sender)
                 elif call.mode in ("forget", "remember"):
                     self.forget(room_id, event_id, sender, keep=call.mode == "remember")
                 else:
@@ -3526,16 +3568,84 @@ class Bot:
         ts = event.get("origin_server_ts")
         if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
             return
+        sender = str(event.get("sender"))
+        if self._hear(room_id, event_id, sender, body, addressed_elsewhere=reply_target(event) is not None):
+            return
         batch = self._ambient.setdefault(room_id, {"count": 0, "lively": False})
         batch["count"] += 1
         batch["lively"] = batch["lively"] or bool(LIVELY.search(body))
         batch["event_id"] = event_id
         batch["due"] = time.monotonic() + self.config.ambient_quiet_seconds
 
+    def _listen(self, room_id: str, partner: str) -> None:
+        """She just spoke here, so the conversation is open and everything up to now is read."""
+        self._talks[room_id] = Talk(partner=partner, until=time.monotonic() + TALK_SECONDS)
+
+    def _hear(self, room_id: str, event_id: str, sender: str, body: str, *, addressed_elsewhere: bool) -> bool:
+        """Whether a line falls in a conversation she is in, to be looked at after a short pause. A
+        reply to another person is theirs."""
+        talk = self._talks.get(room_id)
+        now = time.monotonic()
+        if talk is not None and now >= talk.until:
+            del self._talks[room_id]
+            talk = None
+        if talk is None or addressed_elsewhere:
+            return False
+        if talk.turns >= TALK_TURNS:
+            # Still her conversation, which she has left: neither followed nor kept for a visit.
+            return True
+        partner = bool(talk.partner) and sender == talk.partner
+        if talk.quiet_partner >= TALK_QUIET_PARTNER if partner else talk.quiet_others >= TALK_QUIET_OTHERS:
+            return False
+        if not talk.event_id:
+            talk.since = now
+        elif talk.sender == talk.partner and not partner:
+            # The person she is talking to still waits for an answer; another's line is context to it.
+            return True
+        talk.event_id, talk.sender, talk.body = event_id, sender, body
+        pause = TALK_PAUSE[0] + (TALK_PAUSE[1] - TALK_PAUSE[0]) * self._random()
+        talk.due = min(now + pause, talk.since + TALK_PAUSE_LIMIT)
+        return True
+
+    def follow(self) -> None:
+        """Look at the lines waiting in the conversations she is in."""
+        now = time.monotonic()
+        for room_id in [room for room, talk in self._talks.items() if talk.event_id and talk.due <= now]:
+            talk = self._talks[room_id]
+            event_id, sender, body = talk.event_id, talk.sender, talk.body
+            talk.event_id = ""
+            self._follows = [at for at in self._follows if now - at < 3600]
+            if len(self._follows) >= FOLLOW_PER_HOUR or not self._chat_allowed(sender, room_id):
+                log.info("follow budget reached in %s", room_id)
+                continue
+            self._follows.append(now)
+            partner = bool(talk.partner) and sender == talk.partner
+            try:
+                act = self.turn(room_id, event_id, task="follow")
+                spoke = act is not None and bool(act.say or act.react or act.sticker)
+                log.info("followed %s in %s: %s", "her partner" if partner else "another", room_id,
+                         "answered" if spoke else "stayed quiet")
+                if spoke:
+                    self._chat_budget(sender, room_id)
+                current = self._talks.get(room_id)
+                if current is not None and current is not talk:
+                    current.turns = talk.turns + 1
+                if act is not None and not act.say:
+                    if partner:
+                        talk.quiet_partner += 1
+                    else:
+                        talk.quiet_others += 1
+                if act is not None and act.issue and partner:
+                    self._to_desk(room_id, event_id, body, sender)
+            except Exception:
+                log.exception("following in %s", room_id)
+
     def _sync_wait_ms(self) -> int:
-        if not self._ambient:
+        dues = [batch["due"] for batch in self._ambient.values()]
+        dues += [talk.due for talk in self._talks.values() if talk.event_id]
+        if not dues:
             return SYNC_TIMEOUT_MS
-        soonest = min(batch["due"] for batch in self._ambient.values())
+        soonest = min(dues)
         return int(max(0.0, min(SYNC_TIMEOUT_MS / 1000, soonest - time.monotonic())) * 1000)
 
     def tick(self) -> None:
@@ -3549,6 +3659,7 @@ class Bot:
             if self._reported_day:
                 log.info("usage: %s", usage_report(row for row in self.store.usage(2) if row["day"] == self._reported_day))
             self._reported_day = day
+        self.follow()
         now = time.monotonic()
         for room_id in [room for room, batch in self._ambient.items() if batch["due"] <= now]:
             batch = self._ambient.pop(room_id)
@@ -3782,8 +3893,11 @@ class Bot:
         within the desk's own limits."""
         act = self.turn(room_id, event_id, task="called", reply_to=event_id)
         self.store.mark_handled(event_id, "chatted")
-        if act is None or not act.issue:
-            return
+        if act is not None and act.issue:
+            self._to_desk(room_id, event_id, call.prompt, sender)
+
+    def _to_desk(self, room_id: str, event_id: str, prompt: str, sender: str) -> None:
+        """Hand a discussion to the issue desk, within the desk's own limits."""
         last = self._last_answer.get(room_id)
         if last is not None and time.monotonic() - last < self.config.room_cooldown_seconds:
             return
@@ -3792,14 +3906,17 @@ class Bot:
             return
         self._record_call(sender)
         self._last_answer[room_id] = time.monotonic()
-        self._answer(room_id, event_id, Call(mode="auto", prompt=call.prompt))
+        self._answer(room_id, event_id, Call(mode="auto", prompt=prompt))
 
     def turn(self, room_id: str, event_id: str, *, task: str, reply_to: str | None = None,
              rooms: str = "") -> Act | None:
         """Read the room, ask the model for one turn, and post what it says. Only a turn that owes
-        an answer shows typing; an unasked one is mostly silent. Only an answer to a call may look
-        things up."""
-        if task != "ambient":
+        an answer shows typing; an unasked one is mostly silent, as is a follow-up that may be for
+        someone else. Only an answer to a call or a follow-up may look things up."""
+        talk = self._talks.get(room_id)
+        if talk is not None:
+            talk.event_id = ""
+        if task not in ("ambient", "follow"):
             self.matrix.typing(room_id, self.user_id)
         room_name, room_topic = self._room(room_id)
         try:
@@ -3822,16 +3939,22 @@ class Bot:
                               recent=self._recent_stickers.get(room_id, []), rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
                               images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
-                              lookup=self.lookup if task == "called" else None,
+                              lookup=self.lookup if task in ("called", "follow") else None,
                               on_step=lambda: self.matrix.typing(room_id, self.user_id))
         if task == "ambient":
             act = dataclasses.replace(act, issue=False)
         if act.sticker and act.sticker not in offered:
             act = dataclasses.replace(act, sticker="")
+        sender = "" if trigger is None or task == "ambient" else str(events[trigger]["sender"])
+        if task == "follow" and any(row["sender"] != self.user_id for row in events[(trigger or 0) + 1:]):
+            # Others spoke after the line she answers, so the answer says which line it is for.
+            reply_to = event_id
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
         if act.say or act.react or act.sticker:
             self._spoke_at[room_id] = time.monotonic()
             self._ambient.pop(room_id, None)
+        if act.say or act.sticker:
+            self._listen(room_id, sender)
         return act
 
     def pictures(self, events: list[sqlite3.Row], count: int, *, lines: int = IMAGE_LINES,
@@ -3946,23 +4069,26 @@ class Bot:
                 continue
             self.store.set_sticker(sticker.name, sticker.sha256, mxc, len(data))
 
-    def _chat_budget(self, sender: str, room_id: str = "") -> bool:
-        """Count one chat turn against the hourly caps, or answer False when they are reached."""
+    def _chat_allowed(self, sender: str, room_id: str) -> bool:
+        """Whether one more chat turn fits in the hourly caps."""
         now = time.monotonic()
         self._chats = [at for at in self._chats if now - at < 3600]
         user = [at for at in self._user_chats.get(sender, []) if now - at < 3600]
         room = [at for at in self._room_chats.get(room_id, []) if now - at < 3600]
-        if len(self._chats) >= self.config.max_chats_per_hour:
+        return not (len(self._chats) >= self.config.max_chats_per_hour
+                    or sender and len(user) >= self.config.max_chats_per_user_per_hour
+                    or room_id and len(room) >= CHAT_ROOM_PER_HOUR)
+
+    def _chat_budget(self, sender: str, room_id: str = "") -> bool:
+        """Count one chat turn against the hourly caps, or answer False when they are reached."""
+        if not self._chat_allowed(sender, room_id):
             return False
-        if sender and len(user) >= self.config.max_chats_per_user_per_hour:
-            return False
-        if room_id and len(room) >= CHAT_ROOM_PER_HOUR:
-            return False
+        now = time.monotonic()
         self._chats.append(now)
         if sender:
-            self._user_chats[sender] = [*user, now]
+            self._user_chats[sender] = [*(at for at in self._user_chats.get(sender, []) if now - at < 3600), now]
         if room_id:
-            self._room_chats[room_id] = [*room, now]
+            self._room_chats[room_id] = [*(at for at in self._room_chats.get(room_id, []) if now - at < 3600), now]
         return True
 
     def _within_budget(self, sender: str) -> bool:
