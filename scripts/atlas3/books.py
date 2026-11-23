@@ -131,6 +131,11 @@ def titles(atlas, corpus):
 
 def translate(atlas, mirror):
     """out/books.sqlite from the copies, and how many rows were left out, by reason."""
+    # A missing input stops the run before the last translation is replaced.
+    for table in ("document_dating", "document_characters"):
+        given(table)
+    for table in SOURCES:
+        source(table)
     path = OUT / "books.sqlite"
     path.unlink(missing_ok=True)
     out = sqlite3.connect(path)
