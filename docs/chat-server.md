@@ -288,6 +288,15 @@ models asked without training when to speak judge it badly (Bhagtani et al.,
 lets its view frequency fall with each look
 (https://github.com/MaiM-with-u/MaiBot, `src/maisaka/turn_trigger`, read at b7f3682, 2026-11-19).
 
+She welcomes newcomers, once each (`[chat] welcome`). A Matrix account or a Telegram member is new when
+it joins a public room, a Discord member with the bridge's "joined the server" notice, and anyone else
+with a first line. QQ's bot API reports no joins and IRC people speak through one bridge account, so a
+QQ member is met on speaking and an IRC one is not. She waits 40 to 120 seconds, so that a join and a
+first line make one greeting, and posts it where they spoke, else in a welcome room they joined.
+Whoever was in a room when she first read it is not new, nor is a known person's name on a second
+account; more than five at once is taken for a bridge syncing its members. `known_people` keeps the
+account IDs. People who asked to be forgotten are not greeted.
+
 She also reads along. She opens a room with unread lines at random times, on average 25 minutes after
 the first of them (`[chat] visit_minutes`; sooner after a question or a laugh, later when she lately
 spoke there, at most `visits_per_hour` in all), and waits for a burst to end. The model then rates

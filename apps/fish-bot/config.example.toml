@@ -40,6 +40,8 @@ ignored_senders = [
 # most visits_per_hour of these across the rooms.
 visit_minutes = 25
 visits_per_hour = 8
+# Greet a person once, when they first join or first speak in any public room.
+welcome = true
 
 [digest]
 # From this hour (JST) each day, one digest per room below, written wholly in the language named
