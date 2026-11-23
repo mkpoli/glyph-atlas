@@ -199,11 +199,15 @@ IMAGES_AMBIENT = 2
 # Pictures a stretch of chat sends to memory, the newest ones people posted in it.
 IMAGES_MEMORY = 4
 # Fetches a memory call may make for pictures not cached yet, so a stalled media server holds up the
-# chat for at most this many thumbnail timeouts.
+# chat for at most this many fetches, each one or two thumbnail timeouts.
 IMAGES_MEMORY_FETCHES = 6
 IMAGE_LINES = 12
-IMAGE_SIZE = 1024
-MAX_IMAGE_BYTES = 1_500_000
+# continuwuity 26.9.1 scales a thumbnail only into fixed boxes: a request within 640x480 comes back
+# 640 pixels wide whatever its height, and one past 800x600 comes back as the original (measured on
+# the server, 2026-11-24). A long screenshot can pass the byte limit at 640, so 320 follows; four
+# pictures at the limit still fit Gemini's 20 MB inline request.
+IMAGE_BOXES = ((640, 480), (320, 240))
+MAX_IMAGE_BYTES = 3_000_000
 IMAGE_TIMEOUT = 15.0
 # Pictures kept in memory, by total size of their data URLs.
 IMAGE_CACHE_BYTES = 24_000_000
@@ -869,24 +873,26 @@ class Matrix:
             raise MatrixError(None, "the upload answer has no content_uri")
         return uri
 
-    def thumbnail(self, mxc: str, size: int = IMAGE_SIZE, limit: int = MAX_IMAGE_BYTES) -> bytes:
-        """An image at most `size` pixels a side, through the homeserver's authenticated media API."""
+    def thumbnail(self, mxc: str, limit: int = MAX_IMAGE_BYTES) -> bytes:
+        """The largest of the homeserver's scaled thumbnails within `limit` bytes, through its
+        authenticated media API."""
         match = re.fullmatch(r"mxc://([A-Za-z0-9.:-]+)/([A-Za-z0-9_-]+)", mxc)
         if not match or match.group(1).strip(".") == "":
             raise MatrixError(None, "not an mxc URI")
-        url = (f"{self.homeserver}/_matrix/client/v1/media/thumbnail/{match.group(1)}/{match.group(2)}?"
-               + urllib.parse.urlencode({"width": size, "height": size, "method": "scale", "animated": "false"}))
-        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(request, timeout=IMAGE_TIMEOUT) as response:
-                data = response.read(limit + 1)
-        except urllib.error.HTTPError as error:
-            raise MatrixError(error.code, f"thumbnail refused: {error.reason}") from None
-        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
-            raise MatrixError(None, f"thumbnail failed: {getattr(error, 'reason', error)}") from None
-        if len(data) > limit:
-            raise MatrixError(None, "the image is too large")
-        return data
+        for width, height in IMAGE_BOXES:
+            url = (f"{self.homeserver}/_matrix/client/v1/media/thumbnail/{match.group(1)}/{match.group(2)}?"
+                   + urllib.parse.urlencode({"width": width, "height": height, "method": "scale", "animated": "false"}))
+            request = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT})
+            try:
+                with urllib.request.urlopen(request, timeout=IMAGE_TIMEOUT) as response:
+                    data = response.read(limit + 1)
+            except urllib.error.HTTPError as error:
+                raise MatrixError(error.code, f"thumbnail refused: {error.reason}") from None
+            except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
+                raise MatrixError(None, f"thumbnail failed: {getattr(error, 'reason', error)}") from None
+            if len(data) <= limit:
+                return data
+        raise MatrixError(None, "the image is too large")
 
     def typing(self, room_id: str, user_id: str, *, timeout_ms: int = 15_000) -> None:
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"

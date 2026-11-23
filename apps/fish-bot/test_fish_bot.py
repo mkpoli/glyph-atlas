@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sqlite3
+import urllib.parse
 
 import fish_bot
 import pytest
@@ -98,7 +101,7 @@ class FakeMatrix:
 
     pictures: dict = {}  # noqa: RUF012 - a fake; tests replace it per instance
 
-    def thumbnail(self, mxc, size=1024, limit=4_000_000):
+    def thumbnail(self, mxc, limit=4_000_000):
         if mxc not in self.pictures:
             raise fish_bot.MatrixError(404, "not found")
         return self.pictures[mxc]
@@ -1676,7 +1679,7 @@ def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
 def test_a_picture_that_fails_is_fetched_once(tmp_path):
     matrix = FakeMatrix()
     calls = []
-    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
+    matrix.thumbnail = lambda mxc, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(404, "gone"))
     bot, _, store = make_bot(tmp_path, matrix=matrix)
     bot.ingest(ROOM, picture("$gone", url="mxc://example/gone"), backfilled=False)
     rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
@@ -1703,6 +1706,25 @@ def test_only_a_real_new_picture_counts_for_reading_along():
 def test_a_picture_link_cannot_climb_out_of_the_media_api():
     with pytest.raises(fish_bot.MatrixError):
         fish_bot.Matrix("http://127.0.0.1:1", "token").thumbnail("mxc://../config")
+
+
+def test_a_picture_too_large_in_the_bigger_box_comes_from_the_smaller(monkeypatch):
+    sizes = {"640": 5000, "320": 800}
+    asked = []
+
+    def urlopen(request, timeout=30):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
+        asked.append((query["width"][0], query["height"][0]))
+        body = b"x" * sizes[query["width"][0]]
+        return contextlib.nullcontext(io.BytesIO(body))
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", urlopen)
+    matrix = fish_bot.Matrix("http://127.0.0.1:1", "token")
+    assert len(matrix.thumbnail("mxc://example/shot", limit=1000)) == 800
+    assert asked == [("640", "480"), ("320", "240")]
+    sizes["320"] = 2000
+    with pytest.raises(fish_bot.MatrixError, match="too large"):
+        matrix.thumbnail("mxc://example/shot", limit=1000)
 
 
 def reply(body, target, *, event_id="$reply", sender="@discord_1:example"):
@@ -2065,7 +2087,7 @@ def test_memory_sends_pictures_only_for_messages_that_fit(tmp_path):
 def test_memory_fetches_only_a_few_unseen_pictures(tmp_path):
     matrix = FakeMatrix()
     calls = []
-    matrix.thumbnail = lambda mxc, size=1024, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
+    matrix.thumbnail = lambda mxc, limit=0: calls.append(mxc) or (_ for _ in ()).throw(fish_bot.MatrixError(504, "slow"))
     bot, _, store = make_bot(tmp_path, matrix=matrix)
     start = fish_bot.now_ms() - 30 * HOUR
     for n in range(30):
