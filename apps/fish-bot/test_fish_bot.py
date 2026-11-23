@@ -1897,7 +1897,7 @@ def test_memory_and_digest_run_on_the_standard_tier(monkeypatch):
 
     monkeypatch.setattr(model, "_send", send)
     model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER)
-    model.digest("English", "Room", [], [{"repo": "mkpoli/glyph-atlas", "merged": ["x"], "released": []}], {})
+    model.digest("English", "Room", [{"repo": "mkpoli/glyph-atlas", "merged": ["x"], "released": []}], {})
     assert seen == [None, None]
 
 
