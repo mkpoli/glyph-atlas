@@ -3,11 +3,9 @@
 // Noto Serif CJK JP (docs/typefaces.md), so for those two forms draw what the character's own chip
 // already shows: the IVD figure a font gives the character alone (邦 U+90A6 U+E0103, MJ026242), and
 // the regional description that holds in Japan (邦's ⿰丰阝 of GHTJKV). Those are set apart as
-// `alike`. A Japanese shape with a 構形 of its own (臭 as ⿱自大) is still offered, since filing a
-// crop under it files it under that 構形. Any other character is drawn from Plangothic or Jigmo,
-// whose glyphs follow no one region, and keeps every form. For every character, a regional shape
-// written as the description of a figure the bar offers is that figure (臭's ⿱自犬 is MJ030291),
-// and the bar offers the figure alone, unless the shape has a 構形 of its own.
+// `alike`. Any other character is drawn from Plangothic or Jigmo, whose glyphs follow no one region,
+// and keeps every form. For every character, a regional shape written as the description of a figure
+// the bar offers is that figure (臭's ⿱自犬 is MJ030291), and the bar offers the figure alone.
 
 /** Whether both site faces draw `char` from Noto CJK JP. */
 export const notoDraws = char => {
@@ -23,8 +21,8 @@ export function sortForms(char, figures, shapes) {
   const drawn = notoDraws(char)
   const offered = drawn ? figures.filter(figure => !figure.default) : figures
   const described = new Set(offered.map(figure => figure.ids).filter(Boolean))
-  // A shape with a 構形 of its own stays: a figure files a crop under its character's 構形.
-  const same = shape => !('structure' in shape) && (described.has(shape.text) || (drawn && shape.regions.includes('J')))
+  const drawnAlike = shape => drawn && shape.regions.includes('J')
+  const same = shape => drawnAlike(shape) || described.has(shape.text)
   return {
     figures: offered,
     shapes: shapes.filter(shape => !same(shape)),
