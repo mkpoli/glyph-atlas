@@ -214,6 +214,8 @@ MAX_IMAGE_BYTES = 3_000_000
 IMAGE_TIMEOUT = 15.0
 # Pictures kept in memory, by total size of their data URLs.
 IMAGE_CACHE_BYTES = 24_000_000
+# A GIF frame decoded to a still, at most; a header may claim far more pixels than its data holds.
+MAX_GIF_PIXELS = 4_000_000
 IMAGE_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "image/webp"}
 # After reading code or a page the model tends to answer in prose, which JSON mode blanks out, so
 # each round of results ends with the answer's shape again.
@@ -1968,10 +1970,15 @@ def _png(width: int, height: int, rows: list[bytes], palette: bytes, transparent
 
 
 def gif_still(data: bytes) -> bytes:
-    """The first frame of a GIF as a PNG, its transparent colour kept."""
+    """The first frame of a GIF as a PNG of its whole screen, its transparent colour kept (GIF89a
+    spec, https://www.w3.org/Graphics/GIF/spec-gif89a.txt)."""
     if data[:6] not in (b"GIF87a", b"GIF89a") or len(data) < 13:
         raise ValueError("not a GIF")
-    flags = data[10]
+    screen_width, screen_height, flags, background = struct.unpack_from("<HHBB", data, 6)
+    if not screen_width or not screen_height:
+        raise ValueError("no pixels")
+    if screen_width * screen_height > MAX_GIF_PIXELS:
+        raise ValueError("the GIF is too large")
     at = 13
     palette = b""
     if flags & 0x80:
@@ -1983,20 +1990,24 @@ def gif_still(data: bytes) -> bytes:
             if data[at] == 0x21:
                 label = data[at + 1]
                 at += 2
-                if label == 0xF9 and data[at] >= 4 and data[at + 1] & 1:
-                    transparent = data[at + 4]
+                if label == 0xF9 and data[at] >= 4:
+                    transparent = data[at + 4] if data[at + 1] & 1 else None
+                elif label == 0x01:
+                    # Plain text is a graphic too, so it takes the control block before it.
+                    transparent = None
                 while data[at]:
                     at += data[at] + 1
                 at += 1
             elif data[at] == 0x2C:
-                width, height = struct.unpack_from("<HH", data, at + 5)
-                flags = data[at + 9]
+                left, top, width, height, flags = struct.unpack_from("<HHHHB", data, at + 1)
                 at += 10
                 if flags & 0x80:
                     palette = data[at:at + 3 * (2 << (flags & 7))]
                     at += len(palette)
                 if not palette or not width or not height:
                     raise ValueError("no colour table or no pixels")
+                if width * height > MAX_GIF_PIXELS:
+                    raise ValueError("the GIF is too large")
                 min_size = data[at]
                 at += 1
                 packed = bytearray()
@@ -2004,7 +2015,8 @@ def gif_still(data: bytes) -> bytes:
                     packed += data[at + 1:at + 1 + data[at]]
                     at += data[at] + 1
                 pixels = _lzw(bytes(packed), min_size, width * height)
-                pixels += bytes(width * height - len(pixels))
+                if len(pixels) < width * height:
+                    raise ValueError("the GIF is cut short")
                 rows = [pixels[row * width:(row + 1) * width] for row in range(height)]
                 if flags & 0x40:
                     order = [row for start, step in ((0, 8), (4, 8), (2, 4), (1, 2))
@@ -2013,7 +2025,15 @@ def gif_still(data: bytes) -> bytes:
                     for row, line in zip(order, rows):
                         placed[row] = line
                     rows = placed
-                return _png(width, height, rows, palette, transparent)
+                fill = transparent if transparent is not None else background
+                canvas = [bytearray((fill,)) * screen_width for _ in range(screen_height)]
+                for row, line in enumerate(rows[:max(0, screen_height - top)]):
+                    part = line[:max(0, screen_width - left)]
+                    canvas[top + row][left:left + len(part)] = part
+                # An index past the colour table is drawn black, so the PNG stays valid.
+                needed = 3 * (max(max(line) for line in canvas) + 1)
+                palette += bytes(max(0, needed - len(palette)))
+                return _png(screen_width, screen_height, [bytes(line) for line in canvas], palette, transparent)
             else:
                 break
     except (IndexError, struct.error):

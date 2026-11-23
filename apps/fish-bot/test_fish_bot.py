@@ -1668,6 +1668,39 @@ def test_a_gif_becomes_a_png_of_its_first_frame():
     assert [list(raw[row * 6 + 1:row * 6 + 6]) for row in range(17)] == [[(x + y) % 4 for x in range(5)] for y in range(17)]
     with pytest.raises(ValueError):
         fish_bot.gif_still(STRIPED_GIF[:40])
+    cut_short = "47494638396101000100800000000000ffffff2c00000000010001000002012c003b"
+    with pytest.raises(ValueError, match="cut short"):
+        fish_bot.gif_still(bytes.fromhex(cut_short))
+    huge = STRIPED_GIF[:38] + b"\xff\xff\xff\xff" + STRIPED_GIF[42:]
+    with pytest.raises(ValueError, match="too large"):
+        fish_bot.gif_still(huge)
+
+
+def _png_pixels(png):
+    chunks, at = {}, 8
+    while at < len(png):
+        size = int.from_bytes(png[at:at + 4], "big")
+        chunks[png[at + 4:at + 8]] = png[at + 8:at + 8 + size]
+        at += size + 12
+    width = int.from_bytes(chunks[b"IHDR"][:4], "big")
+    raw = zlib.decompress(chunks[b"IDAT"])
+    return [list(raw[row * (width + 1) + 1:(row + 1) * (width + 1)]) for row in range(len(raw) // (width + 1))], chunks
+
+
+def test_a_gif_still_keeps_the_screen_and_stays_a_valid_png():
+    # A white pixel at x = 1 on a 2x1 screen whose background is colour 0.
+    rows, _ = _png_pixels(fish_bot.gif_still(bytes.fromhex(
+        "47494638396102000100800000000000ffffff2c01000000010001000002024c01003b")))
+    assert rows == [[0, 1]]
+    # Index 2 with a two-colour table: the palette grows so the PNG stays valid.
+    rows, chunks = _png_pixels(fish_bot.gif_still(bytes.fromhex(
+        "47494638396101000100800000000000ffffff2c00000000010001000002025401003b")))
+    assert rows == [[2]] and len(chunks[b"PLTE"]) == 9
+    # Transparency set for a plain-text block, then an opaque control block: the image is opaque.
+    _, chunks = _png_pixels(fish_bot.gif_still(bytes.fromhex(
+        "47494638396101000100800000000000ffffff21f904010000000021010c00000000010001000101010001580021f9"
+        "0400000000002c00000000010001000002024401003b")))
+    assert b"tRNS" not in chunks
 
 
 def test_the_model_gets_pictures_after_the_json(monkeypatch):
