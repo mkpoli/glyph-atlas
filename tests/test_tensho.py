@@ -357,3 +357,26 @@ def test_a_page_is_numbered_by_its_place_in_the_manifest():
     assert {number: page["canvas"] for number, page in pages.items()} == {
         1: "https://x.org/canvas/0", 2: "https://x.org/canvas/1"}
     assert pages[1] == {"canvas": "https://x.org/canvas/0", "image": "https://x.org/iiif/0", "width": 10, "height": 20}
+
+
+def test_a_crops_page_is_found_by_its_image_service():
+    pages = {7: {"canvas": "https://x.org/canvas/6", "image": "https://x.org/iiif/6"},
+             8: {"canvas": "https://x.org/canvas/7", "image": "https://x.org/iiif/7"}}
+    row = lambda canvas, image: {"Image": "TE_1", "Canvas URI": canvas, "Image Info": f"{image}/info.json"}
+
+    # CODH's canvas 7 is the manifest's canvas 6, the seventh frame; its host may carry `www.`.
+    assert build_tensho_equivalents.frames_of(
+        [row("https://x.org/canvas/7", "https://www.x.org/iiif/6")], pages) == {"https://x.org/canvas/7": 7}
+    with pytest.raises(SystemExit, match="no image of the manifest"):
+        build_tensho_equivalents.frames_of([row("https://x.org/canvas/9", "https://x.org/iiif/9")], pages)
+    with pytest.raises(SystemExit, match="two images"):
+        build_tensho_equivalents.frames_of(
+            [row("https://x.org/canvas/7", "https://x.org/iiif/6"), row("https://x.org/canvas/7", "https://x.org/iiif/7")], pages)
+
+
+def test_a_page_named_as_replaced_is_a_frame_of_its_volume():
+    """`replaced_pages` counts frames: コマ41 of 巻3 is the canvas the library names 41."""
+    pages = {int(row["page"]): row for row in tensho.read_tsv(tensho.DEFAULT_DATA / "TE00024" / "pages.tsv")}
+    assert pages[41]["canvas"].endswith("/canvas/41")
+    first = tensho.read_tsv(tensho.DEFAULT_DATA / "TE00003" / "pages.tsv")[0]
+    assert (first["page"], first["canvas"].rsplit("/", 1)[-1]) == ("6", "5")

@@ -48,7 +48,8 @@ DATA = ROOT / "data" / "tensho"
 #: CODH's mark for a 親字 with no code point (凡例 2).
 GETA = "3013"
 #: Two boxes whose centres are closer than this are in one column: in the three volumes of 新撰篆書字典
-#: two neighbours in a column are 86 pixels apart at most, and two columns are never nearer than 140.
+#: two neighbours in a column are 86 pixels apart at most, and two columns are never nearer than 140; in
+#: 聯珠篆文 no two centres lie between 40 and 140 pixels apart.
 COLUMN = 120
 PAGE_FIELDS = ("page", "canvas", "image", "width", "height")
 
@@ -139,6 +140,22 @@ def write_pages(crops: list[dict], pages: dict[int, dict], target: Path, book: s
             writer.writerow([frames[canvas], canvas, page["image"], page["width"], page["height"]])
 
 
+def frames_of(source: list[dict], pages: dict[int, dict]) -> dict[str, int]:
+    """The frame of each canvas CODH's source table names, found by the image service of its row."""
+    services: dict[str, int] = {}
+    for number, page in pages.items():
+        if services.setdefault(page["image"], number) != number:
+            raise SystemExit(f"{page['image']}: the image of two canvases of the manifest")
+    frames: dict[str, int] = {}
+    for row in source:
+        service = row["Image Info"].replace("//www.", "//").removesuffix("/info.json")
+        if service not in services:
+            raise SystemExit(f"{row['Image']}: {service} is no image of the manifest")
+        if frames.setdefault(row["Canvas URI"], services[service]) != services[service]:
+            raise SystemExit(f"{row['Canvas URI']}: named for two images")
+    return frames
+
+
 def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
     """A book's entry of the source record, its crops in order and the pages of its manifest."""
     name = path.stem
@@ -157,9 +174,7 @@ def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
 
     # A page is found by its image service: a holder may number its canvases otherwise than CODH's table
     # does (国書データベース counts them from zero, the table from one).
-    frames = {page["image"]: number for number, page in pages.items()}
-    frame = {row["Canvas URI"]: frames[row["Image Info"].replace("//www.", "//").removesuffix("/info.json")]
-             for row in book.table("source")}
+    frame = frames_of(book.table("source"), pages)
     crops = crops_in_order(book, number=frame.__getitem__, pitch=COLUMN)
     for crop in crops:
         page = pages[frame[crop["canvas"]]]

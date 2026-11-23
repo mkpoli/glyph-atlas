@@ -3,7 +3,8 @@
 # seal characters as kSEAL_CCZSrc; `data/tensho/TE00039/characters.tsv` places its crops on them and
 # `pages.tsv` pins the pages of the 東方學デジタル圖書館 facsimile they were cut from. Books TE00024 to
 # TE00026 are the three volumes of 新撰篆書字典 (1924) on the 国立国会図書館's IIIF pages; their tables
-# place a crop on a seal character where its 親字 answers one only.
+# place a crop on a seal character where its 親字 answers one only. Book TE00003 is 聯珠篆文 (享和二序) on
+# the pages 新潟大学附属図書館 serves through 国書データベース, placed by the same rule.
 
 id: codh-tensho
 name: 篆書字体データセット
@@ -136,6 +137,8 @@ books:
       - https://kotenseki.nijl.ac.jp/biblio/100250413/
     manifest: https://kokusho.nijl.ac.jp/biblio/100250413/manifest
     image_licence: RS-NOC-CR
+    rights_evidence: https://collections.lib.niigata-u.ac.jp/collections/
+    checked: "2026-11-24"
     zip_sha256: 4a988683b39e3808253f7e6704a15a7a365894b62d19d862e4be2b588618e558
     crops: 6195
     production: printed
