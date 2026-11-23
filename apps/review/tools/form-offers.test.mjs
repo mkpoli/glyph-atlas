@@ -17,8 +17,14 @@ describe('form offers', () => {
   it("offers a figure in place of the regional shape that is its description", () => {
     const sorted = sortForms('臭', chouFigures, chouShapes)
     expect(sorted.figures.map(figure => figure.mj)).toEqual(['MJ030291'])
-    expect(sorted.shapes).toEqual([])
-    expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿱自犬', '⿱自大'])
+    expect(sorted.alike.shapes.map(shape => shape.text)).toEqual(['⿱自犬'])
+  })
+
+  it('keeps a shape with a 構形 of its own, and one only a set-aside figure describes', () => {
+    // ⿱自大 (J) files under 𦤀's 構形; the default MJ021299 it matches is set aside.
+    expect(sortForms('臭', chouFigures, chouShapes).shapes.map(shape => shape.text)).toEqual(['⿱自大'])
+    const shapes = [{ text: '⿱自大', regions: 'TV' }]
+    expect(sortForms('臭', chouFigures, shapes).shapes).toEqual(shapes)
   })
 
   it('offers a figure in place of its description for a character another font draws', () => {
