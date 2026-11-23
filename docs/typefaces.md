@@ -90,7 +90,7 @@ An upload writes one R2 object per file: 2127 for a whole build.
 
 ## Small seal
 
-The Atlas faces hold no small seal character. Sealie 1.3.1 Medium, its outlines enlarged 1.3 times to
+The Atlas faces hold no small seal character. Sealie 1.3.1 Medium with the correction of U+3EA9E that follows that release, its outlines enlarged 1.3 times to
 the size of a Han character beside it, draws the Small Seal block
 (U+3D000–U+3FC3F) as a build of its own, stored and served the same way under its own version
 (`SEAL_FONT_VERSIONS`, newest first): `seal/s.woff2` for the script legend's sample and `seal/000.woff2` onwards, 64
