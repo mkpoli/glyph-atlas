@@ -288,9 +288,15 @@ models asked without training when to speak judge it badly (Bhagtani et al.,
 lets its view frequency fall with each look
 (https://github.com/MaiM-with-u/MaiBot, `src/maisaka/turn_trigger`, read at b7f3682, 2026-11-19).
 
-She also reads along. When a room goes quiet after a few messages, she takes a look now and then
-(the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
-never files from these turns.
+She also reads along. She opens a room with unread lines at random times, on average 25 minutes after
+the first of them (`[chat] visit_minutes`; sooner after a question or a laugh, later when she lately
+spoke there, at most `visits_per_hour` in all), and waits for a burst to end. The model then rates
+its interest from 0 to 5: it speaks from 3, adds an emoji or a sticker from 2, and otherwise only
+reads. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
+[arXiv 2501.00383](https://arxiv.org/abs/2501.00383), 2024; its thresholds were set by trial and
+error, as are these) and GroupGPT splits the decision to chime in from the reply
+([arXiv 2603.01059](https://arxiv.org/abs/2603.01059), 2026). Each visit's interest and outcome are
+in the journal.
 
 Every evening from 21:00 JST she posts a digest in each language room listed in `[digest.rooms]`,
 wholly in the language set there, whatever the room's recent messages are written in: what the
@@ -328,8 +334,7 @@ URL context tool (run on Google's side, so the homeserver's loopback address is 
 https://ai.google.dev/gemini-api/docs/google-search and
 https://ai.google.dev/gemini-api/docs/url-context), code, issues, pull requests and commits in the
 community's repositories through GitHub, and her own memory of the rooms she reads. She gets up to four
-rounds of lookups per answer and `[lookup] per_hour` (120) across the bot; unasked turns never look
-anything up. MemGPT lets a model page through its memory with tools and reports that it often stops
+rounds of lookups per answer and `[lookup] per_hour` (120) across the bot. MemGPT lets a model page through its memory with tools and reports that it often stops
 early (Packer et al., [arXiv 2310.08560](https://arxiv.org/abs/2310.08560), 2023), so the recalled
 memory still comes with every turn.
 
@@ -351,7 +356,7 @@ runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/
 ```
 
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
-the newest few among its last lines (four when called, two when reading along) to the model as the
+the newest few among its last lines (four when called, two on a visit) to the model as the
 homeserver's thumbnails, 640 pixels wide, or 320 when a long screenshot passes 3 MB at 640.
 `gemini-4-hydrogen` reads PNG, JPEG and WebP inline and no GIF, so a GIF goes as a PNG of its first
 frame (https://ai.google.dev/gemini-api/docs/image-understanding). A posted picture also counts as a

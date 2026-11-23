@@ -106,6 +106,17 @@ TALK_QUIET_OTHERS = 2
 # Answers in one conversation before she needs to be called again, so two bots cannot keep it going.
 TALK_TURNS = 12
 FOLLOW_PER_HOUR = 40
+# Reading along: she opens a room with unread lines at random times, as a person checks a chat, and
+# the gap is drawn from an exponential around [chat] visit_minutes. A burst still under way is left
+# to finish first. Once there, the model rates how much it has to add, 0 to 5, and below these marks
+# its words, or its emoji and sticker, stay unsent: Inner Thoughts scores a thought 1 to 5 and voices
+# it past a threshold (Liu et al., arXiv 2501.00383, 2024; thresholds set by trial and error), and
+# GroupGPT keeps the decision to chime in apart from the reply (arXiv 2603.01059, 2026).
+VISIT_SHORTEST = 120.0
+VISIT_BURST = 20.0
+VISIT_BURST_WAIT = 180.0
+SAY_INTEREST = 3
+REACT_INTEREST = 2
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
@@ -213,7 +224,7 @@ MEMBER_COVERAGE = ("Counts and lists come from Matrix. Every QQ person here has 
 # A turn sees the newest pictures and stickers people posted among its last lines, as the
 # homeserver's thumbnails.
 IMAGES_CALLED = 4
-IMAGES_AMBIENT = 2
+IMAGES_VISIT = 2
 # Pictures a stretch of chat sends to memory, the newest ones people posted in it.
 IMAGES_MEMORY = 4
 # Fetches a memory call may make for pictures not cached yet, so a stalled media server holds up the
@@ -446,11 +457,8 @@ class Config:
     max_calls_per_user_per_hour: int = 5
     max_chats_per_hour: int = 120
     max_chats_per_user_per_hour: int = 20
-    ambient_chance: float = 0.2
-    ambient_quiet_seconds: int = 25
-    ambient_min_messages: int = 2
-    ambient_room_cooldown_seconds: int = 900
-    ambient_per_hour: int = 12
+    visit_minutes: float = 25.0
+    visits_per_hour: int = 8
     digest_hour: int = 21
     digest_rooms: tuple[tuple[str, str], ...] = ()
     digest_repos: tuple[str, ...] = ()
@@ -564,11 +572,8 @@ class Config:
             max_calls_per_user_per_hour=max(1, min(100, int(field(limits, "max_calls_per_user_per_hour", cls.max_calls_per_user_per_hour)))),
             max_chats_per_hour=max(1, min(2000, int(field(limits, "max_chats_per_hour", cls.max_chats_per_hour)))),
             max_chats_per_user_per_hour=max(1, min(500, int(field(limits, "max_chats_per_user_per_hour", cls.max_chats_per_user_per_hour)))),
-            ambient_chance=_clamp(_finite(field(chat, "ambient_chance", cls.ambient_chance), cls.ambient_chance), 0.0, 1.0),
-            ambient_quiet_seconds=max(0, min(600, int(field(chat, "ambient_quiet_seconds", cls.ambient_quiet_seconds)))),
-            ambient_min_messages=max(1, min(100, int(field(chat, "ambient_min_messages", cls.ambient_min_messages)))),
-            ambient_room_cooldown_seconds=max(0, int(field(chat, "ambient_room_cooldown_seconds", cls.ambient_room_cooldown_seconds))),
-            ambient_per_hour=max(0, min(1000, int(field(chat, "ambient_per_hour", cls.ambient_per_hour)))),
+            visit_minutes=_clamp(_finite(field(chat, "visit_minutes", cls.visit_minutes), cls.visit_minutes), 3.0, 1440.0),
+            visits_per_hour=max(0, min(1000, int(field(chat, "visits_per_hour", cls.visits_per_hour)))),
             digest_hour=max(0, min(23, int(field(digest, "hour", cls.digest_hour)))),
             digest_rooms=tuple(digest_rooms.items()),
             digest_repos=tuple(digest_repos),
@@ -637,6 +642,7 @@ class Act:
     issue: bool
     sticker: str = ""
     recap: bool = False
+    interest: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1713,10 +1719,18 @@ CHAT_TASKS = {
     "intro-elsewhere": ("Message {trigger} asks you to introduce yourself, but you do that only in {rooms}. "
                         "Say so in one short, friendly line in that message's language, without "
                         "introducing yourself here. `say` must not be empty."),
-    "ambient": ("Nobody called you; you are reading along. Most of the time stay quiet: empty `say`, no "
-                "react, no sticker. Join only when you have something fun, kind or helpful to add to the "
-                "last few messages: a short playful remark, a cute sticker, or an emoji on a message you "
-                "like. A reaction, or a sticker when you have any, usually beats words. Never bring up issues here."),
+    "visit": ("Nobody called you. You have just opened this room, as people do now and then, and message "
+              "{trigger} is the first line you have not read. First decide, as yourself, how much you want to "
+              "join in, and add it to the json object as \"interest\", 0 to 5: 0 nothing here for you, 1 fine to "
+              "read, 2 a line you would put an emoji on, 3 something you would chat about (a strange glyph or "
+              "picture you are curious about, something you know that fits, a joke to play along with, food, "
+              "naps, whales, news worth a cheer), 4 something you can really help with, 5 someone would miss "
+              "it if you said nothing. Many visits are 0 or 1. From 3, say one short line that adds something "
+              "new to the newest lines, a question of your own included; look a fact up first when you bring "
+              "one. At 2 an emoji or a sticker. Below that stay quiet: empty `say`, no react, no sticker. Do "
+              "not join a talk that has moved on, step between two people in something private, repeat what "
+              "someone said, or speak when the last line nobody asked for is yours. Never bring up issues "
+              "here, and leave \"recap\" false."),
 }
 
 
@@ -1935,6 +1949,13 @@ def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], name
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _interest(value: Any) -> int:
+    """How much she wants to join in, 0 when the model gave no usable number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 0
+    return max(0, min(5, int(value)))
+
+
 def parse_act(raw: str, count: int, stickers: Iterable[str] = ()) -> Act:
     """The model's chat turn, kept to what the room can take: a few short bubbles and one emoji."""
     data = _json_object(raw)
@@ -1960,7 +1981,7 @@ def parse_act(raw: str, count: int, stickers: Iterable[str] = ()) -> Act:
     sticker = data.get("sticker")
     sticker = sticker if isinstance(sticker, str) and sticker in set(stickers) else ""
     return Act(say=bubbles, react_to=react_to, react=react, issue=data.get("issue") is True, sticker=sticker,
-               recap=data.get("recap") is True)
+               recap=data.get("recap") is True, interest=_interest(data.get("interest")))
 
 
 def _lzw(data: bytes, min_size: int, count: int) -> bytes:
@@ -3326,11 +3347,11 @@ class Bot:
         self._room_chats: dict[str, list[float]] = {}
         self._recent_stickers: dict[str, list[str]] = {}
         self._sticker_at: dict[str, float] = {}
-        self._ambient: dict[str, dict[str, Any]] = {}
+        self._unread: dict[str, dict[str, Any]] = {}
         self._talks: dict[str, Talk] = {}
         self._follows: list[float] = []
         self._spoke_at: dict[str, float] = {}
-        self._ambient_turns: list[float] = []
+        self._visits: list[float] = []
         self._random = random.random
         self._aliases: dict[str, str] = {}
         self._alias_failed: dict[str, float] = {}
@@ -3594,11 +3615,24 @@ class Bot:
         sender = str(event.get("sender"))
         if self._hear(room_id, event_id, sender, body, addressed_elsewhere=reply_target(event) is not None):
             return
-        batch = self._ambient.setdefault(room_id, {"count": 0, "lively": False})
-        batch["count"] += 1
-        batch["lively"] = batch["lively"] or bool(LIVELY.search(body))
-        batch["event_id"] = event_id
-        batch["due"] = time.monotonic() + self.config.ambient_quiet_seconds
+        now = time.monotonic()
+        unread = self._unread.get(room_id)
+        if unread is None:
+            unread = self._unread[room_id] = {"first": event_id, "count": 0, "lively": False, "due": now + self._gap(room_id)}
+        unread["count"] += 1
+        unread["last"] = now
+        if not unread["lively"] and LIVELY.search(body):
+            # A question or a laugh, seen as a notification would be, brings the visit forward once.
+            unread["lively"] = True
+            unread["due"] = min(unread["due"], now + self._gap(room_id) / 2)
+
+    def _gap(self, room_id: str) -> float:
+        """Seconds until she next opens a room: random, and twice as long after she lately spoke there."""
+        mean = self.config.visit_minutes * 60
+        spoke = self._spoke_at.get(room_id)
+        if spoke is not None and time.monotonic() - spoke < 2 * mean:
+            mean *= 2
+        return max(VISIT_SHORTEST, min(3 * mean, -math.log(max(1e-9, 1.0 - self._random())) * mean))
 
     def _listen(self, room_id: str, partner: str) -> None:
         """She just spoke here, so the conversation is open and everything up to now is read."""
@@ -3663,8 +3697,32 @@ class Bot:
             except Exception:
                 log.exception("following in %s", room_id)
 
+    def visit(self) -> None:
+        """Open the rooms whose time has come, and let the model decide whether to join in."""
+        now = time.monotonic()
+        for room_id in [room for room, unread in self._unread.items() if unread["due"] <= now]:
+            unread = self._unread[room_id]
+            latest = unread.setdefault("latest", unread["due"] + VISIT_BURST_WAIT)
+            if now - unread["last"] < VISIT_BURST and now < latest:
+                unread["due"] = min(unread["last"] + VISIT_BURST, latest)
+                continue
+            self._visits = [at for at in self._visits if now - at < 3600]
+            if len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
+                unread["due"] = now + self._gap(room_id)
+                continue
+            self._visits.append(now)
+            del self._unread[room_id]
+            try:
+                act = self.turn(room_id, str(unread["first"]), task="visit")
+                done = [name for name, part in (("spoke", act.say), ("reacted", act.react), ("sticker", act.sticker))
+                        if part] if act is not None else []
+                log.info("visited %s: %s unread, interest %s, %s", room_id, unread["count"],
+                         act.interest if act is not None else "-", ", ".join(done) or "stayed quiet")
+            except Exception:
+                log.exception("visiting %s", room_id)
+
     def _sync_wait_ms(self) -> int:
-        dues = [batch["due"] for batch in self._ambient.values()]
+        dues = [unread["due"] for unread in self._unread.values()]
         dues += [talk.due for talk in self._talks.values() if talk.event_id]
         if not dues:
             return SYNC_TIMEOUT_MS
@@ -3683,25 +3741,7 @@ class Bot:
                 log.info("usage: %s", usage_report(row for row in self.store.usage(2) if row["day"] == self._reported_day))
             self._reported_day = day
         self.follow()
-        now = time.monotonic()
-        for room_id in [room for room, batch in self._ambient.items() if batch["due"] <= now]:
-            batch = self._ambient.pop(room_id)
-            if batch["count"] < self.config.ambient_min_messages and not batch["lively"]:
-                continue
-            spoke = self._spoke_at.get(room_id)
-            if spoke is not None and now - spoke < self.config.ambient_room_cooldown_seconds:
-                continue
-            chance = self.config.ambient_chance * (2 if batch["lively"] else 1)
-            if self._random() >= chance:
-                continue
-            self._ambient_turns = [at for at in self._ambient_turns if now - at < 3600]
-            if len(self._ambient_turns) >= self.config.ambient_per_hour or not self._chat_budget("", room_id):
-                continue
-            self._ambient_turns.append(now)
-            try:
-                self.turn(room_id, str(batch["event_id"]), task="ambient")
-            except Exception:
-                log.exception("joining in %s", room_id)
+        self.visit()
         try:
             self.consolidate()
         except Exception:
@@ -3946,11 +3986,12 @@ class Bot:
              rooms: str = "") -> Act | None:
         """Read the room, ask the model for one turn, and post what it says. Only a turn that owes
         an answer shows typing; an unasked one is mostly silent, as is a follow-up that may be for
-        someone else. Only an answer to a call or a follow-up may look things up."""
+        someone else."""
         talk = self._talks.get(room_id)
         if talk is not None:
             talk.event_id = ""
-        if task not in ("ambient", "follow"):
+        self._unread.pop(room_id, None)
+        if task not in ("visit", "follow"):
             self.matrix.typing(room_id, self.user_id)
         room_name, room_topic = self._room(room_id)
         try:
@@ -3959,6 +4000,8 @@ class Bot:
             log.warning("refreshing %s: %s", room_id, error)
         events = self.store.context(room_id, now_ms() + 60_000, CHAT_CONTEXT)
         trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
+        if trigger is None and task == "visit":
+            trigger = 0
         names = self._names(room_id, [str(row["sender"]) for row in events])
         try:
             facts = self.community.summary(room_id)
@@ -3972,18 +4015,20 @@ class Bot:
                               bot_user_id=self.user_id, stickers=offered,
                               recent=self._recent_stickers.get(room_id, []), rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
-                              images=self.pictures(events, IMAGES_AMBIENT if task == "ambient" else IMAGES_CALLED),
-                              lookup=self.lookup if task in ("called", "follow") else None,
-                              on_step=lambda: self.matrix.typing(room_id, self.user_id))
-        if task == "ambient":
-            act = dataclasses.replace(act, issue=False)
+                              images=self.pictures(events, IMAGES_VISIT if task == "visit" else IMAGES_CALLED),
+                              lookup=self.lookup if task in ("called", "follow", "visit") else None,
+                              on_step=(lambda: None) if task == "visit" else (lambda: self.matrix.typing(room_id, self.user_id)))
+        if task == "visit":
+            act = dataclasses.replace(act, issue=False, recap=False,
+                                      say=act.say if act.interest >= SAY_INTEREST else (),
+                                      react=act.react if act.interest >= REACT_INTEREST else "",
+                                      sticker=act.sticker if act.interest >= REACT_INTEREST else "")
         if act.sticker and act.sticker not in offered:
             act = dataclasses.replace(act, sticker="")
-        sender = "" if trigger is None or task == "ambient" else str(events[trigger]["sender"])
+        sender = "" if trigger is None or task == "visit" else str(events[trigger]["sender"])
         if act.recap and task in ("called", "follow") and self.store.recap_material(self.active_rooms)[0]:
             self.post_recap(room_id, reply_to=event_id, request=self._request(events, trigger))
             self._spoke_at[room_id] = time.monotonic()
-            self._ambient.pop(room_id, None)
             self._listen(room_id, sender)
             return act
         if act.recap and not act.say and task in ("called", "follow"):
@@ -3994,7 +4039,6 @@ class Bot:
         self.perform(room_id, event_id, act, events, reply_to=reply_to)
         if act.say or act.react or act.sticker:
             self._spoke_at[room_id] = time.monotonic()
-            self._ambient.pop(room_id, None)
         if act.say or act.sticker:
             self._listen(room_id, sender)
         return act
