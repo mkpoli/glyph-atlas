@@ -26,10 +26,12 @@ const upTo = (list, n) => list.filter(h => h.r < n)
 
 const isSelector = ch => ch !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(ch)
 
-/** The character a variation sequence varies, or null for any other key. */
+/** The character a variation sequence varies, or null for any other key. Asked of every key the
+ *  composer looks up, so a key of any other length is told at once. */
 export const variantBase = key => {
-  const [base, selector, ...rest] = key
-  return isSelector(selector) && !rest.length ? base : null
+  if (key.length < 2 || key.length > 4) return null
+  const base = String.fromCodePoint(key.codePointAt(0)), selector = key.slice(base.length)
+  return isSelector(selector) ? base : null
 }
 
 /** `⿰亻⿱亠女` as ['⿰', '亻', ['⿱', '亠', '女']], each operator taking `arity(op)` operands. */
