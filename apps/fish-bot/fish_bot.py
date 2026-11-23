@@ -29,8 +29,10 @@ import math
 import os
 import random
 import re
+import signal
 import sqlite3
 import struct
+import sys
 import time
 import tomllib
 import unicodedata
@@ -106,6 +108,11 @@ TALK_QUIET_OTHERS = 2
 # Answers in one conversation before she needs to be called again, so two bots cannot keep it going.
 TALK_TURNS = 12
 FOLLOW_PER_HOUR = 40
+# Typing: a bubble takes about as long as a quick typist needs for it, shown as typing in the room. The
+# time the model took to answer a call, shown as typing too, counts towards the first one.
+TYPING_HAN_PER_SECOND = 5.0
+TYPING_LATIN_PER_SECOND = 11.0
+TYPING_LONGEST = 6.0
 # Welcoming: a person is new when no public room has had them before, as a member or a writer, under
 # this account or another of the same name. They are greeted once, after a wait in which a join and
 # a first line come together. More than WELCOME_FLOOD at once is a bridge syncing its member list.
@@ -792,7 +799,7 @@ class Matrix:
             payload: dict[str, Any] = {}
             try:
                 payload = json.loads(error.read() or b"{}")
-            except ValueError:
+            except (ValueError, OSError, http.client.HTTPException):
                 pass
             retry = payload.get("retry_after_ms")
             code = payload.get("errcode")
@@ -801,7 +808,7 @@ class Matrix:
                               code if isinstance(code, str) else None) from None
         except ValueError as error:
             raise MatrixError(None, f"the homeserver answered with JSON that could not be read: {error}") from None
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
             raise MatrixError(None, str(getattr(error, "reason", error))) from None
 
     def whoami(self) -> str:
@@ -953,10 +960,11 @@ class Matrix:
         raise MatrixError(None, "the image is too large")
 
     def typing(self, room_id: str, user_id: str, *, timeout_ms: int = 15_000) -> None:
+        """Show typing for a while, or stop showing it when the time is 0."""
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id, safe='')}"
                 f"/typing/{urllib.parse.quote(user_id, safe='')}")
         try:
-            self.call("PUT", path, body={"typing": True, "timeout": timeout_ms})
+            self.call("PUT", path, body={"typing": True, "timeout": timeout_ms} if timeout_ms else {"typing": False})
         except MatrixError:
             pass
 
@@ -1996,6 +2004,12 @@ def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], name
         "task": CHAT_TASKS[task].replace("{trigger}", str(trigger)).replace("{rooms}", rooms),
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def typing_seconds(text: str) -> float:
+    """How long a quick typist takes for a line."""
+    wide = sum(1 for char in text if unicodedata.east_asian_width(char) in "WF")
+    return min(TYPING_LONGEST, wide / TYPING_HAN_PER_SECOND + (len(text) - wide) / TYPING_LATIN_PER_SECOND)
 
 
 def _interest(value: Any) -> int:
@@ -3398,6 +3412,8 @@ class Bot:
         self._recent_stickers: dict[str, list[str]] = {}
         self._sticker_at: dict[str, float] = {}
         self._unread: dict[str, dict[str, Any]] = {}
+        self._outbox: dict[str, list[dict[str, Any]]] = {}
+        self._pace = 1.0
         self._newcomers: dict[str, dict[str, Any]] = {}
         self._welcomes: list[float] = []
         self._rooms_met: set[str] = set()
@@ -3584,6 +3600,10 @@ class Bot:
             if call.mode == "forget":
                 self.store.forget_person(sender)
                 self._newcomers.pop(sender, None)
+                for room, box in list(self._outbox.items()):
+                    box[:] = [item for item in box if item["task"] != "welcome"]
+                    if not box:
+                        del self._outbox[room]
             else:
                 self.store.remember_person(sender)
         if isinstance(ts, int) and now_ms() - ts > self.config.call_window_seconds * 1000:
@@ -3906,6 +3926,7 @@ class Bot:
 
     def _sync_wait_ms(self) -> int:
         dues = [unread["due"] for unread in self._unread.values()]
+        dues += [box[0]["due"] for box in self._outbox.values() if box]
         dues += [waiting["due"] for waiting in self._newcomers.values()]
         dues += [talk.due for talk in self._talks.values() if talk.event_id]
         if not dues:
@@ -3915,6 +3936,7 @@ class Bot:
 
     def tick(self) -> None:
         """Post the day's digest when it is due, then look at each room that has gone quiet."""
+        self.deliver_all()
         try:
             self.digest()
         except Exception:
@@ -4164,6 +4186,7 @@ class Bot:
             return
         self._record_call(sender)
         self._last_answer[room_id] = time.monotonic()
+        self.deliver(room_id, everything=True)
         self._answer(room_id, event_id, Call(mode="auto", prompt=prompt))
 
     def turn(self, room_id: str, event_id: str, *, task: str, reply_to: str | None = None,
@@ -4175,7 +4198,11 @@ class Bot:
         if talk is not None:
             talk.event_id = ""
         self._unread.pop(room_id, None)
-        if task not in ("visit", "follow"):
+        # What she is still typing goes out first, so she reads the room with it and answers after it.
+        self.deliver(room_id, everything=True)
+        started = time.monotonic()
+        shown = task not in ("visit", "follow", "welcome")
+        if shown:
             self.matrix.typing(room_id, self.user_id)
         room_name, room_topic = self._room(room_id)
         try:
@@ -4222,7 +4249,9 @@ class Bot:
         if task == "follow" and any(row["sender"] != self.user_id for row in events[(trigger or 0) + 1:]):
             # Others spoke after the line she answers, so the answer says which line it is for.
             reply_to = event_id
-        self.perform(room_id, event_id, act, events, task=task, reply_to=reply_to)
+        self.perform(room_id, event_id, act, events, task=task, reply_to=reply_to, typed=time.monotonic() - started if shown else 0.0)
+        if shown and room_id not in self._outbox:
+            self.matrix.typing(room_id, self.user_id, timeout_ms=0)
         if act.say or act.react or act.sticker:
             self._spoke_at[room_id] = time.monotonic()
         if act.say or act.sticker:
@@ -4279,8 +4308,9 @@ class Bot:
         return f"data:{kind};base64,{base64.b64encode(data).decode()}"
 
     def perform(self, room_id: str, event_id: str, act: Act, events: list[sqlite3.Row],
-                *, task: str, reply_to: str | None = None) -> None:
-        """Post a turn: the emoji first, as a person reacts before typing, then the bubbles."""
+                *, task: str, reply_to: str | None = None, typed: float = 0.0) -> None:
+        """Post a turn: the emoji first, as a person reacts before typing, then the bubbles one by one
+        as they get typed. `typed` is how long the room has seen her type already."""
         key = hashlib.sha256(f"{task} {event_id}".encode()).hexdigest()[:40]
         if act.react and act.react_to is not None and act.react_to < len(events):
             target = str(events[act.react_to]["event_id"])
@@ -4289,28 +4319,55 @@ class Bot:
                 self.matrix.send(room_id, content, f"fish-r-{key}", "m.reaction")
             except MatrixError as error:
                 log.warning("reaction in %s: %s", room_id, error)
-        lines = [part for line in act.say for part in split_message(line)]
-        for number, line in enumerate(lines):
+        due = time.monotonic()
+        box = self._outbox.setdefault(room_id, [])
+        for number, line in enumerate(part for said in act.say for part in split_message(said)):
             content: dict[str, Any] = {"msgtype": "m.text", "body": line}
             if number == 0 and reply_to:
                 content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
-            try:
-                self.matrix.send(room_id, content, f"fish-s{number}-{key}")
-            except MatrixError as error:
-                log.warning("message in %s: %s", room_id, error)
-                return
+            pause = typing_seconds(line) * (0.8 + 0.4 * self._random()) * self._pace
+            due += max(0.0, pause - typed)
+            typed = 0.0
+            box.append({"due": due, "content": content, "key": f"fish-s{number}-{key}", "type": "m.room.message", "task": task})
         uploaded = self.store.stickers().get(act.sticker) if act.sticker else None
         if uploaded is not None:
             mxc, size = uploaded
             sticker = next(item for item in STICKERS if item.name == act.sticker)
             content = {"body": sticker.meaning, "url": mxc, "info": {
                 "w": STICKER_SIZE, "h": STICKER_SIZE, "mimetype": "image/png", "size": size}}
+            box.append({"due": due + 1.0 * self._pace, "content": content, "key": f"fish-k-{key}", "type": "m.sticker",
+                        "sticker": act.sticker, "task": task})
+        self.deliver(room_id)
+
+    def deliver(self, room_id: str, *, everything: bool = False) -> None:
+        """Send a room's bubbles whose time has come, and show typing until the next one."""
+        box = self._outbox.get(room_id, [])
+        while box and (everything or box[0]["due"] <= time.monotonic()):
+            item = box[0]
             try:
-                self.matrix.send(room_id, content, f"fish-k-{key}", "m.sticker")
-                self._recent_stickers[room_id] = [*self._recent_stickers.get(room_id, [])[-2:], act.sticker]
-                self._sticker_at[room_id] = time.monotonic()
+                self.matrix.send(room_id, item["content"], item["key"], item["type"])
             except MatrixError as error:
-                log.warning("sticker in %s: %s", room_id, error)
+                log.warning("message in %s: %s", room_id, error)
+                box.clear()
+                break
+            # Taken out only once sent: a stop in between sends it again, and its key keeps it single.
+            box.pop(0)
+            if item.get("sticker"):
+                self._recent_stickers[room_id] = [*self._recent_stickers.get(room_id, [])[-2:], item["sticker"]]
+                self._sticker_at[room_id] = time.monotonic()
+        if not box:
+            self._outbox.pop(room_id, None)
+            return
+        if box[0]["type"] == "m.room.message":
+            self.matrix.typing(room_id, self.user_id,
+                               timeout_ms=int(max(1.0, box[0]["due"] - time.monotonic() + 1.0) * 1000))
+
+    def deliver_all(self, *, everything: bool = False) -> None:
+        for room_id in list(self._outbox):
+            if everything or not self._outbox[room_id] or self._outbox[room_id][0]["due"] <= time.monotonic():
+                self.deliver(room_id, everything=everything)
+                if room_id not in self._outbox:
+                    self.matrix.typing(room_id, self.user_id, timeout_ms=0)
 
     def _stickers_now(self, room_id: str) -> dict[str, tuple[str, int]]:
         """The stickers she may send in a room this turn: none while her last one there is recent."""
@@ -4671,9 +4728,15 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 response = matrix.sync(since, timeout_ms=0)
                 bot.process(response)
+                bot.deliver_all(everything=True)
                 bot.state.save(bot._token(response))
             return
-        bot.run()
+        # systemd stops the bot with SIGTERM: what she is still typing goes out before it exits.
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+        try:
+            bot.run()
+        finally:
+            bot.deliver_all(everything=True)
     finally:
         store.close()
 

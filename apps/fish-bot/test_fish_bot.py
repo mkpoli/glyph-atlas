@@ -44,6 +44,7 @@ class FakeMatrix:
         self.events = []
         self.uploads = []
         self.typed = []
+        self.stopped = []
         self.transactions = []
 
     def whoami(self):
@@ -73,7 +74,10 @@ class FakeMatrix:
         return "$sent"
 
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
-        self.typed.append(room_id)
+        if timeout_ms:
+            self.typed.append(room_id)
+        else:
+            self.stopped.append(room_id)
 
     def canonical_alias(self, room_id):
         return {"!welcome:example": "#welcome:example"}.get(room_id, "")
@@ -199,6 +203,7 @@ def make_bot(tmp_path, *, decision_value=None, github=None, config=None, matrix=
     fake_matrix = matrix or FakeMatrix()
     bot = fish_bot.Bot(config, store, fake_matrix, FakeGemini(decision_value, act=act), github,
                        fish_bot.State(tmp_path / "state.json"))
+    bot._pace = 0.0
     return bot, fake_matrix, store
 
 
@@ -1195,6 +1200,120 @@ def test_welcoming_can_be_turned_off(tmp_path, monkeypatch):
     bot, _, _, _ = door(tmp_path, monkeypatch, welcome=False)
     arrive(bot, joins("@new:example"))
     assert bot._newcomers == {}
+
+
+def typist(tmp_path, monkeypatch, *lines, **kwargs):
+    bot, matrix, store, clock = reading_bot(tmp_path, monkeypatch, act_value=act(*lines, interest=4, **kwargs))
+    bot._pace = 1.0
+    return bot, matrix, store, clock
+
+
+def test_types_each_bubble_before_it_goes_out(tmp_path, monkeypatch):
+    first, second = "我" * 10, "o" * 22
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, first, second)
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    assert matrix.sent == [] and matrix.typed == [ROOM] and bot._sync_wait_ms() == 2000
+    clock["now"] += 2
+    bot.tick()
+    assert [content["body"] for _, content, _ in matrix.sent] == [first] and matrix.typed == [ROOM, ROOM]
+    clock["now"] += 2
+    bot.tick()
+    assert [content["body"] for _, content, _ in matrix.sent] == [first, second] and matrix.stopped == [ROOM]
+    assert bot._outbox == {}
+
+
+def test_the_models_time_counts_as_typing_the_answer_to_a_call(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "我" * 10, "我" * 10)
+    thinking = bot.gemini.act
+
+    def slow(*args, **kwargs):
+        clock["now"] += 5
+        return thinking(*args, **kwargs)
+
+    bot.gemini.act = slow
+    call = event("大肥魚?", event_id="$call")
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+    assert len(matrix.sent) == 1 and bot._sync_wait_ms() == 2000
+    again = event("大肥魚!", event_id="$again")
+    bot.ingest(ROOM, again, backfilled=False)
+    bot.answer(ROOM, again)
+    assert len(matrix.sent) == 3, "what she was still typing goes out before the next answer"
+
+
+def test_a_failed_bubble_drops_the_rest(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "one", "two")
+
+    def broken(*args, **kwargs):
+        raise fish_bot.MatrixError(500, "down")
+
+    matrix.send = broken
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    clock["now"] += 10
+    bot.tick()
+    assert bot._outbox == {}
+
+
+def test_a_stop_sends_what_she_is_still_typing(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "我" * 10, "我" * 10)
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    assert matrix.sent == []
+    bot.deliver_all(everything=True)
+    assert len(matrix.sent) == 2
+
+
+def test_a_cut_answer_from_the_homeserver_is_a_matrix_error(monkeypatch):
+    def cut(request, timeout):
+        raise fish_bot.http.client.IncompleteRead(b"half")
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", cut)
+    matrix = fish_bot.Matrix("http://127.0.0.1:1", "token")
+    matrix.typing(ROOM, USER)
+    with pytest.raises(fish_bot.MatrixError):
+        matrix.whoami()
+
+
+def test_a_stop_in_the_middle_of_a_bubble_sends_it_again(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "one", "two")
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    send = matrix.send
+
+    def stopped(*args, **kwargs):
+        raise SystemExit(0)
+
+    matrix.send = stopped
+    clock["now"] += 10
+    with pytest.raises(SystemExit):
+        bot.tick()
+    matrix.send = send
+    bot.deliver_all(everything=True)
+    assert [content["body"] for _, content, _ in matrix.sent] == ["one", "two"]
+
+
+def test_forgetting_cancels_a_welcome_being_typed(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    bot._pace = 1.0
+    arrive(bot, event("hi, I am Nagisa", sender="@new:example", event_id="$hi"))
+    clock["now"] += 41
+    bot.tick()
+    assert [item["task"] for item in bot._outbox[ROOM]] == ["welcome"]
+    arrive(bot, event("!fish forget me", sender="@new:example", event_id="$forget"))
+    bot.deliver_all(everything=True)
+    assert [content["m.relates_to"]["m.in_reply_to"]["event_id"] for _, content, _ in matrix.sent] == ["$forget"]
+
+
+def test_a_line_takes_as_long_as_its_script():
+    assert fish_bot.typing_seconds("我" * 10) == 2.0
+    assert fish_bot.typing_seconds("o" * 22) == 2.0
+    assert fish_bot.typing_seconds("我" * 500) == fish_bot.TYPING_LONGEST
 
 
 def test_forgetting_cancels_a_welcome_and_a_call_keeps_its_own_words(tmp_path, monkeypatch):

@@ -277,6 +277,15 @@ and by its sender and opening text when it is older. She introduces herself
 only when asked (`!fish 自我介紹`, or 「大肥魚，自我介紹一下」), and only in the rooms listed in
 `bot.intro_rooms` (歡迎 · Welcome and 談話 · Chatting); elsewhere she points to them.
 
+She types. Each bubble goes out after the time a quick typist needs for it (five Han characters or
+eleven Latin ones a second, six seconds at most, a little random), with the room showing her typing;
+while she works on an answer to a call that already counts. The bubbles wait in a queue, so other
+rooms are read meanwhile. Typing shows on Matrix. continuwuity 26.9 does not pass typing on to the
+bridges; 26.11 does (commit 7ce47be4, 2026-10-06, in its alphas when read on 2026-11-24), and
+mautrix-discord then shows it for accounts logged in to it, as hers is. mautrix-telegram v26.10
+passes on no typing for relayed accounts, and QQ's bot API has none for groups
+(@tencent-connect/qqbot-nodejs 1.0.6, `sendTyping`).
+
 She stays in a conversation. For four minutes after she speaks, she reads each new line in that room
 after a pause of a few seconds and decides whether it is for her: a follow-up, a correction such as
 "I mean the whole server!", or a thank-you gets an answer or an emoji without anyone naming her
