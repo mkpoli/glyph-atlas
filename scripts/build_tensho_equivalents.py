@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-import re
 import sys
 import unicodedata
 from collections import Counter, defaultdict
@@ -59,14 +58,6 @@ def unified(parent: str) -> str:
     return f"{ord(unicodedata.normalize('NFC', chr(int(parent, 16)))):04X}"
 
 
-def canvas_number(canvas: str) -> int:
-    """The number of a canvas of a IIIF manifest, from its URI."""
-    number = re.search(r"/canvas/(\d+)$", canvas)
-    if number is None:
-        raise SystemExit(f"{canvas}: not a numbered canvas")
-    return int(number.group(1))
-
-
 def equivalents(path: Path) -> dict[str, list[str]]:
     """The seal characters of each Han character that is a `kSEAL_MCJK`, as hex code points."""
     held: dict[str, list[str]] = defaultdict(list)
@@ -91,11 +82,12 @@ def place(crops: list[dict], seals: dict[str, list[str]]) -> None:
 
 
 def manifest_pages(manifest: dict) -> dict[int, dict]:
-    """The id, image service and size of every canvas of a Presentation 2 manifest, by canvas number."""
+    """The id, image service and size of every canvas of a Presentation 2 manifest, by its place in the
+    manifest counted from one, the holder's frame number."""
     pages: dict[int, dict] = {}
-    for canvas in manifest["sequences"][0]["canvases"]:
+    for number, canvas in enumerate(manifest["sequences"][0]["canvases"], start=1):
         resource = canvas["images"][0]["resource"]
-        pages[canvas_number(canvas["@id"])] = {
+        pages[number] = {
             "canvas": canvas["@id"], "image": resource["service"]["@id"].rstrip("/"),
             "width": int(resource["width"]), "height": int(resource["height"]),
         }
@@ -131,19 +123,20 @@ def write(crops: list[dict], target: Path, book: str, title: str, release: str) 
 
 def write_pages(crops: list[dict], pages: dict[int, dict], target: Path, book: str, manifest: str) -> None:
     header = (
-        f"# The pages that hold a crop of book {book}, in the order of the book. page is the number of the",
-        f"# canvas in {manifest};",
+        f"# The pages that hold a crop of book {book}, in the order of the book. page is the place of the",
+        f"# canvas in {manifest}, counted from one;",
         "# canvas is its id, image its Image API service and width and height its size, as the manifest states",
         "# them. Written by scripts/build_tensho_equivalents.py.",
     )
-    canvases = sorted({crop["canvas"] for crop in crops}, key=canvas_number)
+    frames = {page["canvas"]: number for number, page in pages.items()}
+    canvases = sorted({crop["canvas"] for crop in crops}, key=frames.__getitem__)
     with target.open("w", encoding="utf-8", newline="") as handle:
         handle.write("\n".join(header) + "\n")
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(PAGE_FIELDS)
         for canvas in canvases:
-            page = pages[canvas_number(canvas)]
-            writer.writerow([canvas_number(canvas), canvas, page["image"], page["width"], page["height"]])
+            page = pages[frames[canvas]]
+            writer.writerow([frames[canvas], canvas, page["image"], page["width"], page["height"]])
 
 
 def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
@@ -162,9 +155,14 @@ def read(path: Path, record: dict) -> tuple[dict, list[dict], dict[int, dict]]:
         raise SystemExit(f"{name}: its pages are not all of {url}")
     pages = manifest_pages(fetch_manifest(url))
 
-    crops = crops_in_order(book, number=canvas_number, pitch=COLUMN)
+    # A page is found by its image service: a holder may number its canvases otherwise than CODH's table
+    # does (国書データベース counts them from zero, the table from one).
+    frames = {page["image"]: number for number, page in pages.items()}
+    frame = {row["Canvas URI"]: frames[row["Image Info"].replace("//www.", "//").removesuffix("/info.json")]
+             for row in book.table("source")}
+    crops = crops_in_order(book, number=frame.__getitem__, pitch=COLUMN)
     for crop in crops:
-        page = pages[canvas_number(crop["canvas"])]
+        page = pages[frame[crop["canvas"]]]
         crop["canvas"] = page["canvas"]
         if crop["x"] + crop["w"] > page["width"] or crop["y"] + crop["h"] > page["height"]:
             raise SystemExit(f"{crop['image']}: a box lies off its page of {page['width']} x {page['height']}")
