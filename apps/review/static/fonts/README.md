@@ -49,9 +49,12 @@ Sealie draws the small seal characters. Its files are served from R2 beside the 
   Its licence header calls it "Panorama Gothic Seal Draft … Generated glyph drawings" and its name
   table "simplified geometric SVG source": the glyphs are generated drawings of the seal forms, not
   tracings of a print of 説文解字.
-- Source: the release asset `Sealie-Medium.ttf`, SHA-256
-  `69fd3621e8fa5d54e159f134fc05201bc74e905211395923ce28866340642b5f`, which is the hash the release's
-  `font-hashes.json` gives. `scripts/build_seal_font.py` fetches it, checks the hash, and writes the
+- Source: `Sealie-Medium.ttf` as iebb/sealie's own build workflow made it for commit `c8d4a98` (run
+  44912812191), SHA-256 `4c1a5f2e118c47bb7bd604848e65278d412b1876bc52145850b2e36d43e60027`. That commit
+  follows release 1.3.1 by 38 minutes and differs from it in U+3EA9E alone, whose left 匕 gains its second
+  stroke. No release holds it yet, so the file is fetched from a snapshot release of a fork,
+  <https://github.com/mkpoli/sealie/releases/tag/v1.3.1-c8d4a98>; the next release of iebb/sealie replaces
+  it. `scripts/build_seal_font.py` fetches it, checks the hash, and writes the
   build, `src/seal-font.css` and the build's name in `apps/cloudflare/src/typefaceVersions.ts`.
 - Outlines: Sealie's forms fill about half the width and three quarters of the height of their square,
   and beside Han text of the same size read as smaller and lighter letters. The build enlarges every
