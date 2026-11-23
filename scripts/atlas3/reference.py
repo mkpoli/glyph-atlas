@@ -26,9 +26,10 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   the shard of the reading (SUMMARY_DIGITS). A kana search reads the one shard for the kanji it lists.
 - `ids/<shard>.json.gz`: each character's ideographic descriptions, regional shapes and 構形
   (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
-  character (IDS_DIGITS). A regional shape is a spelling of its character's 構形. A description the
-  site names a character or a form by
-  (`export_character_variants.py --described`) is a key of its own, with its 構形.
+  character (IDS_DIGITS). A regional shape is a spelling of its character's 構形. A small seal
+  character has no description and its Han equivalent's 構形. A description the site names a
+  character or a form by (`export_character_variants.py --described`) is a key of its own, with its
+  構形.
 - `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
   which a `structures` row records.
 - `names.json.gz`: every card's name and how often it occurs, for a search by name or code point.
@@ -583,6 +584,11 @@ def put_ids(objects, notes):
         structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), json.loads(shapes) if shapes else None,
                                                      [structure.id, structure.label] if structure else None]
         notes["descriptions with a structure" if is_sequence(char) else "characters with a structure"] += structure is not None
+    # A small seal character has no description and the structure of its Han equivalent.
+    for seal in structure_layer.seal_equivalents():
+        if structure := structure_layer.for_character(seal):
+            structures[shard(seal, IDS_DIGITS)][seal] = [[], None, [structure.id, structure.label]]
+            notes["seal characters with a structure"] += 1
     for key, chars in structures.items():
         objects.put(f"{IDS}{key}.json.gz", compact(dict(sorted(chars.items()))))
     objects.put(STRUCTURE, compact({"scheme": structure_layer.SCHEME, "version": structure_layer.VERSION,

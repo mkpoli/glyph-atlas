@@ -61,6 +61,10 @@ SLOTS = {"⿰": ("left", "right"), "⿱": ("top", "bottom"),
 #: 新字体 to 旧字体 (㠀 and 島). CJKVI's non-cognate gives two characters that only look alike, and
 #: keeps them apart whatever else is stated (杮 and 柿).
 SAME = frozenset({"z"})
+#: Unicode's Seal block, and the source of the 異体字 graph that states each seal character's
+#: equivalent.
+SEAL = range(0x3D000, 0x3FC40)
+SEAL_SOURCE = "unicode-ucd"
 APART = "non-cognate"
 #: The level of the IRG's unifiable list this layer reads. A level-2 entry lists characters its
 #: variation tells apart (壬 and 王: 任 and 仼).
@@ -294,10 +298,26 @@ def _own(char: str) -> Structure | None:
     return next((from_tree(candidate) for candidate in candidates if candidate in han_components._sequences()), None)
 
 
+@cache
+def seal_equivalents() -> dict[str, str]:
+    """Each small seal character's Han equivalent, as Unicode's SealSources.txt gives it (kSEAL_MCJK,
+    the `small-seal` rows of the 異体字 graph from unicode-ucd). The value follows the seal form's
+    own composition: 𽀅 has 叓 where 吏 is written today, and 𾲟 has 臭."""
+    found = {}
+    for row in refs.variant_edges():
+        if row["relation"] == "small-seal" and row["source"] == SEAL_SOURCE:
+            seal, han = (row["a"], row["b"]) if ord(row["a"][0]) in SEAL else (row["b"], row["a"])
+            found[seal] = han
+    return found
+
+
 def for_character(char: str) -> Structure | None:
     """The structure of a character: its own (`_own`), or that of the character it joins as one
-    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬)."""
+    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬). A small seal character has its Han
+    equivalent's (`seal_equivalents`); 書体 never parts two forms of one composition."""
     char = unicodedata.normalize("NFC", char)
+    if han := seal_equivalents().get(char):
+        return for_character(han)
     head = _joined().get(char) or _joined().get(_whole(char))
     return _own(head) if head else _own(char)
 
