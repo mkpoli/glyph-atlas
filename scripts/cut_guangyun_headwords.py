@@ -24,7 +24,8 @@ correction kept beside it, and an IDS for a headword Unicode lacks.
 
 An opening whose leaves the readers do not bear out is tried as the leaves next to them, as far
 as the copy's `search` reaches, and read as those the readers read most of; the openings after it
-follow from there, since a scan that skips or repeats an opening stays so far off.
+follow from there, since a scan that skips or repeats an opening stays so far off. A headword the
+scan shows twice is cut from the first opening that shows it.
 
 `OUTPUT` becomes a dataset: one document per volume, a page per opening with a kept headword, a
 line and a unit per headword, their boxes on the opening's image at its own size. `--volumes` and
@@ -215,6 +216,7 @@ def main() -> int:
     reader_of = readers(classifier, second)
 
     documents, pages, lines, units, report = [], [], [], [], {}
+    cut: set[str] = set()
     totals = defaultdict(int)
     enlarge = int(copy["enlarge"]) if args.enlarge is None else args.enlarge
     scale = float(copy["scale"]) if args.scale is None else args.scale
@@ -306,6 +308,10 @@ def main() -> int:
                             if not cell.detected or verdict is False or (not verdict and cell.error >= fit):
                                 continue
                             line_id = f"gy-{copy['id']}:{entry.entry_id}"
+                            if line_id in cut:
+                                counts["repeated"] = counts.get("repeated", 0) + 1
+                                continue  # the scan shows this leaf on an earlier opening too
+                            cut.add(line_id)
                             box = shrunk(cell.box, enlarge)
                             row = entry.row
                             lines.append(Line(id=line_id, page_id=page.id, seq=kept_here + counts["kept"], vertical=True, box=box,
