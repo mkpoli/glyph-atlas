@@ -6,7 +6,7 @@
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
   import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, setReading, stretch } from '../lib/cropReadings.js'
-  import { clearWord, setWord, wordChoices } from '../lib/cropWords.js'
+  import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
   import { t } from '../lib/i18n.svelte.js'
   import { signedInUser } from '../lib/session.svelte.js'
@@ -161,6 +161,12 @@
     return () => { active = false; clearTimeout(timer) }
   })
 
+  // The word the run is saved with: the one chosen here, else the reader's own, with the evidence they gave it.
+  // Nothing for a word that is another reader's, or that readers dispute.
+  function wordText() {
+    const form = probable ? 'probable' : 'certain'
+    return chosen ? { id: chosen, form, method } : chosen === null ? null : held?.word ? { id: held.word, form } : undefined
+  }
   async function save() {
     if (busy) return
     if (!reads) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
@@ -169,14 +175,8 @@
       await arriving
       const others = new Map(places.flatMap((place, i) => place !== line.at && crops.has(place) ? [[i, crops.get(place)]] : []))
       // The reading is written in ordinary kana; a hentaigana typed there is the page's, kept in the ruby.
-      let result = await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
-        left: leftText(), method, crops: others })
-      saved?.(result)
-      // The word is written only when the reader chose one here, or changed how sure its form is.
-      if (picked ? picked !== held?.word || probable !== (held?.form === 'probable') : chosen === null && held) {
-        result = (picked ? await setWord(result, { word: picked, method, form: probable ? 'probable' : 'certain' }) : await clearWord(result)).crop
-        saved?.(result)
-      }
+      saved?.(await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
+        left: leftText(), method, word: wordText(), crops: others }))
       leave()
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
@@ -185,9 +185,7 @@
     if (busy) return
     pending = true; working?.(true); error = ''
     try {
-      let result = item
-      if (slots.some(mine)) { result = await clearReading(result); saved?.(result) }
-      if (mine(item.word)) { result = (await clearWord(result)).crop; saved?.(result) }
+      saved?.(await clearReading(item, { word: mine(item.word) }))
       leave()
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }

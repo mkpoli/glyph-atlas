@@ -123,7 +123,7 @@ as the page splits it. Each is a slot of its own, so two readers who read a run
 alike agree whatever each records of the ruby. A save claims the same run on each of its crops that is
 published, at the version its reader saw, and replaces the reader's earlier runs that it meets, whole.
 A character of the run with no published crop is named in the run alone. A reading names no word: the word
-a run writes is its `writes_word` claim.
+a run writes is its `writes_word` claim, saved with the run on each of its crops.
 
 Acceptance is its own row in `assertion_actions`: `accept`, `reject`, `retract` (by the asserter) or
 `adjudicate` (by an adjudicator). A predicate catalogue (`data/ledger.json`) states each

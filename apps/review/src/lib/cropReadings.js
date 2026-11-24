@@ -90,17 +90,19 @@ async function send(crop, value) {
       { id: submissions.get(key), crop_version: crop.crop_version, ...value })
   } catch (error) { if (error.status) submissions.delete(key); throw error }
   submissions.delete(key)
-  return { ...crop, reading: result.reading }
+  return { ...crop, reading: result.reading, word: result.word }
 }
 
 /**
  * Save how a crop is read: `run` with the crop at `at`, the `reading` over each character or over all of
  * them, what it rests on and the ruby and the 左訓 (`left`) as the page writes them, or null. The published crops of the run (`crops`, by place in it)
  * are saved with it, each at the version it is shown at.
+ * `word` ({ id, form, method }) names the dictionary word the run writes, null takes the reader's back, and without it the words stand.
  */
-export function setReading(crop, { run, at, reading, ruby = null, left = null, method, crops = new Map() }) {
+export function setReading(crop, { run, at, reading, ruby = null, left = null, method, word, crops = new Map() }) {
   const others = [...crops].map(([place, one]) => ({ id: one.id, crop_version: one.crop_version, at: place }))
-  return send(crop, { run, at, reading, ruby, left, method, others })
+  return send(crop, { run, at, reading, ruby, left, method, others, ...(word === undefined ? {} : { word }) })
 }
 
-export const clearReading = crop => send(crop, { run: null })
+/** Take back the reader's run on a crop and, with `word`, the word it writes. */
+export const clearReading = (crop, { word = false } = {}) => send(crop, { run: null, ...(word ? { word: null } : {}) })
