@@ -9,7 +9,7 @@ import { filedClaims } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { categoryOf } from '../category';
+import { categoryOf, isSeal } from '../category';
 import { tallyDates } from '../dating';
 import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
 import { ROUND_MAX } from '../rounds';
@@ -442,7 +442,8 @@ export async function page(env: Env, stages: Stage[], start: number, cursor: str
 
 // The members of a grapheme a round names, by the grapheme table: は's family is は, ハ and its
 // hentaigana. A key that names no family is its own text alone; a key that names a family's member
-// rather than the family is refused. The head comes first, then the members by id.
+// rather than the family is refused. The head comes first, then the members by id, the small seal
+// characters after every other: the interface's number keys follow the list.
 export const graphemeQuery = () => 'SELECT id,text,head FROM graphemes WHERE text=?';
 export const membersQuery = () => 'SELECT id,text FROM graphemes WHERE head=? ORDER BY id';
 export async function graphemeMembers(env: Env, key: string): Promise<{ ids: number[]; texts: string[] }> {
@@ -454,7 +455,8 @@ export async function graphemeMembers(env: Env, key: string): Promise<{ ids: num
     throw new Problem(422, `${graphemeText(key)} is filed under ${head?.text}.`);
   }
   const members = (await env.ATLAS.prepare(membersQuery()).bind(row.id).all<{ id: number; text: string }>()).results;
-  const all = [{ id: row.id, text: row.text }, ...members.filter(m => m.id !== row.id)];
+  const others = members.filter(m => m.id !== row.id);
+  const all = [{ id: row.id, text: row.text }, ...others.filter(m => !isSeal(m.text)), ...others.filter(m => isSeal(m.text))];
   return { ids: all.map(m => m.id), texts: all.map(m => m.text) };
 }
 
@@ -632,10 +634,12 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     total = mine.length;
   } else {
     // A grapheme's round of pending crops deals its corpus glyphs after its collected crops. Corpus
-    // glyphs belong to no book of the collection, so a round narrowed to one deals none.
-    const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched
-      && (category === null || members!.texts.every(member => categoryOf(member) === groupParam));
-    const corpusFilter: Filter = { ...filter, state: 0, category: null };
+    // glyphs belong to no book of the collection, so a round narrowed to one deals none. A corpus glyph
+    // has no category of its own, so a round narrowed to a script deals those of the members it holds: a
+    // kanji round of 春 leaves out its small seal character.
+    const inScript = scoped && category !== null ? new Set(members!.ids.filter((_, i) => categoryOf(members!.texts[i]) === groupParam)) : null;
+    const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched && inScript?.size !== 0;
+    const corpusFilter: Filter = { ...filter, state: 0, category: null, ...(inScript ? { chars: inScript } : {}) };
     // A round deals what another reviewer skipped first, then the collected crops, then the corpus
     // glyphs, each crop once. Four seeds in five deal the collected crops by priority, each priority in
     // turn from the seed's point; the fifth deals them all together.

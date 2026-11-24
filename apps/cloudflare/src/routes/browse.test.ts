@@ -462,6 +462,33 @@ describe('review rounds', () => {
     expect((await every(env, '/atlas?purpose=review&grapheme=U%2B306F&state=pending&seed=11', 4)).seen.length).toBe(8);
   });
 
+  it('deal a kanji’s small seal glyphs with the rest, and a script’s round that script’s alone', async () => {
+    // 所's small seal character, filed under 所, with a member that came to the table after it.
+    const SEAL = '\u{3FA6A}', MEMBER = '𫠦';
+    const { env, c, crop } = await setup((db, page) => {
+      db.exec(`UPDATE graphemes SET head=4 WHERE id=4; INSERT INTO graphemes(id,text,head) VALUES(7,'${SEAL}',4),(8,'${MEMBER}',4);`);
+      const glyph = db.prepare('INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision,flags) VALUES(?,1,3,?,4,NULL,0,0,1,?,0,0,0)');
+      glyph.run(cropId(page, 10), 7, 500); glyph.run(cropId(page, 11), 4, 600);
+    });
+    const ids = (body: any) => body.grapheme.members;
+    const whole = await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0');
+    // The number keys follow the members, so the small seal character comes last whatever its id.
+    expect(ids(whole)).toEqual(['所', MEMBER, SEAL]);
+    const both = ['handwritten', 'handwritten&group=all'];
+    for (const production of both)
+      expect((await get(env, `/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=${production}`)).total).toBe(1 + 2);
+    // One collected 所 and its corpus glyph in the kanji round, the seal glyph in the small seal round.
+    expect((await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=handwritten&group=kanji')).total).toBe(1 + 1);
+    expect((await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=handwritten&group=seal')).total).toBe(1);
+    expect((await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=handwritten&group=kana')).total).toBe(0);
+    // Asked for by its small seal character, a round names the grapheme, as it does for ハ.
+    await expect(get(env, `/atlas?purpose=review&grapheme=U%2B3FA6A&limit=10`)).rejects.toThrow(`${SEAL} is filed under 所.`);
+    // Each character counts under the grapheme, so the interface's rounds hold both.
+    const counts = await get(env, '/atlas?purpose=review&limit=0&state=pending&production=handwritten');
+    expect(counts.categories.find((x: any) => x.label === SEAL)).toMatchObject({ grapheme: 'U+6240', pending: 1 });
+    void c; void crop;
+  });
+
   it('never deal a crop no one has read, which browsing shows', async () => {
     const { env, a, crop } = await setup();
     const unread = publicId(crop(a, 8));
