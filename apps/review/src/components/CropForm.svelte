@@ -86,9 +86,18 @@
   const ownStructure = $derived(structureOf.get(current) ?? null)
   const relatedChars = $derived(new Set(listed.chips ? [] : listed.related.map(form => form.char)))
   const me = $derived(signedInUser()?.id ?? null)
-  const barGroups = $derived(groupForms(bar, { structureOf, related: relatedChars, own: (ownStructure?.part ?? ownStructure)?.id ?? builtAs(crop)[0]?.structure, proposed }))
-  // What a whole grapheme's bar folds away: never a form its source names, the crop has, or the reader chose.
-  const folded = $derived(listed.chips ? foldGroups(barGroups, { keep: new Set([...listed.focal, current, typeof chosen === 'string' ? chosen : '', ...added.map(form => form.char)]) }) : { shown: barGroups, hidden: [] })
+  // The 構形 the crop is said to be built as, and the one chosen here (`{ structure, label, target }`; with
+  // no `target` the reader's own word is taken back).
+  const built = $derived(builtAs(crop))
+  const mineBuilt = $derived(me ? (crop?.structure?.values ?? []).find(value => value.by.includes(me)) : null)
+  // The 構形 named under the bar: what the crop is built as, and the reader's own word while a form stands.
+  const builtShown = $derived(built.length ? built : mineBuilt ? [mineBuilt] : [])
+  const open = $derived(chosen && typeof chosen === 'object' ? chosen : null)
+  const barGroups = $derived(groupForms(bar, { structureOf, related: relatedChars, own: (ownStructure?.part ?? ownStructure)?.id ?? built[0]?.structure, proposed }))
+  // What a whole grapheme's bar folds away: never a form or a 構形 the crop has or the reader chose, nor a
+  // form its source names.
+  const folded = $derived(listed.chips ? foldGroups(barGroups, { keep: new Set([...listed.focal, current, typeof chosen === 'string' ? chosen : '', ...added.map(form => form.char)]),
+    structures: new Set([open?.structure, ...builtShown.map(value => value.structure)]) }) : { shown: barGroups, hidden: [] })
   const shownGroups = $derived(expanded ? barGroups : folded.shown)
   const hidden = $derived(chipsOf(folded.hidden).length)
   const captioned = $derived(shownGroups.some(group => group.label))
@@ -102,13 +111,6 @@
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   const give = char => onchoose(char, baseOf(char, listed))
   function choose(char) { if (char === chosen) onchoose(null); else give(char) }
-  // The 構形 the crop is said to be built as, and the one chosen here (`{ structure, label, target }`; with
-  // no `target` the reader's own word is taken back).
-  const built = $derived(builtAs(crop))
-  const mineBuilt = $derived(me ? (crop?.structure?.values ?? []).find(value => value.by.includes(me)) : null)
-  // The 構形 named under the bar: what the crop is built as, and the reader's own word while a form stands.
-  const builtShown = $derived(built.length ? built : mineBuilt ? [mineBuilt] : [])
-  const open = $derived(chosen && typeof chosen === 'object' ? chosen : null)
   function leaveOpen(block) { onchoose(open?.structure === block.id ? null : { structure: block.id, label: block.label, target: targets.get(block.id) }) }
   // The bar's 構形 a save can name, by id.
   const targets = $derived(new Map(others ? [] : barGroups.flatMap(group => group.blocks.filter(block => block.label).map(block => [block.id, structureTarget(group, block, structureOf, written)])).filter(([, target]) => target)))

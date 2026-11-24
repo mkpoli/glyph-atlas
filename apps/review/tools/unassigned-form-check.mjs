@@ -153,6 +153,16 @@ try {
   await shot('after-large-all')
   console.log(`PASS a bar of ${all.length} shows ${few.length} and folds the rest away`)
 
+  // A 構形 chosen from the picker stands on the bar, its group unfolded.
+  await open('/ja/crop/' + LARGE)
+  await evaluate(`${dialog}.querySelector('.form-add').click()`)
+  await browser.waitFor(`${dialog}.querySelector('.form-structure')`)
+  const away = await evaluate(`(() => { const shown = new Set([...${dialog}.querySelectorAll('.form-group-label')].map(e => e.innerText.trim())); const o = [...${dialog}.querySelectorAll('.form-structure')].find(o => !shown.has(o.innerText.trim())); o?.click(); return o?.innerText.trim() })()`)
+  await wait(400)
+  assert(away && await evaluate(`${dialog}.querySelector('.form-chip.form-open.chosen')?.title.includes(${JSON.stringify(away)})`), `${away} is chosen and does not stand on the bar`)
+  await shot('after-structure')
+  console.log(`PASS ${away}, folded away, stands on the bar once chosen`)
+
   // Until the grapheme's forms are read, and where they cannot be, there is none to choose.
   for (const kind of ['held', 'failed']) {
     forms = kind; release = []

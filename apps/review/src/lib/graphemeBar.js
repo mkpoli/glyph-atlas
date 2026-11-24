@@ -63,9 +63,10 @@ export function listedOf(offered, char, whole) {
 }
 
 /** The 構形 groups a bar of more than `limit` chips shows, and those it folds away: every group with a form in
- *  `keep`, and of the rest as many from the start as fit, whole. */
-export function foldGroups(groups, { keep = new Set(), limit = 40 } = {}) {
-  const size = group => formsOf(group).length, kept = group => formsOf(group).some(form => keep.has(form.char))
+ *  `keep` or a 構形 in `structures`, by id, and of the rest as many from the start as fit, whole. */
+export function foldGroups(groups, { keep = new Set(), structures = new Set(), limit = 40 } = {}) {
+  const size = group => formsOf(group).length
+  const kept = group => formsOf(group).some(form => keep.has(form.char)) || group.blocks.some(block => structures.has(block.id))
   if (groups.reduce((n, group) => n + size(group), 0) <= limit) return { shown: groups, hidden: [] }
   let n = groups.filter(kept).reduce((sum, group) => sum + size(group), 0), full = false
   const shown = new Set(groups.filter(group => kept(group) || !full && (n + size(group) <= limit ? (n += size(group), true) : (full = true, false))))

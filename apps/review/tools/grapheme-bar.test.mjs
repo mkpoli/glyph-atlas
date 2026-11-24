@@ -76,6 +76,10 @@ describe('a bar of many forms', () => {
     expect(shown.map(group => group.id)).toEqual([...Array.from({ length: 12 }, (_, i) => 'st' + i), 'st14'])
     expect(hidden.map(group => group.id)).toEqual(['st12', 'st13', 'st15', 'st16', 'st17', 'st18', 'st19'])
   })
+  it('folds away no 構形 chosen or held alone', () => {
+    const { shown } = foldGroups(groups, { structures: new Set(['st18']) })
+    expect(shown.map(group => group.id)).toEqual([...Array.from({ length: 12 }, (_, i) => 'st' + i), 'st18'])
+  })
   it('folds nothing up to forty', () => {
     expect(foldGroups(groupForms(list.slice(0, 40), { structureOf })).hidden).toEqual([])
   })
