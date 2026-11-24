@@ -1,8 +1,10 @@
-// What stands for a grapheme (字種) where the site names one: its head, and where that is a 新字体 the
-// 常用漢字表 prints a 旧字体 of that is a character of the same grapheme, the two side by side, the old form first (假仮, 國国). The label is for
-// showing alone: the grapheme's key, address, place in a list and search are its head's. The table is
+// What stands for a grapheme (字種) where the site names one: its 旧字体, its head and its 简体字, each once
+// (圖図图, 語语, 假仮), where the 常用漢字表 and the 通用规范汉字表 give them; else its head. The label is for showing
+// alone: the grapheme's key, address, place in a list and search are its head's. The table is
 // scripts/build_grapheme_labels.py's.
-import OLD_FORMS from './graphemeLabels.json';
+import LABELS from './graphemeLabels.json';
 
 /** The label of the grapheme headed by `char`; a character that heads no such grapheme is its own. */
-export const graphemeLabel = (char: string): string => Object.hasOwn(OLD_FORMS, char) ? (OLD_FORMS as Record<string, string>)[char] + char : char;
+export const graphemeLabel = (char: string): string => Object.hasOwn(LABELS, char) ? (LABELS as Record<string, string>)[char] : char;
+/** How many characters the label is, by which a place of fixed size draws them: 1, 2 or 3. */
+export const labelSize = (char: string): number => [...graphemeLabel(char)].length;

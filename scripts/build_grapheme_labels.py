@@ -1,51 +1,115 @@
-"""Write what stands for a grapheme (字種) that the Jōyō table writes two ways: 假仮, 國国.
+"""Write what stands for a grapheme (字種): its 旧字体, its head and its 简体字, each once (圖図图, 語语, 假仮).
 
-The 常用漢字表 (2010) prints the 旧字体 beside a 新字体 that differs from it markedly, as 仮（假）. Its pairs are
-the `joyo/variant` edges of `data/vocab/kanji-variants.tsv`, which CJKVI names 異体字（常用漢字表）, and they are
-those of the 文化庁 index of the table (`joyo-2010` in `graphemes.yaml`). A pair whose two characters are of
-the grapheme the 新字体 heads labels it, the old form first. A grapheme keeps its head as its key, address and
-place in a list: the label is what it is shown as. A pair whose older form is of another grapheme (状 狀, 弁 辨)
-labels none, as the two are then counted apart, and neither does a compatibility ideograph.
+The 旧字体 is the older form the 常用漢字表 (2010) prints beside the head, as 仮（假）. Its pairs are the
+`joyo/variant` edges of `data/vocab/kanji-variants.tsv`, which CJKVI names 異体字（常用漢字表）, and they are
+those of the 文化庁 index of the table (`joyo-2010` in `graphemes.yaml`). A pair whose older form is of another
+grapheme (状 狀, 弁 辨) gives none, as the two are counted apart, and neither does a compatibility ideograph.
 
-    uv run scripts/build_grapheme_labels.py
+The 简体字 is a character of the same grapheme that the 通用规范汉字表 (2013) lists and that Unihan gives as the
+simplified form of another of its characters (kSimplifiedVariant and kTraditionalVariant, the `simplified`
+edges of source `unihan`), the first in the table's order where there are more (线 before 缐). There is none
+where the table lists the head too (确), nor where the simplified form it lists of the head or of the 旧字体 is
+of another grapheme (豊 豐: 丰; 閣: 阁): a 简体字 left in the grapheme is then some other member's.
 
-Writes apps/cloudflare/src/graphemeLabels.json, each head with its 旧字体, which the Worker and the review
-app read.
+A head that is the 简体字, and that the 常用漢字表 prints no older form of, stands after the character it
+simplifies (彎弯). A grapheme keeps its head as its key, address and place in a list: the label is what it is
+shown as.
+
+    uv run scripts/build_grapheme_labels.py [--unihan cache/variants/18.0.0/Unihan.zip]
+
+Writes apps/cloudflare/src/graphemeLabels.json, each head with its label, which the Worker and the review app
+read. `--unihan` first writes data/vocab/tongyong-guifan.tsv, the 通用规范汉字表 as Unihan's kTGH numbers it.
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import unicodedata
+import zipfile
+from collections import defaultdict
 from pathlib import Path
+
+import yaml
 
 from glyph_atlas import refs
 
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ROOT / "data" / "vocab" / "kanji-variants.tsv"
+TONGYONG = ROOT / "data" / "vocab" / "tongyong-guifan.tsv"
+UNIHAN = ROOT / "data" / "sources" / "unihan.yaml"
 LABELS = ROOT / "apps" / "cloudflare" / "src" / "graphemeLabels.json"
 
+#: The file `unihan.yaml` describes, as `ids-parts.yaml` records it too.
+UNIHAN_SHA256 = "4c93ea9c1f636451729a840978f1667a53886af37ba854fdcce109721c63d43e"
+#: The characters of the 通用规范汉字表.
+TONGYONG_SIZE = 8105
 
-def pairs() -> list[tuple[str, str]]:
-    """The 常用漢字表's pairs, each 新字体 with a 旧字体 it prints beside it."""
-    found = set()
+
+def tongyong_table(archive: Path) -> str:
+    """The 通用规范汉字表 in Unihan's archive, as `data/vocab/tongyong-guifan.tsv` holds it."""
+    if (found := hashlib.sha256(archive.read_bytes()).hexdigest()) != UNIHAN_SHA256:
+        raise SystemExit(f"{archive}: sha256 {found}, not the {UNIHAN_SHA256} of Unihan 18.0.0")
+    positions: dict[int, str] = {}
+    with zipfile.ZipFile(archive) as files:
+        for line in files.read("Unihan_OtherMappings.txt").decode("utf-8").splitlines():
+            cells = line.split("\t")
+            if len(cells) == 3 and cells[1] == "kTGH":
+                year, position = cells[2].split(":")
+                if year != "2013" or int(position) in positions:
+                    raise SystemExit(f"{cells[0]}: kTGH {cells[2]}")
+                positions[int(position)] = chr(int(cells[0].removeprefix("U+"), 16))
+    if sorted(positions) != list(range(1, TONGYONG_SIZE + 1)):
+        raise SystemExit(f"kTGH numbers {len(positions)} characters, not 1 to {TONGYONG_SIZE}")
+    record = yaml.safe_load(UNIHAN.read_text(encoding="utf-8"))
+    origin = f"{record['name'].partition(',')[0]} {record['version']}, kTGH (Unihan_OtherMappings.txt, `2013:<position>`)"
+    header = [
+        "# The 通用规范汉字表 (2013): its 8,105 characters by their number in it; see scripts/build_grapheme_labels.py.",
+        f"# source unihan: {origin}; {record['licence']} ({record['licence_evidence']}); {record['attribution']}",
+        f"#   {record['access']['zip']} sha256:{UNIHAN_SHA256[:16]}",
+        "position\tcode_point\tchar",
+    ]
+    rows = [f"{position}\t{refs.to_code_point(char)}\t{char}" for position, char in sorted(positions.items())]
+    return "\n".join([*header, *rows]) + "\n"
+
+
+def tongyong() -> dict[str, int]:
+    """The characters of the 通用规范汉字表, each with its number in it."""
+    rows = [line.split("\t") for line in TONGYONG.read_text(encoding="utf-8").splitlines() if line[:1].isdigit()]
+    return {char: int(position) for position, _, char in rows}
+
+
+def edges() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """The 常用漢字表's pairs, each 新字体 with a 旧字体 it prints beside it, and Unihan's, each character with
+    a simplified form of it."""
+    joyo, simplified = set(), set()
     for line in VARIANTS.read_text(encoding="utf-8").splitlines():
-        if line.startswith("#") or "joyo/variant" not in line:
+        if line.startswith("#"):
             continue
-        for edge in line.split("\t")[4].split(" | "):
-            named, _, relation = edge.partition(" ")
-            if relation == "joyo/variant":
-                new, old = named.split("→")
-                found.add((new, old))
-    return sorted(found)
+        a, b, relation, source, detail = line.split("\t")
+        if relation == "simplified" and source == "unihan":
+            simplified.add((a, b))
+        if "joyo/variant" in detail:
+            for edge in detail.split(" | "):
+                named, _, kind = edge.partition(" ")
+                if kind == "joyo/variant":
+                    new, old = named.split("→")
+                    joyo.add((new, old))
+    return sorted(joyo), sorted(simplified)
 
 
-def labels() -> dict[str, str]:
-    """Each head the table prints an older form of, in the same grapheme, with that form."""
+def grapheme(char: str) -> str:
+    """The head of the grapheme a character is of."""
+    key = refs.grapheme(refs.to_code_point(char))
+    return refs.to_char(key) if key else char
+
+
+def older_forms(joyo: list[tuple[str, str]]) -> dict[str, str]:
+    """Each head the 常用漢字表 prints an older form of, in the same grapheme, with that form."""
     out: dict[str, str] = {}
-    for new, old in pairs():
-        head = refs.to_code_point(new)
-        if unicodedata.normalize("NFC", old) != old or not (refs.grapheme(head) == refs.grapheme(refs.to_code_point(old)) == head):
+    for new, old in joyo:
+        if unicodedata.normalize("NFC", old) != old or not (grapheme(new) == grapheme(old) == new):
             continue
         if new in out:
             raise SystemExit(f"{new}: two older forms in its grapheme, {out[new]} and {old}")
@@ -53,10 +117,46 @@ def labels() -> dict[str, str]:
     return out
 
 
+def labels() -> dict[str, str]:
+    """Each head that is not a grapheme's whole label, with the label, in code point order."""
+    joyo, pairs = edges()
+    older, listed = older_forms(joyo), tongyong()
+    simplified: dict[str, list[str]] = defaultdict(list)
+    for char, simple in pairs:
+        if simple in listed and simple != char:
+            simplified[char].append(simple)
+    within: dict[str, list[tuple[int, str, str]]] = defaultdict(list)
+    for char, forms in simplified.items():
+        for simple in forms:
+            if (head := grapheme(char)) == grapheme(simple):
+                within[head].append((listed[simple], simple, char))
+    out = {}
+    for head in older.keys() | within.keys():
+        old, found = older.get(head, ""), min(within.get(head, []), default=None)
+        simple = found[1] if found else ""
+        if simple == head:
+            # The head is the 简体字; without an older form it stands after the character it simplifies.
+            parts = [old or found[2], head]
+        else:
+            own = [form for char in (head, old) for form in simplified.get(char, [])]
+            elsewhere = bool(own) and not any(grapheme(form) == head for form in own)
+            parts = [old, head, "" if head in listed or elsewhere else simple]
+        label = "".join(dict.fromkeys("".join(parts)))
+        if label != head:
+            out[head] = label
+    return dict(sorted(out.items()))
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--unihan", type=Path, help="Unihan.zip, to write data/vocab/tongyong-guifan.tsv from")
+    args = parser.parse_args()
+    if args.unihan:
+        TONGYONG.write_text(tongyong_table(args.unihan), encoding="utf-8")
     found = labels()
     LABELS.write_text(json.dumps(found, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
-    print(f"{len(found)} graphemes shown by a 旧字体 and its 新字体")
+    three = sum(len(label) == 3 for label in found.values())
+    print(f"{len(found)} graphemes shown by more than their head, {three} of them by three characters")
     return 0
 
 

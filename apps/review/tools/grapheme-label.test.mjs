@@ -3,7 +3,7 @@ import LABELS from '../../cloudflare/src/graphemeLabels.json'
 
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: (key, values) => `${key} ${values.char} ${values.codePoint}`, formatDate: () => '', localize: path => path, locale: () => 'en' }))
 mock.module('../src/lib/client.js', () => ({ request: async () => ({}) }))
-const { graphemeLabel } = await import('../../cloudflare/src/graphemeLabel.ts')
+const { graphemeLabel, labelSize } = await import('../../cloudflare/src/graphemeLabel.ts')
 const { bibtex, characterEntry, citationKey, hayagriva, linkedData } = await import('../../cloudflare/src/citation.ts')
 const { galleryName, galleryTitle } = await import('../src/lib/citation.js')
 const { graphemeAddress } = await import('../src/lib/addresses.js')
@@ -12,14 +12,15 @@ const { chronologyName } = await import('../src/lib/chronology.js')
 const card = { code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EEE', char: '仮' } }
 
 describe('what stands for a grapheme', () => {
-  it('is its 旧字体 and 新字体 where a 新字体 heads it, else its head', () => {
-    expect(['仮', '国', '竜', '発', '郷'].map(graphemeLabel)).toEqual(['假仮', '國国', '龍竜', '發発', '鄕郷'])
-    expect(['歩', '録', '闘', '麺'].map(graphemeLabel)).toEqual(['步歩', '錄録', '鬭闘', '麵麺'])
-    // The old form alone, a head that is no 新字体 or whose older form is another grapheme's, a kana, a description and a key that names nothing.
-    for (const text of ['假', '遇', '神', '青', '状', '弁', 'は', '⿰木木', '', 'toString']) expect(graphemeLabel(text)).toBe(text)
+  it('is its 旧字体, its head and its 简体字, each once, else its head', () => {
+    expect(['図', '竜', '語', '馬', '国', '仮', '説', '線', '弯', '歩'].map(graphemeLabel)).toEqual(['圖図图', '龍竜龙', '語语', '馬马', '國国', '假仮', '説说', '線线', '彎弯', '步歩'])
+    expect(['図', '語', '後'].map(labelSize)).toEqual([3, 2, 1])
+    // The old form or the 简体字 alone, a head with neither or whose forms are another grapheme's, a kana,
+    // a description and a key that names nothing.
+    for (const text of ['假', '语', '遇', '神', '青', '状', '弁', '閣', '确', 'は', '⿰木木', '', 'toString']) expect(graphemeLabel(text)).toBe(text)
   })
-  it('is two characters of two, whatever the table holds', () => {
-    for (const [head, old] of Object.entries(LABELS)) expect([...graphemeLabel(head)]).toEqual([old, head])
+  it('is two or three characters, the head among them, whatever the table holds', () => {
+    for (const [head, label] of Object.entries(LABELS)) expect([[2, 3].includes([...label].length), [...label].includes(head)]).toEqual([true, true])
   })
   it('names the grapheme\'s page, title and citation, and leaves a character\'s and every address', () => {
     expect([galleryName({ char: '仮', of: 'grapheme' }), galleryName({ char: '仮', of: 'character' })]).toEqual(['假仮', '仮'])
