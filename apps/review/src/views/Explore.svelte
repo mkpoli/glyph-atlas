@@ -1341,7 +1341,8 @@
   onDestroy(() => { sheetJob?.abort(); clearTimeout(sheetFault) })
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
-   * address bar keeps what the view had moved on to. The view follows the address bar.
+   * address bar keeps what the view had moved on to; a link to the address the page was first loaded at
+   * keeps that page, and with it this view. The view follows the address bar.
    */
   function followAddress() {
     const { path } = delocalize(location.pathname)
@@ -1397,13 +1398,15 @@
   if (back?.partial) seed = back.seed
   else if (restored) restore(restored)
   // Back or Forward between two entries of the same page keeps this view, so it takes the one kept for
-  // the entry it lands on, and its scroll position, itself.
+  // the entry it lands on, and its scroll position, itself. A link keeps it where the page was first loaded
+  // at the address it names, whatever the view has shown since.
   let arrived = false
   afterNavigate(navigation => {
     if (!arrived) { arrived = true; return }
     current = entry()
-    const view = navigation.type === 'popstate' && addressed ? keptView() : null
-    if (!view || view.partial || view.showWithheld !== showWithheld) return
+    if (!addressed) return
+    const view = navigation.type === 'popstate' ? keptView() : null
+    if (!view || view.partial || view.showWithheld !== showWithheld) { followAddress(); return }
     // Reads the view had on their way answer for what it showed before.
     requestId += 1; pickId += 1; runsRequest += 1; catalogueRequest?.abort()
     clearTimeout(searchTimer); choosing = false
