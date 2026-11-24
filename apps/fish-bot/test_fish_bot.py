@@ -145,7 +145,7 @@ class FakeGemini:
         return self.memory_value
 
     def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(),
-            rooms="", memory=None, lookup=None, on_step=None, room_facts=None, images=()):
+            sticker_mood=False, rooms="", memory=None, lookup=None, on_step=None, room_facts=None, images=()):
         self.rooms = rooms
         self.room_facts = room_facts
         self.images = list(images)
@@ -153,6 +153,7 @@ class FakeGemini:
         self.lookup = lookup
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
         self.sticker_offers = tuple(stickers)
+        self.sticker_mood = sticker_mood
         if self.error is not None:
             raise self.error
         return self.act_value
@@ -851,6 +852,25 @@ def test_a_sticker_follows_right_after_another_but_not_the_same(tmp_path, monkey
     sent = [content["url"] for _, kind, content in matrix.events if kind == "m.sticker"]
     assert sent == ["mxc://example/yay", "mxc://example/love", "mxc://example/ok", "mxc://example/yay"]
     assert bot._stickers_now("!elsewhere:example").keys() == {"yay", "love", "ok"}
+
+
+@pytest.mark.parametrize(("drawn", "mood"), [(0.0, True), (fish_bot.STICKER_MOOD, False), (0.99, False)])
+def test_a_turn_draws_whether_she_is_in_the_mood_for_a_sticker(tmp_path, drawn, mood):
+    bot, _, store = make_bot(tmp_path, act=act("好耶"))
+    store.set_sticker("yay", next(s.sha256 for s in fish_bot.STICKERS if s.name == "yay"), "mxc://example/yay", 1)
+    bot._random = lambda: drawn
+    trigger = event("大肥魚!", event_id="$call")
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+    assert bot.gemini.sticker_mood is mood
+    assert bot.gemini.sticker_offers == ("yay",)
+
+
+def test_the_model_is_told_her_sticker_mood():
+    for mood in (True, False):
+        payload = json.loads(fish_bot.format_chat("Room", "", [message_row("hi")], {}, task="called", trigger=0,
+                                                  bot_user_id=USER, stickers=("yay",), sticker_mood=mood))
+        assert payload["sticker_mood"] is mood
 
 
 def test_parse_act_drops_a_sticker_it_does_not_have():
