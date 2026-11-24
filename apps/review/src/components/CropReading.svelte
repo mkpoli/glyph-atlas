@@ -1,0 +1,289 @@
+<script>
+  // How a crop is read at its place: the run of characters it stands in (諸器, the crop its 器), the
+  // reading over each or over all of them, what that rests on, and the ruby as the page writes it. The
+  // run is picked on the crop's own line, and one save reads every published crop of it. A word of the
+  // dictionary that the characters write can be named with it.
+  import { tick, untrack } from 'svelte'
+  import { line as readLine } from '../lib/client.js'
+  import { RUN_MAX, beside, clearReading, cropLine, pressed, setReading, stretch } from '../lib/cropReadings.js'
+  import { clearWord, setWord, wordChoices } from '../lib/cropWords.js'
+  import { plainKana } from '../lib/hentaigana.js'
+  import { t } from '../lib/i18n.svelte.js'
+  import { signedInUser } from '../lib/session.svelte.js'
+  import Glyph from './Glyph.svelte'
+  import ScriptText from './ScriptText.svelte'
+
+  let { item, disabled = false, working = null, saved = null } = $props()
+  const METHODS = ['ruby', 'gloss', 'note', 'parallel', 'context']
+  // The line is shown this far either side of the crop, and past the run. It stays still as the run grows.
+  const AROUND = 9
+  const uid = $props.id()
+  let root = $state(null), editing = $state(false), pending = $state(false), error = $state('')
+  let line = $state(null), from = $state(0), to = $state(0), touched = $state(false)
+  // The published crops beside this one, and the read that brings them, which a save waits for.
+  let neighbours = $state([]), arriving = null
+  // What is written over each place of the line, and over the run as a whole.
+  let readings = $state({}), rubies = $state({}), whole = $state(false), wholeReading = $state(''), wholeRuby = $state('')
+  let method = $state('context'), picked = $state(null), probable = $state(false), choices = $state([])
+
+  const values = $derived(item.reading?.values ?? [])
+  const rubyValues = $derived(item.reading?.ruby?.values ?? [])
+  const words = $derived(item.word?.values ?? [])
+  // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
+  const known = $derived(Object.hasOwn(item, 'reading'))
+  const mine = slot => Boolean(signedInUser()?.id && slot?.by?.includes(signedInUser().id))
+  // Only a reader's own claim can be cleared; the others stand until their readers take them back.
+  const own = $derived(mine(item.reading) || mine(item.reading?.ruby) || mine(item.word))
+  const busy = $derived(disabled || pending)
+
+  const places = $derived(line ? Array.from({ length: to - from + 1 }, (_, i) => from + i) : [])
+  // The published crops of the line the run can be saved on with this one.
+  const crops = $derived(line ? beside(line.parts, line.at, neighbours) : new Map())
+  // A run ends at the punctuation either side of the crop.
+  const within = $derived(line ? stretch(line.parts, line.at) : null)
+  const run = $derived(places.map(place => line.parts[place]))
+  const joined = $derived(whole && places.length > 1)
+  const shown = $derived(line ? { from: Math.max(0, Math.min(line.at - AROUND, from - 2)), to: Math.min(line.parts.length - 1, Math.max(line.at + AROUND, to + 2)) } : null)
+  const reading = $derived(joined ? [wholeReading.trim()] : places.map(place => (readings[place] ?? '').trim()))
+  const ruby = $derived(joined ? [wholeRuby.trim()] : places.map(place => (rubies[place] ?? '').trim()))
+  const reads = $derived(reading.join(''))
+  const kana = part => /^[\p{Script=Hiragana}\p{Script=Katakana}\p{M}ー]+$/u.test(part)
+
+  // What an earlier reading, or the kana of a run, already gives each place.
+  function fill() {
+    for (const place of places) if (readings[place] === undefined && kana(line.parts[place])) readings[place] = plainKana(line.parts[place])
+  }
+  function open() {
+    error = ''; picked = words[0]?.word ?? null; probable = words[0]?.form === 'probable'; choices = []
+    readings = {}; rubies = {}; whole = false; wholeReading = ''; wholeRuby = ''; touched = false
+    const value = values[0] ?? rubyValues[0] ?? null
+    method = item.reading?.methods?.[0] ?? untrack(() => method)
+    place(cropLine(item), value)
+    editing = true
+    tick().then(() => root?.querySelector('.reading-over input')?.focus({ preventScroll: true }))
+    neighbours = []
+    arriving = item.origin === 'corpus' ? null : readLine(item.id).then(({ items }) => {
+      if (!editing) return
+      neighbours = items
+      if (!touched) place(cropLine(item, items), value)
+    }).catch(() => { /* The run is then saved on this crop alone. */ })
+  }
+  // Stand the crop on its line, with the run of an earlier reading where the line still holds it.
+  function place(next, value) {
+    const start = value ? next.at - value.at : next.at, held = value && value.run.every((part, i) => next.parts[start + i] === part)
+    line = value && !held ? { parts: value.run, at: value.at, also: [] } : next
+    from = value ? line.at - value.at : line.at; to = from + (value?.run.length ?? 1) - 1
+    if (value && !touched) {
+      const over = values[0]?.reading ?? [], beside = rubyValues[0]?.ruby ?? []
+      whole = value.run.length > 1 && (over.length === 1 || (!over.length && beside.length === 1))
+      if (whole) { wholeReading = over[0] ?? ''; wholeRuby = beside[0] ?? '' }
+      else value.run.forEach((_, i) => { readings[from + i] = over[i] ?? ''; rubies[from + i] = beside[i] ?? '' })
+    }
+    fill()
+  }
+  function press(at) {
+    touched = true; error = ''
+    // Another place of the same character, apart from the run, is where the crop stands instead.
+    if (line.also.includes(at) && (at < from - 1 || at > to + 1 || at < within.from || at > within.to)) { line = { ...line, at, also: [...line.also.filter(each => each !== at), line.at] }; from = to = at }
+    else ({ from, to } = pressed({ from, to }, line.at, at))
+    fill()
+  }
+  // The arrows move along the line, and leave the list of crops where it is.
+  function along(event) {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key]
+    if (!step || event.metaKey || event.ctrlKey || event.altKey) return
+    event.preventDefault()
+    const buttons = [...event.currentTarget.querySelectorAll('button')]
+    buttons[buttons.indexOf(document.activeElement) + step]?.focus()
+  }
+  // The ruby gives the reading its kana until the reader writes another, and says what the reading rests on.
+  function wroteRuby(at, text) {
+    const before = at === null ? wholeRuby : rubies[at] ?? '', now = at === null ? wholeReading : readings[at] ?? ''
+    if (now === '' || now === plainKana(before)) { if (at === null) wholeReading = plainKana(text); else readings[at] = plainKana(text) }
+    if (at === null) wholeRuby = text; else rubies[at] = text
+    if (text.trim()) method = 'ruby'
+    touched = true; error = ''
+  }
+  function wroteReading(at, text) {
+    if (at === null) wholeReading = text; else readings[at] = text
+    touched = true; error = ''
+  }
+  // Read as one, a run keeps what was written over its characters, and back.
+  function toggleWhole() {
+    touched = true
+    if (!whole) { wholeReading = reading.join(''); wholeRuby = ruby.join('') }
+    whole = !whole
+  }
+  function pick(choice) {
+    picked = picked === choice.id ? null : choice.id
+    if (picked && !reads) { if (places.length > 1) whole = true; if (places.length > 1) wholeReading = choice.reading; else readings[from] = choice.reading }
+  }
+
+  $effect(() => {
+    if (!editing) return
+    const crop = item, q = reads
+    let active = true
+    const timer = setTimeout(async () => {
+      try { const found = await wordChoices(crop, q); if (active) choices = found } catch { /* No word is offered. */ }
+    }, 250)
+    return () => { active = false; clearTimeout(timer) }
+  })
+
+  async function save() {
+    if (busy) return
+    if (!reads) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
+    pending = true; working?.(true); error = ''
+    try {
+      await arriving
+      const others = new Map(places.flatMap((place, i) => place !== line.at && crops.has(place) ? [[i, crops.get(place)]] : []))
+      // The reading is written in ordinary kana; a hentaigana typed there is the page's, kept in the ruby.
+      let result = await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby : null, method, crops: others })
+      if (picked) result = (await setWord(result, { word: picked, method, form: probable ? 'probable' : 'certain' })).crop
+      else if (mine(item.word)) result = (await clearWord(result)).crop
+      saved?.(result)
+      leave()
+    } catch (e) { error = e.message }
+    finally { pending = false; working?.(false) }
+  }
+  async function clear() {
+    if (busy) return
+    pending = true; working?.(true); error = ''
+    try {
+      let result = item
+      if (mine(item.reading) || mine(item.reading?.ruby)) result = await clearReading(result)
+      if (mine(item.word)) result = (await clearWord(result)).crop
+      saved?.(result)
+      leave()
+    } catch (e) { error = e.message }
+    finally { pending = false; working?.(false) }
+  }
+  // The focus goes back to the button that opened the editor.
+  const leave = () => { editing = false; error = ''; tick().then(() => root?.querySelector('.reading-set')?.focus({ preventScroll: true })) }
+  function keydown(event) {
+    if (event.isComposing) return
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); leave() }
+    else if (event.key === 'Enter' && event.target.matches('input[type=text]')) { event.preventDefault(); save() }
+  }
+</script>
+
+{#snippet read(value, field)}
+  <ruby class="reading-run">{#if value[field].length === value.run.length}{#each value.run as part, i}<span class:here={i === value.at && value.run.length > 1}>{part}</span><rt>{value[field][i]}</rt>{/each}{:else}{#each value.run as part, i}<span class:here={i === value.at}>{part}</span>{/each}<rt>{value[field][0]}</rt>{/if}</ruby>
+{/snippet}
+
+<div class="reading-field" class:editing bind:this={root}>
+  <div class="reading-slot">
+    <span>{t('reading.label')}</span>
+    {#each values as value, i}
+      {#if i}<span>/</span>{/if}{@render read(value, 'reading')}
+    {/each}
+    {#if item.reading?.methods?.[0]}<span>{t(`reading.methods.${item.reading.methods[0]}`)}</span>{/if}
+    {#each rubyValues as value}<bdi class="reading-ruby" title={t('reading.ruby')}>{value.ruby.join('')}</bdi>{/each}
+    {#if words.length}
+      <span>{t('word.label')}</span>
+      {#each words as value, i}
+        {#if i}<span>/</span>{/if}
+        <b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>
+        {#if value.form === 'probable'}<span>{t('word.probable')}</span>{/if}
+      {/each}
+    {/if}
+    {#if item.reading?.status === 'disputed' || item.word?.status === 'disputed'}<span>{t('reading.disputed')}</span>{/if}
+    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{values.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+      {#if own}<button type="button" disabled={busy} onclick={clear}>{t('reading.clear')}</button>{/if}{/if}
+  </div>
+  {#if editing && line}
+    <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
+    <div class="reading-editor" onkeydown={keydown}>
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div class="reading-line" role="group" aria-label={t('reading.run')} onkeydown={along}>
+        {#if shown.from > 0}<span class="reading-more">…</span>{/if}
+        {#each line.parts.slice(shown.from, shown.to + 1) as part, i}
+          {@const at = shown.from + i}
+          {@const inside = at >= from && at <= to}
+          {@const reach = at >= within.from && at <= within.to}
+          <button type="button" class:inside class:here={at === line.at} class:next={reach && (at === from - 1 || at === to + 1)} class:first={at === from} class:last={at === to}
+            aria-pressed={inside} aria-current={at === line.at ? 'true' : undefined} disabled={busy || !(inside || line.also.includes(at) || (reach && places.length < RUN_MAX))}
+            title={inside || !reach ? undefined : t('reading.extend', { char: part })} onclick={() => press(at)}>{part}</button>
+        {/each}
+        {#if shown.to < line.parts.length - 1}<span class="reading-more">…</span>{/if}
+      </div>
+      <div class="reading-grid" style:--places={places.length}>
+        <span class="reading-row" id="{uid}-reading">{t('reading.label')}</span>
+        {#if joined}<span class="reading-over whole"><input type="text" lang="ja" value={wholeReading} disabled={busy} aria-label={t('reading.of', { char: run.join('') })} oninput={e => wroteReading(null, e.currentTarget.value)} /></span>
+        {:else}{#each places as place (place)}<span class="reading-over"><input type="text" lang="ja" value={readings[place] ?? ''} disabled={busy} aria-label={t('reading.of', { char: line.parts[place] })} oninput={e => wroteReading(place, e.currentTarget.value)} /></span>{/each}{/if}
+        <span class="reading-row">{#if places.length > 1}<button type="button" class="reading-whole" role="switch" aria-checked={whole} disabled={busy} onclick={toggleWhole}>{t('reading.whole')}</button>{/if}</span>
+        {#each places as place (place)}
+          {@const crop = place === line.at ? item : crops.get(place)}
+          <span class="reading-char" class:here={place === line.at}>{#if crop?.image}<Glyph item={crop} alt="" class="reading-crop" />{:else}<span class="reading-crop absent"></span>{/if}<ScriptText text={line.parts[place]} titled={false} /></span>
+        {/each}
+        <span class="reading-row">{t('reading.ruby')}</span>
+        {#if joined}<span class="reading-over whole"><input type="text" lang="ja" value={wholeRuby} disabled={busy} aria-label={t('reading.rubyOf', { char: run.join('') })} oninput={e => wroteRuby(null, e.currentTarget.value)} /></span>
+        {:else}{#each places as place (place)}<span class="reading-over"><input type="text" lang="ja" value={rubies[place] ?? ''} disabled={busy} aria-label={t('reading.rubyOf', { char: line.parts[place] })} oninput={e => wroteRuby(place, e.currentTarget.value)} /></span>{/each}{/if}
+      </div>
+      <div class="reading-methods" role="radiogroup" aria-label={t('reading.method')}>
+        <span>{t('reading.method')}</span>
+        {#each METHODS as value}<label class:chosen={method === value}><input type="radio" name="{uid}-method" {value} bind:group={method} disabled={busy} />{t(`reading.methods.${value}`)}</label>{/each}
+      </div>
+      {#if choices.length}
+        <div class="reading-words">
+          <span>{t('word.label')}</span>
+          {#each choices as choice (choice.id)}
+            <button type="button" aria-pressed={picked === choice.id} disabled={busy} onclick={() => pick(choice)}><b>{choice.reading}</b> <span>{choice.class}</span> <span>{choice.spellings.join('・')}</span></button>
+          {/each}
+          {#if picked}<button type="button" role="switch" aria-checked={probable} disabled={busy} onclick={() => probable = !probable}>{t('word.probable')}</button>{/if}
+        </div>
+      {/if}
+      <div class="reading-actions">
+        {#if error}<span class="reading-error" role="alert">{error}</span>{/if}
+        <button type="button" disabled={pending} onclick={leave}>{t('common.cancel')}</button>
+        <button type="button" class="reading-save" disabled={busy} onclick={save}>{pending ? t('common.saving') : t('reading.save')}</button>
+      </div>
+    </div>
+  {:else if error}<span class="reading-error" role="alert">{error}</span>{/if}
+</div>
+
+<style>
+  .reading-field{font-size:12px;color:var(--muted);display:grid;gap:8px;min-width:0}
+  .reading-field.editing{flex:1 1 100%}
+  .reading-slot,.reading-methods,.reading-words,.reading-actions{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+  b{color:var(--ink);font-weight:600}
+  button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--line-strong)}
+  button:disabled{opacity:.5;cursor:default}
+  button:focus-visible,input:focus-visible{outline:3px solid var(--focus-ring);outline-offset:1px}
+  .reading-run{font-family:var(--char-font);font-size:20px;line-height:1;color:var(--ink);ruby-position:over;padding-top:2px}
+  .reading-run rt{font-size:11px;color:var(--muted)}
+  .reading-run .here{color:var(--accent)}
+  .reading-ruby{font-family:var(--char-font);font-size:15px;color:var(--ink)}
+  .reading-editor{display:grid;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface);min-width:0}
+  .reading-line{display:flex;flex-wrap:wrap;row-gap:4px;font-family:var(--char-font);font-size:19px;line-height:1}
+  .reading-line button{border:1px solid transparent;border-radius:0;background:none;color:var(--muted);padding:6px 4px;min-width:30px;min-height:34px;line-height:1}
+  .reading-line button:disabled{opacity:.6}
+  .reading-line button.next:not(:disabled){border-style:dashed;border-color:var(--line-strong);border-radius:6px;color:var(--ink)}
+  .reading-line button:hover:not(:disabled){background:var(--accent-light);color:var(--ink);border-radius:6px}
+  .reading-line button.inside{background:var(--accent-light);color:var(--ink);border-color:var(--accent);border-inline-width:0;border-radius:0}
+  .reading-line button.inside.first{border-inline-start-width:1px;border-start-start-radius:6px;border-end-start-radius:6px}
+  .reading-line button.inside.last{border-inline-end-width:1px;border-start-end-radius:6px;border-end-end-radius:6px}
+  .reading-line button.inside.here{color:var(--accent);font-weight:600}
+  .reading-more{align-self:center;padding:0 4px}
+  .reading-grid{display:grid;grid-template-columns:auto repeat(var(--places),minmax(44px,88px));gap:6px 8px;align-items:center;justify-content:start;overflow-x:auto;padding:3px}
+  .reading-row{white-space:nowrap;padding-inline-end:4px}
+  .reading-over.whole{grid-column:span var(--places)}
+  .reading-over input{width:100%;min-width:0;font:inherit;font-family:var(--char-font);font-size:15px;text-align:center;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:6px 4px}
+  .reading-over input:hover{border-color:var(--line-strong)}
+  .reading-char{display:grid;justify-items:center;gap:2px;font-size:24px;line-height:1.1;border:1px solid transparent;border-radius:6px;padding:4px}
+  .reading-char.here{border-color:var(--accent);background:var(--accent-light)}
+  .reading-char :global(.reading-crop){width:40px;height:40px;border-radius:4px}
+  .reading-crop.absent{border:1px dashed var(--line)}
+  .reading-whole{padding:3px 8px}
+  [role=switch][aria-checked=true],.reading-words button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+  .reading-methods label{position:relative;border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--ink);cursor:pointer;background:var(--surface)}
+  .reading-methods label:hover{border-color:var(--line-strong)}
+  .reading-methods label.chosen{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+  .reading-methods label:has(:focus-visible){outline:3px solid var(--focus-ring);outline-offset:1px}
+  .reading-methods input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+  .reading-words button{display:flex;flex-wrap:wrap;gap:6px}
+  .reading-words button span{color:var(--muted)}
+  .reading-actions{justify-content:flex-end}
+  .reading-save{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff;padding:6px 16px}
+  .reading-error{color:var(--wrong);margin-inline-end:auto}
+</style>

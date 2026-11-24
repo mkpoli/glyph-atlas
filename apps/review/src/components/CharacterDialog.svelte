@@ -4,7 +4,7 @@
   import SourceCredit from './SourceCredit.svelte'
   import { pageLink } from '../lib/licence.js'
   import StyleField from './StyleField.svelte'
-  import CropWord from './CropWord.svelte'
+  import CropReading from './CropReading.svelte'
   import CropForm from './CropForm.svelte'
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
@@ -308,7 +308,7 @@
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
   function fieldSaved(result) {
     changed?.(result.id, result)
-    // Style, word and grapheme claims leave the decision as it was.
+    // Style, reading and grapheme claims leave the decision as it was.
     const decided = inspector.decided(result.id)
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
     if (!closed && result.id === data?.id) data = result
@@ -368,7 +368,7 @@
         <div class="inspector-title">{#if !isUnassigned(data)}<CropTitle char={data.written_character ?? data.label} script={data.script} reading={data.needs_segmentation ? null : { item: data, disabled: busy || !fresh || !Object.hasOwn(data, 'grapheme_claim'), working: value => busy = value, saved: fieldSaved }} /><ZiLink character={data.written_character ?? data.label} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{/if}{#if data.needs_segmentation}<ReviewState tone="waiting" text={t('corpus.state.needsSplitting')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else if data.state === 'stale'}<ReviewState tone="waiting" text={t('corpus.state.sourceChanged')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         {#if data.source_label != null && (data.needs_segmentation || isUnassigned(data) || (data.written_character ?? data.label) !== data.source_label)}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: data.source?.corpus === 'codh-full' ? 'CODH' : (data.source?.corpus || t('corpus.genericName')) })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if !isUnassigned(data) && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         <div class="inspector-words">
-          {#if !unassigned}{#key data.id + ':' + data.crop_version}<CropWord item={data} disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
+          {#if !unassigned}{#key data.id + ':' + data.crop_version}<CropReading item={data} disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
           <StyleField item={data} editable disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />
         </div>
         {#if data.origin !== 'corpus' && (issue === 'character' || badCrop)}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
@@ -398,7 +398,7 @@
 </dialog>
 
 <style>
-  /* The word and the style it is written in sit on one line; either wraps when the inspector is narrow. */
+  /* The reading and the style it is written in sit on one line; either wraps when the inspector is narrow. */
   .inspector-words{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px}
   .assignment-options{margin:0 0 16px}
   .unassigned-title{font-size:28px}
