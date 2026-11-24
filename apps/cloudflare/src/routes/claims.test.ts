@@ -664,9 +664,9 @@ describe('a crop read in a run', () => {
     const { db, env, tools, local, corpus, body, of } = read();
     const first = body(), answer = await setReading(env, first, publicId(local), 'reader', tools);
     expect(answer).toEqual({ id: publicId(local), crops: [publicId(local), publicId(corpus)], reading: { status: 'asserted',
-      values: [{ run: ['諸', '器'], at: 1, reading: ['しょ', 'き'] }], methods: ['ruby'], by: ['reader'],
-      ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }], by: ['reader'] } } });
-    expect((await of(corpus))?.values).toEqual([{ run: ['諸', '器'], at: 0, reading: ['しょ', 'き'] }]);
+      values: [{ run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], by: ['reader'], methods: ['ruby'] }], methods: ['ruby'], by: ['reader'],
+      ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'], by: ['reader'] }], by: ['reader'] } } });
+    expect((await of(corpus))?.values).toMatchObject([{ run: ['諸', '器'], at: 0, reading: ['しょ', 'き'] }]);
     // The same save sent again is the same write.
     expect(await setReading(env, first, publicId(local), 'reader', tools)).toEqual(answer);
     expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 4 });
@@ -692,13 +692,17 @@ describe('a crop read in a run', () => {
   it('shows one value for readers who agree, beside a third who does not', async () => {
     const { local, set, of } = read();
     await set(); await set({}, 'other'); await set({ run: ['器'], at: 0, reading: ['うつわ'], ruby: null, others: [] }, 'third');
-    expect((await of(local))?.values).toHaveLength(2);
+    const held = async () => ((await of(local))!.values as any[]).map(v => [v.reading.join(''), [...v.by].sort(), v.methods]).sort();
+    expect(await held()).toEqual([['うつわ', ['third'], ['ruby']], ['しょき', ['other', 'reader'], ['ruby']]]);
+    // Standing alone, a value still names everyone who holds it.
+    await set({ run: null }, 'third');
+    expect(await held()).toEqual([['しょき', ['other', 'reader'], ['ruby']]]);
   });
 
   it('may have one reading for all of its characters', async () => {
     const { set } = read();
     const answer = await set({ run: ['村', '落'], reading: ['ざいご'], ruby: ['ざいご'] });
-    expect(answer.reading.values).toEqual([{ run: ['村', '落'], at: 1, reading: ['ざいご'] }]);
+    expect(answer.reading!.values).toMatchObject([{ run: ['村', '落'], at: 1, reading: ['ざいご'] }]);
   });
 
   it('is refused whole when it is no reading, two crops share a place, or a crop was cut again', async () => {
