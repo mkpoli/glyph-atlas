@@ -23,10 +23,10 @@ export function sectionChosen(selected, tiles, offered) {
   return tiles.some(item => selected.has(item.id)) ? 'some' : 'none'
 }
 
-/** `selected` after a section's box is pressed: every tile it takes, or none of the section's once it has them all. */
+/** `selected` after a section's box is pressed: every tile it takes, or none of the section's once it has them all or there are none to take. */
 export function withSection(selected, tiles, offered) {
   const next = new Set(selected)
-  if (sectionChosen(selected, tiles, offered) === 'all') for (const item of tiles) next.delete(item.id)
+  if (!offered.length || sectionChosen(selected, tiles, offered) === 'all') for (const item of tiles) next.delete(item.id)
   else for (const item of offered) next.add(item.id)
   return next
 }

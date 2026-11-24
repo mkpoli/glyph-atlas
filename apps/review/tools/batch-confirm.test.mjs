@@ -37,6 +37,7 @@ describe('a section’s box', () => {
     expect([...chosen]).toEqual(['x', 'c', 'a', 'b'])
     expect([...withSection(chosen, tiles, offered)]).toEqual(['x'])
     expect([...withSection(new Set(['x', 'a']), tiles, offered)]).toEqual(['x', 'a', 'b'])
+    expect([...withSection(new Set(['x', 'a']), tiles, [])]).toEqual(['x'])
   })
 })
 
