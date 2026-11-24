@@ -120,6 +120,8 @@ WELCOME_WAIT = (40.0, 120.0)
 WELCOME_FLOOD = 5
 WELCOME_LATE_SECONDS = 6 * 3600
 WELCOME_PER_HOUR = 10
+# Newcomers wait this long again when the day's money is gone, up to WELCOME_LATE_SECONDS in all.
+WELCOME_BROKE = 1800.0
 # Reading along: she opens a room with unread lines at random times, as a person checks a chat, and
 # the gap is drawn from an exponential around [chat] visit_minutes. A burst still under way is left
 # to finish first. Once there, the model rates how much it has to add, 0 to 5, and below these marks
@@ -225,6 +227,24 @@ PRICE_SEARCH_QUERY = 0.014
 # Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
 # may pass the day's limit by the difference, once.
 CALL_RESERVE = 0.05
+# As the day's money goes she saves in this order, so that what is left answers people and one voice
+# does it: she opens no rooms unasked while the day's spending is ahead of its pace, which rises from
+# the first share at midnight (JST) to the second at the day's end, so evenings keep their visits; past
+# THRIFT_SHORT she reads fewer lines and one picture, and leaves bystanders' lines in a conversation
+# alone; with nothing left she says so, once a day in a room that calls her.
+THRIFT_VISITS = (0.25, 0.80)
+THRIFT_SHORT = 0.85
+THRIFT_CONTEXT = 15
+BROKE = {
+    "zh-Hant": "今天的飯票花光啦，本鯨先去睡覺，明天再聊～🍚",
+    "zh-Hans": "今天的饭票花光啦，本鲸先去睡觉，明天再聊～🍚",
+    "ja": "今日のごはん券、ぜんぶ使っちゃった……先に寝るね、また明日〜🍚",
+    "ko": "오늘 밥표를 다 써 버렸어요… 먼저 잘게요, 내일 또 얘기해요~🍚",
+    "vi": "Hôm nay mình hết phiếu cơm rồi, mình đi ngủ trước nha, mai nói chuyện tiếp~🍚",
+    "en": "I'm all out of rice tickets for today, so I'm off to nap. Talk tomorrow~ 🍚",
+}
+SIMPLIFIED = re.compile("[们这说吗还没对时来个为么过开关车东见听语读写汉词译图觉饭鱼鲸请问谁怎样让给]")
+VIETNAMESE = re.compile("[ăđơưĂĐƠƯ\u1ea0-\u1ef9]")
 # What the homeserver knows about a room and its people, read again after this long. Bridged people
 # carry their network in their Matrix ID; the QQ bridge makes a QQ member's account the first time
 # they speak, since QQ's bot API cannot list a group, so QQ counts only people who have spoken.
@@ -320,6 +340,19 @@ def _localpart(user_id: str) -> str:
 
 def _room_link(room_id: str) -> str:
     return "https://matrix.to/#/" + urllib.parse.quote(room_id, safe="!:")
+
+
+def language_of(text: str) -> str:
+    """The language of a line, by its letters, among those BROKE is written in."""
+    if re.search("[\u3040-\u30ff]", text):
+        return "ja"
+    if re.search("[\uac00-\ud7af]", text):
+        return "ko"
+    if VIETNAMESE.search(text):
+        return "vi"
+    if re.search(f"[{HAN}]", text):
+        return "zh-Hans" if SIMPLIFIED.search(text) else "zh-Hant"
+    return "en"
 
 
 def _finite(value: Any, default: float) -> float:
@@ -3552,6 +3585,7 @@ class Bot:
         self._follows: list[float] = []
         self._spoke_at: dict[str, float] = {}
         self._visits: list[float] = []
+        self._told_broke: dict[str, str] = {}
         self._random = random.random
         self._aliases: dict[str, str] = {}
         self._alias_failed: dict[str, float] = {}
@@ -3759,6 +3793,10 @@ class Bot:
                     self.forget(room_id, event_id, sender, keep=call.mode == "remember")
                 else:
                     self.chat(room_id, event_id, call, sender)
+            except SpendError as error:
+                log.info("no answer in %s: %s", room_id, error)
+                self.store.mark_handled(event_id, "no-money")
+                self._say_broke(room_id, event_id, human_message(event, self.user_id, self.config.ignored_senders) or "")
             except Exception as error:
                 log.exception("chatting in %s", room_id)
                 self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
@@ -3783,10 +3821,24 @@ class Bot:
                 self._file_pending(room_id, event_id, pending[0], pending[1], pending[2])
             else:
                 self._answer(room_id, event_id, call)
+        except SpendError as error:
+            log.info("no decision in %s: %s", room_id, error)
+            self.store.mark_handled(event_id, "no-money")
+            self._say_broke(room_id, event_id, human_message(event, self.user_id, self.config.ignored_senders) or "")
         except Exception as error:
             log.exception("deciding for %s", event_id)
             self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
             self._tell(room_id, event_id, "I couldn't read that discussion just now. Try calling me again in a minute.")
+
+    def _say_broke(self, room_id: str, event_id: str, line: str) -> None:
+        """Tell a room that calls her that the day's money is gone, once a day."""
+        self.matrix.typing(room_id, self.user_id, timeout_ms=0)
+        today = local_day(now_ms())
+        if self._told_broke.get(room_id) != today:
+            self._told_broke[room_id] = today
+            for alias in sorted(self.config.aliases, key=len, reverse=True):
+                line = line.replace(alias, "")
+            self._tell(room_id, event_id, BROKE[language_of(line)])
 
     def _replies_to_me(self, room_id: str, event: dict[str, Any]) -> bool:
         """Whether a person's message replies to one of the bot's own, by the log or else by asking
@@ -3891,10 +3943,12 @@ class Bot:
                 return
             pause = WELCOME_WAIT[0] + (WELCOME_WAIT[1] - WELCOME_WAIT[0]) * self._random()
             self._newcomers[person] = {"room": room_id, "event_id": "", "name": name, "how": how, "line": "",
-                                       "due": time.monotonic() + pause}
-            if len(self._newcomers) > WELCOME_FLOOD:
-                log.info("%s new people at once, taken for a member sync; not welcomed", len(self._newcomers))
-                self._newcomers.clear()
+                                       "due": time.monotonic() + pause, "since": time.monotonic()}
+            fresh = [person for person, waiting in self._newcomers.items() if not waiting.get("postponed")]
+            if len(fresh) > WELCOME_FLOOD:
+                log.info("%s new people at once, taken for a member sync; not welcomed", len(fresh))
+                for person in fresh:
+                    del self._newcomers[person]
                 self._sync_until = time.monotonic() + WELCOME_WAIT[0]
                 return
             waiting = self._newcomers[person]
@@ -3934,6 +3988,10 @@ class Bot:
                 log.info("welcomed %s in %s", len(people), room_id)
                 if act is not None and len(people) == 1:
                     self._listen(room_id, next(iter(people)))
+            except SpendError as error:
+                log.info("not welcomed in %s yet: %s", room_id, error)
+                self._newcomers.update({person: {**waiting, "due": now + WELCOME_BROKE, "postponed": True}
+                                        for person, waiting in people.items() if now - waiting["since"] < WELCOME_LATE_SECONDS})
             except Exception:
                 log.exception("welcoming in %s", room_id)
 
@@ -4010,6 +4068,8 @@ class Bot:
                 continue
             self._follows.append(now)
             partner = bool(talk.partner) and sender == talk.partner
+            if not partner and self.gemini.purse.share() >= THRIFT_SHORT:
+                continue
             try:
                 act = self.turn(room_id, event_id, task="follow")
                 spoke = act is not None and bool(act.say or act.react or act.sticker or act.recap)
@@ -4027,8 +4087,16 @@ class Bot:
                         talk.quiet_others += 1
                 if act is not None and act.issue and partner:
                     self._to_desk(room_id, event_id, body, sender)
+            except SpendError as error:
+                log.info("not followed in %s: %s", room_id, error)
             except Exception:
                 log.exception("following in %s", room_id)
+
+    def _ahead_of_pace(self) -> bool:
+        """Whether the day's spending leaves nothing for visits at this hour."""
+        now = self._clock()
+        day = (now.hour * 60 + now.minute) / 1440
+        return self.gemini.purse.share() >= THRIFT_VISITS[0] + (THRIFT_VISITS[1] - THRIFT_VISITS[0]) * day
 
     def visit(self) -> None:
         """Open the rooms whose time has come, and let the model decide whether to join in."""
@@ -4040,7 +4108,7 @@ class Bot:
                 unread["due"] = min(unread["last"] + VISIT_BURST, latest)
                 continue
             self._visits = [at for at in self._visits if now - at < 3600]
-            if len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
+            if self._ahead_of_pace() or len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
                 unread["due"] = now + self._gap(room_id)
                 continue
             self._visits.append(now)
@@ -4051,6 +4119,8 @@ class Bot:
                         if part] if act is not None else []
                 log.info("visited %s: %s unread, interest %s, %s", room_id, unread["count"],
                          act.interest if act is not None else "-", ", ".join(done) or "stayed quiet")
+            except SpendError as error:
+                log.info("not visited %s: %s", room_id, error)
             except Exception:
                 log.exception("visiting %s", room_id)
 
@@ -4069,6 +4139,8 @@ class Bot:
         self.deliver_all()
         try:
             self.digest()
+        except SpendError as error:
+            log.info("no digest: %s", error)
         except Exception:
             log.exception("posting the digest")
         day = self._clock().strftime("%Y-%m-%d")
@@ -4344,8 +4416,14 @@ class Bot:
             self.refresh(room_id, limit=CHAT_CONTEXT)
         except MatrixError as error:
             log.warning("refreshing %s: %s", room_id, error)
-        events = self.store.context(room_id, now_ms() + 60_000, CHAT_CONTEXT)
+        short = self.gemini.purse.share() >= THRIFT_SHORT
+        lines = THRIFT_CONTEXT if short else CHAT_CONTEXT
+        events = self.store.context(room_id, now_ms() + 60_000, lines)
         trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
+        if trigger is None and task != "visit" and lines < CHAT_CONTEXT:
+            # The line she answers is read even when many have followed it.
+            events = self.store.context(room_id, now_ms() + 60_000, CHAT_CONTEXT)
+            trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
         if trigger is None and task == "visit":
             trigger = 0
         names = self._names(room_id, [str(row["sender"]) for row in events])
@@ -4361,7 +4439,7 @@ class Bot:
                               bot_user_id=self.user_id, stickers=offered,
                               sticker_mood=self._random() < STICKER_MOOD, rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
-                              images=self.pictures(events, IMAGES_VISIT if task == "visit" else IMAGES_CALLED),
+                              images=self.pictures(events, 1 if short else IMAGES_VISIT if task == "visit" else IMAGES_CALLED),
                               lookup=self.lookup if task in ("called", "follow", "visit") else None,
                               on_step=(lambda: None) if task == "visit" else (lambda: self.matrix.typing(room_id, self.user_id)))
         if task == "visit":
