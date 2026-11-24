@@ -13,6 +13,7 @@ import { Problem } from '../busy';
 import { categoryOf, isSeal } from '../category';
 import { tallyDates } from '../dating';
 import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
+import { digest } from '../representation';
 import { ROUND_MAX } from '../rounds';
 import { Timing } from '../timing';
 
@@ -196,14 +197,15 @@ export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Pro
 // (`graphemeTotals.ts`): what the grapheme browser, its cards and a tile's caption count, withheld crops
 // among them. `['', grapheme, …]` are the crops with no character that name it, and a row ends in 1 where
 // a claim moved some of its crops. It is the same for anyone who asks in the same minute of a
-// publication (`keptFor`), so the edge keeps it, and as of its write for a browser that wrote lately, kept under the catalogue key.
-// The browser asks each time and is told when its copy still stands (`countsTag`).
-export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
+// publication (`keptFor`), so the edge keeps it, and as of its write for a browser that wrote lately, kept
+// under the catalogue key. The browser asks each time, and by the tag of its copy is told that it still
+// stands. The tag is the rows' own, in the order of their labels, so the same counts have the same tag.
+export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<{ text: string; tag: string }> {
   const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]), version = catalogueKey(stamps);
   const span = keptFor(env, stamps, pub);
-  const key = new Request(`${url.origin}/atlas/graphemes/counts?v=${encodeURIComponent(span ?? `${pub}:${version}`)}`);
+  const key = new Request(`${url.origin}/atlas/graphemes/counts?s=2&v=${encodeURIComponent(span ?? `${pub}:${version}`)}`);
   const cached = await caches.default.match(key);
-  if (cached) return cached.json();
+  if (cached) return { text: await cached.text(), tag: cached.headers.get('etag')! };
   const [collected, corpus, filed, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedCounted(env, version),
     filedClaimsKept(env, version)]);
   const place = (chars: Map<number, CharInfo>, char: number) => { const info = chars.get(char); return info ? { label: info.text, grapheme: info.grapheme } : null };
@@ -215,15 +217,10 @@ export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL):
   for (const c of filed.cells) add(family(c.family), c.kind, c.n);
   fileClaims(rows, claims, r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
   const items = [...rows.values()].filter(row => crops(row) > 0).map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
-  const body = { items };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${span ? KEPT_SECONDS : 3600}` } })));
-  return body;
-}
-
-/** What a copy of the counts stands for: the minute of a publication, or a writer's catalogue key. */
-export async function countsTag(env: Env): Promise<string> {
-  const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
-  return `W/"${encodeURIComponent(keptFor(env, stamps, pub) ?? `${pub}:${catalogueKey(stamps)}`)}"`;
+  items.sort((a, b) => byCodePoint(a[0] as string, b[0] as string) || byCodePoint(a[1] as string, b[1] as string));
+  const text = JSON.stringify({ items }), tag = `W/"${await digest(text)}"`;
+  ctx.waitUntil(caches.default.put(key, new Response(text, { headers: { 'content-type': 'application/json', etag: tag, 'cache-control': `public, max-age=${span ? KEPT_SECONDS : 3600}` } })));
+  return { text, tag };
 }
 
 // ---- The homepage gallery.

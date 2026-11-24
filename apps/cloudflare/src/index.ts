@@ -168,9 +168,9 @@ const routes = {
       const run=await runsRoute(env,ctx,url);
       if(run)return run;
       if(path==='/atlas/graphemes/counts'){
-        const headers={'cache-control':'private, no-cache',etag:await browse.countsTag(env)};
-        if(request.headers.get('if-none-match')===headers.etag)return new Response(null,{status:304,headers});
-        return json(await browse.graphemeCounts(env,ctx,url),200,headers);
+        const {text:counts,tag}=await browse.graphemeCounts(env,ctx,url),headers={'cache-control':'private, no-cache',etag:tag};
+        if(request.headers.get('if-none-match')===tag)return new Response(null,{status:304,headers});
+        return new Response(counts,{headers:{'content-type':'application/json','x-content-type-options':'nosniff',...headers}});
       }
       const cropped=await cropRoute(env,ctx,url);
       if(cropped)return cropped;

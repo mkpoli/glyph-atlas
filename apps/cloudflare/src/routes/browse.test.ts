@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, countsTag, gallery, graphemeCounts, groupStats, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
 import worker from '../index';
@@ -134,7 +134,7 @@ describe('the statistics by script group', () => {
   });
 });
 
-const counted = async (env: Env): Promise<any[]> => (await graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'))).items
+const counted = async (env: Env): Promise<any[]> => JSON.parse((await graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'))).text).items
   .sort((a: any, b: any) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]));
 describe('crops by character and grapheme', () => {
   it('count every crop of each, withheld ones and those with no character among them', async () => {
@@ -177,16 +177,21 @@ describe('crops by character and grapheme', () => {
     expect(rows.every(row => row[2] >= 0 && row[3] >= 0 && row[2] + row[3] > 0)).toBe(true);
     expect(rows.find(row => row[0] === '한')).toEqual(['한', 'U+D55C', 0, 1]);
   });
-  it('are asked for each time, and answered as unchanged while they stand for the same', async () => {
-    const { env: writer, db } = await setup(), env = { ...writer, CATALOGUE_LAG: '60' } as Env;
-    const tag = await countsTag(env);
-    expect([await countsTag(env), tag.startsWith('W/"')]).toEqual([tag, true]);
-    const written = await countsTag(writer);
-    db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0)`);
-    expect([await countsTag(env), (await countsTag(writer)) === written]).toEqual([tag, false]);
+  it('are asked for each time, and answered as unchanged while the counts are the same', async () => {
+    const { env, db } = await setup();
     const ask = (headers = {}) => worker.fetch(new Request('https://glyphatlas.org/atlas/graphemes/counts', { headers }), env, { waitUntil: () => {}, passThroughOnException() {} } as unknown as ExecutionContext);
-    const first = await ask(), again = await ask({ 'if-none-match': first.headers.get('etag')! });
-    expect([first.status, first.headers.get('cache-control'), again.status, await again.text()]).toEqual([200, 'private, no-cache', 304, '']);
+    const first = await ask(), tag = first.headers.get('etag')!, rows = await first.text();
+    expect([first.status, first.headers.get('cache-control'), tag.startsWith('W/"')]).toEqual([200, 'private, no-cache', true]);
+    // Another minute, or a save that moved none of them, leaves the copy standing; one that did does not.
+    edge.clear();
+    for (const _ of [0, 1]) {
+      const again = await ask({ 'if-none-match': tag });
+      expect([again.status, await again.text(), again.headers.get('etag')]).toEqual([304, '', tag]);
+      db.exec(`INSERT OR IGNORE INTO ledger_submissions VALUES('tag','u','{}','{}','t')`);
+    }
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,5,-1,3,2,0,0,1,-1,1); INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind) VALUES(4343,1,1,0,1,1,1,1,0)`);
+    const moved = await ask({ 'if-none-match': tag });
+    expect([moved.status, moved.headers.get('etag') === tag, (await moved.text()) === rows]).toEqual([200, false, false]);
   });
   it('are kept a minute of a publication, and answered afresh to a browser that wrote', async () => {
     const { env: writer, db } = await setup(), env = { ...writer, CATALOGUE_LAG: '60' } as Env;

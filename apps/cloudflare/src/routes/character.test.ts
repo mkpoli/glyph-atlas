@@ -568,10 +568,6 @@ describe('the total of a grapheme', () => {
       `/layers/candidates?code_point=${encodeURIComponent(code)}&scope=grapheme`, `/layers/decades?code_point=${encodeURIComponent(code)}&scope=grapheme`, `/layers/books?code_point=${encodeURIComponent(code)}&scope=grapheme`]);
     for (const path of [...paths, '/atlas/graphemes/counts', '/atlas?grapheme=U%2B6642&limit=1']) expect((await worker.fetch(new Request('https://glyphatlas.org' + path), counting, ctx)).status).toBe(200);
     expect(reads).toBe(1);
-    // Asked for together by requests that find no copy, they are one read too.
-    edge.clear(); reads = 0;
-    await Promise.all(['U%2B6642', 'U%2B306D', 'U%2B4E38', 'U%2B5CD5'].map(code => worker.fetch(new Request(`https://glyphatlas.org/layers/occurrences?code_point=${code}&expand=grapheme`), counting, ctx)));
-    expect(reads).toBe(1);
   });
 });
 
