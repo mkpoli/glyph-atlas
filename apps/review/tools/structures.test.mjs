@@ -22,7 +22,7 @@ mock.module('../src/lib/layers.js', () => ({
   },
 }))
 
-const { cardStructures, NAMES, proposed, standing } = await import('../src/lib/structures.js')
+const { cardStructures, layouts, NAMES, proposed, standing } = await import('../src/lib/structures.js')
 
 describe('reading structures beyond NAMES', () => {
   it('chunks composable names by NAMES and merges every answer into known', async () => {
@@ -98,10 +98,17 @@ describe("the 構形 of a character's card", () => {
     expect(asked).toEqual([])
   })
 
-  it('keeps it where a reader filed it under a 構形 folded into this one', async () => {
+  it('keeps it where a reader filed it under a 構形 that stands under this one', async () => {
     const items = [{ id: 'st:1', label: '⿱自犬', chars: ['臭', '𦤀'], claimed: { 𦤀: ['u1'] }, folded: [{ id: 'st:3', label: '⿱自大', by: ['u1'], chars: ['𦤀'] }] }]
     const found = await read('臭', items)
     expect([found.items[0].chars, found.twins]).toEqual([['臭', '𦤀'], ['𦤀']])
+  })
+
+  it('lists the names built as another layout after the others', () => {
+    const part = { id: 'st:2', label: '⿰辵禺', by: [], chars: ['\u{3D4FB}'] }
+    expect(layouts({ id: 'st:1', label: '⿺辶禺', chars: ['遇', '\u{3D4FB}'], folded: [part] })).toEqual({ own: ['遇'], folded: [part] })
+    expect(layouts({ id: 'st:1', label: '⿺辶禺', chars: ['遇'], folded: [part] })).toEqual({ own: ['遇'], folded: [] })
+    expect(layouts({ id: 'st:1', label: '⿺辶禺', chars: ['遇'] })).toEqual({ own: ['遇'], folded: [] })
   })
 
   it('marks a seal character nobody filed as proposed', () => {

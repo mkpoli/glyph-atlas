@@ -78,9 +78,16 @@ A small seal character (Unicode's Seal block) is proposed the structure of its H
 `⿱𡗗日`. The file calls the value the modern CJK equivalent and says nothing of structure. The value can
 follow the seal form's composition (𽀅 has 叓, where 吏 is written today) and need not; how many
 differ is not measured. The site marks a proposed structure with an asterisk until a reader files
-the seal character. 書 is 聿 over 者 in seal (說文解字 聿部, 從聿者聲; 說文繫傳 卷六, Wikisource), so
-its seal character has no structure, nor do those whose value several share: 94 Han characters (折,
-殺, 民) are each the value of more than one.
+the seal character. 書 is 聿 over 者 in seal (說文繫傳 卷六 聿部, 從聿者聲), so
+its seal character has no structure, nor have those of 邃 and 𨘈, which Sealie's figures draw with 穴
+and 虍 over the whole, nor those whose value several share: 94 Han characters (折, 殺, 民) are each
+the value of more than one.
+
+Seal script has no 之繞: it writes 辵 whole at the left, so the seal character of ⿺辶X or ⿺辵X is
+proposed ⿰辵X (𽓻 `⿰辵禺`, of 遇 `⿺辶禺`). 153 are, each read in Sealie's figures. ⿰辵X and ⿺辵X are
+other layouts of ⿺辶X and stand under it (𽓻 and 𨑡 `⿺辵土`), as a structure a reader folds does, with
+nobody named; a reader's own fold is followed first. The ids are of `⿰辵禺` and `⿺辵土`, so the layouts
+can be told apart, and the rule is not part of the policy.
 
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟
@@ -175,5 +182,9 @@ encoded apart share a structure when only a unified component separates them (�
   number and its definition of the two levels were not checked against the published PDF.
 - 王寧『漢字構形學導論』(商務印書館, 2015), for 異寫字 and 異構字; cited from memory of the
   framework, not checked against the page.
+- SealSources.txt of Unicode 18.0 (`data/sources/unicode-ucd.yaml`).
+- 說文繫傳 卷六 (四庫全書本), 聿部, on 書: 著也從聿者聲. Wikisource,
+  https://zh.wikisource.org/wiki/說文繫傳_(四庫全書本)/卷六, read 2026-11-24.
+- Sealie 1.3.1, the figures the layouts were read in (`docs/typefaces.md`).
 - `src/glyph_atlas/structures.py`, the derivation.
 - `apps/cloudflare/migrations-atlas/0017_structures.sql`, the table.

@@ -514,6 +514,40 @@ export async function foldsOf(env: Env, ids: string[]): Promise<Map<string, Fold
   }
   return found;
 }
+// The label of the structure another layout of the same parts stands under: 辵 beside X (⿰辵禺) or
+// whole under it (⿺辵土) under ⿺辶X. `glyph_atlas.structures.head` answers the same.
+const headOf = (label: string) => /^[⿰⿺]辵/u.test(label) ? '⿺辶' + label.slice(2) : label.startsWith('⿲辵') ? '⿺辶⿰' + label.slice(2) : null;
+type Named = { id: string; label: string };
+/** Where each named structure stands, null for one that stands on its own: at the end of the readers'
+ *  folds and of the layouts, a reader's fold first. A layout whose head a reader folded into it stands
+ *  on its own. `source` gives what the structures were read under, without which no layout is known. */
+export async function standingOf(named: Named[], source: () => Promise<{ scheme: string; policy: string } | null>, folds: (ids: string[]) => Promise<Map<string, Fold>>) {
+  const heads = new Map<string, Named>(), folded = new Map<string, Fold>(), asked = new Set<string>();
+  for (let reading = named; reading.length;) {
+    for (const { id, label } of reading) {
+      const head = heads.has(id) ? null : headOf(label), read = head && await source();
+      if (head && read) heads.set(id, { id: await structureId(head, read.scheme, read.policy), label: head });
+    }
+    const wanted = [...new Set(reading.flatMap(({ id }) => [id, heads.get(id)?.id ?? id]))].filter(id => !asked.has(id));
+    for (const id of wanted) asked.add(id);
+    const more = wanted.length ? await folds(wanted) : new Map<string, Fold>();
+    for (const [id, fold] of more) folded.set(id, fold);
+    reading = [...more.values()].map(fold => fold.head).filter(head => !asked.has(head.id));
+  }
+  return (structure: Named): { head: Named; by: string[] } | null => {
+    const path: Named[] = [structure];
+    for (;;) {
+      const at = path.at(-1)!.id, fold = folded.get(at), head = heads.get(at);
+      const next = fold?.head ?? (head && !folded.get(head.id)?.path.includes(at) ? head : null);
+      if (!next) break;
+      const seen = path.findIndex(one => one.id === next.id);
+      if (seen >= 0) { path.push(path.slice(seen).sort((a, b) => a.id < b.id ? -1 : 1)[0]); break; }
+      path.push(next);
+    }
+    const head = path.at(-1)!;
+    return head.id === structure.id ? null : { head: { id: head.id, label: head.label }, by: folded.get(structure.id)?.by ?? [] };
+  };
+}
 // The actor's own live fold of a structure: one range of `assertion_slot`.
 export const ownFoldQuery = (owned: string) => `SELECT a.id,a.object FROM assertions a WHERE a.subject=? AND a.predicate='folds_into'
   AND a.scope='' AND a.slot='' AND (a.asserted_by=? OR a.asserted_by IN ${owned})

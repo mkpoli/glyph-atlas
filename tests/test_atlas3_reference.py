@@ -458,8 +458,8 @@ def test_only_components_sends_the_component_objects_alone_and_touches_no_d1(lay
 
 def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
-    # One seal character of the 11,328, so a shard can still empty and leave R2.
-    monkeypatch.setattr(structures, "seal_equivalents", lambda: {"𾲟": "臭"})
+    # Two seal characters of the 11,328, so a shard can still empty and leave R2.
+    monkeypatch.setattr(structures, "seal_equivalents", lambda: {"𾲟": "臭", "𽓻": "遇"})
     sources(root, cards=[card("あ")])
     bucket = load(remote, monkeypatch, "--send")
     others = {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))}
@@ -489,6 +489,7 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     assert shards != held
     # A small seal character is proposed its Han equivalent's structure (𾲟 is 臭's seal form).
     assert rows.pop("𾲟") == [[], None, [smell.id, smell.label]]
+    assert rows.pop("𽓻") == [[], None, [structures.for_character("𽓻").id, "⿰辵禺"]]
     # A description the site names something by is a key of its own; one that names no structure has none.
     # A character with no description to edit keeps its structure. A regional shape another character
     # encodes again names it (臭's ⿱自大 is 𦤀).

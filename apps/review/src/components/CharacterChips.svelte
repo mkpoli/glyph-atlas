@@ -12,7 +12,7 @@
   import { countsLabel } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
   import { isFigure } from '../lib/mjFigures.js'
-  import { cardStructures, proposed, standing } from '../lib/structures.js'
+  import { cardStructures, layouts, proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
@@ -103,6 +103,10 @@
   const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
 </script>
 
+{#snippet sharing(names, group)}
+  {#if names.length}<span class="sharing">{#each names as name (name)}{#if composedNames > 1}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/if}{#if proposed(name, group.claimed?.[name])}<sup class="derived-mark" title="{name} · {t('chips.derived')}">*</sup>{/if}{/each}</span>{/if}
+{/snippet}
+
 {#if card}
   <div class="character-layers" aria-label={t('chips.layers.label')}>
     <div class="layer-row">
@@ -119,7 +123,8 @@
         <span class="layer-label">{t('chips.structure')}</span>
         <div class="variant-chips">
           {#each composed as s (s.id)}
-            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedNames > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{#if proposed(name, s.claimed?.[name])}<sup class="derived-mark" title="{name} · {t('chips.derived')}">*</sup>{/if}{/if}{/each}</span>{/if}</span>
+            {@const { own, folded } = layouts(s)}
+            <span class="variant structure"><span lang="zh">{s.label}</span>{@render sharing(own, s)}{#each folded as part (part.id)}<span class="layout"><span lang="zh">{part.label}</span>{@render sharing(part.chars, s)}</span>{/each}</span>
           {/each}
           {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>
@@ -265,6 +270,7 @@
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
   .variant.structure{font-size:15px}
+  .layout{display:inline-flex;align-items:baseline;gap:6px;padding-left:8px;border-left:1px solid var(--line)}
   .variant.structure:hover{border-color:var(--line)}
   .arrange{align-self:center;border:0;background:transparent;color:var(--accent);padding:0 4px;font-size:12px;text-decoration:underline;text-underline-offset:3px}
   .arrange:hover{color:var(--ink)}

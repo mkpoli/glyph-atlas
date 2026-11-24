@@ -84,6 +84,31 @@ def fold(client: TestClient, source: dict, into: dict | None, *, reviewer: str =
     return response.json()
 
 
+def test_a_layout_stands_under_the_structure_it_is_one_of(dataset):  # noqa: F811
+    """𽓻, the seal character of 遇, is ⿰辵禺 and stands under ⿺辶禺."""
+    client = TestClient(create_app(dataset))
+    meet, beside = structures.for_character("遇"), structures.for_character("𽓻")
+    part = {"id": beside.id, "label": "⿰辵禺", "by": [], "chars": ["𽓻"]}
+    assert groups(client, "遇𽓻") == [{"id": meet.id, "label": "⿺辶禺", "chars": ["遇", "𽓻"], "folded": [part]}]
+    assert client.get("/layers/ids", params={"c": "𽓻"}).json()["structure"] == {
+        "id": beside.id, "label": "⿰辵禺"}
+    # A reader's filing of the seal character under the structure holds its place there.
+    file(client, "𽓻", char="𽓻")
+    assert groups(client, "遇𽓻")[0]["folded"] == [part]
+    # What stands there does not depend on what else is asked for.
+    file(client, "峰", char="𽓻")
+    assert [(group["id"], group["chars"]) for group in groups(client, "峰")] == [(meet.id, ["峰"])]
+    # Folds and layouts are followed to one end: 遇's structure folded into ⿰辵丌, which stands under ⿺辶丌.
+    fold(client, {"char": "遇"}, {"char": "\U0003ddb3"})
+    end = structures.for_character("䢋")
+    assert [(group["id"], group["chars"]) for group in groups(client, "遇𽓻")] == [(end.id, ["遇", "𽓻"])]
+    # A reader's fold of 遇's structure is followed on, and one under the layout wins.
+    fold(client, {"char": "遇"}, {"char": "嵐"})
+    assert [(group["id"], group["chars"]) for group in groups(client, "嵐遇𽓻")] == [(structures.for_character("嵐").id, ["嵐", "遇", "𽓻"])]
+    fold(client, {"char": "遇"}, {"char": "𽓻"})
+    assert [(group["id"], group["chars"]) for group in groups(client, "遇𽓻")] == [(beside.id, ["遇", "𽓻"])]
+
+
 def test_a_structure_folds_into_another_and_its_forms_join_that_group(dataset):  # noqa: F811
     client = TestClient(create_app(dataset))
     wind = structures.for_character("嵐")

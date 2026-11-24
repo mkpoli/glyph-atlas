@@ -66,9 +66,10 @@ SAME = frozenset({"z"})
 #: equivalent.
 SEAL = range(0x3D000, 0x3FC40)
 SEAL_SOURCE = "unicode-ucd"
-#: The Han values whose seal form is known to be built otherwise: 書 is 聿 over 者 in seal (說文解字 聿部,
-#: 從聿者聲; 說文繫傳 卷六, Wikisource).
-SEAL_UNLIKE = frozenset("書")
+#: The Han values whose seal form is known to be built otherwise: 書 is 聿 over 者 in seal (說文繫傳 卷六 聿部,
+#: 從聿者聲), and the figures of Sealie 1.3.1 draw 邃 with 穴 over the whole and
+#: 𨘈 with 虍 over the rest.
+SEAL_UNLIKE = frozenset("書邃𨘈")
 APART = "non-cognate"
 #: The level of the IRG's unifiable list this layer reads. A level-2 entry lists characters its
 #: variation tells apart (壬 and 王: 任 and 仼).
@@ -321,13 +322,34 @@ def seal_equivalents() -> dict[str, str]:
     return {seal: han for han, found in seals.items() if len(found) == 1 and han not in SEAL_UNLIKE for seal in found}
 
 
+def head(label: str) -> tuple[str, str] | None:
+    """The id and label of the structure another layout of the same parts stands under: 辵 beside X
+    (⿰辵禺, the seal 𽓻) or whole under it (⿺辵土, 𨑡) under ⿺辶X, 辶 being the form 辵 takes as 之繞.
+    None for any other label. The Worker's `headOf` answers the same."""
+    if label[:2] in {"⿰辵", "⿺辵"}:
+        whole = "⿺辶" + label[2:]
+    elif label[:2] == "⿲辵":
+        whole = "⿺辶⿰" + label[2:]
+    else:
+        return None
+    return _identity(whole), whole
+
+
+def _seal(structure: Structure | None) -> Structure | None:
+    """The structure a seal character is proposed from that of its Han equivalent: seal script has no
+    之繞, and writes 辵 whole at the left of ⿺辶X."""
+    if structure and structure.tree[0] == "⿺" and structure.tree[1][0] in {"辶", "辵"}:
+        return from_tree(("⿰", ("辵", structure.tree[1][1])))
+    return structure
+
+
 def for_character(char: str) -> Structure | None:
     """The structure of a character: its own (`_own`), or that of the character it joins as one
-    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬). A small seal character has that of
-    its Han equivalent, as a proposal (`seal_equivalents`)."""
+    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬). A small seal character is proposed that of
+    its Han equivalent (`seal_equivalents`), with 辵 beside its phonetic where that has 之繞."""
     char = unicodedata.normalize("NFC", char)
     if han := seal_equivalents().get(char):
-        return for_character(han)
+        return _seal(for_character(han))
     head = _joined().get(char) or _joined().get(_whole(char))
     return _own(head) if head else _own(char)
 

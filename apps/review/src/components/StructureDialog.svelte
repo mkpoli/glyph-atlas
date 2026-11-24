@@ -27,7 +27,7 @@
   const id = $props.id()
   let dialog, board = $state(null)
   let known = $state(untrack(() => opened)), added = $state([]), query = $state('')
-  // The trays the board has shown, and which of them a reader folded into which (`folds`, by the
+  // The trays the board has shown, and which of them stand under which, folded by a reader or as a layout of it (`folds`, by the
   // folded tray's id: `{ head, by }`). What is held is a form (`held`, its text) or a tray (`lifted`,
   // its id), and `over` is the tray aimed at.
   let trays = $state([]), folds = $state(new Map()), held = $state(null), lifted = $state(null), over = $state(null), dragging = $state(false)
@@ -91,8 +91,10 @@
   // every tray that is not itself folded, but its own. Either goes out of the reader's own word for it.
   const OUT = 'out'
   const out = $derived(held && mineOf(held) ? t('structure.take', { form: held }) : lifted && foldedByMe(lifted) ? t('structure.split', { structure: labelOf(lifted) }) : '')
+  // A proposed form can be filed where it stands, which confirms it.
+  const proposedHere = char => known.has(char) && proposed(char, known.get(char).by)
   const targets = $derived.by(() => {
-    const open = held ? trays.filter(tray => tray.id !== innerOf(held))
+    const open = held ? trays.filter(tray => tray.id !== innerOf(held) || proposedHere(held))
       : lifted ? trays.filter(tray => tray.id !== lifted && !folds.has(tray.id) && tray.id !== headOf(lifted)) : []
     return [...open.map(tray => tray.id), ...(out ? [OUT] : [])]
   })
@@ -131,13 +133,15 @@
     try { await refresh(listed.map(form => form.char)) } catch (failure) { if (saved) error = failure.message }
     busy = null
     const stood = mark.tray ? headOf(mark.tray) : innerOf(mark)
-    if (saved && to && stood !== to) notice = t('structure.disputed', { item: item() })
+    // A tray split off a fold that is a layout of another 構形 stands under that one, with nobody named.
+    const laid = mark.tray && folds.has(mark.tray) && !folds.get(mark.tray).by.length
+    if (saved && to && stood !== to && !laid) notice = t('structure.disputed', { item: item() })
     said = [...new Set([item(), labelOf(stood)])].filter(Boolean).join(' · ')
     await tick()
     focus()
   }
   function place(char, tray) {
-    if (innerOf(char) === tray.id) return
+    if (innerOf(char) === tray.id && !proposedHere(char)) return
     if (mineOf(char) && home.get(char) === tray.id) return takeOut(char)
     return commit(char, tray.id, () => { known = new Map([...known, [char, standsIn(tray.id, [me])]]); landed = tray.id }, () => setStructure(char, tray.target))
   }
@@ -294,7 +298,6 @@
     chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     chip?.focus({ preventScroll: true })
   }
-  const proposedHere = char => known.has(char) && proposed(char, known.get(char).by)
   const titleOf = form => form.regions ? `${form.char} ${form.regions}` : proposedHere(form.char) ? `${form.char} · ${t('chips.derived')}` : form.char
   function cancel(event) { if (held || lifted) { event.preventDefault(); release() } }
   function closed() { if (wrote) changed(); close() }

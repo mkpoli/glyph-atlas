@@ -214,11 +214,28 @@ def test_a_seal_character_has_its_han_equivalents_structure():
     assert not set(shared) & set(structures.seal_equivalents().values())
     equivalents = structures.seal_equivalents()
     held = {row["b"] for row in stated if row["a"] in shared}
-    assert held.isdisjoint(equivalents) and len(equivalents) == 11328 - len(held) - 1 == 11135
+    assert held.isdisjoint(equivalents) and len(equivalents) == 11328 - len(held) - 3 == 11133
     # The seal form of 書 is 聿 over 者.
     assert structures.for_character("𽣆") is None
     assert structures.for_character("𽋎") is None and structures.for_character("𽋏") is None
     assert all(structures.for_character(seal) for seal in structures.seal_equivalents())
+
+
+def test_a_seal_character_writes_辵_beside_the_rest():
+    meet, beside = structures.for_character("遇"), structures.for_character("𽓻")
+    assert (meet.label, beside.label) == ("⿺辶禺", "⿰辵禺") and structures.head(beside.label) == (meet.id, meet.label)
+    assert structures.head(meet.label) is None and structures.head(structures.for_character("辵").label) is None
+    # 辵 written whole under the rest is another layout too: 𨑡 of 𨑒.
+    assert structures.head(structures.for_character("𨑡").label)[0] == structures.for_character("𨑒").id
+    # Every seal character whose equivalent has 之繞 is built so, and stands under its equivalent's.
+    written = {seal: han for seal, han in structures.seal_equivalents().items() if structures.for_character(han).label[:2] in {"⿺辶", "⿺辵"}}
+    assert len(written) == 153
+    for seal, han in written.items():
+        own, whole = structures.for_character(seal), structures.for_character(han)
+        assert own == structures.from_tree(("⿰", ("辵", whole.tree[1][1])))
+        assert structures.head(own.label) == (structures.head(whole.label) or (whole.id, whole.label))
+    # The seal forms of 邃 and 𨘈 are built otherwise.
+    assert not {"邃", "𨘈"} & set(structures.seal_equivalents().values())
 
 
 def test_a_shape_names_the_character_that_encodes_it_again():
