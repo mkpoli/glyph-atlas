@@ -21,8 +21,8 @@ mock.module('$lib/i18n.svelte.js', () => language)
 const page = { url: new URL('https://atlas.test/en') }
 mock.module('$app/state', () => ({ page }))
 mock.module('../src/lib/forms.js', () => ({ familyCodes: async () => ['U+304B'] }))
-let counts = []
-mock.module('../src/lib/client.js', () => ({ graphemeCounts: async () => counts }))
+let counts = [], unnamed = true
+mock.module('../src/lib/client.js', () => ({ graphemeCounts: async () => ({ items: counts, unnamed }) }))
 mock.module('../src/lib/issues.js', () => ({ hasCharacterPage: text => [...text].length === 1,
   pointOf: char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ') }))
 plugin({ name: 'seo-server-render', setup(build) {
@@ -75,6 +75,10 @@ describe('search indexing', () => {
       ['か', 'U+52A0', 1, 0, 1], ['か゚', 'U+304B U+309A', 1, 0], ['が゚', 'U+304B U+309A', 1, 0], ['債', 'U+50B5', 0, 4]]
     expect(await characterPaths(() => {})).toEqual(['/grapheme/U+4EEE', '/grapheme/U+306F', '/grapheme/U+52A0',
       '/character/U+4EEE', '/character/U+9047', '/character/U+306F', '/character/U+52A0', '/character/U+304B'])
+    // Where the crops with no character are not counted, no character is known to hold them all.
+    unnamed = false
+    expect((await characterPaths(() => {})).slice(0, 4)).toEqual(['/grapheme/U+4EEE', '/grapheme/U+9047', '/grapheme/U+306F', '/grapheme/U+52A0'])
+    unnamed = true
   })
   it('keeps unsupported hreflang languages indexable outside the alternate cluster', () => {
     for (const tag of ['lzh', 'ja-x-classical']) {

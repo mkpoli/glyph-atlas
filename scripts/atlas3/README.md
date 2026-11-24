@@ -241,7 +241,7 @@ publish. It refuses while a publish is unfinished.
 
 The answers, and every publish that writes them, come from a checkout at f69ab7a6 or later. `filed` in
 `corpus.json.gz` counts the crops with no character under their family; an older checkout publishes
-answers without it, and the Worker then reads the 256 count shards in its place.
+answers without it, and Explore then counts no such crop.
 
 The local copy takes the site's changes before the answers are written. The Worker lists every crop
 whose row it changes in `touched`, with the generation of the change (migration 0018). The bump is

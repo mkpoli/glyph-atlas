@@ -150,25 +150,23 @@ describe('crops by character and grapheme', () => {
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
     const rows = (await counted(env)).filter((row: any) => row[1] === 'U+306F');
     expect(rows).toEqual([['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 1], ['𛂞', 'U+306F', 1, 3]]);
+    expect((await graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'))).unnamed).toBe(true);
   });
-  it('count the crops with no character from the count shards where the corpus answer does not name them', async () => {
+  it('count no crop with no character where the publication counts none, whatever was reviewed or claimed since', async () => {
     const { env, db, objects, pub } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
       VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0)`));
-    const corpus = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(`v3/pub/${pub}/corpus.json.gz`)!)));
+    const url = new URL('https://glyphatlas.org/atlas/graphemes/counts'), corpus = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(`v3/pub/${pub}/corpus.json.gz`)!)));
     expect(corpus.filed).toEqual([[1, 1, 1], [3, 1, 1]]);
     delete corpus.filed;
     objects.set(`v3/pub/${pub}/corpus.json.gz`, gz(corpus));
-    for (let shard = 0; shard < 256; shard++) objects.set(`v3/pub/${pub}/counts/${shard}.json.gz`, gz({ pub, chars: {}, families: shard === 1 ? { 1: [[1, 0, 0, 1, null, null, 1]] } : shard === 3 ? { 3: [[1, 0, 0, 1, null, null, 1]] } : {} }));
-    const unnamed = async () => (await counted(env)).filter(row => !row[0]);
-    expect(await unnamed()).toEqual([['', 'U+306F', 0, 2]]);
-    // A review that names one is taken from that base, and a claim moves the other from it.
     db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
       INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES('x','has_grapheme','','',(SELECT max(id) FROM crops WHERE kind=1),0,'asserted','U+51E6','[]','[]','[]','r','t');
       INSERT INTO ledger_submissions VALUES('s','u','{}','{}','t');`);
-    expect(await unnamed()).toEqual([['', 'U+51E6', 0, 1, 1]]);
-    // Without either there is no base to count from, which is an error and no empty list.
-    objects.delete(`v3/pub/${pub}/counts/7.json.gz`); edge.clear();
-    await expect(counted(env)).rejects.toThrow('counts/7.json.gz is missing');
+    const body = await graphemeCounts(env, ctx, url);
+    expect(body.unnamed).toBe(false);
+    expect(body.items.filter((row: any) => !row[0])).toEqual([]);
+    expect(body.items.every((row: any) => row[2] >= 0 && row[3] >= 0)).toBe(true);
+    expect(body.items.find((row: any) => row[0] === 'ハ')).toEqual(['ハ', 'U+306F', 3, 1]);
   });
   it('state no negative count', async () => {
     const { env, db } = await setup();

@@ -137,25 +137,6 @@ export async function collectedCounts(env: Env, stamps: string, timing?: Timing)
 export type GlyphCell = { char: number; production: number; state: number; quiz: number; n: number };
 /** The crops with no character that are filed under a family, of one kind. */
 export type FiledCell = { family: number; kind: number; n: number };
-// The crops with no character by family, as a publication counts them: `filed` of its corpus answer. An
-// answers.py from before that field names none; the same crops are the `families` of its count shards,
-// which are then read once per location and kept as one answer.
-const COUNT_SHARDS = 256, READS = 6;
-async function filedOf(env: Env, pub: string, body: Json): Promise<FiledCell[]> {
-  if (body.filed) return (body.filed as number[][]).map(([family, kind, n]) => ({ family, kind, n }));
-  const edge = new Request(`https://glyphatlas.org/_answers/v3/pub/${pub}/filed-families`);
-  const kept = await caches.default.match(edge).then(hit => hit ? hit.json() as Promise<FiledCell[]> : null).catch(() => null);
-  if (kept) return kept;
-  const cells: FiledCell[] = [];
-  for (let at = 0; at < COUNT_SHARDS; at += READS) await Promise.all(Array.from({ length: Math.min(READS, COUNT_SHARDS - at) }, async (_, i) => {
-    const object = await env.MEDIA.get(`v3/pub/${pub}/counts/${at + i}.json.gz`);
-    if (!object) throw new Error(`v3/pub/${pub}/counts/${at + i}.json.gz is missing`);
-    const shard = await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).json() as { families?: Record<string, number[][]> };
-    for (const [family, rows] of Object.entries(shard.families ?? {})) for (const row of rows) cells.push({ family: Number(family), kind: row[0], n: row[row.length - 1] });
-  }));
-  await caches.default.put(edge, Response.json(cells, { headers: { 'cache-control': `public, max-age=${ANSWER_EDGE_SECONDS}, immutable` } })).catch(() => {});
-  return cells;
-}
 /** The corpus glyphs with a character by character, production, state and withheld flag. With the
  *  catalogue key `stamps`, the reviews since the publication are added. */
 export async function corpusCounts(env: Env, stamps: string | null): Promise<{ pub: string; cells: GlyphCell[]; chars: Map<number, CharInfo> }> {
@@ -166,11 +147,13 @@ export async function corpusCounts(env: Env, stamps: string | null): Promise<{ p
   return { pub, cells, chars: await charsOf(env, body.chars, cells.map(c => c.char)) };
 }
 /** The crops of both kinds with no character by family, the reviews since the publication among them,
- *  with the families' texts and graphemes. */
-export async function filedCounted(env: Env, stamps: string): Promise<{ cells: FiledCell[]; chars: Map<number, CharInfo> }> {
+ *  with the families' texts and graphemes; null where the publication does not count them, whose reviews
+ *  then have nothing to be counted from. */
+export async function filedCounted(env: Env, stamps: string): Promise<{ cells: FiledCell[]; chars: Map<number, CharInfo> } | null> {
   const { pub, through_gen } = await currentPointer(env);
   const [body, deltas] = await Promise.all([answer(env, pub, 'corpus.json.gz'), tallyDeltas(env, pub, through_gen, stamps)]);
-  const cells = await filedOf(env, pub, body);
+  if (!body.filed) return null;
+  const cells: FiledCell[] = (body.filed as number[][]).map(([family, kind, n]) => ({ family, kind, n }));
   for (const d of deltas) if (d.char === -1 && d.filed !== -1) cells.push({ family: d.filed, kind: d.kind, n: d.n });
   return { cells, chars: await charsOf(env, body.chars, cells.map(c => c.family)) };
 }

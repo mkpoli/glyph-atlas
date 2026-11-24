@@ -194,8 +194,8 @@ export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Pro
 
 // Every crop and corpus glyph the site holds, by character and the grapheme it is filed under
 // (`graphemeTotals.ts`): what the grapheme browser, its cards and a tile's caption count, withheld crops
-// among them. `['', grapheme, …]` are the crops with no character that name it, and a row ends in 1 where
-// a claim moved some of its crops. It is the same for anyone who asks in the same minute of a
+// among them. `['', grapheme, …]` are the crops with no character that name it, where the publication
+// counts them (`unnamed`), and a row ends in 1 where a claim moved some of its crops. It is the same for anyone who asks in the same minute of a
 // publication (`keptFor`), so the edge keeps it; a browser that wrote lately is answered as of its write.
 export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
   const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]), version = catalogueKey(stamps);
@@ -210,12 +210,13 @@ export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL):
   const add = (at: Under | null, kind: number, n: number) => { if (at) addCrops(rows, at, kind, n) };
   for (const c of collected.cells) if (c.char !== -1) add(place(collected.chars, c.char), 0, c.n);
   for (const c of corpus.cells) add(place(corpus.chars, c.char), 1, c.n);
-  const family = (id: number) => { const at = place(filed.chars, id); return at && { label: '', grapheme: at.grapheme } };
-  for (const c of filed.cells) add(family(c.family), c.kind, c.n);
+  const family = (id: number) => { const at = filed && place(filed.chars, id); return at && { label: '', grapheme: at.grapheme } };
+  for (const c of filed?.cells ?? []) add(family(c.family), c.kind, c.n);
   for (const row of rows.values()) { row.collected = Math.max(0, row.collected); row.corpus = Math.max(0, row.corpus) }
-  fileClaims(rows, claims, r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
+  // A claim on a crop with no character takes it from its family's, which are then not known either.
+  fileClaims(rows, filed ? claims : claims.filter(r => r.char !== null), r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
   const items = [...rows.values()].filter(row => crops(row) > 0).map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
-  const body = { items };
+  const body = { items, unnamed: filed !== null };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${span ? KEPT_SECONDS : 3600}` } })));
   return body;
 }

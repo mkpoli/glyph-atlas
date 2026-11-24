@@ -191,7 +191,7 @@
       // Read again after a claim, past the copy the browser keeps for a few minutes.
       const found = await graphemeCounts(fresh ? { cache: 'no-store' } : {})
       if (closed) return
-      cropCounts = found
+      cropCounts = found.items
       // Under a script group, an empty listing waits for these counts to tell whether the corpus holds its grapheme.
       if (filter !== 'all' && !picked && !loading && data) openEmptyGrapheme(data)
     }
