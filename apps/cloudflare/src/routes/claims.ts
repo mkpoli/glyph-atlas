@@ -650,18 +650,20 @@ export async function setFold(env: Env, input: Json, actor: string, tools: Claim
 
 // The reader's own live readings, rubies and words on these crops, with the save each came from: ranges of `assertion_crop`.
 const RUN_PREDICATES = [...READING_PREDICATES, 'writes_word'];
-export const ownReadingsQuery = (owned: string) => `SELECT a.id,a.crop,a.subject,a.predicate,a.object,a.method,a.submission FROM json_each(?1) j
+export const ownReadingsQuery = (owned: string) => `SELECT a.id,a.crop,a.subject,a.predicate,a.object,a.value,a.confidence,a.confidence_scheme,a.method,a.cut,a.submission FROM json_each(?1) j
   JOIN assertions a ON a.crop=j.value AND a.predicate IN (${RUN_PREDICATES.map(p => `'${p}'`).join()}) WHERE a.scope='' AND a.slot=''
   AND (a.asserted_by=?2 OR a.asserted_by IN ${owned})
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`;
 export const savedRunsQuery = () => 'SELECT response FROM ledger_submissions WHERE id IN (SELECT value FROM json_each(?))';
-type OwnReading = { id: string; crop: number; subject: string; predicate: string; object: string | null; method: string | null; submission: string };
+type OwnReading = { id: string; crop: number; subject: string; predicate: string; object: string | null; value: string | null;
+  confidence: number | null; confidence_scheme: string | null; method: string | null; cut: number; submission: string };
 /** Set how a crop is read at its place: the run of characters it stands in (`run`, with the crop at
  *  `at`), the reading over each or over all of them, what it rests on (`method`) and, as the page writes
  *  them, the `ruby` and the 左訓 (`left`). The other crops of the run (`others`, each with its place and the
  *  version its reader saw) are claimed in the same write. `word` ({id, form, method}) names the dictionary word
- *  the run writes, on each of its crops (decision 0004): null takes the reader's back, one without a method
- *  keeps the method the reader gave it, and a save without `word` leaves the words as they stand. A save replaces the reader's earlier runs wherever
+ *  the run writes, on each of its crops (decision 0004): null takes the reader's back, and one without a method
+ *  keeps the method the reader gave it. Without `word`, the word the reader holds on the crop goes with the run
+ *  as they hold it. A save replaces the reader's earlier runs wherever
  *  they meet the new one, whole; with `run` null it only takes the reader's run on this crop back. Saved or
  *  refused whole. */
 export async function setReading(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
@@ -677,12 +679,12 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   const at = new Date().toISOString(), places: number[] = [input.at, ...others.map(other => other.at)];
   const member = (value: unknown): Member => ({ object: null, value, confidence: null, confidence_scheme: null });
   // What each crop of the run is claimed as, checked before any crop is read.
-  type Claimed = { predicate: string; method: string | null; member: Member };
+  type Claimed = { predicate: string; method: string | null; members: Member[] };
   const claims: Claimed[][] = clear ? [] : places.map(place => [
-    { predicate: 'read_as', method: input.method as string | null, member: member({ run: input.run, at: place, reading: input.reading }) },
+    { predicate: 'read_as', method: input.method as string | null, members: [member({ run: input.run, at: place, reading: input.reading })] },
     ...([['bears_ruby', input.ruby], ['bears_left_ruby', input.left]] as const).flatMap(([predicate, ruby]) =>
-      ruby == null ? [] : [{ predicate, method: null, member: member({ run: input.run, at: place, ruby }) }])]);
-  for (const each of claims.flat()) checkClaims(each.predicate, [each.member], {}, tools.fail, each.method);
+      ruby == null ? [] : [{ predicate, method: null, members: [member({ run: input.run, at: place, ruby })] }])]);
+  for (const each of claims.flat()) checkClaims(each.predicate, each.members, {}, tools.fail, each.method);
   if (!clear && input.ruby != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
   const word = input.word as { id?: unknown; form?: unknown; method?: unknown } | null | undefined;
   if (word != null && clear) bad();
@@ -697,28 +699,42 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   if (recut.length) tools.fail(409, 'Some of these crops were cut again. Reload them.', { targets: recut.map(crop => ({ id: publicId(crop.id) })) });
   // The reader's earlier runs on these crops, and every crop each of them was saved on.
   const own = async (ids: number[]) => (await env.ATLAS.prepare(ownReadingsQuery(ownedActors(actor)))
-    .bind(JSON.stringify(ids), actor).all<OwnReading>()).results.filter(claim => word !== undefined || claim.predicate !== 'writes_word');
+    .bind(JSON.stringify(ids), actor).all<OwnReading>()).results;
   const ids = crops.map(crop => crop.id), here = await own(ids);
-  if (clear && !here.length) tools.fail(409, 'You have no reading on this crop to clear.');
+  const isWord = (claim: OwnReading) => claim.predicate === 'writes_word';
+  if (clear && !here.some(claim => word === null || !isWord(claim))) tools.fail(409, 'You have no reading on this crop to clear.');
   if (word != null) {
-    const method = word.method ?? here.find(claim => claim.predicate === 'writes_word' && claim.crop === crops[0].id && claim.object === word.id)?.method ?? input.method;
+    const method = word.method ?? here.find(claim => isWord(claim) && claim.crop === crops[0].id && claim.object === word.id)?.method ?? input.method;
     const named: Member = { object: word.id as string, value: null, confidence: spec.confidence!.form[word.form as string], confidence_scheme: 'form' };
     checkClaims('writes_word', [named], { [word.id as string]: 'word' }, tools.fail, method as string);
-    for (const list of claims) list.push({ predicate: 'writes_word', method: method as string, member: named });
+    for (const list of claims) list.push({ predicate: 'writes_word', method: method as string, members: [named] });
   }
+  // The word the reader holds on the crop's cut now, its alternatives and its certainty with it, claimed on each
+  // other crop of the run that does not already hold the same.
+  const held = (crop: CropNow) => here.filter(claim => isWord(claim) && claim.crop === crop.id && claim.cut === crop.cut);
+  const worded = (list: OwnReading[]) => tools.canonical(list.map(one => [one.object, one.value, one.confidence, one.confidence_scheme, one.method]).sort());
+  const carried = word === undefined && !clear ? held(crops[0]) : [];
+  if (carried.length) for (const [i, crop] of crops.entries()) if (worded(held(crop)) !== worded(carried)) claims[i].push({ predicate: 'writes_word', method: carried[0].method,
+    members: carried.map(one => ({ object: one.object, value: one.value === null ? null : JSON.parse(one.value), confidence: one.confidence, confidence_scheme: one.confidence_scheme })) });
   const saves = new Set(here.map(claim => claim.submission));
   const reached = saves.size ? (await env.ATLAS.prepare(savedRunsQuery()).bind(JSON.stringify([...saves])).all<{ response: string }>())
     .results.flatMap(row => (JSON.parse(row.response).crops ?? []) as number[]) : [];
   const beyond = [...new Set(reached)].filter(crop => !ids.includes(crop));
-  const earlier = [...here, ...(beyond.length ? await own(beyond) : []).filter(claim => saves.has(claim.submission))];
+  // A word that went with the run was claimed by whichever save first took it there, so it is known by what it names.
+  const told = new Set(here.filter(isWord).map(claim => tools.canonical([claim.object, claim.value])));
+  const earlier = [...here, ...(beyond.length ? await own(beyond) : []).filter(claim => saves.has(claim.submission)
+    || (isWord(claim) && told.has(tools.canonical([claim.object, claim.value]))))];
   const plan: Plan = { statements: [], keys: [], crops: ids };
   for (const [i, crop] of crops.entries()) for (const each of claims[i] ?? []) {
-    const part = await planClaim(env, { key, actor, crop, predicate: each.predicate, scope: '', members: [each.member], at, method: each.method }, ledger);
+    const part = await planClaim(env, { key, actor, crop, predicate: each.predicate, scope: '', members: each.members, at, method: each.method }, ledger);
     plan.statements.push(...part.statements); plan.keys.push(...part.keys);
   }
   // A claim the new run makes again takes the reader's earlier one back itself (`planClaim`).
   const replacing = new Set(claims.flatMap((list, i) => list.map(each => crops[i].id + each.predicate)));
-  for (const claim of earlier.filter(each => !replacing.has(each.crop + each.predicate))) {
+  // A word the save does not name stays on the run, and leaves the crops the run has left behind with it.
+  const leaves = (claim: OwnReading) => !replacing.has(claim.crop + claim.predicate)
+    && (!isWord(claim) || word !== undefined || (carried.length > 0 && !ids.includes(claim.crop)));
+  for (const claim of earlier.filter(leaves)) {
     plan.statements.push(env.ATLAS.prepare("INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,'retract',?,?,?)")
       .bind('cf:' + crypto.randomUUID(), key, claim.id, actor, at, clear ? 'cleared' : 'replaced'));
     plan.keys.push([claim.subject, claim.predicate, '', '']);

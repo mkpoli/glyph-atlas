@@ -97,7 +97,7 @@ async function send(crop, value) {
  * Save how a crop is read: `run` with the crop at `at`, the `reading` over each character or over all of
  * them, what it rests on and the ruby and the 左訓 (`left`) as the page writes them, or null. The published crops of the run (`crops`, by place in it)
  * are saved with it, each at the version it is shown at.
- * `word` ({ id, form, method }) names the dictionary word the run writes, null takes the reader's back, and without it the words stand.
+ * `word` ({ id, form, method }) names the dictionary word the run writes, null takes the reader's back, and without it the word the reader holds goes with the run.
  */
 export function setReading(crop, { run, at, reading, ruby = null, left = null, method, word, crops = new Map() }) {
   const others = [...crops].map(([place, one]) => ({ id: one.id, crop_version: one.crop_version, at: place }))

@@ -130,6 +130,38 @@ describe('the word of a run', () => {
     expect([left.reading, left.word?.by]).toEqual([null, ['reader']]);
   });
 
+  it('goes with the run as the reader holds it when a save does not name it: its alternatives, its certainty and its evidence', async () => {
+    const { db, env, tools, local, corpus, version, input, save, claim } = setup();
+    const others = [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }];
+    const plain = (value = {}) => { const { word: _, ...rest } = input(value); return setReading(env, rest, publicId(local), 'reader', tools); };
+    await claim([W, OTHER].map(object => ({ object, confidence: 0.5, confidence_scheme: 'form' })), 'reader', 'note');
+    // Another reader's certainty of the same words is theirs.
+    const before = await wordOfCrop(env, local);
+    await plain({ run: ['而', '已'], reading: ['のみ'], others });
+    for (const crop of [local, corpus]) expect(await wordOfCrop(env, crop)).toMatchObject({ values: before!.values, methods: ['note'], by: ['reader'] });
+    const count = () => (db.query("SELECT count(*) AS n FROM assertions WHERE predicate='writes_word'").get() as any).n;
+    // Saved again, the words that stand are not claimed again.
+    const held = count(); await plain({ run: ['而', '已'], reading: ['ばかり'], others });
+    expect(count()).toBe(held);
+    // The run leaves a crop behind, and its word with it.
+    await plain();
+    expect([(await wordOfCrop(env, local))?.values.length, await wordOfCrop(env, corpus)]).toEqual([2, null]);
+    await save({ word: null });
+    await save({ form: 'probable' }); await save({}, 'other');
+    await plain({ reading: ['はかり'] });
+    expect(db.query(`SELECT a.confidence FROM assertions a WHERE a.asserted_by='reader' AND a.predicate='writes_word' AND NOT EXISTS
+      (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`).all()).toEqual([{ confidence: 0.5 }]);
+  });
+
+  it('on an earlier cut does not go with the run', async () => {
+    const { db, env, tools, local, corpus, version, input, save } = setup();
+    await save();
+    db.exec(`UPDATE crops SET cut=1 WHERE id=${local}`);
+    const { word: _, ...rest } = input({ run: ['而', '已'], reading: ['のみ'], others: [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }] });
+    await setReading(env, rest, publicId(local), 'reader', tools);
+    expect([await wordOfCrop(env, local), await wordOfCrop(env, corpus)]).toEqual([null, null]);
+  });
+
   it('recognises an earlier actor key belonging to the same reader', async () => {
     const { save } = setup();
     await save({}, 'old-reader');

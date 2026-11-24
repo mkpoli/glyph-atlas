@@ -29,7 +29,7 @@
   let letters = $state.raw(null)
   let method = $state('context'), choices = $state([])
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
-  let chosen = $state(undefined), probable = $state(false)
+  let chosen = $state(undefined), probable = $state(false), changed = false
 
   const values = $derived(item.reading?.values ?? [])
   const rubyValues = $derived(item.reading?.ruby?.values ?? [])
@@ -68,7 +68,7 @@
   async function open() {
     // Whose reading it opens with waits until the page knows who reads.
     await sessionStarted()
-    error = ''; chosen = undefined; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
+    error = ''; chosen = undefined; changed = false; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
     const opened = opening(item.reading, signedInUser()?.id)
     method = opened.method ?? untrack(() => method)
     place(cropLine(item), opened)
@@ -163,11 +163,11 @@
     return () => { active = false; clearTimeout(timer) }
   })
 
-  // The word the run is saved with: the one chosen here, else the reader's own, with the evidence they gave it.
-  // Nothing for a word that is another reader's, or that readers dispute.
+  // The word the reader chose here, or whose certainty they changed. Any other goes with the run as they hold it.
   function wordText() {
     const form = probable ? 'probable' : 'certain'
-    return chosen ? { id: chosen, form, method } : chosen === null ? null : held?.word ? { id: held.word, form } : undefined
+    if (chosen) return { id: chosen, form, method }
+    return chosen === null ? null : held?.word && changed ? { id: held.word, form } : undefined
   }
   async function save() {
     if (busy) return
@@ -280,7 +280,7 @@
           {#each offered as choice (choice.id)}
             <button type="button" aria-pressed={picked === choice.id} disabled={busy} onclick={() => pick(choice)}><b>{choice.reading}</b> <span>{choice.class}</span> <span>{choice.spellings.join('・')}</span></button>
           {/each}
-          {#if picked}<button type="button" role="switch" aria-checked={probable} disabled={busy} onclick={() => probable = !probable}>{t('word.probable')}</button>{/if}
+          {#if picked}<button type="button" role="switch" aria-checked={probable} disabled={busy} onclick={() => { probable = !probable; changed = true }}>{t('word.probable')}</button>{/if}
         </div>
       {/if}
       <div class="reading-actions">
