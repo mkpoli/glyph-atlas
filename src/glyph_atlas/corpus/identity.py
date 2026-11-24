@@ -19,6 +19,14 @@ IDENTITY_FIELDS = (
 )
 
 
+def members_for(family: dict[str, Any] | None, char: str | None) -> list[dict[str, Any]]:
+    """The members of a family a glyph labelled `char` may be written as: its small seal characters
+    only where the label is one."""
+    if not family:
+        return []
+    return family["members"] if refs.is_small_seal(char or "") else refs.transcribed(family["members"])
+
+
 @lru_cache(maxsize=8192)
 def family_of(code_point: str | None) -> dict[str, Any] | None:
     """The grapheme family of one code point; a sequence such as ツ + U+309A has none of its own.
@@ -53,7 +61,7 @@ def identity_fields(
         encoded = unicodedata.normalize("NFC", encoded or source_label)
     family = family_of(" ".join(refs.to_code_points(encoded)) if figure else cp)
     normalized = corpus in NORMALIZED_CORPORA
-    ambiguous = normalized and not figure and family is not None and family["character_count"] > 1
+    ambiguous = normalized and not figure and len(members_for(family, encoded or source_label)) > 1
     basis = "normalized_transcription" if normalized else "source_transcription"
     written = None if ambiguous else encoded or source_label
     assignment = None
@@ -88,7 +96,7 @@ def identity_fields(
             assignment = assignment_for(identity, source_revision, source_label=source_label,
                                         crop_sha256=row.get("crop_sha256"), source_signature=signature)
             candidate = (assignment or {}).get("written_character")
-            members = [member["char"] for member in family["members"]] if family else [encoded]
+            members = [member["char"] for member in members_for(family, encoded or source_label)] if family else [encoded]
             if assignment is not None and (candidate is None or candidate in members):
                 # A provenance-bound visual inspection can also leave conflicting
                 # source labels unresolved; retain that result until reviewed.
@@ -104,7 +112,7 @@ def identity_fields(
         # A character with no family (one Unicode lacks, written as an IDS) is its own grapheme, as the
         # Worker files it.
         "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(written)) if written else None),
-        "family_members": family["members"] if family else [],
+        "family_members": members_for(family, written or encoded or source_label),
         "requires_family_scope": ambiguous,
         "visual_assignment": assignment,
         "visual_group": (assignment or {}).get("visual_group"),

@@ -82,13 +82,18 @@ def family_of(code_point: str | None) -> dict | None:
     thus be named 仿; one labelled 仿 is in 仿's own family.
     """
     info = refs.grapheme_info(code_point) if code_point else None
-    if not info:
+    if not info or refs.is_small_seal(refs.to_char(code_point)):
         return None
+    # A small seal character is a member no transcription writes under its Han character, so it is no
+    # form of a cluster, and one has no family of its own here.
+    members = refs.transcribed(info["members"])
     # A drawn form is a member that makes no family: a kanji alone but for its drawn forms keeps the
     # family of its variants, with them.
-    drawn = [member for member in info.get("members") or [] if drawn_forms.drawn(member["char"])]
-    if len(info.get("members") or []) - len(drawn) > 1:
-        return info
+    drawn = [member for member in members if drawn_forms.drawn(member["char"])]
+    if len(members) - len(drawn) > 1:
+        return info if len(members) == len(info["members"]) else {
+            **info, "members": members, "character_count": len(members),
+            "label": " = ".join(member["char"] for member in members)}
     if info.get("script") != "han" or len(code_point.split()) != 1:
         return None
     found = refs.variants(info["char"])[: MAX_VARIANT_FORMS - 1]

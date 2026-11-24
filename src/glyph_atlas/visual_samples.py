@@ -22,12 +22,14 @@ HI_ARCHIVE = "https://data.lab.hi.u-tokyo.ac.jp/kuzushiji/2023-03-27/all.zip"
 
 
 def families(request=PRIORITY):
+    """Each family's head and its members, less the small seal characters no sample is transcribed as."""
     if request == "all":
         keys = [key for key, members in refs.graphemes().items() if len(members)>1
                 and (refs.grapheme_info(key) or {}).get("relation")=="shinjitai-kyujitai"]
     else:
         keys = [refs.grapheme(f"U+{ord(char):04X}") or f"U+{ord(char):04X}" for char in request]
-    return {key:refs.graphemes().get(key,[key]) for key in dict.fromkeys(keys)}
+    return {key:[point for point in refs.graphemes().get(key,[key]) if not refs.is_small_seal(refs.to_char(point))]
+            for key in dict.fromkeys(keys)}
 
 
 def balanced(rows, limit, *, bucket="document_id"):

@@ -232,8 +232,9 @@ def _row(character: Character, counts: dict[str, int], *, reason: str | None = N
         "occurrence_count": counts.get(character.code_point, 0),
         "url": f"/layers/characters/{character.code_point}",
         "grapheme": _grapheme_head(character, counts),
-        "default_scope": ("grapheme" if _family(character)["relation"]
-                          == "shinjitai-kyujitai" else "character"),
+        # A small seal character's crops are never the normalised ones the family scope is for.
+        "default_scope": ("grapheme" if _family(character)["relation"] == "shinjitai-kyujitai"
+                          and not refs.is_small_seal(character.char) else "character"),
     }
     if reason:
         row["reason"] = reason
