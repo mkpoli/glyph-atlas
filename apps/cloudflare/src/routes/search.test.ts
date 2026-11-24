@@ -63,6 +63,8 @@ const cards: Card[] = [
   { char: '突', occurrences: 66, family: ['突', '\ufa55'] },
   { char: '\ufa55', occurrences: 40, name: 'CJK COMPATIBILITY IDEOGRAPH-FA55', family: ['突', '\ufa55'] },
   { char: '鴇', occurrences: 1 },
+  // A reference load has filed 𽌇 under 春 in `graphemes`, and its card is still in its own shard.
+  { char: '春', occurrences: 3 }, { char: '\u{3D307}', occurrences: 2, name: 'SMALL SEAL CHARACTER-3D307' },
   { char: '鯡', occurrences: 7 }, { char: '𩹉', occurrences: 2 },
   { char: '鮓', occurrences: 9 }, { char: '鮺', occurrences: 3 }, { char: '鮨', occurrences: 3 }, { char: '蚱', occurrences: 1 },
   { char: 'か゚', occurrences: 6, name: '' }, { char: 'か', occurrences: 300, name: 'HIRAGANA LETTER KA' },
@@ -135,6 +137,7 @@ for (const card of cards) {
   const head = (card.family ?? [card.char])[0];
   atlasDb.query('INSERT INTO graphemes(id,text,head) VALUES(?,?,?)').run(ids.get(card.char)!, card.char, head === card.char ? null : ids.get(head)!);
 }
+atlasDb.query('UPDATE graphemes SET head=? WHERE id=?').run(ids.get('春')!, ids.get('\u{3D307}')!);
 for (const [query, code, rank] of aliases) if (!code.includes(' '))
   atlasDb.query('INSERT OR IGNORE INTO names(text,code_point,rank) VALUES(?,?,?)').run(query, parseInt(code.slice(2), 16), rank);
 for (const [a, b, count] of substitutions) atlasDb.query('INSERT INTO component_variants(a,b,count) VALUES(?,?,?)').run(a, b, count);
@@ -248,6 +251,12 @@ describe('a character search', () => {
     expect(await chars('ね')).toEqual(['ね', 'ネ', '𛂒', '𛄧', 'ぬ']);
     expect(await chars('とき')).toEqual(['𛄤', '時', '时', '旹', '刻', '鴇']);
     expect(await chars('鯡')).toEqual(['鯡', '𩹉']);
+  });
+
+  it('finds a character filed under a family whose shard does not hold it yet', async () => {
+    const found = await suggest(newEnv, ask('\u{3D307}', 8), ctx);
+    expect(found.items.map((item: { char: string }) => item.char)).toEqual(['\u{3D307}']);
+    expect((await suggest(newEnv, ask('春', 8), ctx)).items.map((item: { char: string }) => item.char)).toEqual(['春']);
   });
 
   it('lists a small seal character only where every other form has its place', () => {

@@ -56,14 +56,21 @@ async function aliasHits(env: Env, index: NameIndex, term: string, limit: number
 }
 
 // The `data` of the cards of each family the codes file under, by code point: the cards held already,
-// and one summary shard per family of the rest.
+// and one summary shard per family of the rest. While a reference load lands, `graphemes` can file a
+// character under a family whose shard does not hold it yet, or a shard held here can be the one from
+// before: such a character's card is read from its own object, which every load keeps under one key.
 async function cardsOf(env: Env, codes: string[], held: Map<string, Json>, ctx?: ExecutionContext): Promise<Map<string, Json>> {
   const wanted = [...new Set(codes)].filter(code => !held.has(code));
   if (!wanted.length) return held;
   const rows = (await env.ATLAS.prepare(headsQuery()).bind(JSON.stringify(wanted.map(textOf)))
     .all<{ text: string; head: string | null }>()).results;
   const heads = new Map(rows.map(row => [cp(row.text), row.head === null ? cp(row.text) : cp(row.head)]));
-  return new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
+  const cards = new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
+  await Promise.all(wanted.filter(code => !cards.has(code)).map(async code => {
+    const card = await characterObject(env, code, ctx);
+    if (card) cards.set(code, card.data);
+  }));
+  return cards;
 }
 
 // The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
