@@ -147,7 +147,7 @@ def shrunk(box: Box, times: int) -> Box:
 def document_of(source: dict, copy: dict, volume: dict) -> Document:
     return Document(
         id=f"{CORPUS}-{copy['id']}:{volume['volume']}",
-        title=f"{source['title']}{volume['label']}",
+        title=f"{source['work']}{source['volumes'][volume['volume']]}（{source['printing']}，{copy['of']}）",
         source_refs={SOURCE: volume["label"], "images": copy["repository"]},
         holder=copy["holder"],
         shelfmark=copy.get("shelfmark"),

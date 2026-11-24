@@ -615,6 +615,8 @@ def book_titles(src, tables):
 class Mirror:
     def __init__(self):
         self.titled = {}  # the titles the catalogue gives its documents
+        self.retitle = False  # whether a book that has another title takes the catalogue's
+        self.retitled = {}  # the title each book had that takes another, by book id, with the new one
         self.ids = sqlite3.connect(OUT / "mirror.sqlite")
         self.ids.executescript("""
           CREATE TABLE IF NOT EXISTS book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
@@ -667,7 +669,8 @@ class Mirror:
 
     def book(self, key):
         """A book's id, the book added where the site lacks it. A new book takes the title the catalogue
-        gives it (`titled`), and a book the site holds with no title takes it once."""
+        gives it (`titled`), and a book the site holds with no title takes it once; with `retitle`, a book
+        that has another title takes it too."""
         key = key or "unknown"
         title = self.titled.get(key)
         row = self.ids.execute("SELECT id FROM books WHERE key=?", (key,)).fetchone()
@@ -678,9 +681,13 @@ class Mirror:
             self.ids.execute("INSERT INTO books VALUES(?,?)", (key, bid))
         if not self.has("books", "id", bid):
             self.emit("books", ("id", "key", "title"), (bid, key, title))
-        elif title and self.atlas.execute("SELECT title FROM books WHERE id=?", (bid,)).fetchone()[0] is None:
-            self.head.append(f"UPDATE books SET title={lit(title)} WHERE id={bid} AND title IS NULL;")
-            self.atlas.execute("UPDATE books SET title=? WHERE id=? AND title IS NULL", (title, bid))
+        elif title:
+            held = self.atlas.execute("SELECT title FROM books WHERE id=?", (bid,)).fetchone()[0]
+            if held is None or (self.retitle and held != title):
+                self.head.append(f"UPDATE books SET title={lit(title)} WHERE id={bid} AND title IS {lit(held)};")
+                self.atlas.execute("UPDATE books SET title=? WHERE id=? AND title IS ?", (title, bid, held))
+                if held is not None:
+                    self.retitled[bid] = (held, title)
         return bid
 
     def grapheme(self, text):
@@ -1307,6 +1314,7 @@ def main():
     parser = argparse.ArgumentParser(description="Publish a catalogue into the new layout.")
     parser.add_argument("catalogue", type=Path, nargs="?")
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
+    parser.add_argument("--retitle", action="store_true", help="give the catalogue's books its titles where the site has others")
     parser.add_argument("--approve-styles", type=int, metavar="N",
                         help="send a book_styles catalogue that changes exactly N crops, the figure its dry run reported")
     parser.add_argument("--replacements", action="store_true",
@@ -1372,7 +1380,7 @@ def main():
     # nothing else, so nothing reaches D1 before its count is checked.
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
-    m.titled = book_titles(src, tables)
+    m.titled, m.retitle = book_titles(src, tables), args.retitle
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
     # D1 apart from catalogues). A book with neither keeps its crops' years.
     years = dict(m.ids.execute("SELECT key, year FROM book_years"))
@@ -2151,6 +2159,8 @@ def main():
                                               if (OUT / "votes" / f"{pid}.json.gz").exists() else None)]
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages, {len(voted)} vote objects -> {run}", flush=True)
+    for held, title in m.retitled.values():
+        print(f"title: {held} -> {title}", flush=True)
     if relinked:
         print(f"{relinked} pages published before take other neighbours in their book", flush=True)
     if unmapped:
