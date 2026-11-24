@@ -38,6 +38,8 @@ export const gallery = (limit = 24, seed = 0, group = 'all', options) => get('/l
 /** A page of a character's corpus glyphs, from the cursor the page before named (`next`), or the first. */
 export const candidates = (codePoint, limit = 24, after = null, params = {}, options) => get('/layers/candidates', { code_point: codePoint, limit, after, ...params }, options)
 export const decades = (codePoint, params = {}, options) => get('/layers/decades', { code_point: codePoint, ...params }, options)
+/** A page of the books a character's crops come from, each with its first crops; with `document`, more of that book's. */
+export const sources = (codePoint, params = {}, options) => get('/layers/sources', { code_point: codePoint, ...params }, options)
 export const layerSummary = () => get('/layers/summary')
 
 /** `2 crops · 212 line matches` — the two evidence kinds, never added into one number. */
