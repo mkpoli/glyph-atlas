@@ -931,7 +931,7 @@ describe('the forms of a whole grapheme', () => {
       expect({ ...second, forms: [] }).toEqual(first);
       expect(second.forms.map((f: any) => [f.char, f.count])).toEqual([['⿴囗斗', 1]]);
       expect(read.filter(name => name.includes('/reference/ids/'))).toEqual([]);
-    } finally { db.exec(`DELETE FROM carried_forms; DELETE FROM forms WHERE id='fm:t'; DELETE FROM representations WHERE id='rp:t'; DELETE FROM ledger_submissions WHERE id='carried'`); }
+    } finally { db.exec(`DELETE FROM carried_forms; DELETE FROM ledger_submissions WHERE id='carried'`); }
   });
   // 隆 in two shapes, the first 𨺓's only description; 逸 in two, the second encoded again as 𨓜.
   async function owned(second = '⿰阝⿳夂一生') {
