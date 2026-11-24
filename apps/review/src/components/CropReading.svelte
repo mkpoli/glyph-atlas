@@ -9,7 +9,7 @@
   import { clearWord, setWord, wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
   import { t } from '../lib/i18n.svelte.js'
-  import { signedInUser } from '../lib/session.svelte.js'
+  import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
   import ScriptText from './ScriptText.svelte'
 
@@ -65,7 +65,9 @@
   function fill() {
     for (const place of places) if (readings[place] === undefined && kana(line.parts[place])) readings[place] = plainKana(line.parts[place])
   }
-  function open() {
+  async function open() {
+    // Whose reading it opens with waits until the page knows who reads.
+    await sessionStarted()
     error = ''; chosen = undefined; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
     const opened = opening(item.reading, signedInUser()?.id)
     method = opened.method ?? untrack(() => method)
