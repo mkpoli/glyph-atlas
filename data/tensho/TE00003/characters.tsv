@@ -575,7 +575,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 565	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	14	1511	1962	122	200	平	U+5E73					parent	4ffde82f091d8aea04721a79f2d5edf764534812b4cc0ea38b0e8c524b1f3591
 566	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	14	1517	2468	150	221	幼	U+5E7C					parent	0a827a4a7c5edea9f8993231c7609c7c7463bd85830a1d713f34fdc3f376edb3
 567	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	14	1513	2733	134	224	幼	U+5E7C					parent	2e0345666d27c638afffe24a630468e58f639b1368fcb19ebe6888d59a1cfd41
-568	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	15	1290	920	153	239	弁	U+5F01					parent	b15cae5a79e23cf1d6c9f4ce4b6dd9c2b543cd498e09cd2f9b8ec5db7f34ac4f
+568	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	15	1290	920	153	239	弁	U+5F01	𾢩	U+3E8A9		𡭪	read	b15cae5a79e23cf1d6c9f4ce4b6dd9c2b543cd498e09cd2f9b8ec5db7f34ac4f
 569	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	15	1308	1175	125	229	弁	U+5F01					parent	1490667dc13256156201daefabb2fdd8b3abfe99e2084b5570e7485870d52ff9
 570	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	15	1308	1688	136	237	弗	U+5F17	𿕔	U+3F554		弗	ink	689ed6a667341ec1c4aedc93ff558b3f65dde3d1143965406f2fada162060168
 571	TE00003_0316_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/11	15	1313	1949	135	253	弗	U+5F17	𿕔	U+3F554		弗	ink	8e09d4cac29d3bed43056d2a929e31b7d8deb19a102fb6fbeef089b85ad7d7d8
@@ -730,7 +730,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 720	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2294	931	130	222	并	U+5E76					parent	62bb11c5abe1c15516904cc9c4385f50d23bc1c464db05b7680437922ecb3f53
 721	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2285	1178	150	242	并	U+5E76					parent	697dc934deb222a632392c19b8c3824ec0f854e4d68eba8bc2f59539c16216e8
 722	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2289	1723	140	209	再	U+518D	𽭏	U+3DB4F		再	ink	23e9932d52b9fc8cffd87928bf7ad42268650a129ada92e46b441b0b2a83e438
-723	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2288	1973	156	222	再	U+518D	𽭏	U+3DB4F		再	ink	9b757ab2b414a43e560274c01119d02ca70dce6f618ec754df425dcc5ecbe750
+723	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2288	1973	156	222	再	U+518D					parent	9b757ab2b414a43e560274c01119d02ca70dce6f618ec754df425dcc5ecbe750
 724	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2303	2477	131	241	西	U+897F	𿊄	U+3F284		㢴	ink	387ca61b0ff302ca2b68c7512cb51a57a048e25b5f24f13d07ba0f46bde17a2c
 725	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	10	2302	2747	140	207	西	U+897F					parent	03cee3d73159442b84e9bd9cedec6a5e598291a3ef649414a738d33edb58e851
 726	TE00003_0318_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/13	11	2090	934	158	221	同	U+540C	𾖼	U+3E5BC		同	ink	2e2c5c18df11438230438d72ace3f3f07ed13737dfcd402fa1f8973b475cbf78
@@ -4121,7 +4121,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 4111	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	12	1892	2479	157	235	愚	U+611A	𾺰	U+3EEB0		愚	ink	5f0be41ec05d7e5806f85f5268e1623bb611ccf89f1866005d799ef5404c9832
 4112	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	12	1900	2728	153	265	愚	U+611A					parent	f9ace4d7510f0d234aa59b50ba5f62ef5043a842d827bd877e41fe37e0da1a7c
 4113	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	13	1690	904	155	227	愧	U+6127					parent	5a49b7aab9b28e2b2fbc14abb8fcb0c8fc278b4b7d8e9190639422ce3e6b3e7b
-4114	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	13	1706	1162	136	231	愧	U+6127					parent	a9ddc1d2dd41ec01bc55251ceefd811a18a15aab1488ca30caa011aff68683cb
+4114	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	13	1706	1162	136	231	愧	U+6127	𿔾	U+3F53E		媿	read	a9ddc1d2dd41ec01bc55251ceefd811a18a15aab1488ca30caa011aff68683cb
 4115	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	13	1692	1696	159	234	愼	U+613C	𾸴	U+3EE34		愼	ink	51a4d84afde9272444ab4f01b11d74deb728c7a2af8eb4d675979e104dee5245
 4116	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	13	1692	1939	169	216	愼	U+613C	𾸵	U+3EE35		昚	ink	b4552f926c1a977f6b34c84c3b9366dd41a03fb95aeadcbb46d50399e75a2a12
 4117	TE00003_0354_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/49	13	1705	2469	153	243	搖	U+6416	𿎔	U+3F394		搖	ink	783e1ecb2ab1b8a614f5132b092c41c6d26a4555959f6d3f48d67de4ea785296
@@ -4262,7 +4262,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 4252	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	4	3653	1155	177	234	粮	U+7CAE	𾑧	U+3E467		糧	ink	83db4bced8596ab2f4af7187457bec11b6e40fb738b2f2572bd81da06cc3bd57
 4253	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	4	3676	1683	143	237	絹	U+7D79	𿙷	U+3F677		絹	ink	5215ecf7ad98a1ab3910b99ea8910d311f7b0c886e3717ac90100582787e612e
 4254	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	4	3685	1928	130	286	絹	U+7D79					parent	ebfdf1e5b514a8863bf623fc0e8a5f13cae2dd2b2c3ab7211267d786ce50656a
-4255	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	4	3677	2470	158	240	彘	U+5F58	𾭿	U+3EB7F		彘	ink	a6467a3c2f16c8f39793729a11a4e3178ab2e23dca26dc731dd8be0995822cb8
+4255	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	4	3677	2470	158	240	彘	U+5F58					parent	a6467a3c2f16c8f39793729a11a4e3178ab2e23dca26dc731dd8be0995822cb8
 4256	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	4	3686	2734	141	255	彘	U+5F58					parent	ce715a253d2bf6e035b7758c85154653e8b79140ee5245e2e3664e67bbdb98ca
 4257	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	5	3455	904	152	225	經	U+7D93	𿘞	U+3F61E		經	ink	d8e8be5e1613db650c9e585bf9ac25d32a7201224681ef71d1c3fb60e927a501
 4258	TE00003_0356_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/51	5	3447	1159	161	223	經	U+7D93					parent	33453e007c4798e11370857620c8aed3db134a6d393b90ae528de421110d884f
@@ -4405,7 +4405,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 4395	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1907	901	138	249	辠	U+8FA0	𿮣	U+3FBA3		辠	ink	79b0502121c681e0527537bef8f95d2d9a6313c579869c307150aebf2272fa7c
 4396	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1900	1164	144	260	辠	U+8FA0					parent	6e5464e9f347469987dc3f3cd6687c1d69fcf09403b420e21d6975744c62bb6a
 4397	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1887	1702	168	238	農	U+8FB2	𽟲	U+3D7F2		䢉	ink	df8df3684ff9067ce49d87502c21c3b91a8420b886dd9a7f0ccfd016ad464a77
-4398	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1890	1942	157	255	農	U+8FB2	𽟴	U+3D7F4		𦦥	ink	4d46fb2d67b958a8c65bb3431cfce024e83dd4e2691be30920e3f2204bf6951f
+4398	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1890	1942	157	255	農	U+8FB2					parent	4d46fb2d67b958a8c65bb3431cfce024e83dd4e2691be30920e3f2204bf6951f
 4399	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1895	2495	159	223	貯	U+8CAF	𾈊	U+3E20A		貯	ink	f7e83ac7d6b31789e541907f73ba6b4d9beab5f2a4431f5aafb96a30d7f8abcc
 4400	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	12	1895	2731	148	253	貯	U+8CAF					parent	3bc08d6fb0b0f677bf5ad1de3514e1e6e570ec96c095afc71748d0c2fe7f130c
 4401	TE00003_0357_1	https://kokusho.nijl.ac.jp/biblio/100250413/canvas/52	13	1709	919	143	231	鼎	U+9F0E	𾏈	U+3E3C8		鼎	ink	339ff7c4ded1fa48f749dfdc9eaabf898dfa007889a13310003830935ee5b2e5

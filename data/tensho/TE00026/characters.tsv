@@ -858,7 +858,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 848	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	5	3238	2275	159	182	卅	U+5345					parent	2ed4032bd1f1211284376c5cbc1d1823c1f1d84d1c469e4b94ad1149c2d4d2c2
 849	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	5	3222	3181	157	255	卉	U+5349	𽋐	U+3D2D0		芔	ink	3caea2caa260326248184bca086236b08c4e180283a46014b3875588cd5ba6cd
 850	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	6	3047	984	65	224	十	U+5341					parent	b6a3c35dd9933f30d022ca4dede72666c5fb516115cafd893f5e9845a1dc80f3
-851	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	6	3049	1312	56	213	十	U+5341	𽙾	U+3D67E		十	ink	37981aa522a81f7f3b6c2333cf159a733c13b71a40eda7ed4d676026252f89b5
+851	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	6	3049	1312	56	213	十	U+5341					parent	37981aa522a81f7f3b6c2333cf159a733c13b71a40eda7ed4d676026252f89b5
 852	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	6	3007	2247	140	270	升	U+5347	𿪃	U+3FA83		升	ink	3c15bad0e731d5e2cb78de9b779ee160b7a74e0f846eec63e7db0c4187ae50eb
 853	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	6	2989	3186	162	255	𠦒	U+20992	𽭈	U+3DB48		𠦒	ink	abc043422d700f99bfb81208a5b76f2a863da40537b9139f154f8e80d1af139f
 854	TE00026_0042_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/31	7	2781	1294	148	245	卂	U+5342	𿉶	U+3F276		卂	equivalent	e1134afb2c24db9ad99f41ce1d76074133324ab562a1990c8e21749d26aa7dea
@@ -1075,7 +1075,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 1065	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	10	1930	1282	141	204	吉	U+5409	𽏟	U+3D3DF		吉	ink	381f83d583fe89eddab9ffbeb4fa62c91ad458de530cd90eb3bbc0d0cfc424e4
 1066	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	10	1928	1915	165	236	后	U+540E	𾧼	U+3E9FC		后	ink	81c32f9607d48b0b174078f2e7ff8071d9d1891d3aa165431da1e71fa39f7b1b
 1067	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	10	1940	2862	169	228	君	U+541B	𽎷	U+3D3B7		君	ink	992418ae4d009c35092fa71b7b376e9c0e268fced0970054bad2db36a5dcc3ee
-1068	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	10	1944	3183	171	238	君	U+541B	𽎸	U+3D3B8		𠱭	ink	bd71fc7de877ec067ecb2545046523d806ccdb8ce6d7364e071abf39911bbfbb
+1068	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	10	1944	3183	171	238	君	U+541B					parent	bd71fc7de877ec067ecb2545046523d806ccdb8ce6d7364e071abf39911bbfbb
 1069	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	11	1671	978	182	172	吉	U+5409	𽏟	U+3D3DF		吉	ink	c92677a277fdb5b75fe20cf45dde4195210bf7a4ca42e4a052c7a23036ed2385
 1070	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	11	1684	1292	161	203	吉	U+5409					parent	318c9c064465975627d735d260daa1906fff4d99f2fb282427612ea420f45543
 1071	TE00026_0043_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/35	11	1690	2224	165	295	吏	U+540F					parent	e864a71aa402f5bea415b45b6c4a4ca413429dd643a6cdea796e59045abbe6b2
@@ -2512,7 +2512,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 2502	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	6	3182	2231	181	276	弇	U+5F07	𽟌	U+3D7CC		弇	equivalent	7aacac53aef212ca28e5a2f180e26d2a8d1310be6fb951e100edaf4036079d2f
 2503	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	7	2945	1294	181	236	𠔀	U+20500					parent	afcb87b705ca85db1b7c5d22dbf8d4c000cc4d0be620f9e5837fb1934141480f
 2504	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	7	2946	2229	182	274	弈	U+5F08	𽟛	U+3D7DB		弈	equivalent	d21a62f63862ccc059081d96db2c6737ea56f3beb85cb67431420daed694990e
-2505	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	8	2711	1276	175	264	弁	U+5F01					parent	48f15793d17502c7da91149dcefd80b9a5ec5340572a37f345581b57dd161427
+2505	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	8	2711	1276	175	264	弁	U+5F01	𾢩	U+3E8A9		𡭪	read	48f15793d17502c7da91149dcefd80b9a5ec5340572a37f345581b57dd161427
 2506	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	8	2724	2210	153	291	𢍏	U+2234F					parent	b723379a67cb115118d39ba210d5aed0c0cac45cfe98880ad855207b4673f9f3
 2507	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	9	2241	1271	156	273	式	U+5F0F	𽷁	U+3DDC1		式	equivalent	ae702ade6beaa56b5befd35bb124c139475a779cc175425a887f9b7b0f243f98
 2508	TE00026_0058_1	https://dl.ndl.go.jp/api/iiif/1181876/canvas/66	9	2264	2249	141	254	弗	U+5F17	𿕔	U+3F554		弗	ink	eda1ffce2b883f8db44f9b85d058598de5d4aa405d0a8f38ee0cd5471fe6c7b8

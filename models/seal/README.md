@@ -36,8 +36,9 @@ These say how often the small seal form is found. A form alone under its 親字 
 seal character of that 親字, which some are not drawn as, so the figures of 新撰篆書字典 are a floor; 12
 crops say little of 聯珠篆文.
 
-How often a placement is right was judged on a random 200 of the 6,010, each read beside its seal character (`sample.tsv`): 198 are the
-same parts in the same arrangement as their seal character, some of them in a bronze hand, and two
-(農, 再) are another form of the same character. The 95% interval is up to 4 in 100. The 183 placements of
-the third answer and the 318 on another form of the 親字 than its own were all read beforehand, and those
-found wrong are in `data/tensho/read.tsv`, which the tables take over the model's answer.
+How often a placement is right was judged on a random 200 of the 6,010 crops the model places, each read
+beside its seal character (`sample.tsv`): 198 are the same parts in the same arrangement as their seal
+character, some of them in a bronze hand, and two (農, 再) are another form of the same character. The 95%
+interval is up to 4 in 100. `data/tensho/read.tsv`, which the tables take over the model's answer, holds
+those two and the others found wrong, among them in a reading of the placements on another form of the
+親字 than its own and of most of those by the third answer.
