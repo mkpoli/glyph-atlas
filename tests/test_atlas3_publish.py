@@ -788,6 +788,17 @@ def test_published_credits_take_the_words_a_reader_should_see(layout, monkeypatc
     capsys.readouterr()
     run(publish, monkeypatch, tmp_path / "credits.sqlite")
     assert "nothing changed" in capsys.readouterr().out
+    # A retired crop's record loses its credit too, and a page with no live crop left is passed over.
+    path = root / "out" / "pages" / f"{pages['hl:p2']}-{other_rev}.json.gz"
+    gone = "unresolved for review: no licence statement"
+    path.write_bytes(gzip.compress(json.dumps({**other, "page": {**other["page"], "attribution": gone},
+                                               "crops": [{**c, "retired": True, "attribution": gone} for c in other["crops"]]}).encode()))
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("DELETE FROM crops WHERE id >= ? AND id < ?", (pages["hl:p2"] * publish.PAGE, (pages["hl:p2"] + 1) * publish.PAGE))
+        db.commit()
+    run(publish, monkeypatch, tmp_path / "credits.sqlite")
+    assert "credits: 1 crops and 0 pages" in capsys.readouterr().out
+    assert all("attribution" not in c for c in bundle("hl:p2")[1]["crops"])
     with sqlite3.connect(tmp_path / "credits.sqlite") as db:
         db.execute("CREATE TABLE media(key)")
     with pytest.raises(SystemExit, match="holds credits alone"):
