@@ -144,7 +144,7 @@ class FakeGemini:
         self.memories.append(([row["event_id"] for row in rows], [int(fact["id"]) for fact in known], set(left_out)))
         return self.memory_value
 
-    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(), recent=(),
+    def act(self, room_name, room_topic, events, names, *, task, trigger, bot_user_id, stickers=(),
             rooms="", memory=None, lookup=None, on_step=None, room_facts=None, images=()):
         self.rooms = rooms
         self.room_facts = room_facts
@@ -152,7 +152,7 @@ class FakeGemini:
         self.memory = memory
         self.lookup = lookup
         self.turns.append((task, trigger, [row["event_id"] for row in events]))
-        self.sticker_offers = (tuple(stickers), tuple(recent))
+        self.sticker_offers = tuple(stickers)
         if self.error is not None:
             raise self.error
         return self.act_value
@@ -827,17 +827,30 @@ def test_sends_the_sticker_the_model_picks_after_its_line(tmp_path):
     assert matrix.sent[0][1]["body"] == "好耶"
     assert matrix.events[-1][1] == "m.sticker"
     assert matrix.events[-1][2]["url"] == "mxc://example/yay"
-    assert bot.gemini.sticker_offers[0] == ("yay",)
+    assert bot.gemini.sticker_offers == ("yay",)
     trigger = event("大肥魚 again!", event_id="$again")
     bot.ingest(ROOM, trigger, backfilled=False)
     bot.answer(ROOM, trigger)
-    assert bot.gemini.sticker_offers == ((), ("yay",))
+    assert bot.gemini.sticker_offers == ()
     assert [kind for _, kind, _ in matrix.events].count("m.sticker") == 1
-    bot._sticker_at[ROOM] -= fish_bot.STICKER_GAP_SECONDS
-    trigger = event("大肥魚 later!", event_id="$later")
-    bot.ingest(ROOM, trigger, backfilled=False)
-    bot.answer(ROOM, trigger)
-    assert bot.gemini.sticker_offers[0] == ("yay",)
+
+
+def test_a_sticker_follows_right_after_another_but_not_the_same(tmp_path, monkeypatch):
+    monkeypatch.setattr(fish_bot, "STICKERS_RESTING", 2)
+    bot, matrix, store = make_bot(tmp_path)
+    for name in ("yay", "love", "ok"):
+        store.set_sticker(name, next(s.sha256 for s in fish_bot.STICKERS if s.name == name), f"mxc://example/{name}", 1)
+    offers = []
+    for number, name in enumerate(("yay", "love", "ok", "yay")):
+        bot.gemini.act_value = act("好耶", sticker=name)
+        trigger = event("大肥魚!", event_id=f"$call{number}")
+        bot.ingest(ROOM, trigger, backfilled=False)
+        bot.answer(ROOM, trigger)
+        offers.append(set(bot.gemini.sticker_offers))
+    assert offers == [{"yay", "love", "ok"}, {"love", "ok"}, {"ok"}, {"yay"}]
+    sent = [content["url"] for _, kind, content in matrix.events if kind == "m.sticker"]
+    assert sent == ["mxc://example/yay", "mxc://example/love", "mxc://example/ok", "mxc://example/yay"]
+    assert bot._stickers_now("!elsewhere:example").keys() == {"yay", "love", "ok"}
 
 
 def test_parse_act_drops_a_sticker_it_does_not_have():
