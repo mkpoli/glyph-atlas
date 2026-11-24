@@ -18,6 +18,9 @@ describe('the totals a tile states', () => {
     expect([...forms]).toEqual([['仮', 70], ['假', 52], ['か', 4]])
     expect(['U+4EEE', 'U+304B', 'U+52A0', 'U+3042'].map(key => shapes.get(key) ?? 0)).toEqual([2, 1, 1, 0])
     expect(keys.get('か')).toBe('U+52A0')
+    // As many under each: the lower key, whichever row comes first.
+    const tied = [['か', 'U+52A0', 2, 0, 1], ['か', 'U+304B', 2, 0, 1]]
+    for (const rows of [tied, [...tied].reverse()]) expect(cropTotals(rows).keys.get('か')).toBe('U+304B')
   })
 })
 

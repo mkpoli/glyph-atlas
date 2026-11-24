@@ -28,7 +28,8 @@ export function gatherGraphemes({ categories = [], counts = null, inScript = () 
     if (!isSeal(label)) continue
     const at = label + grapheme, sum = (sums.get(at) ?? 0) + all
     sums.set(at, sum)
-    if (!own.has(label) || sum > sums.get(label + own.get(label))) own.set(label, grapheme)
+    const held = own.get(label)
+    if (held === undefined || sum > sums.get(label + held) || sum === sums.get(label + held) && grapheme < held) own.set(label, grapheme)
   }
   const groups = new Map()
   for (const { label, grapheme, local, corpus } of rows) {
@@ -48,6 +49,8 @@ export function gatherGraphemes({ categories = [], counts = null, inScript = () 
   return collected ? [...groups.values()].filter(group => group.local > 0) : [...groups.values()]
 }
 
+// Of two graphemes with as many of a form's crops the lower key is taken, in whatever order the rows come.
+const more = (sums, key, than) => sums.get(key) > sums.get(than) || sums.get(key) === sums.get(than) && key < than
 /**
  * The crops of each written form and of each grapheme, from the counts' rows: `forms` and `groups` their
  * totals, `shapes` how many forms each grapheme is written with and `keys` the grapheme each form counts
@@ -65,7 +68,7 @@ export function cropTotals(rows) {
     const sums = under.get(label) ?? new Map()
     if (!sums.has(key)) shapes.set(key, (shapes.get(key) ?? 0) + 1)
     sums.set(key, (sums.get(key) ?? 0) + n); under.set(label, sums)
-    if (!keys.has(label) || sums.get(key) > sums.get(keys.get(label))) keys.set(label, key)
+    if (!keys.has(label) || more(sums, key, keys.get(label))) keys.set(label, key)
   }
   return { forms, groups, keys, shapes }
 }

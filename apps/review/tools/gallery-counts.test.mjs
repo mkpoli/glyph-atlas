@@ -2,22 +2,54 @@ import { describe, expect, it, jest, mock } from 'bun:test'
 
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: (key, values = {}) => `${key} ${values.count ?? ''}`.trim() }))
 mock.module('../src/lib/busy.svelte.js', () => ({ isReload: () => false }))
-const { afterBurst, countsMoved, withSummary } = await import('../src/lib/galleryCounts.js')
+const { afterBurst, countsMoved, latest, listDone, savedTile, withSummary } = await import('../src/lib/galleryCounts.js')
 const { matchesLabel } = await import('../src/lib/layers.js')
 
 describe('a save', () => {
   const claim = grapheme => ({ grapheme_claim: { status: 'asserted', values: [{ grapheme }] } })
-  it('moves the counts when it changes a crop\'s character or its grapheme, and not when it confirms it', () => {
-    const crop = { id: 'a', label: '仮', state: 'pending' }
-    expect(countsMoved(crop, { ...crop, state: 'checked' })).toBe(false)
-    expect(countsMoved(crop, { ...crop, state: 'flagged', issue: 'crop' })).toBe(false)
-    expect(countsMoved(crop, { ...crop, label: '假' })).toBe(true)
-    expect(countsMoved(crop, { ...crop, ...claim('U+53CD') })).toBe(true)
-    expect(countsMoved({ ...crop, ...claim('U+53CD') }, { ...crop, grapheme_claim: { status: 'retracted', values: [] } })).toBe(true)
-    expect(countsMoved({ ...crop, ...claim('U+53CD') }, { ...crop, ...claim('U+53CD') })).toBe(false)
+  const named = { id: 'b', label: 'は', written_character: null, identity_basis: 'normalized_transcription', identity_status: 'unassigned' }
+  it('moves the totals when it changes a crop\'s character or its grapheme, and nothing when it confirms it', () => {
+    const crop = { id: 'a', label: '仮', state: 'pending', grapheme_claim: null }
+    expect(countsMoved(crop, { ...crop, state: 'checked' })).toBe(null)
+    expect(countsMoved(crop, { ...crop, state: 'flagged', issue: 'crop' })).toBe(null)
+    expect(countsMoved(crop, { ...crop, label: '假' })).toBe('totals')
+    expect(countsMoved(crop, { ...crop, ...claim('U+53CD') })).toBe('totals')
     // A corpus glyph a reader names, and a crop no list holds.
-    expect(countsMoved({ id: 'b', label: 'は', written_character: null, identity_basis: 'normalized_transcription' }, { id: 'b', label: 'は', written_character: 'は', identity_status: 'assigned' })).toBe(true)
-    expect(countsMoved(undefined, crop)).toBe(true)
+    expect(countsMoved(named, savedTile(named, { written_character: 'は', identity_status: 'assigned' }))).toBe('totals')
+    expect(countsMoved(undefined, crop)).toBe('totals')
+  })
+  it('that takes a claim back moves them, as the record it was saved from tells and a tile does not', () => {
+    const record = { id: 'a', label: '后', ...claim('U+5F8C') }, tile = { id: 'a', label: '后' }
+    expect(countsMoved(record, { ...record, grapheme_claim: { status: 'retracted', values: [] } })).toBe('totals')
+    expect(countsMoved(record, { ...record, state: 'checked' })).toBe(null)
+    // A tile states no claim, so confirming a claimed crop from one is no change.
+    expect(countsMoved(tile, savedTile(tile, { ...record, state: 'checked' }))).toBe(null)
+  })
+  it('and its undo move them, the tile back as it was naming no character of its own', () => {
+    const tile = { id: 'a', label: '仮', state: 'pending' }, corrected = { ...tile, label: '仮', written_character: '假', state: 'checked' }
+    expect(countsMoved(tile, corrected)).toBe('totals')
+    expect(countsMoved(corrected, { ...tile, revision: 3 })).toBe('totals')
+  })
+  it('of a style moves what a gallery is narrowed by, and no total', () => {
+    const crop = { id: 'a', label: '仮', style: 'cursive' }
+    expect(countsMoved(crop, { ...crop, style: 'regular' })).toBe('facets')
+    expect(countsMoved({ ...crop, style: null }, { ...crop, style: 'mixed' })).toBe(null)
+    expect(countsMoved(crop, { ...crop, style: 'running' })).toBe(null)
+    expect(countsMoved(crop, { ...crop, style: 'regular', label: '假' })).toBe('totals')
+  })
+  it('leaves a list its last page: what ends it is the page that names no next', () => {
+    // 61 glyphs, 60 of them read; one relabelled makes the count 60.
+    expect([listDone(true, '0S0.1.a'), listDone(true, null), listDone(false, null)]).toEqual([false, true, false])
+  })
+  it('has the counts of the last read begun, in whatever order reads come in', async () => {
+    const begin = latest(), answers = []
+    let shown = null
+    const read = value => { const current = begin(); return new Promise(done => answers.push(done)).then(() => { if (current()) shown = value }) }
+    const before = read('before the save'), after = read('after it')
+    answers[1](); await after
+    expect(shown).toBe('after it')
+    answers[0](); await before
+    expect(shown).toBe('after it')
   })
   it('leaves an open gallery its own total, and gives a listing the catalogue\'s', () => {
     const data = { query: '仮', total: 65, available: 65, categories: [1], other: true }
