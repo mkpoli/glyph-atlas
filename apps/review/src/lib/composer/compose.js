@@ -26,6 +26,14 @@ const upTo = (list, n) => list.filter(h => h.r < n)
 
 const isSelector = ch => ch !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(ch)
 
+/** The character a variation sequence varies, or null for any other key. Asked of every key the
+ *  composer looks up, so a key of any other length is told at once. */
+export const variantBase = key => {
+  if (key.length < 2 || key.length > 4) return null
+  const base = String.fromCodePoint(key.codePointAt(0)), selector = key.slice(base.length)
+  return isSelector(selector) ? base : null
+}
+
 /** `⿰亻⿱亠女` as ['⿰', '亻', ['⿱', '亠', '女']], each operator taking `arity(op)` operands. */
 export function parseTree(sequence, arity) {
   const chars = [...sequence]
@@ -89,7 +97,16 @@ export class Composer {
   arity = ch => this.arities.get(ch) ?? 0
   parse = sequence => parseTree(sequence, this.arity)
   // A key holding an empty slot has no record and no hosts: nothing is asked for it.
-  rec = key => key.includes(EMPTY) ? null : this.data.rec(key)
+  rec = key => key.includes(EMPTY) ? null : this.variantRecord(key) ?? this.data.rec(key)
+  /** The record of a character under a variation selector: its own outline (`data.variant`), laid out
+   *  as its base is. The base's description is left out, so a sequence never opens into it. Null where
+   *  the font draws no such sequence. */
+  variantRecord(key) {
+    const base = variantBase(key), own = base && this.data.variant?.(key)
+    if (!own?.G) return null
+    const { s: _sequence, e: _described, a: _forms, ...record } = this.data.rec(base) ?? {}
+    return { ...record, o: own.G.p.length, ...own }
+  }
   excluded = ch => this.exclude.has(ch)
   slot = (op, i) => this.SLOTS[op] ? this.SLOTS[op][i] : `${op}${i}`
 
@@ -211,6 +228,8 @@ export class Composer {
    *  a piece, which the composer weighs before finding it cannot cut them. */
   hostsOf(written, place, uncut = false) {
     if (written.includes(EMPTY)) return []
+    // A cut names the part, not which of its shapes the host draws, so a variation sequence takes none.
+    if (this.variantRecord(written)) return []
     const list = this.data.hosts(written, place)
     return uncut ? list : list.filter(h => this.cutOf(h))
   }
@@ -418,7 +437,8 @@ export class Composer {
     for (let i = 0; i < children.length; i++) {
       const child = children[i]
       let box = boxes[i]
-      let part = this.host(op, i, child, [...children.slice(0, i), ...children.slice(i + 1)], box, region === null)
+      // Inside a variation sequence, which is drawn from its glyph, a part is set into the opening.
+      let part = i === 1 && op in this.ENCLOSE && this.variantRecord(keyOf(children[0])) ? null : this.host(op, i, child, [...children.slice(0, i), ...children.slice(i + 1)], box, region === null)
       if (part && op in this.ENCLOSE && i === 0 && typeof child === 'string' && this.own(child)
         && stretchOf(part.piece.box, box) > C.ENCLOSING_STRETCH) part = null
       if (!part) {
