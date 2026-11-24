@@ -125,7 +125,7 @@ def corpus(per_route: int, images: int, seed: int, new_ids: str) -> list[Case]:
                  "/atlas/corpus/reviews?state=flagged", "/layers/graphemes?limit=50", "/layers/ligatures?limit=50",
                  "/api/favourites", "/api/favourites/crops", "/api/account", "/atlas/history",
                  "/atlas?purpose=browse&limit=24", "/atlas?purpose=review&state=pending&production=all&limit=24",
-                 "/atlas/ngrams/2?limit=20", "/atlas/ngrams/3?limit=20", "/atlas/corpus/characters",
+                 "/atlas/ngrams/2?limit=20", "/atlas/ngrams/3?limit=20", "/atlas/graphemes/counts",
                  "/atlas/forms/families", "/atlas/forms/codes"]:
         both(path, path)
 

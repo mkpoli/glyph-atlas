@@ -89,16 +89,20 @@ export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k
     AND c.cut=k.cut+(r.x IS NOT NULL) ORDER BY c.object,c.subject LIMIT ${FILED_MAX}`;
 export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; book: number; production: number | null; category: number | null; shuffle: number; style: number | null;
   state: number | null; quiz: number | null; visual_group: number | null; decade: number };
+export type FiledAt = Filed & { head: string };
 /** For a family headed by `grapheme` (its key) with these members: the crops of its members a claim
  *  files elsewhere (`away`), and the crops from outside it a claim files here (`here`). A claim files
  *  its crop under the family its grapheme heads now, or is filed under since a publication moved it. */
 export async function familyClaims(env: Env, grapheme: string, members: number[]): Promise<{ away: Filed[]; here: Filed[] }> {
-  const rows = await filedClaims(env), own = new Set(members);
+  return claimsAt(await filedClaims(env), grapheme, members);
+}
+export function claimsAt<T extends FiledAt>(rows: T[], grapheme: string, members: number[]): { away: T[]; here: T[] } {
+  const own = new Set(members);
   const inFamily = (r: Filed) => r.char !== null ? own.has(r.char) : r.family !== null && own.has(r.family);
   return { away: rows.filter(r => r.head !== grapheme && inFamily(r)), here: rows.filter(r => r.head === grapheme && !inFamily(r)) };
 }
 /** Every crop a grapheme claim files, with the key of the head of the family it files it under now. */
-export async function filedClaims(env: Env): Promise<(Filed & { head: string })[]> {
+export async function filedClaims(env: Env): Promise<FiledAt[]> {
   const rows = (await env.ATLAS.prepare(filedClaimsQuery()).all<Filed>()).results, heads = await keyHeads(env, rows.map(r => r.grapheme));
   return rows.map(r => ({ ...r, head: heads.get(r.grapheme)! }));
 }
