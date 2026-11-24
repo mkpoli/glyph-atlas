@@ -367,12 +367,7 @@ She catches newcomers up. `!fish recap`, asking her for the whole server in plai
 (「大肥魚，前情提要」, 「我錯過了什麼？」, 「これまでの話」, 「지금까지 요약해 줘」)
 answers with a brief of everything she remembers from every room she reads: what the community is
 building, the subjects that keep coming back, decisions and recent news, in the language of the
-request. The same brief can be posted once from the server, for example to the welcome room:
-
-```sh
-runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/config.toml \
-  --recap '#welcome:glyphatlas.org' --language 'Traditional Chinese, then English'
-```
+request.
 
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
 the newest few among its last lines (four when called, two on a visit) to the model as the
@@ -395,7 +390,6 @@ latest messages, checks the open issues for duplicates, and files in `mkpoli/gly
 the log names a concrete request. `!fish review` proposes a title and keeps it for a day; `!fish
 issue` files that proposal, or reads the room again when none is pending. Filing is capped at five
 issues a day and one every ten minutes; model calls are capped per user and across the bot.
-Starting the program with `--dry-run` answers `[dry run] Would file: …` and writes nothing to GitHub.
 
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
 and directories:
@@ -474,7 +468,9 @@ settled at its real cost (one that costs more may pass the limit by the differen
 day's money is gone no call is sent until midnight JST. She opens no rooms unasked while spending
 is ahead of a pace that rises through the day; from 85% she reads 15 lines and one picture and leaves
 bystanders in a conversation alone; with none left she tells a room that calls her, once a day. A
-client without a purse sends nothing at all. The last week is printed by
+client without a purse sends nothing at all, and only the process systemd runs as `fish-bot.service`
+may call a model: nothing that costs money is ever tested, by anyone or any agent. The last week is
+printed by
 
 ```sh
 runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --db /var/lib/fish-bot/chat.sqlite3 --usage
