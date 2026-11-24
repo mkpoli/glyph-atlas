@@ -1698,7 +1698,7 @@ def test_a_stretch_that_keeps_failing_backs_off_and_is_skipped(tmp_path, monkeyp
     def remember(room_name, rows, names, known, *, bot_user_id, left_out=(), images=()):
         calls.append(rows[0]["event_id"])
         if rows[0]["event_id"] == "$p0":
-            raise fish_bot.GeminiError("400 Content Exists Risk")
+            raise fish_bot.ModelError("400 Content Exists Risk")
         return fish_bot.Memory(summary="fine", keywords=(), edits=())
 
     monkeypatch.setattr(bot.gemini, "remember", remember)
@@ -2234,7 +2234,7 @@ def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
     def post(body, **_):
         bodies.append(json.loads(json.dumps(body)))
         if isinstance(body["input"], list):
-            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
+            raise fish_bot.ModelError("Gemini answered 400: invalid image", status=400)
         return answer('{"say": "看不到圖，但我在！"}')
 
     monkeypatch.setattr(model, "_post", post)
@@ -2447,14 +2447,14 @@ def test_every_call_is_counted_with_its_tokens_failures_and_cost(tmp_path, monke
 
     def send(body, **_):
         if not answers:
-            raise fish_bot.GeminiError("Gemini answered 503", status=503)
+            raise fish_bot.ModelError("Gemini answered 503", status=503)
         return answers.pop(0)
 
     monkeypatch.setattr(model, "_send", send)
     model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
     found = model.search("tangut")
     assert found[0]["url"] == "https://example.org/tangut" and "Tangut" in found[0]["summary"]
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.fetch("https://example.org")
     rows = {row["kind"]: row for row in store.usage(1)}
     assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 30)
@@ -2513,17 +2513,17 @@ def test_two_processes_share_the_days_money(tmp_path):
 def test_a_refused_call_is_free_and_a_lost_one_is_not(tmp_path, monkeypatch):
     purse = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 1.0)
     model = paid_gemini("key", purse=purse)
-    error = fish_bot.GeminiError("Gemini answered 429", status=429)
+    error = fish_bot.ModelError("Gemini answered 429", status=429)
 
     def send(body, **_):
         raise error
 
     monkeypatch.setattr(model, "_send", send)
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.search("tangut")
     assert purse.spent() == pytest.approx(0)
-    error = fish_bot.GeminiError("Gemini could not be reached: timed out")
-    with pytest.raises(fish_bot.GeminiError):
+    error = fish_bot.ModelError("Gemini could not be reached: timed out")
+    with pytest.raises(fish_bot.ModelError):
         model.search("tangut")
     assert purse.spent() == pytest.approx(fish_bot.CALL_RESERVE)
 
@@ -2657,14 +2657,14 @@ def test_every_tool_call_gets_a_result_past_the_limit(monkeypatch):
 def test_search_without_sources_is_no_result(monkeypatch):
     model = paid_gemini("key")
     monkeypatch.setattr(model, "_send", lambda body, **_: answer("I could not find anything useful."))
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.search("tangut")
 
 
 def test_fetch_without_a_retrieved_page_is_no_result(monkeypatch):
     model = paid_gemini("key")
     monkeypatch.setattr(model, "_send", lambda body, **_: answer("The page talks about Tangut."))
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.fetch("https://example.org")
 
 
@@ -2674,7 +2674,7 @@ def test_fetch_refuses_a_url_context_error(monkeypatch):
         "Could not access URL",
         extra_steps=[{"type": "url_context_result", "result": [{"url": "https://example.org", "status": "error"}]}],
     ))
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.fetch("https://example.org")
 
 
@@ -2750,7 +2750,7 @@ def test_memory_tries_again_without_pictures_the_model_refuses(monkeypatch):
     def post(body, **_):
         sent.append(body["input"])
         if isinstance(body["input"], list):
-            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
+            raise fish_bot.ModelError("Gemini answered 400: invalid image", status=400)
         return answer('{"summary": "Talked.", "facts": []}')
 
     monkeypatch.setattr(model, "_post", post)
@@ -2795,7 +2795,7 @@ def test_a_refused_picture_leaves_memory_both_text_tries(monkeypatch):
     def post(body, **_):
         sent.append("list" if isinstance(body["input"], list) else "str")
         if sent[-1] == "list":
-            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
+            raise fish_bot.ModelError("Gemini answered 400: invalid image", status=400)
         if sent.count("str") == 1:
             return answer("not json")
         return answer('{"summary": "Talked.", "facts": []}')

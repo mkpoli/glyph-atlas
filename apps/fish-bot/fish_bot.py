@@ -842,7 +842,7 @@ class MatrixError(Exception):
         self.code = code
 
 
-class GeminiError(Exception):
+class ModelError(Exception):
     """The model did not answer with a decision."""
 
     def __init__(self, message: str = "", status: int | None = None):
@@ -850,7 +850,7 @@ class GeminiError(Exception):
         self.status = status
 
 
-class SpendError(GeminiError):
+class SpendError(ModelError):
     """The day's money is spent, or the caller has none: nothing was sent."""
 
 
@@ -2427,7 +2427,7 @@ class Gemini:
         day = self.purse.reserve(kind)
         try:
             answer = self._send(body, timeout=timeout)
-        except GeminiError as error:
+        except ModelError as error:
             # An answer that never came may still be billed, so its reserve stays spent.
             self._settle(kind, day, failed=True, cost=0.0 if error.status is not None else CALL_RESERVE)
             raise
@@ -2470,11 +2470,11 @@ class Gemini:
                 payload = (error.read() or b"").decode(errors="replace")[:500]
             except OSError:
                 pass
-            raise GeminiError(f"Gemini answered {error.code}: {payload or error.reason}", status=error.code) from None
+            raise ModelError(f"Gemini answered {error.code}: {payload or error.reason}", status=error.code) from None
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
-            raise GeminiError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
+            raise ModelError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise GeminiError(f"Gemini answered with JSON that could not be read: {error}") from None
+            raise ModelError(f"Gemini answered with JSON that could not be read: {error}") from None
 
     def decide(self, room_name: str, room_topic: str, events: list[sqlite3.Row],
                names: dict[str, str], call: Call, open_issues: list[IssueRef]) -> Decision:
@@ -2500,7 +2500,7 @@ class Gemini:
                 return parse_decision(content, open_issues)
             except SpendError:
                 raise
-            except (TypeError, ValueError, GeminiError) as error:
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 if attempt == 0:
                     log.warning("model answer unusable, asking once more: %s", error)
@@ -2514,7 +2514,7 @@ class Gemini:
                             "generation_config": {"thinking_level": ISSUE_THINKING, "max_output_tokens": 8192},
                             "store": True,
                         }
-        raise GeminiError(str(last or "no decision"))
+        raise ModelError(str(last or "no decision"))
 
     def act(self, room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
             *, task: str, trigger: int | None, bot_user_id: str,
@@ -2594,7 +2594,7 @@ class Gemini:
                 return parse_act(text, len(events), stickers)
             except SpendError:
                 raise
-            except (TypeError, ValueError, GeminiError) as error:
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("chat answer unusable: %s", error)
                 spoiled = answer.get("id") if answer is not None else None
@@ -2630,7 +2630,7 @@ class Gemini:
                     }
                     if lookup is not None:
                         body["tools"] = lookup.specs()
-        raise GeminiError(str(last or "no answer"))
+        raise ModelError(str(last or "no answer"))
 
     def search(self, query: str, count: int = 5) -> list[dict[str, Any]]:
         """Web results for a query using Gemini's native Google Search grounding."""
@@ -2656,7 +2656,7 @@ class Gemini:
             self._charge("grounding", queries * PRICE_SEARCH_QUERY)
         if not citations:
             # A summary without sources is the model's own words, not a search result.
-            raise GeminiError("the search found no sources")
+            raise ModelError("the search found no sources")
         return [{"title": title[:200], "url": url, "summary": text[:2000] if index == 0 else ""}
                 for index, (title, url) in enumerate(citations)]
 
@@ -2678,12 +2678,12 @@ class Gemini:
                     if isinstance(item, dict) and isinstance(item.get("status"), str):
                         statuses.append(item["status"].lower())
         if not statuses:
-            raise GeminiError(f"could not read {url}: the page was not retrieved")
+            raise ModelError(f"could not read {url}: the page was not retrieved")
         if all(status != "success" for status in statuses):
-            raise GeminiError(f"could not read {url} ({statuses[0]})")
+            raise ModelError(f"could not read {url} ({statuses[0]})")
         text = _interaction_text(answer).strip()
         if not text:
-            raise GeminiError("the fetch answer has no content")
+            raise ModelError("the fetch answer has no content")
         citations = _interaction_citations(answer)
         title = next((title for title, cited in citations if cited == url and title),
                      citations[0][0] if citations else "")
@@ -2721,7 +2721,7 @@ class Gemini:
                 return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
             except SpendError:
                 raise
-            except (TypeError, ValueError, GeminiError) as error:
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("memory answer unusable: %s", error)
                 if not images:
@@ -2731,7 +2731,7 @@ class Gemini:
                     # both tries left.
                     images = []
                     body["input"] = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
-        raise GeminiError(str(last or "no memory"))
+        raise ModelError(str(last or "no memory"))
 
     def digest(self, language: str, room_name: str, changes: list[dict[str, Any]],
                other_rooms: dict[str, list[sqlite3.Row]]) -> str:
@@ -2755,10 +2755,10 @@ class Gemini:
                 return text.strip()[:MAX_REPLY]
             except SpendError:
                 raise
-            except (TypeError, ValueError, GeminiError) as error:
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("digest answer unusable: %s", error)
-        raise GeminiError(str(last or "no digest"))
+        raise ModelError(str(last or "no digest"))
 
     def recap(self, language: str, episodes: list[dict[str, str]], notes: list[str], request: str = "") -> str:
         """A catch-up on everything remembered, for a newcomer."""
@@ -2781,10 +2781,10 @@ class Gemini:
                 return text.strip()[:MAX_RECAP]
             except SpendError:
                 raise
-            except (TypeError, ValueError, GeminiError) as error:
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("catch-up answer unusable: %s", error)
-        raise GeminiError(str(last or "no catch-up"))
+        raise ModelError(str(last or "no catch-up"))
 
     def check(self) -> None:
         parts = urllib.parse.urlsplit(self.url)
@@ -2797,16 +2797,16 @@ class Gemini:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if response.status != 200:
-                    raise GeminiError(f"Gemini answered {response.status}", status=response.status)
+                    raise ModelError(f"Gemini answered {response.status}", status=response.status)
                 payload = json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
-            raise GeminiError(f"Gemini rejected the key or model: {error.code}", status=error.code) from None
+            raise ModelError(f"Gemini rejected the key or model: {error.code}", status=error.code) from None
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise GeminiError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
+            raise ModelError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise GeminiError(f"Gemini answered with JSON that could not be read: {error}") from None
+            raise ModelError(f"Gemini answered with JSON that could not be read: {error}") from None
         if not isinstance(payload, dict) or not payload.get("name"):
-            raise GeminiError(f"the key does not serve {self.model}")
+            raise ModelError(f"the key does not serve {self.model}")
 
 
 class GitHub:
@@ -3252,7 +3252,7 @@ class Lookup:
                     return {"error": "the lookup budget for this hour is used up; answer without it"}
                 self._used.append(now)
             result = self._run(name, args)
-        except (GeminiError, GitHubError, MatrixError, TypeError, ValueError, KeyError, binascii.Error) as error:
+        except (ModelError, GitHubError, MatrixError, TypeError, ValueError, KeyError, binascii.Error) as error:
             log.info("lookup %s failed: %s", name, error)
             return {"error": str(error)[:300]}
         log.info("lookup %s", name)
@@ -4207,7 +4207,7 @@ class Bot:
             log.info("remembering waits: %s", error)
             self._memory_due = now_mono + MEMORY_RETRY_SECONDS
             return
-        except GeminiError as error:
+        except ModelError as error:
             first = str(segment[0]["event_id"])
             previous = self._memory_failures.get(room_id)
             tries = previous[1] + 1 if previous is not None and previous[0] == first else 1
@@ -4903,7 +4903,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"homeserver: {whoami}")
             print(f"model: {config.gemini_model}")
             print(f"github: {config.github_repo} (read access)" if github else "github: not configured")
-        except (MatrixError, GeminiError, GitHubError) as error:
+        except (MatrixError, ModelError, GitHubError) as error:
             raise SystemExit(str(error)) from None
         return
     store = Store(args.db)
@@ -4921,7 +4921,7 @@ def main(argv: list[str] | None = None) -> None:
                 if room_id is None or room_id not in bot.active_rooms:
                     raise SystemExit(f"{args.recap} is not a public room the bot reads")
                 text = bot.post_recap(room_id, language=args.language)
-            except (MatrixError, GeminiError) as error:
+            except (MatrixError, ModelError) as error:
                 raise SystemExit(str(error)) from None
             if not text:
                 raise SystemExit("nothing is remembered yet, so nothing was posted")
