@@ -144,7 +144,7 @@
     <div class="run-top">
       <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
       {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs lead={run ? runLead : null} />{/key}
+      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs linked lead={run ? runLead : null} />{/key}
     </div>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>

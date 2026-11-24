@@ -13,6 +13,7 @@
   // `token`: the grapheme that snippet chose, by its head, shown in the box until the reader removes it or types.
   // A page that knows its graphemes gives `groupOf`: the candidates a query names then show as the
   // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
+  // A page whose rows open pages is `linked`: the heading over a grapheme's rows then leads to the grapheme's page.
   // A `lead` snippet is a row the page puts above the candidates while the list is open.
   import { onMount } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
@@ -20,7 +21,8 @@
   import ScriptText from './ScriptText.svelte'
   import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { graphemeAddress } from '../lib/addresses.js'
+  import { t, localize } from '../lib/i18n.svelte.js'
   import { isSingle } from '../lib/issues.js'
 
   let {
@@ -49,15 +51,18 @@
     // A box that takes a run of characters as typed (what a joined crop reads): Enter on more than one
     // character submits the run to `onsubmit`, and the rows wait for the arrows.
     runs = false,
+    linked = false,
     lead = null,
   } = $props()
 
   const listId = `candidates-${Math.random().toString(36).slice(2, 9)}`
+  // `active` is the row the arrows stand on: a candidate's place in `items`, `g` and a block's place for
+  // its heading, or -1.
   let root = $state(null), input = $state(null), open = $state(false), active = $state(-1), items = $state([])
   const PAGE = 8, CEILING = 48   // the service answers up to 48 candidates for one query
   let limit = $state(PAGE)
   let loading = $state(false), failed = $state(false), answer = $state(null)
-  let options = $state([]), closed = false, timer, generation = 0
+  let closed = false, timer, generation = 0
   let pending = null, composing = false, quiet = false, list = $state(null)
   // The list takes the side of the box with room for it: the box under a selection sits at the bottom
   // edge of the window, where a list below it would run off the page.
@@ -78,13 +83,17 @@
   // the query found first, so 时 shows 時 = 时 = 旹 under one heading.
   const blocks = $derived.by(() => {
     const found = []
-    items.forEach((item, index) => {
+    for (const { item, index } of carded ? others : items.map((item, index) => ({ item, index }))) {
       const key = item.grapheme?.code_point ?? item.code_point, last = found.at(-1)
       if (last?.key === key) last.entries.push({ item, index })
       else found.push({ key, grapheme: item.grapheme, entries: [{ item, index }] })
-    })
+    }
     return found
   })
+  const headed = block => block.grapheme?.character_count > 1
+  // The rows the arrows walk, in the order they stand in.
+  const stops = $derived(blocks.flatMap((block, at) => [...(linked && headed(block) ? ['g' + at] : []), ...block.entries.map(({ index }) => index)]))
+  const rowId = stop => `${listId}-${stop}`
 
   function rowCount(item) {
     const count = countOf(item.char)
@@ -169,7 +178,8 @@
 
   // Enter in the box opens the first candidate, with or without cards: トモ still opens 𪜈.
   function choose(index = active) {
-    if (loading || index < 0) return
+    if (loading || index === -1) return
+    if (!Number.isInteger(index)) { document.getElementById(rowId(index))?.click(); return }
     const item = items[index]
     if (!item) return
     value = item.char
@@ -197,14 +207,15 @@
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       // The first arrow opens a closed list, and the page must not scroll while it does.
       event.preventDefault()
-      if (!open) { open = true; if (items.length && active < 0) active = 0; return }
-      if (!items.length) return
-      active = (active + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+      if (!open) { open = true; if (items.length && active === -1) active = 0; return }
+      if (!stops.length) return
+      const at = stops.indexOf(active)
+      active = event.key === 'ArrowDown' ? stops[(at + 1) % stops.length] : stops.at(Math.max(at, 0) - 1)
       return
     }
     if (event.key === 'Enter') {
       if (loading) return
-      if (open && active >= 0 && items[active]) { event.preventDefault(); choose() }
+      if (open && active !== -1) { event.preventDefault(); choose() }
       else if (onsubmit) { event.preventDefault(); onsubmit(value) }
       return
     }
@@ -243,9 +254,9 @@
 
   // Keep the highlighted row visible when the arrow keys walk past the bottom of the list.
   $effect(() => {
-    const index = active
-    if (!open || index < 0) return
-    options[index]?.scrollIntoView({ block: 'nearest' })
+    const row = active
+    if (!open || row === -1) return
+    document.getElementById(rowId(row))?.scrollIntoView({ block: 'nearest' })
   })
 
   /** The part of the window the list may fill: the visible viewport, less any panel between it and
@@ -305,8 +316,7 @@
 </script>
 
 {#snippet row(item, index, grouped = false)}
-  <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role={carded ? undefined : 'option'}
-          bind:this={options[index]}
+  <div class="candidate-row"><button type="button" class="candidate" id={rowId(index)} role={carded ? undefined : 'option'}
           aria-selected={carded ? undefined : index === active} class:active={!carded && index === active}
           onpointerenter={() => { if (!carded) active = index }} onclick={() => choose(index)}
           title={[item.name, item.reason].filter(Boolean).join(' · ')}>
@@ -323,6 +333,26 @@
   </button></div>
 {/snippet}
 
+<!-- A grapheme's rows under its heading, each row alone where the grapheme is the character's own. -->
+{#snippet grouped()}
+  {#each blocks as block, at (`${block.key}:${block.entries[0].index}`)}
+    {#if headed(block)}
+      {@const stop = 'g' + at}
+      <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${graphemeLabel(block.grapheme.char ?? block.entries[0].item.char)}`}>
+        {#snippet heading()}{t('chips.grapheme')} <ScriptText {...labelParts(block.grapheme.char ?? block.entries[0].item.char)} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}{/snippet}
+        {#if linked}
+          <a class="candidate-grapheme-head" class:active={!carded && active === stop} id={rowId(stop)} href={localize(graphemeAddress(block.key, block.grapheme.char ?? block.entries[0].item.char))}
+             role={carded ? undefined : 'option'} aria-selected={carded ? undefined : active === stop}
+             onpointerenter={() => { if (!carded) active = stop }} onclick={() => { open = false }}>{@render heading()}<span class="head-arrow" aria-hidden="true">→</span></a>
+        {:else}<p class="candidate-grapheme-head" aria-hidden="true">{@render heading()}</p>{/if}
+        {#each block.entries as { item, index } (item.code_point)}{@render row(item, index, true)}{/each}
+      </div>
+    {:else}
+      {#each block.entries as { item, index } (item.code_point)}{@render row(item, index)}{/each}
+    {/if}
+  {/each}
+{/snippet}
+
 <div class="character-search" class:compact class:flipped style={room == null ? undefined : `--candidate-room:${room}px`} bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
@@ -330,7 +360,7 @@
     <input bind:this={input} aria-label={label} bind:value placeholder={placeholder}
            autocomplete="off" spellcheck="false" role="combobox" aria-expanded={open}
            aria-controls={listId} aria-autocomplete="list" aria-busy={loading}
-           aria-activedescendant={open && !carded && active >= 0 ? `${listId}-${active}` : undefined}
+           aria-activedescendant={open && !carded && active !== -1 ? rowId(active) : undefined}
            oncompositionstart={() => { composing = true; reset() }}
            oncompositionend={e => { composing = false; typed(e.currentTarget.value) }}
            oninput={e => { if (!composing && !e.isComposing) typed(e.currentTarget.value) }}
@@ -350,8 +380,9 @@
     <div class="candidate-list browse-panel" id={listId} onmousedown={e => e.preventDefault()}
          onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); done() } }}>{@render browse(done)}</div>
   {:else if open}
+    <!-- Pressing a row keeps focus in the box, as in the panel above. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="candidate-list" class:carded bind:this={list} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
+    <div class="candidate-list" class:carded bind:this={list} onmousedown={e => { if (e.target.closest('a, button')) e.preventDefault() }} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
       {#if lead}<div class="candidate-lead">{@render lead()}</div>{/if}
       <div id={listId} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
@@ -362,20 +393,11 @@
         {/each}
         {#if others.length}
           <details class="candidate-others"><summary>{t('search.others', { count: others.length })}</summary>
-            {#each others as { item, index } (item.code_point)}{@render row(item, index)}{/each}
+            {@render grouped()}
           </details>
         {/if}
       {:else}
-        {#each blocks as block (`${block.key}:${block.entries[0].index}`)}
-          {#if block.grapheme?.character_count > 1}
-            <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${graphemeLabel(block.grapheme.char ?? block.entries[0].item.char)}`}>
-              <p class="candidate-grapheme-head" aria-hidden="true">{t('chips.grapheme')} <ScriptText {...labelParts(block.grapheme.char ?? block.entries[0].item.char)} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}</p>
-              {#each block.entries as { item, index } (item.code_point)}{@render row(item, index, true)}{/each}
-            </div>
-          {:else}
-            {#each block.entries as { item, index } (item.code_point)}{@render row(item, index)}{/each}
-          {/if}
-        {/each}
+        {@render grouped()}
       {/if}
       {#if items.length && (!carded || others.length)}<div class="candidate-legend"><ScriptLegend /></div>{/if}
       {#if !loading && !failed && !items.length && answer}
@@ -407,5 +429,8 @@
   .candidate-others summary{cursor:pointer;padding:8px 6px;font-size:12px}
   .candidate-others .candidate-row{opacity:.8}
   .candidate-grapheme{margin:4px 6px;border:1px solid var(--line);border-radius:9px}
-  .candidate-grapheme-head{margin:0;padding:6px 10px 2px;font-size:12px;color:var(--muted)}
+  .candidate-grapheme-head{display:block;margin:0;padding:6px 10px 2px;font-size:12px;color:var(--muted);text-decoration:none}
+  a.candidate-grapheme-head{padding-block:8px;border-radius:8px 8px 0 0}
+  a.candidate-grapheme-head:hover,a.candidate-grapheme-head.active,a.candidate-grapheme-head:focus-visible{background:var(--accent-light);color:var(--accent)}
+  .head-arrow{margin-left:6px}
 </style>

@@ -1513,7 +1513,7 @@
     <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
          them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
-      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} linked {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: graphemeLabel(charOf(grapheme)) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
