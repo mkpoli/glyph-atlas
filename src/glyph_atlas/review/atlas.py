@@ -1341,7 +1341,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 raise BadRequest("This round was already submitted with different characters.")
             for answer in round.answers:
                 old = json.loads(next(r for r in reviews if r["target_id"] == answer.id)["review"]["evidence"])
-                if (old.get("grapheme") != grapheme or old["verdict"] != answer.verdict
+                if ((refs.grapheme(old.get("grapheme") or "") or old.get("grapheme")) != grapheme or old["verdict"] != answer.verdict
                         or old.get("issue") != answer.issue
                         or old.get("suggested_text") != correction_text(answer.correction, answer.issue)
                         or old.get("suggested_character") != identity_correction(answer.character, answer.issue)
