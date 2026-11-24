@@ -331,10 +331,12 @@ export async function graphemeForms(env: Env, ctx: ExecutionContext, url: URL, v
   const known = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms?c=${encodeURIComponent(head)}&v=${encodeURIComponent(publicationKey(stamps))}`), async () => {
     const members: Json[] = (card.detail.grapheme?.members ?? [{ char: head, code_point: cp(head) }]).filter((m: Json) => !compatibility(m.char)).slice(0, FORMS_MEMBERS);
     const family = new Set<string>(members.map(m => m.char));
-    const read = await Promise.all(members.map(async m => ({ object: await characterObject(env, cp(m.char), ctx),
-      shapes: (/^\p{Script=Han}$/u.test(m.char) ? (await characterIds(env, m.char, ctx))?.shapes : null) ?? [] })));
-    const owners = new Map<string, number>();
-    for (const { shapes } of read) for (const { text } of shapes) owners.set(text, (owners.get(text) ?? 0) + 1);
+    const read = await Promise.all(members.map(async m => {
+      const [object, ids] = await Promise.all([characterObject(env, cp(m.char), ctx), /^\p{Script=Han}$/u.test(m.char) ? characterIds(env, m.char, ctx) : null]);
+      return { object, ids, shapes: ids?.shapes ?? [], described: new Set([...ids?.sequences ?? [], ...(ids?.shapes ?? []).map(shape => shape.text)]) };
+    }));
+    // A member of one shape has no regional shapes, and its descriptions alone say it is written so.
+    const shared = (shape: Json, i: number) => members.some((m, j) => j !== i && (read[j].described.has(shape.text) || shape.chars?.includes(m.char)));
     type Via = { char: string; via: string[] };
     const variants = new Map<string, Via>(), related = new Map<string, Via>(), derived = new Map<string, Via & { encoded: boolean; route: [string, string][] }>();
     const join = <T extends Via>(list: Map<string, T>, entry: T) => { const found = list.get(entry.char); if (found) found.via.push(...entry.via); else list.set(entry.char, entry) };
@@ -353,7 +355,7 @@ export async function graphemeForms(env: Env, ctx: ExecutionContext, url: URL, v
     const list = (found: Map<string, Via>, not: Map<string, Via>[]) => [...found.values()].filter(row => !not.some(other => other.has(row.char)))
       .map(row => ({ ...row, via: [...new Set(row.via)], code_point: [...row.char].length === 1 ? cp(row.char) : null }));
     return { head, members: members.map((m, i) => ({ char: m.char, code_point: m.code_point ?? cp(m.char), script: m.script ?? '',
-        shapes: read[i].shapes.map(shape => ({ ...shape, base: owners.get(shape.text) === 1 ? m.char : null })) })),
+        shapes: read[i].shapes.map(shape => ({ ...shape, base: shared(shape, i) ? null : m.char })) })),
       variants: list(variants, []), related: list(related, [variants]), derived: list(derived, [variants, related]) };
   });
   const forms = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms/carried?c=${encodeURIComponent(head)}&v=${encodeURIComponent(version)}`),

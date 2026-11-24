@@ -933,6 +933,24 @@ describe('the forms of a whole grapheme', () => {
       expect(read.filter(name => name.includes('/reference/ids/'))).toEqual([]);
     } finally { db.exec(`DELETE FROM carried_forms; DELETE FROM forms WHERE id='fm:t'; DELETE FROM representations WHERE id='rp:t'; DELETE FROM ledger_submissions WHERE id='carried'`); }
   });
+  // 隆 in two shapes, the first 𨺓's only description; 逸 in two, the second encoded again as 𨓜.
+  async function owned(second = '⿰阝⿳夂一生') {
+    const families: [string, string[], Record<string, unknown>][] = [['隆', ['隆', '𨺓'], { 隆: [['⿰阝⿱夂生', second], [{ text: '⿰阝⿱夂生', regions: 'J' }, { text: second, regions: 'G' }], null], 𨺓: [['⿰阝⿱夂生'], null, null] }],
+      ['逸', ['逸', '𨓜'], { 逸: [['⿺辶兔', '⿺辶免'], [{ text: '⿺辶兔', regions: 'GT' }, { text: '⿺辶免', regions: 'J', chars: ['𨓜'] }], null] }]];
+    for (const [i, [head, chars, ids]] of families.entries()) {
+      db.exec(chars.map((char, j) => `INSERT OR IGNORE INTO graphemes(id,text,head) VALUES(${960 + i * 10 + j},'${char}',${960 + i * 10});`).join(''));
+      const grapheme = { code_point: point(head), char: head, members: chars.map(char => ({ code_point: point(char), char })) };
+      for (const char of chars) objects.set(`v3/reference/char/${point(char)}.json.gz`, json({ grapheme: 960, data: card(char, { grapheme: { code_point: point(head), char: head } }),
+        detail: card(char, { grapheme }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: {} }));
+      for (const [char, value] of Object.entries(ids)) objects.set(`v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, json({ [char]: value }));
+    }
+  }
+  const bases = (found: any) => found.members.map((m: any) => m.shapes.map((shape: any) => [shape.text, shape.base]));
+  it('name no member for a shape another is described by, though it has that shape alone or is encoded for it', async () => {
+    await owned();
+    expect(bases(await forms('隆'))).toEqual([[['⿰阝⿱夂生', null], ['⿰阝⿳夂一生', '隆']], []]);
+    expect(bases(await forms('逸'))).toEqual([[['⿺辶兔', '逸'], ['⿺辶免', null]], []]);
+  });
   it('are a kana’s members, and none for a character with no card', async () => {
     expect((await forms('𛂒')).members.map((m: any) => [m.char, m.shapes])).toEqual([['ね', []], ['𛂒', []]]);
     expect((await worker.fetch(new Request('https://glyphatlas.org/layers/graphemes/U%2B4E00/forms'), env, ctx)).status).toBe(404);

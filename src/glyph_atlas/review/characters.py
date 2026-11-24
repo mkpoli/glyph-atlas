@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import json
 import unicodedata
-from collections import Counter
 from functools import lru_cache
 from threading import RLock
 from typing import Annotated, Any, Literal
@@ -647,7 +646,13 @@ def grapheme_forms(point: str) -> dict[str, Any]:
                if unicodedata.normalize("NFC", m["char"]) == m["char"]]
     family = {m["char"] for m in members}
     shapes = {m["char"]: structures.encoded_shapes(m["char"], refs.regional_shapes(m["char"])) for m in members}
-    owners = Counter(shape["text"] for each in shapes.values() for shape in each)
+    described = {char: {*refs.ids_sequences(char), *(shape["text"] for shape in shapes[char])} for char in shapes}
+
+    def base(char: str, shape: dict[str, Any]) -> str | None:
+        # A member of one shape has no regional shapes, and its descriptions alone say it is written so.
+        shared = any(other != char and (shape["text"] in described[other] or other in shape.get("chars", ())) for other in described)
+        return None if shared else char
+
     lent = [writer.char for writer in written_with.writers(head)]
     variants: dict[str, dict[str, Any]] = {}
     related: dict[str, dict[str, Any]] = {}
@@ -678,7 +683,7 @@ def grapheme_forms(point: str) -> dict[str, Any]:
     derived = {char: row for char, row in derived.items() if char not in variants and char not in related}
     return {"head": head, "variants": [*variants.values()], "related": [*related.values()], "derived": [*derived.values()],
             "members": [{"char": m["char"], "code_point": m["code_point"], "script": m.get("script") or "",
-                         "shapes": [{**shape, "base": m["char"] if owners[shape["text"]] == 1 else None} for shape in shapes[m["char"]]]}
+                         "shapes": [{**shape, "base": base(m["char"], shape)} for shape in shapes[m["char"]]]}
                         for m in members]}
 
 

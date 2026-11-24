@@ -755,6 +755,12 @@ def test_the_forms_of_a_whole_grapheme_name_the_member_each_is_of(dataset):
     assert "徒" in {row["char"] for row in found["related"]}
     assert not {row["char"] for row in found["variants"]} & {member["char"] for member in found["members"]}
     assert api.get("/layers/graphemes/U+306D/forms").json()["head"] == "ね"
+    # 𨺓 and 𨓜 have no shape but one 隆 and 逸 have too.
+    for head, shape in (("隆", "⿰阝⿱夂生"), ("逸", "⿺辶免")):
+        members = api.get(f"/layers/graphemes/U+{ord(head):X}/forms").json()["members"]
+        own = next(member["shapes"] for member in members if member["char"] == head)
+        assert {each["text"]: each["base"] for each in own}[shape] is None
+        assert head in {each["base"] for each in own}
 
 
 def test_a_correction_refuses_a_second_character_and_a_stale_revision(dataset):
