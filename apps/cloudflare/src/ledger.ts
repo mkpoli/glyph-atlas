@@ -69,12 +69,27 @@ export type Member = { object: string | null; value: unknown; confidence: number
 /** The actor keys a user holds in glyph-atlas-v3, as SQL; `actor_user` finds them. */
 export const ownedActors = (user: string) => `(SELECT key FROM actors WHERE user='${user.replaceAll("'", "''")}')`;
 
-// A value a predicate takes besides its listed ones: a `gloss` is {gloss: text}, the sense in words where no word
-// row fits yet, with no space around it and at most GLOSS_MAX code points, as the review service counts them.
+// A value a predicate takes besides its listed ones. A `gloss` is {gloss: text}, the sense in words where no word
+// row fits yet, with no space around it and at most GLOSS_MAX code points. A `reading` is {run, at, reading} and a
+// `ruby` {run, at, ruby}: the characters read together, which of them the crop is, and the text over each of them or
+// one text over them all. The review service checks the same shapes.
+const isGloss = (value: Json) => Object.keys(value).join() === 'gloss' && typeof value.gloss === 'string' && value.gloss === value.gloss.trim()
+  && value.gloss.length > 0 && [...value.gloss].length <= GLOSS_MAX;
+export const RUN_MAX = 12, RUN_PART_MAX = 8, OVER_MAX = 32;
+const runPart = (part: unknown) => typeof part === 'string' && part.length > 0 && [...part].length <= RUN_PART_MAX && part === part.normalize('NFC')
+  && !/[\p{Z}\p{Cc}\p{Cf}\p{Cs}]/u.test(part);
+// Letters and marks alone, so a reading never holds a space or punctuation; the hentaigana are letters as the page writes them.
+const over = (text: unknown) => typeof text === 'string' && [...text].length <= OVER_MAX && text === text.normalize('NFC') && /^[\p{L}\p{M}\p{Sk}]*$/u.test(text);
+const HENTAIGANA = /[\u{1B002}-\u{1B11E}]/u;
+const isRun = (value: Json, field: 'reading' | 'ruby') => {
+  const { run, at, [field]: texts } = value;
+  return Object.keys(value).sort().join() === ['at', field, 'run'].sort().join() && Array.isArray(run) && run.length >= 1 && run.length <= RUN_MAX && run.every(runPart)
+    && Number.isSafeInteger(at) && at >= 0 && at < run.length && Array.isArray(texts) && (texts.length === run.length || texts.length === 1)
+    && texts.every(over) && texts.some(text => text !== '') && (field === 'ruby' || !texts.some(text => HENTAIGANA.test(text)));
+};
 const shaped = (shape: string | undefined, value: unknown) => {
-  if (shape !== 'gloss' || typeof value !== 'object' || value === null || Array.isArray(value) || Object.keys(value).join() !== 'gloss') return false;
-  const gloss = (value as Json).gloss;
-  return typeof gloss === 'string' && gloss === gloss.trim() && gloss.length > 0 && [...gloss].length <= GLOSS_MAX;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return shape === 'gloss' ? isGloss(value) : shape === 'reading' || shape === 'ruby' ? isRun(value, shape) : false;
 };
 
 /** Refuse members the catalogue does not allow; `kinds` gives the kind of each named entity. A predicate

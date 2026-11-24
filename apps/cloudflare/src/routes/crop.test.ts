@@ -154,6 +154,7 @@ describe('a crop\'s record', () => {
       // The style it is listed under, which a reviewer may change.
       style: 'unassessed', style_basis: 'none', style_editable: true, style_choices: [],
       grapheme_claim: null, form: { status: 'single', values: [{ form: 'form:1', scheme: 'unicode', text: '弌', confidence: null }], supporting: ['f1'], by: ['x'] },
+      reading: null,
       word: { status: 'single', values: [{ word: 'ja/いち', reading: 'いち', class: 'noun', form: null }], methods: ['ruby'], supporting: ['w1'], by: ['x'] },
       honkoku_url: `https://app.honkoku.org/transcription/${book.slice(3)}/5`,
       dating: { witness: { kind: 'copied', start: 1790, end: 1790, precision: 'year', qualifier: null, uncertain: false, text: '寛政二年',
@@ -349,7 +350,15 @@ describe('a crop\'s line', () => {
       [1, 'ム', 'checked', null], [2, '四', 'pending', null]]);
     expect(body.items[3].revision).toBe(1);
     expect(body.items[0]).toEqual({ id: publicId(ids.a), offset: -1, label: '一', image: '/atlas/media/19968.webp', revision: 0, image_sha256: hash,
-      state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
+      crop_version: `${publicId(ids.a)}@${hash}@10,10,20,30`, state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
+    // A neighbour's version is its own record's, a box redrawn and not yet cut included.
+    for (const [item, id] of [[body.items[0], ids.a], [body.items[3], ids.d]]) expect(item.crop_version).toBe((await (await get(`/atlas/characters/${publicId(id)}`)).json() as any).crop_version);
+  });
+  it('reaches as far as it is asked, within the longest run', async () => {
+    const { get, ids } = setup();
+    const line = async (reach: string) => await (await get(`/atlas/characters/${publicId(ids.b)}/line?reach=${reach}`)).json() as any;
+    expect((await line('1')).items.map((i: any) => i.offset)).toEqual([-1, 0, 1]);
+    for (const [asked, reach] of [['99', 11], ['0', 4], ['x', 4], ['-3', 4]]) expect((await line(asked as string)).reach).toBe(reach);
   });
   it('is empty for a crop with no neighbour or no crop, and redirects an old id', async () => {
     const { get, ids, text } = setup();
@@ -441,6 +450,7 @@ describe('the crop routes\' queries', () => {
     expect(plan(db, recordQuery(), 1)).toEqual([]);
     expect(plan(db, listedCropsQuery(), '[1]')).toEqual([]);
     expect(plan(db, cropSlotsQuery(), '[1]', 'has_form')).toEqual([]);
+    expect(plan(db, cropSlotsQuery(2), '[1]', 'read_as', 'bears_ruby')).toEqual([]);
     expect(plan(db, formNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordMethodsQuery(), '[]')).toEqual([]);
