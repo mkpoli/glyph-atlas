@@ -267,17 +267,17 @@
     if (form != null && issue !== 'character') {
       try {
         const formed = await setForm(data, form)
-        changed?.(target, formed.crop)
+        changed?.(target, formed.crop, data)
         if (closed || current !== generation) return
         data = { ...data, ...formed.crop }; form = null
         // A form that named the crop's character was a review already; nothing more to say.
-        if (formed.reviewed && (matches || !issue)) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
+        if (formed.reviewed && (matches || !issue)) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop, data); busy = false; return }
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const correctingCharacter = writtenDirty && Boolean(written) && (unassigned || written !== (data.written_character ?? data.label))
     // A match, and a crop fixed by its redrawn box, carry no issue.
     const resolvedIssue = value.verdict === 'match' ? null : issue
-    const pixels = cropPixels(data)
+    const pixels = cropPixels(data), was = data
     // Naming another character uses `/layers/units/:id`, which rejects extra fields; all other saves use `/atlas/characters/:id`.
     const route = correctingCharacter
       ? '/layers/units/' + encodeURIComponent(target)
@@ -299,15 +299,15 @@
       const result = await request(route, { id: submission.id, ...payload })
       inspector.remember(target, { choices: decided })
       // A save that lands after the dialog closed or moved on still decided its crop.
-      if (!closed && current === generation) saved(target, result)
-      else reviewed?.(target, result)
+      if (!closed && current === generation) saved(target, result, was)
+      else reviewed?.(target, result, was)
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }
   // A field saved for one crop may come back after the dialog has moved to another; the crop is
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
-  function fieldSaved(result) {
-    changed?.(result.id, result)
+  function fieldSaved(result, was = result.id === data?.id ? data : null) {
+    changed?.(result.id, result, was)
     // Style, reading and grapheme claims leave the decision as it was.
     const decided = inspector.decided(result.id)
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })

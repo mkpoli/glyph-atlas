@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, gallery, graphemeCounts, groupStats, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
+import worker from '../index';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
 
 // The Workers cache, as far as these routes use it.
@@ -133,13 +134,14 @@ describe('the statistics by script group', () => {
   });
 });
 
-const counted = (env: Env) => graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'));
+const counted = async (env: Env): Promise<any[]> => JSON.parse((await graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'))).text).items
+  .sort((a: any, b: any) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]));
 describe('crops by character and grapheme', () => {
   it('count every crop of each, withheld ones and those with no character among them', async () => {
     // Two corpus glyphs and a withheld crop of は's family name it with no character.
     const { env } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
       VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0),(${cropId(c, 22)},0,3,NULL,2,2,0,0,0,7,0,0,0)`));
-    expect((await counted(env)).items).toEqual([['', 'U+306F', 1, 2], ['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 0], ['処', 'U+51E6', 1, 0], ['所', 'U+6240', 6, 1],
+    expect(await counted(env)).toEqual([['', 'U+306F', 1, 2], ['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 0], ['処', 'U+51E6', 1, 0], ['所', 'U+6240', 6, 1],
       ['한', 'U+D55C', 0, 1], ['𛂞', 'U+306F', 1, 3]]);
   });
   it('follow the reviews since the publication, also those that name a crop', async () => {
@@ -147,8 +149,57 @@ describe('crops by character and grapheme', () => {
       VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0)`));
     db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
-    const rows = (await counted(env)).items.filter((row: any) => row[1] === 'U+306F');
+    const rows = (await counted(env)).filter((row: any) => row[1] === 'U+306F');
     expect(rows).toEqual([['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 1], ['𛂞', 'U+306F', 1, 3]]);
+  });
+  it('count no crop with no character where the publication counts none, but for one a claim files', async () => {
+    const { env, db, objects, pub } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
+      VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0)`));
+    const corpus = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(`v3/pub/${pub}/corpus.json.gz`)!)));
+    expect(corpus.filed).toEqual([[1, 1, 1], [3, 1, 1]]);
+    delete corpus.filed;
+    objects.set(`v3/pub/${pub}/corpus.json.gz`, gz(corpus));
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES('x','has_grapheme','','',(SELECT max(id) FROM crops WHERE kind=1),0,'asserted','U+51E6','[]','[]','[]','r','t');
+      INSERT INTO ledger_submissions VALUES('s','u','{}','{}','t');`);
+    const rows = await counted(env);
+    // The one a claim files under 処 is that grapheme's, whose gallery lists it.
+    expect(rows.filter(row => !row[0])).toEqual([['', 'U+51E6', 0, 1, 1]]);
+    expect(rows.every(row => row[2] >= 0 && row[3] >= 0)).toBe(true);
+    expect(rows.find(row => row[0] === 'ハ')).toEqual(['ハ', 'U+306F', 3, 1]);
+  });
+  it('state no negative count', async () => {
+    const { env, db } = await setup();
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,0,5,-1,1,2,0,0,1,-1,-1),(1,1,-1,1,3,2,0,0,1,-1,-1);
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+        SELECT 'x','has_grapheme','','',id,0,'asserted','U+51E6','[]','[]','[]','r','t' FROM crops WHERE kind=0 AND char IS NULL LIMIT 1;`);
+    const rows = await counted(env);
+    expect(rows.every(row => row[2] >= 0 && row[3] >= 0 && row[2] + row[3] > 0)).toBe(true);
+    expect(rows.find(row => row[0] === '한')).toEqual(['한', 'U+D55C', 0, 1]);
+  });
+  it('are asked for each time, and answered as unchanged while the counts are the same', async () => {
+    const { env, db } = await setup();
+    const ask = (headers = {}) => worker.fetch(new Request('https://glyphatlas.org/atlas/graphemes/counts', { headers }), env, { waitUntil: () => {}, passThroughOnException() {} } as unknown as ExecutionContext);
+    const first = await ask(), tag = first.headers.get('etag')!, rows = await first.text();
+    expect([first.status, first.headers.get('cache-control'), tag.startsWith('W/"')]).toEqual([200, 'private, no-cache', true]);
+    // Another minute, or a save that moved none of them, leaves the copy standing; one that did does not.
+    edge.clear();
+    for (const _ of [0, 1]) {
+      const again = await ask({ 'if-none-match': tag });
+      expect([again.status, await again.text(), again.headers.get('etag')]).toEqual([304, '', tag]);
+      db.exec(`INSERT OR IGNORE INTO ledger_submissions VALUES('tag','u','{}','{}','t')`);
+    }
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,5,-1,3,2,0,0,1,-1,1); INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind) VALUES(4343,1,1,0,1,1,1,1,0)`);
+    const moved = await ask({ 'if-none-match': tag });
+    expect([moved.status, moved.headers.get('etag') === tag, (await moved.text()) === rows]).toEqual([200, false, false]);
+  });
+  it('are kept a minute of a publication, and answered afresh to a browser that wrote', async () => {
+    const { env: writer, db } = await setup(), env = { ...writer, CATALOGUE_LAG: '60' } as Env;
+    const of = async (as: Env) => (await counted(as)).find(row => row[0] === '한')[3];
+    expect([await of(env), await of(writer)]).toEqual([1, 1]);
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,5,-1,3,2,0,0,1,-1,1); INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind) VALUES(4242,1,1,0,1,1,1,1,0);`);
+    expect([await of(env), await of(writer)]).toEqual([1, 2]);
+    expect([...edge.keys()].filter(url => url.includes('/graphemes/counts')).length).toBe(3);
   });
 });
 
@@ -245,7 +296,7 @@ describe('the browse page', () => {
     expect(of('所')).toEqual([['U+51E6', 1, 1], ['U+6240', 4, 2]]);
     expect(body.counts).toEqual({ pending: 10, seen: 1, flagged: 1, checked: 2, hard: 1, skipped: 0 });
     // 所 keeps five of its six crops and no glyph; the claimed two are 処's, in rows marked as moved.
-    expect((await counted(env)).items.filter((row: any) => ['U+51E6', 'U+6240'].includes(row[1]))).toEqual([['処', 'U+51E6', 1, 0], ['所', 'U+51E6', 1, 1, 1], ['所', 'U+6240', 5, 0, 1]]);
+    expect((await counted(env)).filter((row: any) => ['U+51E6', 'U+6240'].includes(row[1]))).toEqual([['処', 'U+51E6', 1, 0], ['所', 'U+51E6', 1, 1, 1], ['所', 'U+6240', 5, 0, 1]]);
     // Each family's listing agrees with its count: 処 lists the claimed 所, and 所 leaves it out.
     const ids = (body: any) => body.items.map((item: any) => item.id).sort();
     const sho = await get(env, '/atlas?grapheme=U%2B51E6&limit=60'), so = await get(env, '/atlas?grapheme=U%2B6240&limit=60');
@@ -279,6 +330,7 @@ describe('the browse page', () => {
     const id = member.items.find((i: any) => i.origin !== 'corpus').id;
     db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
       VALUES(?,'has_grapheme','','',?,0,'asserted','U+6240','[]','[]','[]','r','2026-11-24')`).run(id, cropOf(id));
+    db.exec(`INSERT INTO ledger_submissions VALUES('s','u','{}','{}','t')`);
     const ids = async (key: string) => (await of(key)).items.map((i: any) => i.id);
     expect([(await ids('U%2B306F')).includes(id), (await ids('U%2B30CF')).includes(id)]).toEqual([false, true]);
   });

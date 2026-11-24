@@ -4,6 +4,10 @@
 // character and the list of every grapheme count through here, so a grapheme has one total.
 import type { FiledAt } from './atlas3Gallery';
 
+/** A gallery widened to a character's variants counts and lists no further than this in each of its lists:
+ *  the variants of a common character can hold a hundred thousand corpus glyphs. */
+export const WIDENED_CAP = 2000;
+
 /** The crops of one character filed under one grapheme, '' for the crops with no character; `claimed`
  *  where a claim filed some of them in or away. */
 export type Row = { label: string; grapheme: string; collected: number; corpus: number; claimed?: true };
@@ -17,14 +21,15 @@ export function addCrops(rows: Rows, { label, grapheme }: Under, kind: number, n
   return row;
 }
 /** Moves each claimed crop from its place, where its character or its family files it (null for a crop in
- *  none of the rows), to the grapheme its claim names. */
+ *  none of the rows), to the grapheme its claim names, whose gallery lists it. No row is below nothing: a
+ *  count its publication lacks, or a claim on a crop its place does not count, takes nothing from one. */
 export function fileClaims(rows: Rows, claims: FiledAt[], place: (claim: FiledAt) => Under | null) {
+  for (const row of rows.values()) { row.collected = Math.max(0, row.collected); row.corpus = Math.max(0, row.corpus) }
   for (const claim of claims) {
     const from = place(claim), side = claim.kind === 1 ? 'corpus' : 'collected';
     if (from?.grapheme === claim.head) continue;
     const held = from && rows.get(`${from.label} ${from.grapheme}`);
-    if (from && !held?.[side]) continue;
-    if (held) addCrops(rows, held, claim.kind, -1).claimed = true;
+    if (held && held[side] > 0) addCrops(rows, held, claim.kind, -1).claimed = true;
     addCrops(rows, { label: from?.label ?? '', grapheme: claim.head }, claim.kind, 1).claimed = true;
   }
 }

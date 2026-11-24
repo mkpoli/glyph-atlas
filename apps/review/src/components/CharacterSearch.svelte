@@ -37,7 +37,8 @@
     ontokenclear = () => {},
     groupOf = null,
     onform = () => {},
-    // How many crops the page a row opens can list, where the page knows; null where it does not.
+    // How many crops the page a row opens can list, where the page knows; undefined until it does, and
+    // null where it never will.
     countOf = () => null,
     // Rows name the code point rather than the reading.
     codePoints = false,
@@ -86,7 +87,7 @@
 
   function rowCount(item) {
     const count = countOf(item.char)
-    return count ? t('explore.meta.glyphs', { count }) : count === 0 ? t('layers.noOccurrenceYet') : countsLabel(item.candidates) || ownLabel(item)
+    return count === null ? countsLabel(item.candidates) || ownLabel(item) : count === undefined ? '' : count ? t('explore.meta.glyphs', { count }) : t('layers.noOccurrenceYet')
   }
 
   function searchSignal() {

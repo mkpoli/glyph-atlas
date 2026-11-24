@@ -20,7 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import { charOf, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
+  import { charOf, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -51,6 +51,8 @@
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
   import { cardTargets, galleryCount } from '../lib/cardTiers.js'
+  import { WIDENED_CAP } from '$worker/graphemeTotals.ts'
+  import { afterBurst, countsMoved, latest, listDone, owed, savedTile, withSummary } from '../lib/galleryCounts.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the progress line and, for a search, a grapheme or a work, the collection's rows; without
   // rows the view loads them and the corpus sample itself, with the same seed and filters.
@@ -115,7 +117,7 @@
   // different services page them — and they are merged for display only.
   let picked = $state(opened?.picked ?? null), expand = $state(opened?.expand ?? 'none'), local = $state(opened?.local ?? []), corpus = $state(opened?.corpus ?? [])
   let visual = $state(opened?.visual ?? ''), analysis = $state(opened?.analysis ?? null), familyTotal = $state(opened?.familyTotal ?? null), unassignedCount = $state(opened?.unassignedCount ?? null)
-  let corpusTotal = $state(opened?.corpusTotal ?? 0), corpusOffset = $state(opened?.corpus.length ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
+  let corpusTotal = $state(opened?.corpusTotal ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
   // Where each list's next page starts: the cursor its last page named, or null at its end.
   let localAfter = $state(opened?.localAfter ?? null), corpusAfter = $state(opened?.corpusAfter ?? null)
   // Whether the collection's list has answered a page since it was last cleared.
@@ -177,49 +179,40 @@
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
-  // The corpus glyphs of every character, as [label, grapheme, glyphs], read once when the search box is
-  // first focused; the Flagged view has no use for them. A service without them (the local review
-  // service has none) or a failed read leaves the tiles counting crops for the rest of the visit.
+  // Every crop by character and grapheme (`graphemeCounts`), read once the first rows show, and again
+  // after a save that moves a crop between them; the Flagged view has no use for them. Without them (the
+  // local review service has none, or a read failed) the grapheme browser counts the catalogue's crops, and a
+  // tile states no count.
   // The frequent graphemes above the collection need them too, and offer to read them again after a failure.
   let cropCounts = $state(null), countsAsked = false, countsFailed = $state(false)
-  async function loadCounts(fresh = false) {
-    if (flagged || countsAsked) return
-    countsAsked = true; countsFailed = false
+  const countsRead = latest()
+  /** Answers whether the counts stand as read, by this read or a later one. */
+  async function loadCounts(again = false) {
+    if (flagged || countsAsked && !again) return true
+    countsAsked = true
+    // Of reads that overlap the last begun is the one taken, whichever comes in last.
+    const current = countsRead()
+    if (!cropCounts) countsFailed = false
     try {
-      // Read again after a claim, past the copy the browser keeps for a few minutes.
-      const found = await graphemeCounts(fresh ? { cache: 'no-store' } : {})
-      if (closed) return
-      cropCounts = found
+      const found = await graphemeCounts()
+      if (closed || !current()) return true
+      cropCounts = found; countsFailed = false
       // Under a script group, an empty listing waits for these counts to tell whether the corpus holds its grapheme.
       if (filter !== 'all' && !picked && !loading && data) openEmptyGrapheme(data)
+      return true
     }
-    catch { if (!closed) countsFailed = true }
+    // Counts read before stand.
+    catch { if (!closed && current() && !cropCounts) countsFailed = true; return !current() }
   }
+  // The catalogue's own array, which a further page keeps, so paging does not gather them again.
+  const wholeCategories = $derived(data?.categories ?? [])
   // How many crops the site holds of each written form and of each grapheme, the collection's and the
   // corpus's together and withheld ones among them, whatever the filters: a tile reads its form's count
   // and its grapheme's.
-  // The catalogue's own array, which a further page keeps, so paging does not gather them again.
-  const wholeCategories = $derived(data?.categories ?? [])
   // Without them a tile shows no count: the catalogue's own leave out the corpus.
   const tileCounts = $derived.by(() => {
     if (!cropCounts) return null
-    const forms = new Map(), groups = new Map(), keys = new Map()
-    // A form one source files under another grapheme than the other (扵 under 於, or under its own), or
-    // some of whose glyphs a claim reads as another grapheme, counts among the forms of each, and keys
-    // the grapheme most of its glyphs are filed under, the collection's and the corpus's together.
-    const shapes = new Map(), under = new Map()
-    for (const [label, key, collected, glyphs] of cropCounts) {
-      const n = collected + glyphs
-      groups.set(key, (groups.get(key) ?? 0) + n)
-      // The crops with no character are the grapheme's alone.
-      if (!label) continue
-      forms.set(label, (forms.get(label) ?? 0) + n)
-      const sums = under.get(label) ?? new Map()
-      sums.set(key, (sums.get(key) ?? 0) + n); under.set(label, sums)
-      if (!keys.has(label) || sums.get(key) > sums.get(keys.get(label))) keys.set(label, key)
-      if (!shapes.has(key)) shapes.set(key, new Set())
-      shapes.get(key).add(label)
-    }
+    const { forms, groups, keys, shapes } = cropTotals(cropCounts)
     return { forms, groups, keys, shapes, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
   })
   /** Each count's place among `counts`, most first; equal counts share a place. */
@@ -242,7 +235,7 @@
     if (all > form) {
       const percent = form / all * 100
       const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
-      const group = { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key).size,
+      const group = { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key) ?? 0,
         rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }
       lines.push(t('tile.countGrapheme', group)); ranks.push(t('tile.rankGrapheme', group))
     }
@@ -342,10 +335,11 @@
   // Placed by date, the two lists merge the same way by their books' years, the undated last.
   const byYear = $derived(dateOrder === 'year' && expand !== 'variants')
   const merged = $derived(styled && !style && expand !== 'variants' && !byYear && !byBook)
-  // A list is done once its last page named no next one.
-  const localDone = $derived(Boolean(visual) || local.length >= (data?.total ?? 0) || (localAnswered && !localAfter))
+  // A list is done once its last page named no next one, or it holds all a variants widening lists.
+  const listsTo = $derived(expand === 'variants' ? WIDENED_CAP : Infinity)
+  const localDone = $derived(Boolean(visual) || listDone(localAnswered, localAfter, local.length, listsTo))
   // The corpus has said nothing until its first page arrives, and may yet bring running and cursive glyphs.
-  const corpusDone = $derived(Boolean(corpusFault) || (corpusAnswered && (corpusOffset >= corpusTotal || !corpusAfter)))
+  const corpusDone = $derived(Boolean(corpusFault) || listDone(corpusAnswered, corpusAfter, corpus.length, listsTo))
   const localNext = $derived(localDone ? Infinity : 2 * (local.length ? styleRank(local.at(-1)) : 0))
   const corpusNext = $derived(corpusDone ? Infinity : 2 * (corpus.length ? styleRank(corpus.at(-1)) : 0) + 1)
   const yearKey = item => { const date = item.dating?.witness; return date ? date.start ?? date.end ?? Infinity : Infinity }
@@ -421,7 +415,7 @@
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   // While the first page loads, the collage holds placeholders of crops' usual proportions.
   const skeleton = collage(Array.from({ length: 32 }, (_, i) => [1, 1.25, 0.85, 1.1, 1.4, 0.95, 1.2, 0.8][i % 8]))
-  const hasMore = $derived(!choosing && (picked && byBook ? Boolean(booksAfter) : picked ? !localDone || (corpusOffset < corpusTotal && Boolean(corpusAfter))
+  const hasMore = $derived(!choosing && (picked && byBook ? Boolean(booksAfter) : picked ? !localDone || Boolean(corpusAfter) && corpus.length < listsTo
     : Boolean(data?.next)))
   // The homepage's runs stand among the crops (`runTiles`), so the rows are counted with those before the cut.
   const whole = $derived.by(() => {
@@ -523,7 +517,7 @@
     const id = ++requestId; loading = true; error = ''; growing = append
     try {
       if (picked) {
-        if (!append) { local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; localStyles = null; corpusStyles = null; corpusAnswered = false }
+        if (!append) { local = []; corpus = []; corpusTotal = 0; corpusAfter = null; localAfter = null; localAnswered = false; localStyles = null; corpusStyles = null; corpusAnswered = false }
         if (byBook) { await loadBooks(id, append); return }
         // Local records page by their own count, and they are shown before the corpus is asked:
         // a corpus that cannot answer must not hide the records this collection does hold.
@@ -549,7 +543,7 @@
           if (closed || id !== requestId) return
           corpusStyles = leads.styles ?? null; corpusAnswered = true
           corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
-          corpusTotal = leads.glyphs ?? 0; corpusOffset = corpus.length; corpusAfter = leads.next ?? null
+          corpusTotal = leads.glyphs ?? 0; corpusAfter = leads.next ?? null
           analysis = leads.visual_analysis ?? picked.visual_analysis ?? null
           familyTotal = leads.family_total ?? null; unassignedCount = leads.unassigned_count ?? null
         } catch (e) {
@@ -586,14 +580,14 @@
     const found = await layerBooks(picked.code_point, bookParams(append ? { after: booksAfter } : {}))
     if (closed || id !== requestId) return
     const rows = bookPage(found), held = new Set(galleryBooks.flatMap(book => book.records))
-    localStyles = found.styles.local; corpusStyles = found.styles.corpus; styled = Boolean(found.style_groups)
-    localWithheld = found.withheld ?? null; localAnswered = true; corpusAnswered = true; corpusFault = null
+    if (!append) { localStyles = found.styles.local; corpusStyles = found.styles.corpus }
+    styled = Boolean(found.style_groups); localWithheld = found.withheld ?? null; localAnswered = true; corpusAnswered = true; corpusFault = null
     corpusTotal = found.listed.corpus
     // A book whose place moved since the page before is shown where it first was.
     const fresh = rows.books.filter(book => !book.records.some(record => held.has(record))), added = item => !held.has(item.document)
     reach = append ? reach : 0
     local = [...local, ...rows.local.filter(added)]; corpus = [...corpus, ...rows.corpus.filter(added)]
-    galleryBooks = [...galleryBooks, ...fresh]; booksAfter = found.next ?? null; corpusOffset = corpus.length
+    galleryBooks = [...galleryBooks, ...fresh]; booksAfter = found.next ?? null
     data = { ...(data ?? {}), query: picked.char, total: found.listed.local, available: found.listed.local,
              categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
     if (append) return
@@ -781,7 +775,7 @@
     pickId += 1; requestId += 1
     catalogueRequest?.abort()
     if (picked || expand !== 'none') { picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0 }
-    corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
+    corpusAfter = null; localAfter = null; localAnswered = false
     // A direct character search answers its own question, so it drops the grapheme, type and work filters
     // rather than intersecting with them: with シ selected, searching ア used to answer nothing and
     // say there was no such occurrence, when the filter was what excluded it.
@@ -808,7 +802,7 @@
     choosing = false
     clearTimeout(searchTimer); pickId += 1
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null; split = null
-    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; load()
+    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusAfter = null; localAfter = null; localAnswered = false; load()
   }
   /** The next page of corpus leads, kept on its own offset: it is paged by another service. */
   async function moreCorpus() {
@@ -825,7 +819,7 @@
         { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() })
       if (closed || current !== pickId || id !== requestId || picked?.code_point !== target) return
       const rows = (page.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
-      corpusOffset += rows.length; corpusAfter = page.next ?? null
+      corpusAfter = page.next ?? null
       corpus = [...new Map([...corpus, ...rows].map(row => [row.id, row])).values()]
       corpusTotal = page.glyphs ?? corpusTotal
     } catch (e) {
@@ -851,7 +845,7 @@
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
     query = item.char ?? ''; grapheme = ''; filter = 'all'; work = ''; expand = 'none'
-    local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false; corpusFault = null
+    local = []; corpus = []; corpusTotal = 0; corpusAfter = null; localAfter = null; localAnswered = false; corpusFault = null
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
     if (item.code_point) {
       try {
@@ -890,18 +884,50 @@
     const left = tiles()
     left[Math.min(at, left.length - 1)]?.focus()
   }
-  async function updateItem(id, result) {
+  const tileById = id => [...local, ...corpus, ...items, ...sample, ...scattered.flatMap(run => run?.crops ?? [])].find(row => row.id === id)
+  // A save that moves a crop moves counts: between characters or graphemes the tiles', the card's and the
+  // open gallery's, between style groups the gallery's alone. They are read again once a burst of saves is
+  // over and no page is on its way, and the crops on show stay.
+  const totals = owed(), galleryRead = latest()
+  async function readCountsAgain() {
+    if (closed) return
+    if (loading) return countAgain()
+    const { due: whole, done } = totals.begin(), listed = whole && countsAsked ? loadCounts(true) : true
+    const code = picked?.code_point, id = requestId, current = galleryRead()
+    if (!code || !localAnswered) { if (await listed) done(); return }
+    try {
+      const [counted, card, found, leads, dated] = await Promise.all([listed, whole ? layerCharacter(code, 'none') : null,
+        byBook ? layerBooks(code, bookParams({ limit: 1, per: 1 })) : occurrences(code, { expand, limit: 1, style: style || undefined, withheld: withheldParam(), ...dateParams() }),
+        byBook ? null : layerCandidates(code, 1, null, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() }).catch(() => null),
+        whole && expand !== 'variants' ? decades(code, { scope: expand === 'grapheme' ? 'grapheme' : 'character' }).catch(() => null) : null])
+      if (closed || !current() || picked?.code_point !== code) return
+      // A page read meanwhile answers for another view of it: the counts are read for that one.
+      if (id !== requestId) return countAgain()
+      if (card) picked = { ...picked, ...card }
+      localWithheld = found.withheld ?? null
+      data = { ...(data ?? {}), ...byBook ? { total: found.listed.local, available: found.listed.local } : { total: found.counts.total, available: found.counts.exact_total } }
+      localStyles = byBook ? found.styles.local : found.styles ?? null
+      // A corpus that cannot answer keeps what it answered, and so do the decades.
+      if (byBook) { corpusStyles = found.styles.corpus; corpusTotal = found.listed.corpus }
+      else if (leads) { corpusStyles = leads.styles ?? null; corpusTotal = leads.glyphs ?? 0; familyTotal = leads.family_total ?? null; unassignedCount = leads.unassigned_count ?? null }
+      if (dated) decadeCounts = [...dated.local, ...dated.corpus]
+      if (counted) done()
+    } catch { /* The counts stand, and what moved stays due, until the next save or visit. */ }
+  }
+  const countAgain = afterBurst(readCountsAgain, 800)
+  function moved(what) { if (!what) return; if (what === 'totals') totals.mark(); countAgain() }
+  onDestroy(() => countAgain.cancel())
+  /** A crop as a save left it. `was` is the record it was saved from, which states its claim; else its tile. */
+  async function updateItem(id, result, how = 'saved', was = null) {
     // A skip writes nothing, so the tile stands.
     if (!result) return
     try {
       const updated = await character(id)
-      // A grapheme claim moves the glyph between families, and their tiles count it there.
-      const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
-      if (updated.origin === 'corpus' && before && countsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...updated })) { countsAsked = false; loadCounts(true) }
+      const before = tileById(id)
+      moved(countsMoved(was ?? before, savedTile(was ?? before, updated)))
       const replace = item => {
         if (item.id !== id) return [item]
-        const { issue: _issue, box_pending: _boxPending, written_character: _written, identity_status: _status, identity_basis: _basis, ...rest } = item
-        const next = { ...rest, ...updated }
+        const next = savedTile(item, updated)
         return (flagged && !waiting(updated.state)) || !fitsGallery(next) ? [] : [next]
       }
       keepPlace(id, () => {
@@ -917,8 +943,7 @@
       if (updated.origin !== 'corpus') {
         const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
           reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
-        if (!closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
-          reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+        if (!closed) data = withSummary(data, summary, picked)
       }
     } catch (e) { if (!closed) error = e.message }
   }
@@ -1024,6 +1049,7 @@
   }
   /** Tiles changed (`null` takes one out of the gallery); `now` is each crop as it is, which a run's crops take. */
   function patch(change, now = change) {
+    for (const [id, next] of Object.entries(now)) moved(next ? countsMoved(tileById(id), next) : 'totals')
     const apply = list => list.flatMap(item => (item.id in change ? (change[item.id] ? [change[item.id]] : []) : [item]))
     items = apply(items); local = apply(local); corpus = apply(corpus); sample = apply(sample)
     runCrops(now)
@@ -1035,6 +1061,8 @@
       scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ? mergeCropPatch(crop, now[crop.id]) : crop) } : run)
   }
   async function runCropUpdated(id, delta) {
+    const before = tileById(id)
+    moved(countsMoved(before, mergeCropPatch(before ?? {}, delta ?? {})))
     const merge = list => list.map(item => item.id === id ? mergeCropPatch(item, delta) : item)
     items = merge(items); local = merge(local); corpus = merge(corpus); sample = merge(sample)
     if (delta?.state === 'checked') confirmedHere = new Set([...confirmedHere, id])
@@ -1045,8 +1073,7 @@
       runsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 }).catch(() => null)
-      if (summary && !closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
-        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+      if (summary && !closed) data = withSummary(data, summary, picked)
     }
   }
   /** Tiles the site refused, read again so the grid shows what they are now. */
@@ -1207,7 +1234,7 @@
       const shown = new Set([...items, ...local, ...corpus, ...sample, ...scattered.flatMap(run => run?.crops ?? [])].map(item => item.id))
       const restored = waiting.length ? null : restoredCrops(done.before, answered)
       if (restored && Object.keys(restored).every(id => shown.has(id))) patch(restored)
-      else await load()
+      else { moved('totals'); await load() }
       runsChanged()
       readGroupStats()
     } catch (e) { bulkError = e.message }
@@ -1311,7 +1338,7 @@
       if (!picked && q === query.trim() && g === grapheme && w === work && group === filter) return
       clearTimeout(searchTimer); pickId += 1; choosing = false
       visual = ''; analysis = null; familyTotal = null; unassignedCount = null
-      picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
+      picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusAfter = null; localAfter = null; localAnswered = false
       split = null; query = q; grapheme = g; work = w; filter = group; load()
     }
   }
@@ -1323,7 +1350,7 @@
   // shuffle alone, and deals the same crops again; a read on its way is kept as not asked, and asked again.
   let growing = false, current = entry()
   const capture = () => ({ data, items, error, grapheme, work, seed, query, filter, picked, expand, local, corpus, visual, analysis,
-    familyTotal, unassignedCount, corpusTotal, corpusOffset, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder, galleryBooks, booksAfter,
+    familyTotal, unassignedCount, corpusTotal, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder, galleryBooks, booksAfter,
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
     collection, groupStats, localWithheld, cropCounts, countsAsked: Boolean(cropCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
@@ -1337,8 +1364,7 @@
     data = back.data; items = back.items; error = back.error; grapheme = back.grapheme; work = back.work;
     seed = back.seed; query = back.query; filter = back.filter; picked = back.picked; expand = back.expand;
     local = back.local; corpus = back.corpus; visual = back.visual; analysis = back.analysis;
-    familyTotal = back.familyTotal; unassignedCount = back.unassignedCount; corpusTotal = back.corpusTotal;
-    corpusOffset = back.corpusOffset; corpusFault = back.corpusFault; localAfter = back.localAfter;
+    familyTotal = back.familyTotal; unassignedCount = back.unassignedCount; corpusTotal = back.corpusTotal; corpusFault = back.corpusFault; localAfter = back.localAfter;
     corpusAfter = back.corpusAfter; localAnswered = back.localAnswered; style = back.style; styled = back.styled;
     dateOrder = back.dateOrder; galleryBooks = back.galleryBooks; booksAfter = back.booksAfter; failedBook = ''; booksRead += 1; yearRange = back.yearRange; decadeCounts = back.decadeCounts;
     decadesFor = back.decadesFor; localStyles = back.localStyles; corpusStyles = back.corpusStyles;
@@ -1464,7 +1490,7 @@
     <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
          them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
-      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : null} lead={run ? runLead : null}
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
@@ -1521,7 +1547,7 @@
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {/if}
-  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={countsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { countsAsked = false; loadCounts(true) }}
+  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={countsFailed ? t('explore.graphemes.failed') : ''} onretry={() => loadCounts(true)}
       address={group => graphemeAddress(group.key, group.text)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
     {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
