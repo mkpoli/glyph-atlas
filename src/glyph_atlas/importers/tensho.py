@@ -93,7 +93,7 @@ def crop_name(row: dict[str, str]) -> str:
 
 def collect(
     books: Sequence[str],
-    out: Path = Path("work/tensho"),
+    out: Path = Path("work/codh-tensho"),
     *,
     scans: Path | None = None,
     data: Path | None = None,
@@ -165,6 +165,7 @@ def collect(
         pages += held.values()
 
     out = Path(out)
+    _keeps(out, documents)
     out.mkdir(parents=True, exist_ok=True)
     written = (("documents", documents, Document), ("pages", pages, Page), ("lines", lines, Line),
                ("units", units, Unit))
@@ -186,6 +187,16 @@ def collect(
     staging.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(staging, out / "MANIFEST.json")
     return summary
+
+
+def _keeps(out: Path, documents: Sequence[Document]) -> None:
+    """Refuse to write over a dataset that holds a book the import leaves out: what reads the dataset
+    (`atlas dates`) would take the book's facts back."""
+    held = out / "documents.parquet"
+    if not held.exists():
+        return
+    if lost := sorted({document.id for document in tables.read(held, Document)} - {document.id for document in documents}):
+        raise TenshoSourceError(f"{out} holds {', '.join(lost)}: import those too, or write elsewhere")
 
 
 def _check(row: dict[str, str]) -> None:
@@ -322,8 +333,12 @@ def _document(config: dict[str, Any], book: dict[str, Any]) -> Document:
         origin=book["origin"],
         style="mixed",
         genre=["dictionary"],
-        dating=[Dating(literal=book["edition"], start=int(book["year"]), end=int(book["year"]), kind="publication",
-                       evidence=book.get("manifest") or book["url"])],
+        # `year` is the printing's; a book whose printing no source dates has none. The date of a book with
+        # a manifest is the manifest's own statement, which `atlas dates` reads there and credits to its
+        # holder, so it names no evidence here.
+        dating=[Dating(literal=book.get("dated") or book["edition"], start=int(book["year"]), end=int(book["year"]),
+                       kind="publication", evidence=None if book.get("manifest") else book["url"])]
+        if "year" in book else [],
         image_rights=rights,
         text_rights=text_rights,
         meta={

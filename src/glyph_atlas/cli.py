@@ -1227,7 +1227,7 @@ def import_tensho(
     scans: Annotated[
         Path | None, typer.Option(help="directory of the page images of a book whose pages are files (TE00039)")
     ] = None,
-    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/tensho"),
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/codh-tensho"),
     cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
 ) -> None:
     """Import the seal forms of books of CODH's 篆書字体データセット, each box on its page."""

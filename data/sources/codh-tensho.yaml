@@ -60,6 +60,7 @@ books:
     author: 安本春湖 著
     publisher: 春湖書屋
     edition: 春湖書屋 大正13
+    dated: 大正13
     year: 1924
     holder: 国立国会図書館
     provider: 国立国会図書館デジタルコレクション
@@ -81,6 +82,7 @@ books:
     author: 安本春湖 著
     publisher: 春湖書屋
     edition: 春湖書屋 大正13
+    dated: 大正13
     year: 1924
     holder: 国立国会図書館
     provider: 国立国会図書館デジタルコレクション
@@ -99,6 +101,7 @@ books:
     author: 安本春湖 著
     publisher: 春湖書屋
     edition: 春湖書屋 大正13
+    dated: 大正13
     year: 1924
     holder: 国立国会図書館
     provider: 国立国会図書館デジタルコレクション
@@ -118,8 +121,9 @@ books:
   # Title and author are the metadata of the manifest (https://kokusho.nijl.ac.jp/biblio/100250413/manifest,
   # read 2026-11-24): Title 聯珠篆文, author 池永／栄春, attribution 新潟大学附属図書館 国文学研究資料館. The
   # date and publishers are the 国書データベース record's (https://kokusho.nijl.ac.jp/api/biblioDetail/100250413,
-  # read 2026-11-24): 刊, 享和二序（1802）, 〈京都〉出雲寺文次郎 and five more booksellers of 大坂 and 江戸; the copy
-  # itself is undated, so `year` is the preface's. The
+  # read 2026-11-24): 刊, 享和二序（1802）, 〈京都〉出雲寺文次郎 and five more booksellers of 大坂 and 江戸. The record
+  # dates the preface and leaves the printing undated, so the book has no `edition` or `year`; `atlas dates`
+  # reads the preface's year from the record. The
   # holder's conditions (https://collections.lib.niigata-u.ac.jp/collections/, read 2026-11-24): Rights
   # Statements "No Copyright - Contractual Restrictions"; free to use where 新潟大学附属図書館 is named as the
   # provider and a changed image is said to be changed; a notice of use through its form is asked for.
@@ -128,8 +132,6 @@ books:
     work: 聯珠篆文
     author: 池永栄春
     publisher: 出雲寺文次郎ほか
-    edition: 享和二序刊
-    year: 1802
     holder: 新潟大学附属図書館
     provider: 新日本古典籍総合データベース
     url: https://kotenseki.nijl.ac.jp/biblio/100250413/
