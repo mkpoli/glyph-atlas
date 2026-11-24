@@ -8,7 +8,10 @@ era name, a question answered from old chat instead of the homeserver) and from 
 stay cheap (small talk without lookups). Run it on the chat server after a prompt change; it reads
 the homeserver, GitHub and the web but posts nothing and writes no memory:
 
-    python3 replay.py --config /etc/fish-bot/config.toml --db /var/lib/fish-bot/chat.sqlite3
+    python3 replay.py --key-file /root/gemini-test-key --config /etc/fish-bot/config.toml
+
+It takes a key of its own and refuses the one the bot answers with. A run costs about CASE_USD a case,
+says so first, and stops at --max-usd; all runs of a day together stop at DAILY_USD.
 """
 
 from __future__ import annotations
@@ -23,6 +26,43 @@ from pathlib import Path
 from typing import Any
 
 import fish_bot as fb
+
+# A chat call averaged $0.015 on gemini-4-hydrogen on 2026-11-24, and a case with lookups makes a few.
+CASE_USD = 0.02
+DAILY_USD = 0.50
+LEDGER = Path("~/.local/state/fish-bot/replay.sqlite3")
+
+
+class RunPurse(fb.Purse):
+    """The day's test money, of which this run may take only a part."""
+
+    def __init__(self, store: fb.Store, run_usd: float):
+        super().__init__(store, DAILY_USD)
+        self.run_usd = run_usd
+        self.taken = 0.0
+
+    def reserve(self, kind: str) -> str:
+        if self.taken + fb.CALL_RESERVE > self.run_usd:
+            raise fb.SpendError(f"this run's ${self.run_usd:.2f} is spent")
+        day = super().reserve(kind)
+        self.taken += fb.CALL_RESERVE
+        return day
+
+    def settle(self, kind: str, day: str, *, cost: float, **tally: Any) -> None:
+        self.taken += cost - fb.CALL_RESERVE
+        super().settle(kind, day, cost=cost, **tally)
+
+    def add(self, kind: str, cost: float) -> None:
+        self.taken += cost
+        super().add(kind, cost)
+
+
+def own_key(path: Path, live: Path) -> str:
+    """The key to test with, which must not be the bot's own."""
+    key = fb._secret(path)
+    if live.exists() and key == fb._secret(live):
+        raise SystemExit(f"{path} holds the key the bot answers with; tests need a key of their own")
+    return key
 
 
 def load_cases(path: Path) -> list[dict[str, Any]]:
@@ -92,11 +132,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=Path("/etc/fish-bot/config.toml"))
     parser.add_argument("--db", type=Path, default=Path("/var/lib/fish-bot/chat.sqlite3"))
     parser.add_argument("--cases", type=Path, default=Path(__file__).with_name("replay.json"))
+    parser.add_argument("--key-file", type=Path, required=True, help="a Gemini key for tests, from a project of its own")
+    parser.add_argument("--max-usd", type=float, default=0.35, help="stop the run when it has cost this much")
     parser.add_argument("--only", help="run only the cases whose name contains this")
     args = parser.parse_args(argv)
     config = fb.Config.load(args.config)
     matrix = fb.Matrix(config.homeserver, fb._secret(config.token_file))
-    gemini = fb.Gemini(fb._secret(config.gemini_key_file), config.gemini_model, config.gemini_url)
+    cases = [case for case in load_cases(args.cases) if not args.only or args.only in case["name"]]
+    ledger = LEDGER.expanduser()
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    purse = RunPurse(fb.Store(ledger), min(args.max_usd, DAILY_USD))
+    print(f"{len(cases)} cases, about ${len(cases) * CASE_USD:.2f}; stops at ${purse.run_usd:.2f}; "
+          f"${purse.spent():.2f} of today's ${DAILY_USD:.2f} is spent")
+    gemini = fb.Gemini(own_key(args.key_file, config.gemini_key_file), config.gemini_model, config.gemini_url)
+    gemini.purse = purse
     github = fb.GitHub(fb._secret(config.github_token_file), config.github_repo) if config.github_token_file else None
     store = fb.Store(args.db)
     rooms = set(matrix.public_rooms())
@@ -104,15 +153,17 @@ def main(argv: list[str] | None = None) -> int:
     lookup = fb.Lookup(gemini, github, store, owner=config.github_repo.split("/")[0], rooms=lambda: rooms,
                        memory=config.memory_enabled, community=community)
     failed = 0
-    for case in load_cases(args.cases):
-        if args.only and args.only not in case["name"]:
-            continue
+    for case in cases:
         room_id = matrix.resolve(case["room_alias"]) if case.get("room_alias") else next(iter(sorted(rooms)))
         started = time.monotonic()
         try:
             said, tools, recap = run_case(case, gemini, lookup, community, room_id, config.user_id)
             broken = check(case, said, tools, recap)
-        except (fb.GeminiError, fb.MatrixError, fb.GitHubError) as error:
+        except fb.SpendError as error:
+            print(f"stopped before {case['name']}: {error}")
+            failed += 1
+            break
+        except (fb.ModelError, fb.MatrixError, fb.GitHubError) as error:
             said, tools, broken = "", [], [f"error: {error}"]
         failed += bool(broken)
         print(f"{'FAIL' if broken else 'pass'}  {case['name']}  ({time.monotonic() - started:.1f}s, tools: {', '.join(tools) or '-'})")
@@ -120,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         for problem in broken:
             print("      - " + problem)
     store.close()
-    print(f"{failed} failed")
+    print(f"{failed} failed; this run cost ${purse.taken:.2f}")
     return 1 if failed else 0
 
 

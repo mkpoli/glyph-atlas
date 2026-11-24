@@ -1,11 +1,12 @@
 // The catalogue, the homepage and the site's status on the new storage layout (decision record 0005):
-// `/atlas` (the browse page, the review rounds and the Flagged view), `/atlas/corpus/characters`,
+// `/atlas` (the browse page, the review rounds and the Flagged view), `/atlas/graphemes/counts`,
 // `/layers/gallery`, `/atlas/dates/stats`, `/atlas/groups/stats`, `/atlas/collection/status`, `/layers/summary` and
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
-import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, tallyDeltas, type SampleEntry } from '../atlas3Answers';
+import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, tallyDeltas, type CharInfo, type SampleEntry } from '../atlas3Answers';
 import { filedClaims } from '../atlas3Gallery';
+import { addCrops, crops, fileClaims, type Rows, type Under } from '../graphemeTotals';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';
@@ -189,39 +190,29 @@ export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Pro
   return body;
 }
 
-// ---- Corpus glyphs by character.
+// ---- Crops by character and grapheme.
 
-// Corpus glyphs by character in the material asked for, with the grapheme each is filed under: what
-// the grapheme browser counts beside the collection's own crops, so a character the site holds only as
-// corpus glyphs (債) is listed too. A glyph a grapheme claim reads as another grapheme counts under that
-// grapheme's family, as the family's gallery lists it (`filedClaims`). A claim holds on its crop's
-// effective cut, which a redrawn box moves, so the edge keeps one copy per publication and catalogue
-// stamps (reviews and ledger writes among them) and material.
-export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
-  const production = url.searchParams.get('production') || 'all';
-  if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
-  const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
-  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${
-    encodeURIComponent(`${pub}:${catalogueKey(stamps)}`)}`);
+// Every crop and corpus glyph the site holds, by character and the grapheme it is filed under
+// (`graphemeTotals.ts`): what the grapheme browser, its cards and a tile's caption count, withheld crops
+// among them. `['', grapheme, …]` are the crops with no character that name it, and a row ends in 1 where
+// a claim moved some of its crops. A claim holds on its crop's effective cut, which a redrawn box moves,
+// so the edge keeps one copy per publication and catalogue stamps (reviews and ledger writes among them).
+export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
+  const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]), version = catalogueKey(stamps);
+  const key = new Request(`${url.origin}/atlas/graphemes/counts?v=${encodeURIComponent(`${pub}:${version}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
-  const [{ cells, chars }, claims] = await Promise.all([corpusCounts(env, null), filedClaims(env)]);
-  const keys = await productionKeys(env, [...cells.map(c => c.production), ...claims.map(r => r.production ?? -1)]);
-  const scoped = (id: number | null) => inScope(production, keys.get(id ?? -1) ?? 'unknown');
-  // [label, grapheme, glyphs], one per character and the grapheme its glyphs are filed under.
-  const totals = new Map<string, [string, string, number]>();
-  const add = (text: string, grapheme: string, n: number) => {
-    const at = `${text} ${grapheme}`, found = totals.get(at);
-    if (found) found[2] += n; else totals.set(at, [text, grapheme, n]);
-  };
-  for (const c of cells) if (scoped(c.production) && chars.has(c.char)) add(chars.get(c.char)!.text, chars.get(c.char)!.grapheme, c.n);
-  for (const r of claims) {
-    const info = r.kind === 1 && r.char !== null ? chars.get(r.char) : undefined;
-    if (!info || info.grapheme === r.head || !scoped(r.production) || !(totals.get(`${info.text} ${info.grapheme}`)?.[2])) continue;
-    add(info.text, info.grapheme, -1);
-    add(info.text, r.head, 1);
-  }
-  const items = [...totals.values()].filter(([, , n]) => n > 0).sort((a, b) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]));
+  const [collected, corpus, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedClaims(env)]);
+  const place = (chars: Map<number, CharInfo>, char: number) => { const info = chars.get(char); return info ? { label: info.text, grapheme: info.grapheme } : null };
+  const rows: Rows = new Map();
+  const add = (at: Under | null, kind: number, n: number) => { if (at) addCrops(rows, at, kind, n) };
+  for (const c of collected.cells) if (c.char !== -1) add(place(collected.chars, c.char), 0, c.n);
+  for (const c of corpus.cells) add(place(corpus.chars, c.char), 1, c.n);
+  const family = (id: number) => { const at = place(corpus.chars, id); return at && { label: '', grapheme: at.grapheme } };
+  for (const c of corpus.filed) add(family(c.family), c.kind, c.n);
+  fileClaims(rows, claims, r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
+  const items = [...rows.values()].filter(row => crops(row) > 0).sort((a, b) => byCodePoint(a.label, b.label) || byCodePoint(a.grapheme, b.grapheme))
+    .map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
   const body = { items };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
   return body;

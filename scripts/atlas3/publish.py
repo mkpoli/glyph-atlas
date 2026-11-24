@@ -42,6 +42,9 @@ images to the image key map (`media_map.py`).
   moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
   dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
   needs `--approve-styles` naming that count of crops.
+- A catalogue's `credits` (attribution, credit), as `credits.py` writes it, gives every published page
+  and crop entry that carries the attribution the credit in its place, or none where it names no one.
+  Only their bundles change, and the revisions of their pages.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -1383,6 +1386,8 @@ def main():
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
     m.titled, m.retitle = book_titles(src, tables), args.retitle
+    if "credits" in tables and tables - {"credits"}:
+        sys.exit(f"a credits catalogue holds credits alone, not {sorted(tables - {'credits'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
     # D1 apart from catalogues). A book with neither keeps its crops' years.
     years = dict(m.ids.execute("SELECT key, year FROM book_years"))
@@ -1775,6 +1780,25 @@ def main():
         if gone:
             print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
 
+    # A credit shown otherwise than it was published: each published page and crop entry that carries the
+    # catalogue's attribution takes the credit, and loses the field where that names no one.
+    credited = {}
+    if "credits" in tables:
+        credits, crops = dict(src.execute("SELECT attribution, credit FROM credits")), 0
+
+        def with_credit(record):
+            credit = credits[record["attribution"]]
+            return {**{k: v for k, v in record.items() if k != "attribution"}, **({"attribution": credit} if credit else {})}
+        for p in m.atlas.execute("SELECT id, key FROM pages WHERE rev > 0 ORDER BY id").fetchall():
+            bundle = stored(p["id"])
+            if (page := bundle.get("page")) and page.get("attribution") in credits:
+                credited[p["key"]] = with_credit({k: v for k, v in page.items() if k not in LINKS})
+            for e in bundle["crops"]:
+                if e.get("attribution") in credits:
+                    m.touched_pages[p["id"]][e["slot"]] = (with_credit({k: v for k, v in e.items() if k != "slot"}), False)
+                    crops += 1
+        print(f"credits: {crops} crops and {len(credited)} pages", flush=True)
+
     # Corpus glyphs flagged for a person, in the order the catalogue names them, after the crops above.
     # Each is the Worker's admin flag (`flagCorpus`): its finding, its first corpus row and an event of
     # kind `flag` with the wrong-character issue under a submission of the publisher, which moves the
@@ -2075,6 +2099,7 @@ def main():
     # every page of its book the site holds once this publish lands; links a catalogue carries are dropped.
     facts = {r["id"]: {k: v for k, v in json.loads(r["data"]).items() if k not in LINKS}
              for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
+    facts.update(credited)
     # The books whose pages may change: those the catalogue carries a page of, a page new to the site among them,
     # and those a page of which gained or lost a crop in this run, since a page that lost its last one leaves the chain.
     books = {row["book"] for key in facts if (row := m.atlas.execute("SELECT book FROM pages WHERE key=?", (key,)).fetchone())}

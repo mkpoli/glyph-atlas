@@ -34,6 +34,7 @@ from glyph_atlas import (
     withdrawn,
 )
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
+from glyph_atlas.credit_line import credit_line
 from glyph_atlas.review import atlas, characters, collection, corpus_source, ledger
 from glyph_atlas.review.context_suggestions import context_guesses
 from glyph_atlas.review.media import MediaCache
@@ -222,7 +223,7 @@ def page_record(page, doc, crops, catalogue=None, photo=None) -> dict:
             "page_number": page.seq + 1, "width": page.width, "height": page.height, "service": service,
             **page_sources.page_sources(doc.source_refs if doc else None, page.canvas, service, catalogue),
             "holder": doc.holder if doc else None, "licence": str(rights.licence) if rights else None,
-            "attribution": rights.attribution if rights else None, "rights_url": rights.evidence if rights else None,
+            "attribution": credit_line(rights.attribution) if rights else None, "rights_url": rights.evidence if rights else None,
             **({"photo": photo} if photo else {}),
             "crops": crops}
 
@@ -455,7 +456,7 @@ def export(dataset: Path, output: Path, *, resume=False, pages: set[str] | None 
                       "page_number": page_fields(page)["page_number"], **cut}
             detail["licence"] = str(doc.image_rights.licence) if doc and doc.image_rights else None
             detail["holder"] = doc.holder if doc else None
-            detail["attribution"] = doc.image_rights.attribution
+            detail["attribution"] = credit_line(doc.image_rights.attribution)
             detail["rights_url"] = doc.image_rights.evidence
             # Full-resolution pages remain separate; the viewer can pan the hosted context
             # immediately without trying a local full-page endpoint.

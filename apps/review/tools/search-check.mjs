@@ -38,7 +38,7 @@ const rows = `[...document.querySelectorAll('.glyph-tile')].map(tile => ({
 const countText = `document.querySelector('.find-count')?.textContent ?? null`
 // The card for the typed character, with its gallery loaded: until then the count still belongs to
 // the previous query, or reads zero while the answer is pending.
-const counted = char => `document.querySelector('.character-layers .member[aria-pressed=true]')?.getAttribute('aria-label')?.endsWith(${JSON.stringify(char)})
+const counted = char => `document.querySelector('.character-layers .member[aria-current] .script-char')?.textContent === ${JSON.stringify(char)}
   && document.querySelector('.find-count') && !document.querySelector('.find-count .find-pending')
   && document.querySelector('.glyph-grid')?.getAttribute('aria-busy') === 'false'`
 

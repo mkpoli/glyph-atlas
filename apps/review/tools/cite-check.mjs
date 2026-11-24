@@ -74,11 +74,11 @@ try {
   const codePoint = 'U+' + item.title.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
   // The fixture service reads its character layers on first use, which can outlast the page's own wait.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await browser.goto(`${service.base}/en/character/${codePoint}?scope=exact`, { timeout: 90000 })
+    await browser.goto(`${service.base}/en/character/${codePoint}`, { timeout: 90000 })
     if (await browser.evaluate('document.querySelector(".forms-row [data-cite]") !== null')) break
   }
   const form = await openCite('.forms-row [data-cite]')
-  assert(form.text.startsWith(`Form “${item.title}” (${codePoint}). Glyph Atlas, accessed `) && form.text.endsWith(`, ${service.base}/character/${codePoint}?scope=exact`), `the form's citation: ${form.text}`)
+  assert(form.text.startsWith(`Form “${item.title}” (${codePoint}). Glyph Atlas, accessed `) && form.text.endsWith(`, ${service.base}/character/${codePoint}`), `the form's citation: ${form.text}`)
   assert(form.right <= 390 && form.overflow <= 0, 'the form\'s citation fits the phone')
   console.log('PASS a character page cites the form it shows')
 

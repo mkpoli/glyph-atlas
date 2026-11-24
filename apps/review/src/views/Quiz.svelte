@@ -25,7 +25,7 @@
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
   import { dealsFor, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { unslug } from '../lib/gallery.js'
+  import { unslug } from '../lib/addresses.js'
   import { useSession } from '../lib/session.svelte.js'
   let { initialGrapheme = '', initialProduction = '', inspect } = $props()
   // The browser's reviewer id, which a form marking and its undo name like every other save.

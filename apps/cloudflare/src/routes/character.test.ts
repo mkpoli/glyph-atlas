@@ -10,6 +10,7 @@ import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
 import { carriedFormsQuery, bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, copyOf, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
   wordSpellingsQuery, writtenVariants } from './character';
+import { publish } from './browse.fixture.test';
 import worker from '../index';
 
 // The Workers cache.
@@ -160,16 +161,16 @@ beforeAll(() => {
     derived: [['⿰日寺', [[['日', '目']]]]], substitutions: [['日', '目', 4, [{ a: '昨', b: '眲', sources: ['src3'] }]]],
     writes: [['旹', 1], ['峕', 1]], writers: [['时', 1]], ids: { 時: G.時, 旹: G.旹, 峕: G.峕, 时: G.时 } }));
   objects.set('v3/reference/char/U+306D.json.gz', json({ grapheme: G.ね, data: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね' } }),
-    detail: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね' }, visual_analysis: { status: 'ready', groups: [{ code: 1, label: 'Group 1', count: 2,
+    detail: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね', members: [{ code_point: 'U+306D', char: 'ね' }, { code_point: 'U+1B092', char: '𛂒' }] }, visual_analysis: { status: 'ready', groups: [{ code: 1, label: 'Group 1', count: 2,
       representatives: [{ crop: id(filed[0]), source_label: 'ね' }], anchors: [{ crop: id(filed[1]), distance: 0.1 }] }] } }),
     variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+1B092.json.gz', json({ grapheme: G['𛂒'], data: card('𛂒', { grapheme: { code_point: 'U+306D', char: 'ね' } }),
     detail: card('𛂒', { grapheme: { code_point: 'U+306D', char: 'ね' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [],
     ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+5CD5.json.gz', json({ grapheme: G.峕, data: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }),
-    detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
+    detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕', members: [{ code_point: 'U+5CD5', char: '峕' }] } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
   objects.set('v3/reference/char/U+4E38.json.gz', json({ grapheme: G.丸, data: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸' } }),
-    detail: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 丸: G.丸 } }));
+    detail: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸', members: [{ code_point: 'U+4E38', char: '丸' }] } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 丸: G.丸 } }));
   objects.set('v3/reference/char/U+51E1.json.gz', json({ grapheme: G.凡, data: card('凡', { grapheme: { code_point: 'U+51E1', char: '凡' } }),
     detail: card('凡', { grapheme: { code_point: 'U+51E1', char: '凡' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 凡: G.凡 } }));
   // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ,
@@ -223,6 +224,12 @@ describe('a character page', () => {
     expect(body.variants.writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 1, 0]]);
     expect(body.words.items[0].spellings.map((s: any) => [s.spelling, s.current])).toEqual([['時', true], ['刻', false]]);
     expect(body.words.sources).toEqual({ dict: 'A dictionary' });
+  });
+
+  it('counts in a grapheme the crops filed under it with no character', async () => {
+    const { body } = await get('/layers/characters/U+306D');
+    expect(body.grapheme.members.map((m: any) => [m.char, m.count, m.corpus_count])).toEqual([['ね', 0, 0], ['𛂒', 0, 1]]);
+    expect([body.grapheme.count, body.grapheme.corpus_count]).toEqual([0, 4]);
   });
 
   it('answers 404 for a character no card has, and a card for a description sequence', async () => {
@@ -294,7 +301,7 @@ describe('a character page', () => {
     expect(body.grapheme.character_count).toBe(6);
     expect(body.variants.forms).toEqual([]);
     // No other family carries them.
-    expect((await get('/layers/characters/U+5CD5')).body.grapheme.members).toBeUndefined();
+    expect((await get('/layers/characters/U+5CD5')).body.grapheme.members.map((m: any) => m.char)).toEqual(['峕']);
     // A crop filed under a drawn form is counted for it and listed on its page and its family's.
     const target = cropId(PAGE_A, 0), was = db.query('SELECT char FROM crops WHERE id=?').get(target) as { char: number };
     db.prepare('INSERT INTO graphemes(id,text,head) VALUES(520,?,?)').run(ru, G.事);
@@ -346,7 +353,8 @@ describe('a gallery of the collection', () => {
   it('lists a character by style group, shuffle and id, leaving withheld crops out and counting them', async () => {
     const { body } = await get('/layers/occurrences?code_point=U%2B6642&limit=2');
     expect(ids(body.items)).toEqual([crop(PAGE_A, 0), crop(PAGE_A, 1)]);
-    expect([body.total, body.styles, body.withheld, body.scope]).toEqual([4, { cursive: 2, unassessed: 1, formal: 1 }, 1, 'character']);
+    // The counts by style are of every crop, the withheld one among them.
+    expect([body.total, body.styles, body.withheld, body.scope]).toEqual([4, { cursive: 2, unassessed: 2, formal: 1 }, 1, 'character']);
     expect(await every('/layers/occurrences?code_point=U%2B6642&limit=2')).toEqual([crop(PAGE_A, 0), crop(PAGE_A, 1), crop(PAGE_B, 0), crop(PAGE_B, 1)]);
     const shown = await get('/layers/occurrences?code_point=U%2B6642&withheld=show&style=unassessed');
     expect([ids(shown.body.items), shown.body.total, shown.body.withheld]).toEqual([[crop(PAGE_B, 0), crop(PAGE_A, 2)], 2, null]);
@@ -425,6 +433,72 @@ describe('a crop a grapheme claim files', () => {
       expect((await get(time)).body.total).toBe(6);
       expect(ids((await get(other)).body.items)).toEqual([crop(PAGE_B, 4)]);
     } finally { db.exec(`DELETE FROM current_claims WHERE predicate='has_grapheme'`) }
+  });
+});
+
+describe('the total of a grapheme', () => {
+  const cards = { 時: 'U%2B6642', 峕: 'U%2B5CD5', ね: 'U%2B306D', 丸: 'U%2B4E38' };
+  // Every place that states it: the card, the list of every grapheme, the gallery with what it withholds,
+  // and the counts by style and by decade.
+  async function totals(char: keyof typeof cards) {
+    edge.clear();
+    const code = cards[char], sum = (counts: object) => Object.values(counts).reduce((a, b) => a + b, 0);
+    const { grapheme } = (await get('/layers/characters/' + code)).body;
+    const list = (await get('/atlas/graphemes/counts')).body.items.filter((row: any) => row[1] === decodeURIComponent(code));
+    const own = (await get(`/layers/occurrences?code_point=${code}&expand=grapheme`)).body, glyphs = (await get(`/layers/candidates?code_point=${code}&scope=grapheme`)).body;
+    const decades = (await get(`/layers/decades?code_point=${code}&scope=grapheme`)).body;
+    const found = [[grapheme.count, grapheme.corpus_count], list.reduce(([a, b]: number[], row: any) => [a + row[2], b + row[3]], [0, 0]),
+      [own.total + own.withheld, glyphs.glyphs], [sum(own.styles), sum(glyphs.styles)],
+      [decades.local.reduce((n: number, d: any) => n + d[1], 0), decades.corpus.reduce((n: number, d: any) => n + d[1], 0)]];
+    expect(found.map(String)).toEqual(found.map(() => String(found[0])));
+    return { total: found[0], sole: grapheme.sole };
+  }
+  const claim = (crop: number, object: string) => db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,value,members,supporting,claims,resolver,at)
+    VALUES('c' || ?1,'has_grapheme','','',?1,0,'asserted',?2,NULL,'[]','[]','[]','r','t')`).run(crop, object);
+  const unclaim = () => db.exec(`DELETE FROM current_claims WHERE predicate='has_grapheme'`);
+  beforeAll(() => publish(db, objects, 'T', 4));
+
+  it('counts withheld crops and the glyphs with no character, and is one number wherever it is stated', async () => {
+    expect(await totals('時')).toEqual({ total: [7, 2], sole: null });
+    expect(await totals('ね')).toEqual({ total: [0, 4], sole: null });
+    expect(await totals('丸')).toEqual({ total: [4, 2], sole: 'U+4E38' });
+  });
+
+  it('takes the crops claims file into the grapheme, and leaves out those they file away', async () => {
+    expect(await totals('峕')).toEqual({ total: [1, 0], sole: 'U+5CD5' });
+    claim(cropId(PAGE_B, 2), 'U+5CD5');
+    try {
+      expect(await totals('時')).toEqual({ total: [6, 2], sole: null });
+      // 峕's gallery holds a 时 now, which its character's page does not.
+      expect(await totals('峕')).toEqual({ total: [2, 0], sole: null });
+      // The 字種 a form writes is counted the same way on that form's card.
+      const { writes } = (await get('/layers/characters/U+6642')).body.variants;
+      expect(writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 2, 0]]);
+    } finally { unclaim() }
+    // A glyph with no character is taken from the family that names it, and one crop for another leaves
+    // the total as it was and the two galleries different.
+    claim(cropId(PAGE_C, 4), 'U+5CD5');
+    claim(cropId(PAGE_B, 4), 'U+6642');
+    try {
+      expect(await totals('ね')).toEqual({ total: [0, 3], sole: null });
+      expect(await totals('峕')).toEqual({ total: [0, 1], sole: null });
+      expect(await totals('時')).toEqual({ total: [8, 2], sole: null });
+    } finally { unclaim() }
+  });
+
+  it('counts a small seal member the card does not list yet, as the gallery reads it', async () => {
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(600,'\u{3D307}',${G.丸});
+      INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,600,${G.丸},1,-1,1,4,1,1700,2);
+      INSERT INTO imports(stamp,at) VALUES('seal',0)`);
+    try { expect(await totals('丸')).toEqual({ total: [6, 2], sole: null }) }
+    finally { db.exec('DELETE FROM graphemes WHERE id=600; DELETE FROM tally WHERE char=600; DELETE FROM imports WHERE stamp=\'seal\'') }
+  });
+
+  it('reads the claims once for every card of a catalogue version', async () => {
+    let reads = 0;
+    const counting = { ...env, ATLAS: Object.assign(Object.create(env.ATLAS), { prepare: (sql: string) => { if (sql.includes("'has_grapheme'")) reads++; return env.ATLAS.prepare(sql) } }) } as unknown as Env;
+    for (const code of ['U+6642', 'U+306D', 'U+4E38']) await worker.fetch(new Request('https://glyphatlas.org/layers/characters/' + code), counting, ctx);
+    expect(reads).toBe(1);
   });
 });
 
@@ -593,11 +667,11 @@ describe('a gallery grouped by book', () => {
 describe('decades and the time axis', () => {
   it('count a character’s crops per decade on either axis', async () => {
     const witness = await get('/layers/decades?code_point=U%2B6642');
-    expect([witness.body.local, witness.body.corpus]).toEqual([[[1700, 2], [1810, 2]], [[null, 1], [1700, 1]]]);
-    const composed = await get('/layers/decades?code_point=U%2B6642&axis=composed&withheld=show');
+    expect([witness.body.local, witness.body.corpus]).toEqual([[[1700, 3], [1810, 2]], [[null, 1], [1700, 1]]]);
+    const composed = await get('/layers/decades?code_point=U%2B6642&axis=composed');
     expect([composed.body.local, composed.body.corpus]).toEqual([[[null, 2], [1650, 3]], [[null, 1], [1650, 1]]]);
     const family = await get('/layers/decades?code_point=U%2B6642&scope=grapheme');
-    expect(family.body.local).toEqual([[1700, 2], [1810, 4]]);
+    expect(family.body.local).toEqual([[1700, 3], [1810, 4]]);
   });
 
   it('draw a few crops per decade, the collection’s first, narrowed by production or character', async () => {

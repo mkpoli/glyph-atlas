@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit'
 import { catalogue, request, shuffleSeed } from '$lib/client.js'
-import { characterAddress } from '$lib/gallery.js'
+import { characterAddress } from '$lib/addresses.js'
 import { keyText } from '$lib/codePoints.js'
 import { localize } from '$lib/i18n.svelte.js'
 import { hasCharacterPage, pointOf } from '$lib/issues.js'

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, groupStats, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, gallery, graphemeCounts, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
@@ -133,16 +133,22 @@ describe('the statistics by script group', () => {
   });
 });
 
-describe('corpus glyphs by character', () => {
-  it('count each character in the material asked for, under its grapheme, in code point order', async () => {
-    const { env } = await setup();
-    const all = await corpusCharacters(env, ctx, new URL('https://glyphatlas.org/atlas/corpus/characters'));
-    expect(all.items).toEqual([['は', 'U+306F', 4], ['所', 'U+6240', 1], ['한', 'U+D55C', 1], ['𛂞', 'U+306F', 3]]);
-    const scoped = await corpusCharacters(env, ctx, new URL('https://glyphatlas.org/atlas/corpus/characters?production=not:printed/type'));
-    expect(scoped.items.map((i: any) => i[0])).toEqual(['は', '한', '𛂞']);
-    expect((await corpusCharacters(env, ctx, new URL('https://glyphatlas.org/atlas/corpus/characters?production=handwritten'))).items)
-      .toEqual([['𛂞', 'U+306F', 3]]);
-    await expect(corpusCharacters(env, ctx, new URL('https://glyphatlas.org/atlas/corpus/characters?production=wood'))).rejects.toThrow('Invalid production scope.');
+const counted = (env: Env) => graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'));
+describe('crops by character and grapheme', () => {
+  it('count every crop of each, withheld ones and those with no character among them', async () => {
+    // Two corpus glyphs and a withheld crop of は's family name it with no character.
+    const { env } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
+      VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0),(${cropId(c, 22)},0,3,NULL,2,2,0,0,0,7,0,0,0)`));
+    expect((await counted(env)).items).toEqual([['', 'U+306F', 1, 2], ['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 0], ['処', 'U+51E6', 1, 0], ['所', 'U+6240', 6, 1],
+      ['한', 'U+D55C', 0, 1], ['𛂞', 'U+306F', 1, 3]]);
+  });
+  it('follow the reviews since the publication, also those that name a crop', async () => {
+    const { env, db } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
+      VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0)`));
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
+    const rows = (await counted(env)).items.filter((row: any) => row[1] === 'U+306F');
+    expect(rows).toEqual([['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 1], ['𛂞', 'U+306F', 1, 3]]);
   });
 });
 
@@ -238,8 +244,8 @@ describe('the browse page', () => {
     const of = (label: string) => body.categories.filter((x: any) => x.label === label).map((x: any) => [x.grapheme, x.total, x.pending]).sort();
     expect(of('所')).toEqual([['U+51E6', 1, 1], ['U+6240', 4, 2]]);
     expect(body.counts).toEqual({ pending: 10, seen: 1, flagged: 1, checked: 2, hard: 1, skipped: 0 });
-    const corpus = await corpusCharacters(env, ctx, new URL('https://glyphatlas.org/atlas/corpus/characters'));
-    expect(corpus.items).toEqual([['は', 'U+306F', 4], ['所', 'U+51E6', 1], ['한', 'U+D55C', 1], ['𛂞', 'U+306F', 3]]);
+    // 所 keeps five of its six crops and no glyph; the claimed two are 処's, in rows marked as moved.
+    expect((await counted(env)).items.filter((row: any) => ['U+51E6', 'U+6240'].includes(row[1]))).toEqual([['処', 'U+51E6', 1, 0], ['所', 'U+51E6', 1, 1, 1], ['所', 'U+6240', 5, 0, 1]]);
     // Each family's listing agrees with its count: 処 lists the claimed 所, and 所 leaves it out.
     const ids = (body: any) => body.items.map((item: any) => item.id).sort();
     const sho = await get(env, '/atlas?grapheme=U%2B51E6&limit=60'), so = await get(env, '/atlas?grapheme=U%2B6240&limit=60');
@@ -420,7 +426,7 @@ describe('the reviews since the publication', () => {
     // The isolate holds the last key alone; the first comes back from the edge as it was read.
     expect(await tallyDeltas(counted, pub, 0, 'k1')).toEqual(first);
     expect(reads).toBe(2);
-    expect([...edge.keys()].filter(url => url.includes('/_deltas/'))).toEqual(['k1', 'k2'].map(k => `https://glyphatlas.org/_deltas/${encodeURIComponent(`${pub}|0|${k}`)}`));
+    expect([...edge.keys()].filter(url => url.includes('/_deltas/'))).toEqual(['k1', 'k2'].map(k => `https://glyphatlas.org/_deltas/${encodeURIComponent(`${pub}|0|${k}`)}?s=2`));
   });
 });
 

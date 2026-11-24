@@ -36,7 +36,7 @@ export function errorCase({ status, code, message = '', routeId = '', online = t
   if (status >= 500) return 'server'
   if (status === 404) {
     if (/\/crop\/\[id\]$/.test(routeId)) return 'crop'
-    if (/\/(character|chronology)\/\[code\]$/.test(routeId)) return 'character'
+    if (/\/(character|grapheme|chronology)\/\[code\]$/.test(routeId)) return 'character'
     if (/\/forms\/\[\[family\]\]$/.test(routeId)) return 'forms'
     return 'notFound'
   }
@@ -48,7 +48,7 @@ const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).
 
 /**
  * The page a missing address may have meant, from its last part (the path without its language):
- * a character (`字`, `U+5B57`), a sequence of two to eight characters, or a crop id (`codh:…`).
+ * a character (`字`, `U+5B57`) or the grapheme it names, a sequence of two to eight characters, or a crop id (`codh:…`).
  * `{ kind, path, text }`, or null. A path the router already took for that kind is not offered again.
  */
 export function suggestion(path, kind = 'notFound') {
@@ -57,13 +57,14 @@ export function suggestion(path, kind = 'notFound') {
   try { last = decodeURIComponent(last) } catch { return null }
   last = last.trim()
   if (!last) return null
-  // A code point as a character's address writes it (`gallery.js` slug), in any case.
+  const page = parts.at(-2) === 'grapheme' ? 'grapheme' : 'character'
+  // A code point as a character's address writes it (`addresses.js` slug), in any case.
   if (/^u\+[0-9a-f]{4,6}(-u\+[0-9a-f]{4,6})*$/i.test(last)) {
     const point = last.toUpperCase(), values = point.split('-').map(p => parseInt(p.slice(2), 16))
     if (values.some(value => value > 0x10ffff)) return null
-    return kind === 'character' && point === last ? null : { kind: 'character', path: '/character/' + point, text: String.fromCodePoint(...values) }
+    return kind === 'character' && point === last ? null : { kind: 'character', path: `/${page}/` + point, text: String.fromCodePoint(...values) }
   }
-  if (/^[^\s\x00-\x7f]+$/u.test(last) && [...graphemes.segment(last)].length === 1) return { kind: 'character', path: '/character/' + pointOf(last), text: last }
+  if (/^[^\s\x00-\x7f]+$/u.test(last) && [...graphemes.segment(last)].length === 1) return { kind: 'character', path: `/${page}/` + pointOf(last), text: last }
   if (runText(last)) return { kind: 'sequence', path: '/sequence/' + encodeURIComponent(last), text: last }
   if (kind !== 'crop' && /^[a-z][a-z0-9-]*:[^\s/]+$/i.test(last)) return { kind: 'crop', path: '/crop/' + encodeURIComponent(last), text: last }
   return null

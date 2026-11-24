@@ -20,7 +20,7 @@
   import { number } from '../lib/client.js'
   import { suggest } from '../lib/layers.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { graphemeAddress } from '../lib/addresses.js'
   import { originTitle } from '../lib/origin.js'
 
   // The family the address names; none, the first of the list. `onshow` is told each family shown.
@@ -522,7 +522,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}><ScriptText text={current.char} /></a></h2>
+          <h2><a class="family-link" href={localize(graphemeAddress(current.code_point, current.char))} aria-label={t('chips.showCharacter', { char: current.char })}><ScriptText text={current.char} /></a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>

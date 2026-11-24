@@ -49,6 +49,8 @@ HOMESERVER = "http://127.0.0.1:6167"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_API_REVISION = "2026-05-20"
 GEMINI_MODEL = "gemini-4-hydrogen"
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODEL = "deepseek-flash"
 GITHUB_API = "https://api.github.com"
 JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
 
@@ -120,6 +122,8 @@ WELCOME_WAIT = (40.0, 120.0)
 WELCOME_FLOOD = 5
 WELCOME_LATE_SECONDS = 6 * 3600
 WELCOME_PER_HOUR = 10
+# Newcomers wait this long again when the day's money is gone, up to WELCOME_LATE_SECONDS in all.
+WELCOME_BROKE = 1800.0
 # Reading along: she opens a room with unread lines at random times, as a person checks a chat, and
 # the gap is drawn from an exponential around [chat] visit_minutes. A burst still under way is left
 # to finish first. Once there, the model rates how much it has to add, 0 to 5, and below these marks
@@ -131,6 +135,9 @@ VISIT_BURST = 20.0
 VISIT_BURST_WAIT = 180.0
 SAY_INTEREST = 3
 REACT_INTEREST = 2
+# A visit reads fewer lines than an answer, and only the pictures it has not read: a log of 40 lines
+# costs 1,436 tokens more than one of 20, and a picture 1,151 (gemini-4-hydrogen, 2026-11-24).
+VISIT_CONTEXT = 20
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
@@ -222,6 +229,36 @@ PRICE_INPUT = 1.50
 PRICE_CACHE_READ = 0.075
 PRICE_OUTPUT = 7.50
 PRICE_SEARCH_QUERY = 0.014
+# deepseek-flash (V4.1-Flash-1017) per million tokens, doubled in the peak hours (UTC, Monday to
+# Friday; Chinese public holidays are off-peak, so on those this counts too much). Summarizing follows
+# DeepSeek's temperature for data analysis. Sources: https://api-docs.deepseek.com/quick_start/pricing
+# and https://api-docs.deepseek.com/quick_start/parameter_settings (read 2026-11-24).
+DEEPSEEK_CACHE_HIT = 0.003
+DEEPSEEK_CACHE_MISS = 0.15
+DEEPSEEK_OUTPUT = 0.60
+DEEPSEEK_PEAK = ((1, 4), (6, 10))
+MEMORY_TEMPERATURE = 1.0
+# Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
+# may pass the day's limit by the difference, once.
+CALL_RESERVE = 0.05
+# As the day's money goes she saves in this order, so that what is left answers people and one voice
+# does it: she opens no rooms unasked while the day's spending is ahead of its pace, which rises from
+# the first share at midnight (JST) to the second at the day's end, so evenings keep their visits; past
+# THRIFT_SHORT she reads fewer lines and one picture, and leaves bystanders' lines in a conversation
+# alone; with nothing left she says so, once a day in a room that calls her.
+THRIFT_VISITS = (0.25, 0.80)
+THRIFT_SHORT = 0.85
+THRIFT_CONTEXT = 15
+BROKE = {
+    "zh-Hant": "今天的飯票花光啦，本鯨先去睡覺，明天再聊～🍚",
+    "zh-Hans": "今天的饭票花光啦，本鲸先去睡觉，明天再聊～🍚",
+    "ja": "今日のごはん券、ぜんぶ使っちゃった……先に寝るね、また明日〜🍚",
+    "ko": "오늘 밥표를 다 써 버렸어요… 먼저 잘게요, 내일 또 얘기해요~🍚",
+    "vi": "Hôm nay mình hết phiếu cơm rồi, mình đi ngủ trước nha, mai nói chuyện tiếp~🍚",
+    "en": "I'm all out of rice tickets for today, so I'm off to nap. Talk tomorrow~ 🍚",
+}
+SIMPLIFIED = re.compile("[们这说吗还没对时来个为么过开关车东见听语读写汉词译图觉饭鱼鲸请问谁怎样让给]")
+VIETNAMESE = re.compile("[ăđơưĂĐƠƯ\u1ea0-\u1ef9]")
 # What the homeserver knows about a room and its people, read again after this long. Bridged people
 # carry their network in their Matrix ID; the QQ bridge makes a QQ member's account the first time
 # they speak, since QQ's bot API cannot list a group, so QQ counts only people who have spoken.
@@ -319,6 +356,19 @@ def _room_link(room_id: str) -> str:
     return "https://matrix.to/#/" + urllib.parse.quote(room_id, safe="!:")
 
 
+def language_of(text: str) -> str:
+    """The language of a line, by its letters, among those BROKE is written in."""
+    if re.search("[\u3040-\u30ff]", text):
+        return "ja"
+    if re.search("[\uac00-\ud7af]", text):
+        return "ko"
+    if VIETNAMESE.search(text):
+        return "vi"
+    if re.search(f"[{HAN}]", text):
+        return "zh-Hans" if SIMPLIFIED.search(text) else "zh-Hant"
+    return "en"
+
+
 def _finite(value: Any, default: float) -> float:
     try:
         number = float(value)
@@ -405,6 +455,25 @@ def model_cost(usage: Any) -> float:
     return (cached * PRICE_CACHE_READ + uncached * PRICE_INPUT + output * PRICE_OUTPUT) / 1_000_000
 
 
+def deepseek_cost(usage: Any, at: datetime.datetime) -> float:
+    """The dollar cost of one DeepSeek call from its usage block, at the time it was made."""
+    if not isinstance(usage, dict):
+        return 0.0
+
+    def count(name: str) -> int | None:
+        value = usage.get(name)
+        return max(0, value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+    hit = count("prompt_cache_hit_tokens") or 0
+    miss = count("prompt_cache_miss_tokens")
+    if miss is None:
+        miss = max(0, (count("prompt_tokens") or 0) - hit)
+    utc = at.astimezone(datetime.UTC)
+    peak = utc.weekday() < 5 and any(start <= utc.hour < end for start, end in DEEPSEEK_PEAK)
+    cost = hit * DEEPSEEK_CACHE_HIT + miss * DEEPSEEK_CACHE_MISS + (count("completion_tokens") or 0) * DEEPSEEK_OUTPUT
+    return cost / 1_000_000 * (2 if peak else 1)
+
+
 def usage_report(rows: Iterable[sqlite3.Row]) -> str:
     """Each day's calls, failures, tokens and estimated dollars, one line per day."""
     days: dict[str, list[sqlite3.Row]] = {}
@@ -448,6 +517,8 @@ class Config:
     gemini_key_file: Path = Path("/etc/fish-bot/gemini-key")
     gemini_model: str = GEMINI_MODEL
     gemini_url: str = GEMINI_URL
+    deepseek_key_file: Path | None = None
+    deepseek_model: str = DEEPSEEK_MODEL
     github_token_file: Path | None = Path("/etc/fish-bot/github-token")
     github_repo: str = "mkpoli/glyph-atlas"
     user_id: str = "@bigfatfish:glyphatlas.org"
@@ -484,6 +555,7 @@ class Config:
     lookup_enabled: bool = True
     lookup_per_hour: int = 120
     retention_days: int = 180
+    daily_usd: float = 0.75
     dry_run: bool = False
 
     @classmethod
@@ -491,6 +563,7 @@ class Config:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
         matrix = raw.get("matrix") or {}
         gemini = raw.get("gemini") or {}
+        deepseek = raw.get("deepseek") or {}
         github = raw.get("github") or {}
         bot = raw.get("bot") or {}
         limits = raw.get("limits") or {}
@@ -498,8 +571,9 @@ class Config:
         digest = raw.get("digest") or {}
         memory = raw.get("memory") or {}
         lookup = raw.get("lookup") or {}
-        if not all(isinstance(table, dict) for table in (chat, digest, memory, lookup)):
-            raise TypeError("chat, digest, memory and lookup must be tables")
+        budget = raw.get("budget") or {}
+        if not all(isinstance(table, dict) for table in (chat, digest, memory, lookup, budget)):
+            raise TypeError("chat, digest, memory, lookup and budget must be tables")
         memory_enabled = memory.get("enabled", True)
         lookup_enabled = lookup.get("enabled", True)
         if not isinstance(memory_enabled, bool) or not isinstance(lookup_enabled, bool):
@@ -514,8 +588,8 @@ class Config:
                 not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", item)
                 for item in digest_repos):
             raise ValueError("digest.repos must be a list of owner/name")
-        if not isinstance(matrix, dict) or not isinstance(gemini, dict) or not isinstance(github, dict):
-            raise TypeError("matrix, gemini and github must be tables")
+        if not isinstance(matrix, dict) or not isinstance(gemini, dict) or not isinstance(deepseek, dict) or not isinstance(github, dict):
+            raise TypeError("matrix, gemini, deepseek and github must be tables")
         if not isinstance(bot, dict) or not isinstance(limits, dict):
             raise TypeError("bot and limits must be tables")
 
@@ -570,6 +644,8 @@ class Config:
             gemini_key_file=key_file,
             gemini_model=str(field(gemini, "model", cls.gemini_model)),
             gemini_url=str(field(gemini, "url", cls.gemini_url)),
+            deepseek_key_file=path_field(deepseek, "api_key_file", cls.deepseek_key_file),
+            deepseek_model=str(field(deepseek, "model", cls.deepseek_model)),
             github_token_file=github_token,
             github_repo=repo,
             user_id=user_id,
@@ -600,6 +676,7 @@ class Config:
             lookup_enabled=lookup_enabled,
             lookup_per_hour=max(0, min(10_000, int(field(lookup, "per_hour", cls.lookup_per_hour)))),
             retention_days=max(1, min(3650, int(field(limits, "retention_days", cls.retention_days)))),
+            daily_usd=_clamp(_finite(field(budget, "daily_usd", cls.daily_usd), cls.daily_usd), 0.0, 20.0),
             dry_run=dry_run,
         )
 
@@ -803,12 +880,16 @@ class MatrixError(Exception):
         self.code = code
 
 
-class GeminiError(Exception):
+class ModelError(Exception):
     """The model did not answer with a decision."""
 
     def __init__(self, message: str = "", status: int | None = None):
         super().__init__(message)
         self.status = status
+
+
+class SpendError(ModelError):
+    """The day's money is spent, or the caller has none: nothing was sent."""
 
 
 class GitHubError(Exception):
@@ -1219,14 +1300,33 @@ class Store:
         return cursor.rowcount == 1
 
     def count_usage(self, kind: str, *, failed: bool = False, tokens_in: int = 0, tokens_out: int = 0,
-                    cost: float = 0.0) -> None:
+                    cost: float = 0.0, day: str | None = None, calls: int = 1) -> None:
         """Add one model or tool call to the day's tally (JST days, as the digest)."""
         self.db.execute(
-            "INSERT INTO usage(day, kind, calls, failures, tokens_in, tokens_out, cost) VALUES(?,?,1,?,?,?,?) "
-            "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+1, failures=failures+excluded.failures, "
+            "INSERT INTO usage(day, kind, calls, failures, tokens_in, tokens_out, cost) VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+excluded.calls, failures=failures+excluded.failures, "
             "tokens_in=tokens_in+excluded.tokens_in, tokens_out=tokens_out+excluded.tokens_out, cost=cost+excluded.cost",
-            (local_day(now_ms()), kind, 1 if failed else 0, tokens_in, tokens_out, cost))
+            (day or local_day(now_ms()), kind, calls, 1 if failed else 0, tokens_in, tokens_out, cost))
         self.db.commit()
+
+    def spent(self, day: str) -> float:
+        return float(self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage WHERE day=?", (day,)).fetchone()[0])
+
+    def reserve(self, kind: str, amount: float, limit: float) -> str | None:
+        """Book an amount on today unless the day's total would pass the limit; returns the day."""
+        self.db.commit()
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            # The day is read under the lock, which may have been waited for past midnight.
+            day = local_day(now_ms())
+            if self.spent(day) + amount > limit:
+                return None
+            self.db.execute(
+                "INSERT INTO usage(day, kind, calls, cost) VALUES(?,?,1,?) "
+                "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+1, cost=cost+excluded.cost", (day, kind, amount))
+            return day
+        finally:
+            self.db.commit()
 
     def usage(self, days: int = 7) -> list[sqlite3.Row]:
         start = local_day(now_ms() - (days - 1) * 86_400_000)
@@ -2280,6 +2380,46 @@ def _interaction_citations(answer: dict[str, Any]) -> list[tuple[str, str]]:
     return sources
 
 
+class Purse:
+    """One day's money for model calls, kept in a database so that every process using it shares the
+    limit. A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at
+    its real cost afterwards; a process that dies in between leaves the reserve spent."""
+
+    def __init__(self, store: Store, daily_usd: float):
+        self.store = store
+        self.daily_usd = daily_usd
+
+    def spent(self) -> float:
+        return self.store.spent(local_day(now_ms()))
+
+    def share(self) -> float:
+        """How much of the day's money is gone, 1 when all of it is or the amount cannot be read."""
+        try:
+            return self.spent() / self.daily_usd if self.daily_usd > 0 else 1.0
+        except sqlite3.Error:
+            log.exception("reading the money spent")
+            return 1.0
+
+    def reserve(self, kind: str) -> str:
+        """Set money aside for one call, or refuse it. Returns the day it is booked on."""
+        try:
+            day = self.store.reserve(kind, CALL_RESERVE, self.daily_usd)
+        except sqlite3.Error as error:
+            raise SpendError(f"the money spent could not be read: {error}") from None
+        if day is None:
+            raise SpendError(f"today's ${self.daily_usd:.2f} for model calls is spent")
+        return day
+
+    def settle(self, kind: str, day: str, *, cost: float, failed: bool = False, tokens_in: int = 0,
+               tokens_out: int = 0) -> None:
+        self.store.count_usage(kind, failed=failed, tokens_in=tokens_in, tokens_out=tokens_out,
+                               cost=cost - CALL_RESERVE, day=day, calls=0)
+
+    def add(self, kind: str, cost: float) -> None:
+        """A charge that comes with a call, such as its web searches."""
+        self.store.count_usage(kind, cost=cost)
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
         return None
@@ -2304,50 +2444,65 @@ def _resolve_grounding_url(url: str, *, timeout: float = 5.0) -> str:
         return url
 
 
-class Gemini:
-    """Calls Gemini 4 Hydrogen through the Interactions API."""
+class Model:
+    """A model behind an API: every paid request goes through a purse."""
 
-    def __init__(self, api_key: str, model: str = GEMINI_MODEL, url: str = GEMINI_URL,
-                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0):
+    name = "the model"
+
+    def __init__(self, api_key: str, model: str, url: str, timeout: float = 120.0):
         self.api_key = api_key
         self.model = model
         self.url = url
-        self.repo = repo
         self.timeout = timeout
-        self.meter: Any = None
+        self.purse: Purse | None = None
+
+    def _headers(self) -> dict[str, str]:
+        raise NotImplementedError
+
+    def _bill(self, answer: Any) -> tuple[int, int, float]:
+        """An answer's tokens in, tokens out and dollars."""
+        raise NotImplementedError
+
+    def _ask(self, system: str, text: str, pictures: list[tuple[str, str]], *, kind: str,
+             timeout: float) -> str:
+        """One answer in JSON to a text and captioned pictures (data URLs)."""
+        raise NotImplementedError
 
     def _post(self, body: dict[str, Any], *, timeout: float | None = None,
               kind: str = "chat") -> dict[str, Any]:
-        """One request, counted by kind with its tokens and cost when a meter is attached. Counting
-        is best effort: a call already paid for is never lost to a failed count."""
+        """One paid request. It needs a purse with money in it, and is settled by kind with its
+        tokens and cost; a call already paid for is never lost to a failed settlement."""
+        if self.purse is None:
+            raise SpendError("no purse: this client makes no paid call")
+        day = self.purse.reserve(kind)
         try:
             answer = self._send(body, timeout=timeout)
-        except GeminiError:
-            self._count(kind, failed=True)
+        except ModelError as error:
+            # An answer that never came may still be billed, so its reserve stays spent.
+            self._settle(kind, day, failed=True, cost=0.0 if error.status is not None else CALL_RESERVE)
             raise
-        usage = answer.get("usage") if isinstance(answer, dict) else None
-        tokens_in, tokens_out = usage_tokens(usage)
-        self._count(kind, tokens_in=tokens_in, tokens_out=tokens_out, cost=model_cost(usage))
+        tokens_in, tokens_out, cost = self._bill(answer)
+        # An answer without its token counts is charged as reserved.
+        self._settle(kind, day, tokens_in=tokens_in, tokens_out=tokens_out, cost=cost if tokens_in else CALL_RESERVE)
         return answer
 
-    def _count(self, kind: str, **tally: Any) -> None:
-        if self.meter is None:
-            return
+    def _settle(self, kind: str, day: str, **tally: Any) -> None:
         try:
-            self.meter(kind, **tally)
+            self.purse.settle(kind, day, **tally)
         except Exception:
-            log.exception("counting a %s call", kind)
+            log.exception("settling a %s call", kind)
+
+    def _charge(self, kind: str, cost: float) -> None:
+        try:
+            self.purse.add(kind, cost)
+        except Exception:
+            log.exception("charging %s", kind)
 
     def _send(self, body: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
             self.url,
             data=json.dumps(body).encode(),
-            headers={
-                "x-goog-api-key": self.api_key,
-                "Content-Type": "application/json",
-                "Api-Revision": GEMINI_API_REVISION,
-                "User-Agent": USER_AGENT,
-            },
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT, **self._headers()},
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
@@ -2358,11 +2513,117 @@ class Gemini:
                 payload = (error.read() or b"").decode(errors="replace")[:500]
             except OSError:
                 pass
-            raise GeminiError(f"Gemini answered {error.code}: {payload or error.reason}", status=error.code) from None
+            raise ModelError(f"{self.name} answered {error.code}: {payload or error.reason}", status=error.code) from None
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
-            raise GeminiError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
+            raise ModelError(f"{self.name} could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise GeminiError(f"Gemini answered with JSON that could not be read: {error}") from None
+            raise ModelError(f"{self.name} answered with JSON that could not be read: {error}") from None
+
+    def remember(self, room_name: str, rows: list[sqlite3.Row], names: dict[str, str],
+                 known: list[sqlite3.Row], *, bot_user_id: str, left_out: Iterable[str] = (),
+                 images: Iterable[tuple[int, str]] = ()) -> Memory:
+        """What one stretch of a room leaves in memory, with the pictures posted in it."""
+        images = list(images)
+        numbers = {index: number for number, (index, _) in enumerate(images, 1)}
+        user, keys = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id, pictures=numbers)
+        pictures = [(f"Picture {number}:", url) for number, (_, url) in enumerate(images, 1)]
+        last: Exception | None = None
+        failures = 0
+        while failures < 2:
+            try:
+                text = self._ask(MEMORY_PROMPT, user, pictures, kind="memory", timeout=MEMORY_TIMEOUT)
+                if not text.strip():
+                    raise TypeError("the answer has no message content")
+                return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
+            except SpendError:
+                raise
+            except (TypeError, ValueError, ModelError) as error:
+                last = error
+                log.warning("memory answer unusable: %s", error)
+                if not pictures:
+                    failures += 1
+                else:
+                    # Pictures the model refuses must not cost the episode: go on without them, with
+                    # both tries left.
+                    pictures = []
+                    user = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
+        raise ModelError(str(last or "no memory"))
+
+
+class DeepSeek(Model):
+    """Calls DeepSeek Flash, thinking off, for work nobody hears: it has no voice in the chat."""
+
+    name = "DeepSeek"
+
+    def __init__(self, api_key: str, model: str = DEEPSEEK_MODEL, url: str = DEEPSEEK_URL, timeout: float = 60.0):
+        super().__init__(api_key, model, url, timeout)
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def _bill(self, answer: Any) -> tuple[int, int, float]:
+        usage = answer.get("usage") if isinstance(answer, dict) else None
+        if not isinstance(usage, dict):
+            return 0, 0, 0.0
+        tokens = [value if isinstance(value, int) and not isinstance(value, bool) else 0
+                  for value in (usage.get("prompt_tokens"), usage.get("completion_tokens"))]
+        return tokens[0], tokens[1], deepseek_cost(usage, datetime.datetime.now(datetime.UTC))
+
+    def _ask(self, system: str, text: str, pictures: list[tuple[str, str]], *, kind: str,
+             timeout: float) -> str:
+        content: str | list[dict[str, Any]] = text
+        if pictures:
+            content = [{"type": "text", "text": text}]
+            for caption, url in pictures:
+                content += [{"type": "text", "text": caption}, {"type": "image_url", "image_url": {"url": url}}]
+        answer = self._post({
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "temperature": MEMORY_TEMPERATURE,
+            "max_tokens": 2000,
+        }, timeout=timeout, kind=kind)
+        choices = answer.get("choices") if isinstance(answer, dict) else None
+        message = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+        said = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(said, str):
+            raise TypeError("the answer has no message content")
+        return said
+
+
+class Gemini(Model):
+    """Calls Gemini 4 Hydrogen through the Interactions API."""
+
+    name = "Gemini"
+
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL, url: str = GEMINI_URL,
+                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0):
+        super().__init__(api_key, model, url, timeout)
+        self.repo = repo
+
+    def _headers(self) -> dict[str, str]:
+        return {"x-goog-api-key": self.api_key, "Api-Revision": GEMINI_API_REVISION}
+
+    def _bill(self, answer: Any) -> tuple[int, int, float]:
+        usage = answer.get("usage") if isinstance(answer, dict) else None
+        return (*usage_tokens(usage), model_cost(usage))
+
+    def _ask(self, system: str, text: str, pictures: list[tuple[str, str]], *, kind: str,
+             timeout: float) -> str:
+        content: str | list[dict[str, Any]] = text
+        if pictures:
+            content = [{"type": "text", "text": text}]
+            for caption, url in pictures:
+                content += [{"type": "text", "text": caption}, _image_block(url)]
+        return _interaction_text(self._post({
+            "model": self.model,
+            "system_instruction": system,
+            "input": content,
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": MEMORY_THINKING, "max_output_tokens": 4096},
+            "store": False,
+        }, timeout=timeout, kind=kind))
 
     def decide(self, room_name: str, room_topic: str, events: list[sqlite3.Row],
                names: dict[str, str], call: Call, open_issues: list[IssueRef]) -> Decision:
@@ -2386,7 +2647,9 @@ class Gemini:
                 if not content.strip():
                     raise TypeError("the answer has no message content")
                 return parse_decision(content, open_issues)
-            except (TypeError, ValueError, GeminiError) as error:
+            except SpendError:
+                raise
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 if attempt == 0:
                     log.warning("model answer unusable, asking once more: %s", error)
@@ -2400,7 +2663,7 @@ class Gemini:
                             "generation_config": {"thinking_level": ISSUE_THINKING, "max_output_tokens": 8192},
                             "store": True,
                         }
-        raise GeminiError(str(last or "no decision"))
+        raise ModelError(str(last or "no decision"))
 
     def act(self, room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
             *, task: str, trigger: int | None, bot_user_id: str,
@@ -2478,7 +2741,9 @@ class Gemini:
                 if not text.strip():
                     raise TypeError("the answer has no message content")
                 return parse_act(text, len(events), stickers)
-            except (TypeError, ValueError, GeminiError) as error:
+            except SpendError:
+                raise
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("chat answer unusable: %s", error)
                 spoiled = answer.get("id") if answer is not None else None
@@ -2514,7 +2779,7 @@ class Gemini:
                     }
                     if lookup is not None:
                         body["tools"] = lookup.specs()
-        raise GeminiError(str(last or "no answer"))
+        raise ModelError(str(last or "no answer"))
 
     def search(self, query: str, count: int = 5) -> list[dict[str, Any]]:
         """Web results for a query using Gemini's native Google Search grounding."""
@@ -2537,10 +2802,10 @@ class Gemini:
         citations = [(title, _resolve_grounding_url(url)) for title, url in _interaction_citations(answer)[:count]]
         queries = _search_queries(answer)
         if queries:
-            self._count("grounding", cost=queries * PRICE_SEARCH_QUERY)
+            self._charge("grounding", queries * PRICE_SEARCH_QUERY)
         if not citations:
             # A summary without sources is the model's own words, not a search result.
-            raise GeminiError("the search found no sources")
+            raise ModelError("the search found no sources")
         return [{"title": title[:200], "url": url, "summary": text[:2000] if index == 0 else ""}
                 for index, (title, url) in enumerate(citations)]
 
@@ -2562,58 +2827,16 @@ class Gemini:
                     if isinstance(item, dict) and isinstance(item.get("status"), str):
                         statuses.append(item["status"].lower())
         if not statuses:
-            raise GeminiError(f"could not read {url}: the page was not retrieved")
+            raise ModelError(f"could not read {url}: the page was not retrieved")
         if all(status != "success" for status in statuses):
-            raise GeminiError(f"could not read {url} ({statuses[0]})")
+            raise ModelError(f"could not read {url} ({statuses[0]})")
         text = _interaction_text(answer).strip()
         if not text:
-            raise GeminiError("the fetch answer has no content")
+            raise ModelError("the fetch answer has no content")
         citations = _interaction_citations(answer)
         title = next((title for title, cited in citations if cited == url and title),
                      citations[0][0] if citations else "")
         return {"title": title[:200], "content": text}
-
-    def remember(self, room_name: str, rows: list[sqlite3.Row], names: dict[str, str],
-                 known: list[sqlite3.Row], *, bot_user_id: str, left_out: Iterable[str] = (),
-                 images: Iterable[tuple[int, str]] = ()) -> Memory:
-        """What one stretch of a room leaves in memory, with the pictures posted in it."""
-        images = list(images)
-        numbers = {index: number for number, (index, _) in enumerate(images, 1)}
-        user, keys = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id, pictures=numbers)
-        content: str | list[dict[str, Any]] = user
-        if images:
-            content = [{"type": "text", "text": user}]
-            for number, (_, url) in enumerate(images, 1):
-                content += [{"type": "text", "text": f"Picture {number}:"},
-                            _image_block(url)]
-        body: dict[str, Any] = {
-            "model": self.model,
-            "system_instruction": MEMORY_PROMPT,
-            "input": content,
-            "response_format": {"type": "text", "mime_type": "application/json"},
-            "generation_config": {"thinking_level": MEMORY_THINKING, "max_output_tokens": 4096},
-            "store": False,
-        }
-        last: Exception | None = None
-        failures = 0
-        while failures < 2:
-            try:
-                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory")
-                text = _interaction_text(answer)
-                if not text.strip():
-                    raise TypeError("the answer has no message content")
-                return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
-            except (TypeError, ValueError, GeminiError) as error:
-                last = error
-                log.warning("memory answer unusable: %s", error)
-                if not images:
-                    failures += 1
-                else:
-                    # Pictures the model refuses must not cost the episode: go on without them, with
-                    # both tries left.
-                    images = []
-                    body["input"] = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
-        raise GeminiError(str(last or "no memory"))
 
     def digest(self, language: str, room_name: str, changes: list[dict[str, Any]],
                other_rooms: dict[str, list[sqlite3.Row]]) -> str:
@@ -2635,10 +2858,12 @@ class Gemini:
                 if not isinstance(text, str) or not text.strip():
                     raise TypeError("the digest has no text")
                 return text.strip()[:MAX_REPLY]
-            except (TypeError, ValueError, GeminiError) as error:
+            except SpendError:
+                raise
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("digest answer unusable: %s", error)
-        raise GeminiError(str(last or "no digest"))
+        raise ModelError(str(last or "no digest"))
 
     def recap(self, language: str, episodes: list[dict[str, str]], notes: list[str], request: str = "") -> str:
         """A catch-up on everything remembered, for a newcomer."""
@@ -2659,10 +2884,12 @@ class Gemini:
                 if not isinstance(text, str) or not text.strip():
                     raise TypeError("the catch-up has no text")
                 return text.strip()[:MAX_RECAP]
-            except (TypeError, ValueError, GeminiError) as error:
+            except SpendError:
+                raise
+            except (TypeError, ValueError, ModelError) as error:
                 last = error
                 log.warning("catch-up answer unusable: %s", error)
-        raise GeminiError(str(last or "no catch-up"))
+        raise ModelError(str(last or "no catch-up"))
 
     def check(self) -> None:
         parts = urllib.parse.urlsplit(self.url)
@@ -2675,16 +2902,16 @@ class Gemini:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if response.status != 200:
-                    raise GeminiError(f"Gemini answered {response.status}", status=response.status)
+                    raise ModelError(f"Gemini answered {response.status}", status=response.status)
                 payload = json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
-            raise GeminiError(f"Gemini rejected the key or model: {error.code}", status=error.code) from None
+            raise ModelError(f"Gemini rejected the key or model: {error.code}", status=error.code) from None
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise GeminiError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
+            raise ModelError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise GeminiError(f"Gemini answered with JSON that could not be read: {error}") from None
+            raise ModelError(f"Gemini answered with JSON that could not be read: {error}") from None
         if not isinstance(payload, dict) or not payload.get("name"):
-            raise GeminiError(f"the key does not serve {self.model}")
+            raise ModelError(f"the key does not serve {self.model}")
 
 
 class GitHub:
@@ -3130,7 +3357,7 @@ class Lookup:
                     return {"error": "the lookup budget for this hour is used up; answer without it"}
                 self._used.append(now)
             result = self._run(name, args)
-        except (GeminiError, GitHubError, MatrixError, TypeError, ValueError, KeyError, binascii.Error) as error:
+        except (ModelError, GitHubError, MatrixError, TypeError, ValueError, KeyError, binascii.Error) as error:
             log.info("lookup %s failed: %s", name, error)
             return {"error": str(error)[:300]}
         log.info("lookup %s", name)
@@ -3430,12 +3657,15 @@ class Bot:
     """The account, the rooms it reads, and the loop that turns a call into a decision."""
 
     def __init__(self, config: Config, store: Store, matrix: Matrix, gemini: Gemini,
-                 github: GitHub | None = None, state: State | None = None):
+                 github: GitHub | None = None, state: State | None = None, deepseek: DeepSeek | None = None):
         self.config = config
         self.store = store
         self.matrix = matrix
         self.gemini = gemini
-        self.gemini.meter = store.count_usage
+        self.gemini.purse = Purse(store, config.daily_usd)
+        self.deepseek = deepseek
+        if deepseek is not None:
+            deepseek.purse = self.gemini.purse
         self.github = github
         self.state = state or State()
         self.user_id = config.user_id
@@ -3463,6 +3693,7 @@ class Bot:
         self._follows: list[float] = []
         self._spoke_at: dict[str, float] = {}
         self._visits: list[float] = []
+        self._told_broke: dict[str, str] = {}
         self._random = random.random
         self._aliases: dict[str, str] = {}
         self._alias_failed: dict[str, float] = {}
@@ -3670,6 +3901,10 @@ class Bot:
                     self.forget(room_id, event_id, sender, keep=call.mode == "remember")
                 else:
                     self.chat(room_id, event_id, call, sender)
+            except SpendError as error:
+                log.info("no answer in %s: %s", room_id, error)
+                self.store.mark_handled(event_id, "no-money")
+                self._say_broke(room_id, event_id, human_message(event, self.user_id, self.config.ignored_senders) or "")
             except Exception as error:
                 log.exception("chatting in %s", room_id)
                 self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
@@ -3694,10 +3929,24 @@ class Bot:
                 self._file_pending(room_id, event_id, pending[0], pending[1], pending[2])
             else:
                 self._answer(room_id, event_id, call)
+        except SpendError as error:
+            log.info("no decision in %s: %s", room_id, error)
+            self.store.mark_handled(event_id, "no-money")
+            self._say_broke(room_id, event_id, human_message(event, self.user_id, self.config.ignored_senders) or "")
         except Exception as error:
             log.exception("deciding for %s", event_id)
             self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
             self._tell(room_id, event_id, "I couldn't read that discussion just now. Try calling me again in a minute.")
+
+    def _say_broke(self, room_id: str, event_id: str, line: str) -> None:
+        """Tell a room that calls her that the day's money is gone, once a day."""
+        self.matrix.typing(room_id, self.user_id, timeout_ms=0)
+        today = local_day(now_ms())
+        if self._told_broke.get(room_id) != today:
+            self._told_broke[room_id] = today
+            for alias in sorted(self.config.aliases, key=len, reverse=True):
+                line = line.replace(alias, "")
+            self._tell(room_id, event_id, BROKE[language_of(line)])
 
     def _replies_to_me(self, room_id: str, event: dict[str, Any]) -> bool:
         """Whether a person's message replies to one of the bot's own, by the log or else by asking
@@ -3802,10 +4051,12 @@ class Bot:
                 return
             pause = WELCOME_WAIT[0] + (WELCOME_WAIT[1] - WELCOME_WAIT[0]) * self._random()
             self._newcomers[person] = {"room": room_id, "event_id": "", "name": name, "how": how, "line": "",
-                                       "due": time.monotonic() + pause}
-            if len(self._newcomers) > WELCOME_FLOOD:
-                log.info("%s new people at once, taken for a member sync; not welcomed", len(self._newcomers))
-                self._newcomers.clear()
+                                       "due": time.monotonic() + pause, "since": time.monotonic()}
+            fresh = [person for person, waiting in self._newcomers.items() if not waiting.get("postponed")]
+            if len(fresh) > WELCOME_FLOOD:
+                log.info("%s new people at once, taken for a member sync; not welcomed", len(fresh))
+                for person in fresh:
+                    del self._newcomers[person]
                 self._sync_until = time.monotonic() + WELCOME_WAIT[0]
                 return
             waiting = self._newcomers[person]
@@ -3845,6 +4096,10 @@ class Bot:
                 log.info("welcomed %s in %s", len(people), room_id)
                 if act is not None and len(people) == 1:
                     self._listen(room_id, next(iter(people)))
+            except SpendError as error:
+                log.info("not welcomed in %s yet: %s", room_id, error)
+                self._newcomers.update({person: {**waiting, "due": now + WELCOME_BROKE, "postponed": True}
+                                        for person, waiting in people.items() if now - waiting["since"] < WELCOME_LATE_SECONDS})
             except Exception:
                 log.exception("welcoming in %s", room_id)
 
@@ -3921,6 +4176,8 @@ class Bot:
                 continue
             self._follows.append(now)
             partner = bool(talk.partner) and sender == talk.partner
+            if not partner and self.gemini.purse.share() >= THRIFT_SHORT:
+                continue
             try:
                 act = self.turn(room_id, event_id, task="follow")
                 spoke = act is not None and bool(act.say or act.react or act.sticker or act.recap)
@@ -3938,8 +4195,16 @@ class Bot:
                         talk.quiet_others += 1
                 if act is not None and act.issue and partner:
                     self._to_desk(room_id, event_id, body, sender)
+            except SpendError as error:
+                log.info("not followed in %s: %s", room_id, error)
             except Exception:
                 log.exception("following in %s", room_id)
+
+    def _ahead_of_pace(self) -> bool:
+        """Whether the day's spending leaves nothing for visits at this hour."""
+        now = self._clock()
+        day = (now.hour * 60 + now.minute) / 1440
+        return self.gemini.purse.share() >= THRIFT_VISITS[0] + (THRIFT_VISITS[1] - THRIFT_VISITS[0]) * day
 
     def visit(self) -> None:
         """Open the rooms whose time has come, and let the model decide whether to join in."""
@@ -3951,7 +4216,7 @@ class Bot:
                 unread["due"] = min(unread["last"] + VISIT_BURST, latest)
                 continue
             self._visits = [at for at in self._visits if now - at < 3600]
-            if len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
+            if self._ahead_of_pace() or len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
                 unread["due"] = now + self._gap(room_id)
                 continue
             self._visits.append(now)
@@ -3962,6 +4227,8 @@ class Bot:
                         if part] if act is not None else []
                 log.info("visited %s: %s unread, interest %s, %s", room_id, unread["count"],
                          act.interest if act is not None else "-", ", ".join(done) or "stayed quiet")
+            except SpendError as error:
+                log.info("not visited %s: %s", room_id, error)
             except Exception:
                 log.exception("visiting %s", room_id)
 
@@ -3980,6 +4247,8 @@ class Bot:
         self.deliver_all()
         try:
             self.digest()
+        except SpendError as error:
+            log.info("no digest: %s", error)
         except Exception:
             log.exception("posting the digest")
         day = self._clock().strftime("%Y-%m-%d")
@@ -4037,11 +4306,16 @@ class Bot:
         names.update({str(fact["subject"]): self.store.any_display_name(str(fact["subject"])) or _localpart(str(fact["subject"]))
                       for fact in known if str(fact["subject"]).startswith("@") and str(fact["subject"]) not in names})
         try:
-            memory = self.gemini.remember(self._room(room_id)[0] or room_id, segment, names, known,
-                                          bot_user_id=self.user_id, left_out=self._left_out(),
-                                          images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
-                                                               lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
-        except GeminiError as error:
+            memory = self._remember(self._room(room_id)[0] or room_id, segment, names, known,
+                                    bot_user_id=self.user_id, left_out=self._left_out(),
+                                    images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
+                                                         lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
+        except SpendError as error:
+            # It waits for the next day's money and is not given up.
+            log.info("remembering waits: %s", error)
+            self._memory_due = now_mono + MEMORY_RETRY_SECONDS
+            return
+        except ModelError as error:
             first = str(segment[0]["event_id"])
             previous = self._memory_failures.get(room_id)
             tries = previous[1] + 1 if previous is not None and previous[0] == first else 1
@@ -4061,6 +4335,17 @@ class Bot:
             return
         self.store.save_memory(room_id, segment, people, memory)
         log.info("remembered %s messages of %s: %s new or changed facts", len(segment), room_id, len(memory.edits))
+
+    def _remember(self, *args: Any, **kwargs: Any) -> Memory:
+        """The stretch read by DeepSeek, at a tenth of the price, or by Gemini when that fails."""
+        if self.deepseek is not None:
+            try:
+                return self.deepseek.remember(*args, **kwargs)
+            except SpendError:
+                raise
+            except ModelError as error:
+                log.warning("DeepSeek could not remember, asking Gemini: %s", error)
+        return self.gemini.remember(*args, **kwargs)
 
     def recall(self, room_id: str, events: list[sqlite3.Row], names: dict[str, str]) -> dict[str, Any]:
         """What she remembers that bears on the last lines of a room."""
@@ -4250,8 +4535,14 @@ class Bot:
             self.refresh(room_id, limit=CHAT_CONTEXT)
         except MatrixError as error:
             log.warning("refreshing %s: %s", room_id, error)
-        events = self.store.context(room_id, now_ms() + 60_000, CHAT_CONTEXT)
+        short = self.gemini.purse.share() >= THRIFT_SHORT
+        lines = THRIFT_CONTEXT if short else VISIT_CONTEXT if task == "visit" else CHAT_CONTEXT
+        events = self.store.context(room_id, now_ms() + 60_000, lines)
         trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
+        if trigger is None and task != "visit" and lines < CHAT_CONTEXT:
+            # The line she answers is read even when many have followed it.
+            events = self.store.context(room_id, now_ms() + 60_000, CHAT_CONTEXT)
+            trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
         if trigger is None and task == "visit":
             trigger = 0
         names = self._names(room_id, [str(row["sender"]) for row in events])
@@ -4267,7 +4558,8 @@ class Bot:
                               bot_user_id=self.user_id, stickers=offered,
                               sticker_mood=self._random() < STICKER_MOOD, rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
-                              images=self.pictures(events, IMAGES_VISIT if task == "visit" else IMAGES_CALLED),
+                              images=self.pictures(events, 1 if short else IMAGES_VISIT if task == "visit" else IMAGES_CALLED,
+                                                   lines=min(IMAGE_LINES, len(events) - (trigger or 0)) if task == "visit" else IMAGE_LINES),
                               lookup=self.lookup if task in ("called", "follow", "visit") else None,
                               on_step=(lambda: None) if task == "visit" else (lambda: self.matrix.typing(room_id, self.user_id)))
         if task == "visit":
@@ -4716,6 +5008,8 @@ def main(argv: list[str] | None = None) -> None:
         matrix = Matrix(config.homeserver, _secret(config.token_file))
         gemini = Gemini(_secret(config.gemini_key_file), config.gemini_model, config.gemini_url,
                         config.github_repo)
+        deepseek = (DeepSeek(_secret(config.deepseek_key_file), config.deepseek_model)
+                    if config.deepseek_key_file is not None else None)
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from None
     if args.check:
@@ -4731,14 +5025,14 @@ def main(argv: list[str] | None = None) -> None:
             print(f"homeserver: {whoami}")
             print(f"model: {config.gemini_model}")
             print(f"github: {config.github_repo} (read access)" if github else "github: not configured")
-        except (MatrixError, GeminiError, GitHubError) as error:
+        except (MatrixError, ModelError, GitHubError) as error:
             raise SystemExit(str(error)) from None
         return
     store = Store(args.db)
     github = None
     if config.github_token_file and config.github_token_file.exists():
         github = GitHub(_secret(config.github_token_file), config.github_repo)
-    bot = Bot(config, store, matrix, gemini, github, State(args.state))
+    bot = Bot(config, store, matrix, gemini, github, State(args.state), deepseek)
     try:
         if args.recap:
             try:
@@ -4749,7 +5043,7 @@ def main(argv: list[str] | None = None) -> None:
                 if room_id is None or room_id not in bot.active_rooms:
                     raise SystemExit(f"{args.recap} is not a public room the bot reads")
                 text = bot.post_recap(room_id, language=args.language)
-            except (MatrixError, GeminiError) as error:
+            except (MatrixError, ModelError) as error:
                 raise SystemExit(str(error)) from None
             if not text:
                 raise SystemExit("nothing is remembered yet, so nothing was posted")

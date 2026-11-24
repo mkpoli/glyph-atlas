@@ -347,6 +347,10 @@ def test_crops_with_no_character_are_counted_under_the_family_they_are_filed_und
     body = shard_of(root, family)
     assert [cell[0] for cell in body["families"][str(family)]] == [1] and body["families"][str(family)][0][-1] == 1
     assert str(family) not in body["chars"]
+    # The grapheme totals read them from one answer, with the family's own text and key.
+    glyphs = answer(root, "corpus.json.gz")
+    assert glyphs["filed"] == [[family, 1, 1]]
+    assert glyphs["chars"][str(family)] == ["も", "U+3082"]
 
 
 # --- The crops the site changed ---

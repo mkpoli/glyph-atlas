@@ -1,12 +1,11 @@
 <script>
   // The collection's graphemes, one tile each, with the forms a tile gathers shown in a popover: 仮
   // and 假 are one tile, and pointing at it lists both with their own code points and counts. Choosing
-  // the tile narrows the grid to the whole family; choosing a form in the popover opens that form's
-  // own gallery. Each group is `{ key, char, count, members: [{ label, count }] }`.
+  // the tile chooses the grapheme; choosing a form in the popover opens that form's own gallery. Each group is `{ key, char, count, members: [{ label, count }] }`.
   //
   // The popover follows the tile's focus as well as the pointer, and sits after its tile in the
   // document, so Tab from a tile walks into its forms. On a touch screen the first tap on a tile with
-  // forms to list opens the popover, whose "All forms" chooses the family.
+  // forms to list opens the popover, and the second chooses the grapheme.
   //
   // The collection and the corpus together hold some fifteen thousand graphemes, so the tiles are drawn a
   // slice at a time (`lib/slices.js`), more as the panel is scrolled near their end. The corpus's counts
@@ -43,7 +42,7 @@
   function close() { clearTimeout(timer); shown = null }
 
   function press(group, tile) {
-    // A first tap opens the card; the next one, or "All forms", chooses.
+    // A first tap opens the card; the next one chooses.
     if (touched && listed(group) && !opened) { show(group, tile); return }
     close()
     onchoose(group.key)
@@ -74,7 +73,7 @@
       {#if shown === group.key}
         <div class="grapheme-popover" bind:this={card} style="left:{place.left}px;top:{place.top}px"
              onpointerenter={() => clearTimeout(timer)} onpointerleave={e => { if (e.pointerType !== 'touch') hide() }}>
-          <GraphemeCard {group} onchoose={key => { close(); onchoose(key) }} onform={form => { close(); onform(form) }} />
+          <GraphemeCard {group} onform={form => { close(); onform(form) }} />
         </div>
       {/if}
     </div>
