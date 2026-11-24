@@ -17,6 +17,7 @@ import { ranking } from './routes/ranking';
 import { connections } from './connections';
 import { flagCorpus, flaggedCorpus, reject, reviewerActors, reviewers, submissions } from './routes/admin';
 import { history } from './routes/history';
+import { openShapes } from './routes/shapes';
 import { reviewsPage } from './routes/reviews';
 import { listingItems } from './atlas3Listing';
 import { StaleCrop, staleResponse } from './atlas3Crops';
@@ -215,7 +216,8 @@ const routes = {
       if(path==='/layers/word-choices')return json({items:await wordChoices(env,text(q.get('q')??'',128,'reading')??'',[...(q.get('c')??'')].slice(0,4))});
       if(path==='/layers/suggest')return json(await suggest(env,q,ctx));
       if(path==='/layers/ids')return json(await idsOf(env,ctx,url.origin,q.get('c')||''));
-      if(path==='/layers/structures')return json(await structuresOf(env,ctx,url.origin,q.get('c')||'',q.get('of')||''));
+      if(path==='/atlas/shapes')return json(await openShapes(env,q));
+      if(path==='/layers/structures')return json(await structuresOf(env,ctx,url.origin,q.get('c')||'',q.get('of')||'',q.get('open')==='1'));
       if(path==='/layers/search'){const found=await suggest(env,q,ctx);return json({...found,results:found.items,match:found.items[0]||null})}
       const layer=path.match(/^\/layers\/characters\/([^/]+)$/);
       if(layer)return json(await characterPage(env,ctx,url,decodeURIComponent(layer[1]),characterTools));

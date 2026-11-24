@@ -120,6 +120,11 @@
   {#if names.length}<span class="sharing">{#each names as name (name)}{#if composedNames > 1}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/if}{#if proposed(name, group.claimed?.[name])}<sup class="derived-mark" title="{name} · {t('chips.derived')}">*</sup>{/if}{/each}</span>{/if}
 {/snippet}
 
+<!-- The crops built so whose form is still to be named. -->
+{#snippet waiting(structure)}
+  {#if structure.open}<a class="waiting" href={localize('/shapes?structure=' + encodeURIComponent(structure.id))} title={t('shapes.title')} aria-label={`${structure.label} · ${t('shapes.title')} · ${formatNumber(structure.open)}`}>？ {formatNumber(structure.open)}</a>{/if}
+{/snippet}
+
 {#snippet form(member)}
   <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={isSeal(member.char) || twins.includes(member.char)} />
   {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
@@ -155,7 +160,7 @@
         <div class="variant-chips">
           {#each composed as s (s.id)}
             {@const { own, folded } = layouts(s)}
-            <span class="variant structure"><IdsLabel text={s.label} />{@render sharing(own, s)}{#each folded as part (part.id)}<span class="layout"><IdsLabel text={part.label} />{@render sharing(part.chars, s)}</span>{/each}</span>
+            <span class="variant structure"><IdsLabel text={s.label} />{@render sharing(own, s)}{@render waiting(s)}{#each folded as part (part.id)}<span class="layout"><IdsLabel text={part.label} />{@render sharing(part.chars, s)}{@render waiting(part)}</span>{/each}</span>
           {/each}
           {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>
@@ -297,6 +302,8 @@
   .variant.structure{font-size:15px}
   .layout{display:inline-flex;align-items:baseline;gap:6px;padding-left:8px;border-left:1px solid var(--line)}
   .variant.structure:hover{border-color:var(--line)}
+  .variant.structure .waiting{font-size:11px;color:var(--muted);text-decoration:none;white-space:nowrap}
+  .variant.structure .waiting:hover{color:var(--accent)}
   .arrange{align-self:center;border:0;background:transparent;color:var(--accent);padding:0 4px;font-size:12px;text-decoration:underline;text-underline-offset:3px}
   .arrange:hover{color:var(--ink)}
   .variant.structure .sharing :global(.ids-form){margin-inline:4px 0}

@@ -12,6 +12,7 @@ import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead
   formOfCrop, ownClaimQuery, setCropStructure, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
 import { cropStructures } from '../cropPanels';
+import { openShapeCounts, openShapeCountsQuery, openShapes, openShapesQuery } from './shapes';
 import { cropReadings } from '../cropReadings';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
@@ -444,6 +445,46 @@ describe('a form filed under a structure', () => {
     await expect(say({})).rejects.toThrow('409 You have no structure on this crop to clear.');
     await expect(say({ char: '丑' })).rejects.toThrow('422 No structure is known for 丑.');
     await expect(setCropStructure(env, { id: crypto.randomUUID(), crop_version: 'old', char: '峰' }, crop, 'reader', tools)).rejects.toThrow('409');
+  });
+
+  it('lists the crops given a structure and no form, by structure, and counts them', async () => {
+    const { db, env, tools, local, corpus, version, beside, above } = await forms();
+    const say = (crop: number, char: string | null, actor = 'reader') => setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(crop, crop === corpus ? 'rev1' : 'px'), ...(char ? { char } : {}) }, publicId(crop), actor, tools);
+    const list = async (params: Record<string, string> = {}) => (await openShapes(env, new URLSearchParams(params))).items.map((item: any) => [item.id, item.structure.label]);
+    const counts = async () => Object.fromEntries(await openShapeCounts(env, [beside, above]));
+    expect(await list()).toEqual([]);
+    await say(local, '峰'); await say(corpus, '峯');
+    const both = [[publicId(local), '⿰山夆', beside], [publicId(corpus), '⿱山夆', above]].sort((a, b) => a[2] < b[2] ? -1 : 1).map(row => row.slice(0, 2));
+    expect(await list()).toEqual(both);
+    expect(await counts()).toEqual({ [beside]: 1, [above]: 1 });
+    expect(await list({ structure: above })).toEqual([[publicId(corpus), '⿱山夆']]);
+    expect((await openShapes(env, new URLSearchParams({ structure: above }))).structure).toEqual({ id: above, label: '⿱山夆' });
+    // A page starts after where the last ended.
+    const first = both[0], at = [beside, above].sort()[0], subject = db.query("SELECT subject FROM current_claims WHERE predicate='built_as' AND object=?").get(at) as { subject: string };
+    expect(await list({ after: btoa(encodeURIComponent(JSON.stringify([at, subject.subject]))) })).toEqual(both.slice(1));
+    expect(first).toBeDefined();
+    // A form, agreed or disputed, takes a crop off; so does a structure taken back, and one claimed on an earlier cut.
+    const formed = (actor: string, form: string | null) => setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form }, publicId(local), actor, tools);
+    await formed('other', '⿱山夆'); expect(await list()).toEqual([[publicId(corpus), '⿱山夆']]);
+    await formed('third', '⿰山夆'); expect(await list()).toEqual([[publicId(corpus), '⿱山夆']]);
+    await formed('other', null); await formed('third', null); expect(await list()).toEqual(both);
+    // A shape said to be unresolved waits still.
+    db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,value,members,supporting,claims,resolver,at)
+      VALUES('x','has_form','','',?,0,'asserted',NULL,'"unresolved"','[]','[]','[]','r','n')`).run(local);
+    expect(await list()).toEqual(both);
+    // A page ends where it was read to, and a subject of any script is a cursor.
+    db.exec("DELETE FROM current_claims WHERE subject='x'");
+    const put = db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES(?,'built_as','','',?,9,'asserted',?,'[]','[]','[]','r','n')`);
+    for (let i = 0; i < 130; i++) put.run(`tsj:７:${String(i).padStart(3, '0')}`, 900000 + i, 'st:' + '0'.repeat(32));
+    const early = await openShapes(env, new URLSearchParams());
+    expect(early.items).toEqual([]);
+    expect((await openShapes(env, new URLSearchParams({ after: early.next! }))).items.length).toBe(2);
+    db.exec("DELETE FROM current_claims WHERE subject GLOB 'tsj:*'");
+    await say(corpus, null); expect(await counts()).toEqual({ [beside]: 1 });
+    db.exec(`UPDATE crops SET cut=cut+1 WHERE id=${local}`); expect(await list()).toEqual([]);
+    await expect(openShapes(env, new URLSearchParams({ structure: 'x' }))).rejects.toThrow('Name a structure by its id.');
+    await expect(openShapes(env, new URLSearchParams({ structure: 'st:' + 'f'.repeat(32) }))).rejects.toThrow('No such structure.');
+    for (const bad of ['!!', btoa('[1]'), btoa('[1,2]')]) await expect(openShapes(env, new URLSearchParams({ after: bad }))).rejects.toThrow('Invalid cursor.');
   });
 
   it('takes back every form of the reader\'s own with a crop\'s structure, and leaves another\'s', async () => {
@@ -906,6 +947,8 @@ describe('the ledger queries', () => {
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
       [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],
       [claimedStructuresQuery(), ['["fm:1"]']], [foldsQuery(), ['["st:1"]']], [ownFoldQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['st:1', 'u']],
+      ...[[null, null], ['st:1', null], [null, ['st:1', 's']], ['st:1', ['st:1', 's']]].map(([of, after]) => { const { sql, values } = openShapesQuery(of as string | null, after as [string, string] | null); return [sql, [...values, 61]] as [string, unknown[]] }),
+      [openShapeCountsQuery(), ['["st:1"]']],
       [ownReadingsQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['[1]', 'u']], [savedRunsQuery(), ['["k"]']],
     ];
     for (const [sql, args] of plans) {
