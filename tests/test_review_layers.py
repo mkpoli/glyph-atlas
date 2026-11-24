@@ -714,6 +714,37 @@ def test_a_form_is_claimed_with_the_character_it_is_a_form_of(dataset):
     assert Store(dataset).forms_for({unit["id"]: version})[unit["id"]] == saved
 
 
+def test_a_form_the_ledger_refuses_leaves_its_review_unwritten(dataset):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
+    version = api.get(f"/atlas/characters/{quote(unit['id'], safe='')}").json()["crop_version"]
+    claim = {"id": str(uuid4()), "client_id": "fixture-reviewer", "crop_version": version, "form": "孑"}
+    assert api.post(f"/atlas/characters/{quote(unit['id'], safe='')}/form", json=claim).status_code == 200
+    events, saved = len(Store(dataset).events()), Store(dataset).forms_for({unit["id"]: version})
+    payload = {**claim, "revision": unit["revision"], "image_sha256": digest_of(dataset),
+               "character": "子", "verdict": "wrong", "issue": "character", "form": "子"}
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).status_code == 409
+    assert len(Store(dataset).events()) == events and Store(dataset).forms_for({unit["id"]: version}) == saved
+
+
+def test_a_form_sent_again_after_its_review_alone_was_saved_rests_on_the_redrawn_box(dataset, monkeypatch):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
+    path = f"/atlas/characters/{quote(unit['id'], safe='')}"
+    record = api.get(path).json()
+    payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"], "image_sha256": digest_of(dataset),
+               "character": "子", "verdict": "wrong", "issue": "character", "form": "子", "crop_version": record["crop_version"],
+               "box": {**record["box"], "w": record["box"]["w"] - 1}}
+    with monkeypatch.context() as patch:
+        patch.setattr(Store, "set_form", lambda *_args, **_form: (_ for _ in ()).throw(RuntimeError("stopped")))
+        with pytest.raises(RuntimeError):
+            api.post(f"/layers/units/{unit['id']}", json=payload)
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).json()["duplicate"] is True
+    redrawn = api.get(path).json()
+    assert redrawn["crop_version"] != record["crop_version"]
+    assert [value["text"] for value in redrawn["form"]["values"]] == ["子"]
+
+
 def test_a_correction_refuses_a_second_character_and_a_stale_revision(dataset):
     api = client(dataset)
     unit = api.get("/layers/characters/U+306D").json()["samples"][0]

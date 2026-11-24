@@ -65,6 +65,7 @@ from .atlas import (
     transcription,
     written_identity,
 )
+from .ledger import LedgerError
 from .request_cache import file_stamp, lookup_scope, memoize
 from .store import BadRequest, ReviewRequest, Store, StoreError
 
@@ -1285,11 +1286,20 @@ def router(store: Store) -> APIRouter:
                 "total_kind": payload["total_kind"], "available": len(items),
                 "items": items}
 
-    def claim_form(edit: LayerEdit, unit_id: str, version: str) -> None:
-        """Claim a correction's form on the crop as the correction leaves it; a repeat claims nothing more."""
-        if (form := _form_of(edit)) is not None:
-            store.set_form(key=f"{edit.client_id}:{edit.id}", actor=edit.client_id, request={"layer": edit.model_dump(mode="json")},
-                           crop=unit_id, crop_version=version, form=form)
+    def claim_form(edit: LayerEdit, unit_id: str, *, check: bool = False) -> None:
+        """Claim a correction's form on the crop as the correction leaves it, with the box it redraws; a
+        repeat claims nothing more. With `check`, refuse what the claim would refuse and write nothing."""
+        if (form := _form_of(edit)) is None:
+            return
+        submission = {"key": f"{edit.client_id}:{edit.id}", "request": {"layer": edit.model_dump(mode="json")}}
+        try:
+            if check:
+                store.claim_submission(**submission)
+                return
+            version = evidence.crop_version(unit_id, edit.image_sha256, edit.box) if edit.box else edit.crop_version
+            store.set_form(**submission, actor=edit.client_id, crop=unit_id, crop_version=version, form=form)
+        except LedgerError as error:
+            raise HTTPException(error.status, str(error)) from error
 
     @api.post("/layers/units/{unit_id}")
     def correct(unit_id: str, edit: LayerEdit) -> dict[str, Any]:
@@ -1321,7 +1331,7 @@ def router(store: Store) -> APIRouter:
                              if row["field"] == "review" and row["review"]["evidence"]), {})
             if recorded.get("request") != edit.model_dump(mode="json"):
                 raise StoreError("This submission id was already used for a different correction.")
-            claim_form(edit, unit_id, edit.crop_version)
+            claim_form(edit, unit_id)
             correction = recorded.get("layer_correction", {})
             return {"results": previous, "duplicate": True, "resolved": bool(recorded.get("resolved")),
                     "changed": correction.get("changed", []),
@@ -1425,8 +1435,10 @@ def router(store: Store) -> APIRouter:
                                  "layer_correction": {"changed": changed, **correction}},
                                 ensure_ascii=False),
         ))
+        # A review and its claim are written apart, so the claim is checked before the review is.
+        claim_form(edit, unit_id, check=True)
         results = store.record_batch(requests)
-        claim_form(edit, unit_id, evidence.crop_version(unit.id, digest, edit.box or unit.box))
+        claim_form(edit, unit_id)
         # The counts a reader sees next must be the counts after this correction, which the journal
         # stamp already says: nothing else to invalidate.
 
