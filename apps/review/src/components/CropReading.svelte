@@ -79,7 +79,7 @@
     const start = value ? next.at - value.at : next.at, kept = value && value.run.every((part, i) => next.parts[start + i] === part)
     line = value && !kept ? { parts: value.run, at: value.at, also: [] } : next
     from = value ? line.at - value.at : line.at; to = from + (value?.run.length ?? 1) - 1
-    readings = {}; rubies = {}; whole = false; wholeReading = ''; wholeRuby = ''
+    readings = {}; rubies = {}; whole = false; wholeReading = ''; wholeRuby = ''; letters = null
     if (value) {
       // The ruby beside another run is another's, and says nothing of this one.
       const together = one => one.at === value.at && JSON.stringify(one.run) === JSON.stringify(value.run)
@@ -116,7 +116,7 @@
   // The letters the kana before the caret of a ruby may be written with. They stay until a reading is written or
   // the run changes, so the buttons below them never move under a press.
   function seek(at, input) {
-    const found = lettersAt(input.value, input.selectionStart)
+    const found = lettersAt(input.value, input.selectionEnd)
     letters = found && { ...found, at, input }
   }
   function write({ letter }) {
