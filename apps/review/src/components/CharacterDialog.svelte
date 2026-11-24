@@ -306,8 +306,8 @@
   }
   // A field saved for one crop may come back after the dialog has moved to another; the crop is
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
-  function fieldSaved(result) {
-    changed?.(result.id, result, result.id === data?.id ? data : null)
+  function fieldSaved(result, was = result.id === data?.id ? data : null) {
+    changed?.(result.id, result, was)
     // Style, reading and grapheme claims leave the decision as it was.
     const decided = inspector.decided(result.id)
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })

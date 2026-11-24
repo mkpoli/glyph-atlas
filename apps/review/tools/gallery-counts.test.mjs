@@ -2,7 +2,7 @@ import { describe, expect, it, jest, mock } from 'bun:test'
 
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: (key, values = {}) => `${key} ${values.count ?? ''}`.trim() }))
 mock.module('../src/lib/busy.svelte.js', () => ({ isReload: () => false }))
-const { afterBurst, countsMoved, latest, listDone, savedTile, withSummary } = await import('../src/lib/galleryCounts.js')
+const { afterBurst, countsMoved, latest, listDone, owed, savedTile, withSummary } = await import('../src/lib/galleryCounts.js')
 const { matchesLabel } = await import('../src/lib/layers.js')
 
 describe('a save', () => {
@@ -38,8 +38,27 @@ describe('a save', () => {
     expect(countsMoved(crop, { ...crop, style: 'regular', label: '假' })).toBe('totals')
   })
   it('leaves a list its last page: what ends it is the page that names no next', () => {
-    // 61 glyphs, 60 of them read; one relabelled makes the count 60.
-    expect([listDone(true, '0S0.1.a'), listDone(true, null), listDone(false, null)]).toEqual([false, true, false])
+    // 61 glyphs, 60 of them read; one moved out of the list makes the count 60, and a page is still to come.
+    expect([listDone(true, '0S0.1.a', 60), listDone(true, null, 60), listDone(false, null)]).toEqual([false, true, false])
+    // A variants widening lists no more than its cap, whatever cursor the last page names.
+    expect([listDone(true, '0S0.1.a', 1980, 2000), listDone(true, '0S0.1.a', 2000, 2000)]).toEqual([false, true])
+  })
+  it('stays due until a read of it is taken', () => {
+    const totals = owed()
+    expect(totals.begin().due).toBe(false)
+    totals.mark()
+    // A style's save begins another read before the first is in; the first is dropped, and the second owes all.
+    const first = totals.begin(), second = totals.begin()
+    expect([first.due, second.due]).toEqual([true, true])
+    // It fails: the next read still owes it.
+    const third = totals.begin()
+    expect(third.due).toBe(true)
+    // What moves while it is read is the next one's.
+    totals.mark(); third.done()
+    const fourth = totals.begin()
+    expect(fourth.due).toBe(true)
+    fourth.done(); first.done()
+    expect(totals.begin().due).toBe(false)
   })
   it('has the counts of the last read begun, in whatever order reads come in', async () => {
     const begin = latest(), answers = []

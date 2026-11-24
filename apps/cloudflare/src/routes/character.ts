@@ -16,7 +16,7 @@ import { Problem } from '../busy';
 import { idsCharacter, isSeal } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
-import { addCrops, fileClaims, soleForms, type Rows } from '../graphemeTotals';
+import { WIDENED_CAP, addCrops, fileClaims, soleForms, type Rows } from '../graphemeTotals';
 import { drawnForm, drawnFormsOf } from '../representation';
 import { WRITERS, WRITER_SOURCES } from '../writtenWithData';
 
@@ -415,9 +415,6 @@ function styleGroup(q: URLSearchParams): StyleGroup | null {
   if (!Object.hasOwn(STYLE_GROUPS, value)) throw new Problem(422, 'Invalid style.');
   return value as StyleGroup;
 }
-// A widened gallery counts no further than this: the variants of a common character can hold a hundred
-// thousand corpus glyphs.
-const WIDENED_CAP = 2000;
 // A gallery pages by cursor (`after`, the `next` of the page before). A page addressed by offset comes
 // from a tab opened before the change and is answered with a prompt to reload it.
 export const STALE_PAGE = 'This page is from before an update. Reload it.';

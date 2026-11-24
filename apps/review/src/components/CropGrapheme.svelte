@@ -38,6 +38,8 @@
   // A pick from search finds its grapheme first; nothing else saves until it has. A save shuts the picker.
   async function save(key, picked = null) {
     if (disabled || pending) return
+    // The crop the claim is made of, which the answer is compared with; the dialog may show another by then.
+    const crop = item
     pending = true; working?.(true); error = ''
     let done = false
     try {
@@ -47,7 +49,7 @@
         if (mine(head.code_point)) return
         key = head.code_point
       }
-      saved?.(await setGrapheme(item, key, ready ? offered.own?.code_point : null))
+      saved?.(await setGrapheme(crop, key, ready ? offered.own?.code_point : null), crop)
       done = true
     } catch (e) { error = e.message }
     finally { pending = false; working?.(false); if (done) close() }

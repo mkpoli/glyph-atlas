@@ -4,6 +4,10 @@
 // character and the list of every grapheme count through here, so a grapheme has one total.
 import type { FiledAt } from './atlas3Gallery';
 
+/** A gallery widened to a character's variants counts and lists no further than this in each of its lists:
+ *  the variants of a common character can hold a hundred thousand corpus glyphs. */
+export const WIDENED_CAP = 2000;
+
 /** The crops of one character filed under one grapheme, '' for the crops with no character; `claimed`
  *  where a claim filed some of them in or away. */
 export type Row = { label: string; grapheme: string; collected: number; corpus: number; claimed?: true };

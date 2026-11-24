@@ -26,9 +26,17 @@ export function countsMoved(before, after) {
 export const withSummary = (data, summary, gallery) => ({ ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents,
   ...(gallery ? {} : { total: summary.total, available: summary.available }), reported_count: summary.reported_count, withheld_count: summary.withheld_count })
 
-/** Whether a list of crops read a page at a time has no more to bring: its last page named no next one. A
- *  count says nothing of it, as a save moves the count and not the pages. */
-export const listDone = (answered, after) => answered && !after
+/** Whether a list of crops read a page at a time has no more to bring: its last page named no next one, or
+ *  it holds as many as it may. Its count says nothing of it, as a save moves the count and not the pages. */
+export const listDone = (answered, after, held = 0, cap = Infinity) => answered && (!after || held >= cap)
+
+/** What has moved and not been read again. `begin` starts a read: whether something is `due`, and `done`,
+ *  by which what had moved as it began is read. A read that failed, or that a later one superseded, leaves
+ *  it due. */
+export function owed() {
+  let moved = 0, read = 0
+  return { mark() { moved += 1 }, begin() { const at = moved; return { due: at > read, done() { read = Math.max(read, at) } } } }
+}
 
 /** Reads of one thing, of which only the latest begun is taken: `begin` answers whether it still is. */
 export function latest() {
