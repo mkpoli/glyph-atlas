@@ -239,6 +239,10 @@ its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/re
 `publish.py` runs it under its lock after every publish that sent something, so the counts follow each
 publish. It refuses while a publish is unfinished.
 
+The answers, and every publish that writes them, come from a checkout at f69ab7a6 or later. `filed` in
+`corpus.json.gz` counts the crops with no character under their family; an older checkout publishes
+answers without it, and the Worker then reads the 256 count shards in its place.
+
 The local copy takes the site's changes before the answers are written. The Worker lists every crop
 whose row it changes in `touched`, with the generation of the change (migration 0018). The bump is
 one file D1 applies whole (`out/pub/pointer-<pub>/bump.sql`): it stamps the publication, bumps the

@@ -248,6 +248,8 @@ def test_browse_corpus_and_book_counts_name_characters_by_grapheme(corpus_layout
                                       [char["か"], production["unknown"], pending, 1, 1],
                                       [char["한"], production["printed"], pending, 1, 1]])
     assert glyphs["chars"][str(char["한"])] == ["한", "U+D55C"]
+    # The crops with no character by family are stated even where there are none: a missing list is no empty one.
+    assert glyphs["filed"] == []
     assert answer(root, "books.json.gz")["books"] == {str(book["book:a"]): [2, 0], str(book["book:b"]): [1, 0],
                                                     str(book["codh:b"]): [0, 3], str(book["kor:b"]): [0, 1]}
 
