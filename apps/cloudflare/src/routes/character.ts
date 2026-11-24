@@ -218,33 +218,25 @@ function derivedOf(object: CharacterObject) {
   });
 }
 const sum = (cells: Cell[] | undefined, kind: number) => (cells ?? []).filter(c => c.kind === kind).reduce((n, c) => n + c.n, 0);
-/** The forms a family carries through a reviewer's `written_for` claim: shapes Unicode lacks, written as
- *  an IDS, and registered figures, written as a variation sequence (突󠄃), which no character card holds. Each counts the family's crops a person marked with it, here
- *  and in the corpus; a form already on the card as a member or a static variant is not listed twice. */
-export const writtenFormsQuery = () => `SELECT c.subject AS form,r.scheme,r.value FROM current_claims c
-  JOIN forms f ON f.id=c.subject JOIN representations r ON r.id=f.anchor
-  WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme IN ('ids','ivs')
-    AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value`;
-export const writtenFormUseQuery = () => `SELECT c.object AS form,
-  sum(CASE WHEN k.kind=0 THEN 1 ELSE 0 END) AS count,sum(CASE WHEN k.kind=1 THEN 1 ELSE 0 END) AS corpus_count
-  FROM current_claims c JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
-  WHERE c.predicate='has_form' AND c.scope='' AND c.slot='' AND c.status IN ('asserted','accepted','adjudicated')
-    AND c.cut=k.cut+(r.x IS NOT NULL) AND c.object IN (SELECT value FROM json_each(?1))
-    AND (k.char IN (SELECT value FROM json_each(?2)) OR k.family IN (SELECT value FROM json_each(?2)))
-  GROUP BY c.object`;
-async function writtenForms(env: Env, card: Card, rows: Json[]) {
-  const head = card.detail.grapheme?.code_point ?? card.detail.code_point;
-  const family = await familyOf(env, card);
-  if (!head || !family.members.length) return [];
-  const linked = (await env.ATLAS.prepare(writtenFormsQuery()).bind(head).all<{ form: string; scheme: string; value: string }>()).results;
+/** The forms a family's crops carry that no character card holds: shapes Unicode lacks, written as an
+ *  IDS, and registered figures, written as a variation sequence (突󠄃), each with the family's crops and
+ *  corpus glyphs claimed to have it on their effective cut (migration 0020). `?1` are the family's
+ *  members; a grapheme claim files a crop elsewhere (`?2`) or here from another family (`?3`). */
+export const carriedFormsQuery = () => `SELECT c.form,r.scheme,r.value,sum(k.kind=0) AS count,sum(k.kind=1) AS corpus_count
+  FROM (SELECT form,crop,cut FROM carried_forms WHERE grapheme IN (SELECT value FROM json_each(?1)) AND crop NOT IN (SELECT value FROM json_each(?2))
+    UNION ALL SELECT form,crop,cut FROM carried_forms WHERE crop IN (SELECT value FROM json_each(?3))) c
+  CROSS JOIN crops k ON k.id=c.crop LEFT JOIN reviews v ON v.crop=k.id JOIN forms f ON f.id=c.form JOIN representations r ON r.id=f.anchor
+  WHERE k.kind<2 AND c.cut=k.cut+(v.x IS NOT NULL) GROUP BY c.form`;
+async function carriedForms(env: Env, card: Card, rows: Json[], claimed: Claimed) {
+  const { members } = await familyOf(env, card);
+  if (!members.length) return [];
+  const { away, here } = claimsAt(await claimed(), cp(card.data.grapheme?.char ?? card.data.char), members);
+  const carried = (await env.ATLAS.prepare(carriedFormsQuery()).bind(JSON.stringify(members), JSON.stringify(away.map(r => r.id)), JSON.stringify(here.map(r => r.id)))
+    .all<{ form: string; scheme: string; value: string; count: number; corpus_count: number }>()).results;
+  // A form already on the card as a member or a static variant is not listed twice.
   const known = new Set([...(card.detail.grapheme?.members ?? []).map((m: Json) => m.char), ...rows.map(r => r.char)]);
-  const fresh = linked.filter(row => !known.has(row.value));
-  if (!fresh.length) return [];
-  const used = (await env.ATLAS.prepare(writtenFormUseQuery()).bind(JSON.stringify(fresh.map(row => row.form)), JSON.stringify(family.members))
-    .all<{ form: string; count: number; corpus_count: number }>()).results;
-  const counts = new Map(used.map(row => [row.form, row]));
-  return fresh.map(row => ({ char: row.value, code_point: null, form: row.form, scheme: row.scheme,
-    count: counts.get(row.form)?.count ?? 0, corpus_count: counts.get(row.form)?.corpus_count ?? 0 }))
+  return carried.filter(row => !known.has(row.value))
+    .map(({ value, ...row }) => ({ char: value, code_point: null, form: row.form, scheme: row.scheme, count: row.count, corpus_count: row.corpus_count }))
     .sort((a, b) => (b.count + b.corpus_count) - (a.count + a.corpus_count) || (a.char < b.char ? -1 : a.char > b.char ? 1 : 0));
 }
 /** The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
@@ -298,10 +290,10 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const rows = [...shown, ...lent.map(w => ({ char: w.char, code_point: cp(w.char), widens: false, written: true, relations: w.relations }))]
       .map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
         count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
-    const forms = await writtenForms(env, card, rows);
-    // A derived form a reviewer said is written for the family is one of its 字体, and is predicted no more.
-    const said = new Set(forms.map(form => form.char));
-    const predicted = derived.filter(entry => !said.has(entry.char))
+    const forms = await carriedForms(env, card, rows, claimed);
+    // A derived form a crop of the family carries is one of its 字体, and is predicted no more.
+    const carried = new Set(forms.map(form => form.char));
+    const predicted = derived.filter(entry => !carried.has(entry.char))
       .map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const used = new Set(rows.flatMap(row => row.sources));
     // The grapheme a character of another script also writes is cited on its own card too.

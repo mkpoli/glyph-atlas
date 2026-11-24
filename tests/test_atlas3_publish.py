@@ -1397,8 +1397,8 @@ def test_a_build_files_a_glyph_with_no_character_under_its_family(layout, monkey
 def test_a_layout_without_the_family_column_is_refused_by_a_publish(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
-    local.executescript("".join(f"DROP INDEX {name};" for (name,) in local.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND sql LIKE '%family%'").fetchall()) + "ALTER TABLE crops DROP COLUMN family;")
+    local.executescript("".join(f"DROP {kind} {name};" for kind, name in local.execute(
+        "SELECT type,name FROM sqlite_master WHERE type IN ('index','trigger') AND sql LIKE '%family%' ORDER BY type DESC").fetchall()) + "ALTER TABLE crops DROP COLUMN family;")
     local.close()
     with pytest.raises(SystemExit, match="fill.py"):
         run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))
