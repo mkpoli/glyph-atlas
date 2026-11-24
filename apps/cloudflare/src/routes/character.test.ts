@@ -160,7 +160,7 @@ beforeAll(() => {
     derived: [['⿰日寺', [[['日', '目']]]]], substitutions: [['日', '目', 4, [{ a: '昨', b: '眲', sources: ['src3'] }]]],
     writes: [['旹', 1], ['峕', 1]], writers: [['时', 1]], ids: { 時: G.時, 旹: G.旹, 峕: G.峕, 时: G.时 } }));
   objects.set('v3/reference/char/U+306D.json.gz', json({ grapheme: G.ね, data: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね' } }),
-    detail: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね' }, visual_analysis: { status: 'ready', groups: [{ code: 1, label: 'Group 1', count: 2,
+    detail: card('ね', { grapheme: { code_point: 'U+306D', char: 'ね', members: [{ code_point: 'U+306D', char: 'ね' }, { code_point: 'U+1B092', char: '𛂒' }] }, visual_analysis: { status: 'ready', groups: [{ code: 1, label: 'Group 1', count: 2,
       representatives: [{ crop: id(filed[0]), source_label: 'ね' }], anchors: [{ crop: id(filed[1]), distance: 0.1 }] }] } }),
     variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+1B092.json.gz', json({ grapheme: G['𛂒'], data: card('𛂒', { grapheme: { code_point: 'U+306D', char: 'ね' } }),
@@ -223,6 +223,12 @@ describe('a character page', () => {
     expect(body.variants.writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 1, 0]]);
     expect(body.words.items[0].spellings.map((s: any) => [s.spelling, s.current])).toEqual([['時', true], ['刻', false]]);
     expect(body.words.sources).toEqual({ dict: 'A dictionary' });
+  });
+
+  it('counts in a grapheme the crops filed under it with no character', async () => {
+    const { body } = await get('/layers/characters/U+306D');
+    expect(body.grapheme.members.map((m: any) => [m.char, m.count, m.corpus_count])).toEqual([['ね', 0, 0], ['𛂒', 0, 1]]);
+    expect([body.grapheme.count, body.grapheme.corpus_count]).toEqual([0, 4]);
   });
 
   it('answers 404 for a character no card has, and a card for a description sequence', async () => {

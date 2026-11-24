@@ -313,8 +313,8 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
 }
 
 /** A family's own forms (the card's `grapheme.members`), by character, each with the crops filed under
- *  it here and the corpus glyphs recorded for it, and the family's totals: the 字体 row states each
- *  form's images, the 字種 row the grapheme's. A member the card's object names has an id already; the
+ *  it here and the corpus glyphs recorded for it, and the family's totals, the crops filed under it with
+ *  no character among them: the 字体 row states each form's images, the 字種 row the grapheme's. A member the card's object names has an id already; the
  *  rest are looked up in `graphemes`. */
 async function familyUsage(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string) {
   const members: { char: string }[] = card.detail.grapheme?.members ?? [];
@@ -325,10 +325,10 @@ async function familyUsage(env: Env, ctx: ExecutionContext, origin: string, card
     const missing = members.map(({ char }) => char).filter(char => !ids.has(char));
     if (missing.length) for (const row of (await env.ATLAS.prepare(graphemeIdsQuery()).bind(JSON.stringify(missing)).all<{ id: number; text: string }>()).results)
       ids.set(row.text, row.id);
-    const counts = await characterCounts(env, [...ids.values()]);
+    const [counts, filed] = await Promise.all([characterCounts(env, [...ids.values()]), filedCounts(env, [...ids.values()])]);
     const count = (char: string, kind: number) => ids.has(char) ? sum(counts.get(ids.get(char)!), kind) : 0;
     const forms = Object.fromEntries(members.map(({ char }) => [char, { count: count(char, 0), corpus_count: count(char, 1) }]));
-    const total = { count: 0, corpus_count: 0 };
+    const unnamed = [...filed.values()].flat(), total = { count: sum(unnamed, 0), corpus_count: sum(unnamed, 1) };
     for (const form of Object.values(forms)) { total.count += form.count; total.corpus_count += form.corpus_count }
     return { forms, total };
   });
