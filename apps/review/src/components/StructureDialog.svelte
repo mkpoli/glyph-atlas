@@ -16,7 +16,7 @@
   import FormText from './FormText.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { setStructure, setFold } from '../lib/cropForms.js'
-  import { composable, NAMES } from '../lib/structures.js'
+  import { composable, NAMES, proposed } from '../lib/structures.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -27,7 +27,7 @@
   const id = $props.id()
   let dialog, board = $state(null)
   let known = $state(untrack(() => opened)), added = $state([]), query = $state('')
-  // The trays the board has shown, and which of them a reader folded into which (`folds`, by the
+  // The trays the board has shown, and which of them stand under which, folded by a reader or as a layout of it (`folds`, by the
   // folded tray's id: `{ head, by }`). What is held is a form (`held`, its text) or a tray (`lifted`,
   // its id), and `over` is the tray aimed at.
   let trays = $state([]), folds = $state(new Map()), held = $state(null), lifted = $state(null), over = $state(null), dragging = $state(false)
@@ -57,6 +57,9 @@
       home.set(form.char, tray.id)
       const [rank, target] = naming(form)
       if (rank > tray.rank) Object.assign(tray, { rank, target })
+      // A tray that only layouts of it stand under (⿺辶禺 by 𽓻 alone) is named by one of them.
+      const head = stands.part && !stands.part.by?.length && stands.label.endsWith(stands.part.label.slice(2)) && trayOf(stands.id, stands.label)
+      if (head && !head.rank) Object.assign(head, { rank: 0.5, target: { ...target, head: true } })
     }
     // A tray with no form left on the board keeps the fold it was last seen in, led on to where that ends now.
     for (const [part, link] of folds) {
@@ -91,8 +94,10 @@
   // every tray that is not itself folded, but its own. Either goes out of the reader's own word for it.
   const OUT = 'out'
   const out = $derived(held && mineOf(held) ? t('structure.take', { form: held }) : lifted && foldedByMe(lifted) ? t('structure.split', { structure: labelOf(lifted) }) : '')
+  // A proposed form can be filed where it stands, which confirms it.
+  const proposedHere = char => known.has(char) && proposed(char, known.get(char).by)
   const targets = $derived.by(() => {
-    const open = held ? trays.filter(tray => tray.id !== innerOf(held))
+    const open = held ? trays.filter(tray => tray.id !== innerOf(held) || proposedHere(held))
       : lifted ? trays.filter(tray => tray.id !== lifted && !folds.has(tray.id) && tray.id !== headOf(lifted)) : []
     return [...open.map(tray => tray.id), ...(out ? [OUT] : [])]
   })
@@ -131,13 +136,15 @@
     try { await refresh(listed.map(form => form.char)) } catch (failure) { if (saved) error = failure.message }
     busy = null
     const stood = mark.tray ? headOf(mark.tray) : innerOf(mark)
-    if (saved && to && stood !== to) notice = t('structure.disputed', { item: item() })
+    // A tray split off a fold that is a layout of another 構形 stands under that one, with nobody named.
+    const laid = mark.tray && folds.has(mark.tray) && !folds.get(mark.tray).by.length
+    if (saved && to && stood !== to && !laid) notice = t('structure.disputed', { item: item() })
     said = [...new Set([item(), labelOf(stood)])].filter(Boolean).join(' · ')
     await tick()
     focus()
   }
   function place(char, tray) {
-    if (innerOf(char) === tray.id) return
+    if (innerOf(char) === tray.id && !proposedHere(char)) return
     if (mineOf(char) && home.get(char) === tray.id) return takeOut(char)
     return commit(char, tray.id, () => { known = new Map([...known, [char, standsIn(tray.id, [me])]]); landed = tray.id }, () => setStructure(char, tray.target))
   }
@@ -294,7 +301,7 @@
     chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     chip?.focus({ preventScroll: true })
   }
-  const titleOf = form => form.regions ? `${form.char} ${form.regions}` : form.char
+  const titleOf = form => form.regions ? `${form.char} ${form.regions}` : proposedHere(form.char) ? `${form.char} · ${t('chips.derived')}` : form.char
   function cancel(event) { if (held || lifted) { event.preventDefault(); release() } }
   function closed() { if (wrote) changed(); close() }
   onMount(() => {
@@ -312,7 +319,7 @@
     aria-disabled={!me || Boolean(busy)} title={titleOf(form)} aria-label={titleOf(form)}
     onpointerdown={event => down(event, 'form', form.char)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
     onclick={event => tap(event, 'form', form.char)} onkeydown={event => keys(event, 'form', form.char)}>
-    <FormText text={form.char} script={form.script} lang={form.lang} />
+    <FormText text={form.char} script={form.script} lang={form.lang} />{#if proposedHere(form.char)}<sup aria-hidden="true">*</sup>{/if}
   </button>{#if mine}<button type="button" class="take" disabled={Boolean(busy)} aria-label={t('structure.take', { form: form.char })} title={t('structure.take', { form: form.char })}
     onclick={event => { event.stopPropagation(); takeOut(form.char) }}>×</button>{/if}
 {/snippet}
@@ -421,6 +428,7 @@
   .tray.landed{animation:landed .7s ease-out}
   @keyframes landed{from{background:var(--accent-light);box-shadow:0 0 0 2px var(--accent)}}
   .token{display:inline-flex;align-items:stretch;border-radius:7px}
+  .piece sup{font-size:11px;line-height:1;color:var(--muted);margin-left:-4px;align-self:flex-start}
   .piece{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;cursor:grab;user-select:none;-webkit-user-select:none;
     font-family:var(--char-font)}
   .piece[aria-disabled="true"]{cursor:default}

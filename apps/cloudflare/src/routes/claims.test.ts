@@ -341,6 +341,8 @@ describe('a form filed under a structure', () => {
     const wind = await structureId('⿱山風', SOURCE.scheme, SOURCE.policy);
     const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
       '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']], '嵐': [['⿱山風'], null, [wind, '⿱山風']],
+      // The seal character of 遇.
+      '𽓻': [[], null, [await structureId('⿰辵禺', SOURCE.scheme, SOURCE.policy), '⿰辵禺']],
       // 嶺's regional shapes are spellings of its structure, even the one that is 峯's own.
       '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J' }], [beside, '⿰山夆']],
       // A description the load read: the form's own, which spells 峰 with another drawing of 夆.
@@ -389,6 +391,14 @@ describe('a form filed under a structure', () => {
     expect(await say('⿰山夅')).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: [] });
     const both = (await say('峰\u{E0100}', false, 'other')).structures;
     expect(both.map((v: any) => [v.structure, [...v.by].sort()])).toEqual([[beside, ['other', 'reader']]]);
+  });
+
+  it('names by a layout the structure it stands under, which no claim has named', async () => {
+    const { env, tools, form } = await forms();
+    const name = (char: string) => setStructure(env, { id: crypto.randomUUID(), char, head: true }, form, 'reader', tools);
+    // structures.for_character("遇").id
+    expect((await name('𽓻')).structures).toEqual([{ structure: 'st:8809517f55e2790006eb57615ce80656', label: '⿺辶禺', by: ['reader'] }]);
+    await expect(name('峰')).rejects.toThrow('422 峰 is no layout of another structure.');
   });
 
   it('takes a claim back by the id of its structure, and refuses one id for two requests', async () => {

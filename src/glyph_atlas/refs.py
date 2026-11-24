@@ -496,6 +496,50 @@ def descriptions() -> han_component_variants.Descriptions:
 STRUCTURE_CHARS = 48
 
 
+def _standing(named: Sequence[Mapping[str, Any]], folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None,
+              ) -> Callable[[Mapping[str, Any]], dict[str, Any] | None]:
+    """Where each named structure stands, as `{head, by}` or None for one that stands on its own: at the
+    end of the readers' folds (`folds`) and of the layouts (`structures.head`), a reader's fold first. A
+    layout whose head a reader folded into it stands on its own. The Worker's `standingOf` answers the
+    same."""
+    from . import structures
+
+    heads: dict[str, dict[str, str]] = {}
+    folded: dict[str, Mapping[str, Any]] = {}
+    asked: set[str] = set()
+    reading: list[Mapping[str, Any]] = list(named)
+    while reading:
+        for structure in reading:
+            if found := structures.head(structure["label"]):
+                heads[structure["id"]] = {"id": found[0], "label": found[1]}
+        wanted = list(dict.fromkeys(id_ for structure in reading for id_ in (structure["id"], heads.get(structure["id"], structure)["id"])
+                                    if id_ not in asked))
+        asked.update(wanted)
+        more = folds(wanted) if folds and wanted else {}
+        folded.update(more)
+        reading = [fold["head"] for fold in more.values() if fold["head"]["id"] not in asked]
+
+    def standing(structure: Mapping[str, Any]) -> dict[str, Any] | None:
+        path: list[Mapping[str, Any]] = [structure]
+        while True:
+            at = path[-1]["id"]
+            following: Mapping[str, Any] | None = folded[at]["head"] if at in folded else heads.get(at)
+            if following and at not in folded and at in folded.get(following["id"], {}).get("path", ()):
+                following = None
+            if following is None:
+                break
+            seen = [one["id"] for one in path]
+            if following["id"] in seen:
+                path.append(min(path[seen.index(following["id"]):], key=lambda one: one["id"]))
+                break
+            path.append(following)
+        if path[-1]["id"] == structure["id"]:
+            return None
+        return {"head": path[-1], "by": folded[structure["id"]]["by"] if structure["id"] in folded else []}
+
+    return standing
+
+
 def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
                      folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None,
                      of: str = "") -> dict[str, Any]:
@@ -505,8 +549,9 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
     and the group names who says so; with no claim it stands under the one its description gives, and a
     regional shape of `of` under that character's. A
     structure a reader folded into another (`folds`, by id: `{head, by}`) stands under that one, and
-    the group lists it in `folded` with the names built as it. A name with no structure is in no
-    group. `filed` lists the other structures a name was filed under."""
+    the group lists it in `folded` with the names built as it. So does a structure that is another
+    layout of one (`structures.head`: ⿰辵禺 under ⿺辶禺), with nobody in `by`, unless a reader folded
+    that one under it. A name with no structure is in no group. `filed` lists the other structures a name was filed under."""
     from . import structures
     from .representation import written
 
@@ -526,15 +571,14 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
             continue
         if structure:
             built[name] = {"id": structure.id, "label": structure.label}
-    others = [other["id"] for rest in filed.values() for other in rest]
-    folded = folds(list(dict.fromkeys([*(value["id"] for value in built.values()), *others]))) if folds and built else {}
+    standing = _standing([*built.values(), *(other for rest in filed.values() for other in rest)], folds)
     for rest in filed.values():
         for other in rest:
-            if other["id"] in folded:
-                other["head"] = folded[other["id"]]["head"]["id"]
+            if fold := standing(other):
+                other["head"] = fold["head"]["id"]
     groups: dict[str, dict[str, Any]] = {}
     for name, structure in built.items():
-        fold = folded.get(structure["id"])
+        fold = standing(structure)
         head = fold["head"] if fold else structure
         group = groups.setdefault(head["id"], {"id": head["id"], "label": head["label"], "chars": []})
         group["chars"].append(name)

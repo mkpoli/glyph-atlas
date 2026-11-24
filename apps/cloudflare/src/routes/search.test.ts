@@ -1,3 +1,4 @@
+import { structureId } from './claims';
 import { Database } from 'bun:sqlite';
 import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -100,6 +101,8 @@ const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '�
 const structures: [string, string[], { text: string; regions: string }[] | null, [string, string]?][] = [
   ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }], ['st:00000000000000000000000000000001', '⿰水骨']],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
+  ['遇', ['⿺辶禺'], null, ['st:8809517f55e2790006eb57615ce80656', '⿺辶禺']],
+  ['𽓻', [], null, ['st:ad2b2b78de86a82256b5b47ad68053dd', '⿰辵禺']],
   ['磆', ['⿰石骨'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
   // A description the site names a form by, kept under its own text.
   ['⿰氵⿵冖月', ['⿰氵⿵冖月'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
@@ -186,6 +189,7 @@ for (const [char, sequences, shapes, structure] of structures) {
 // Component lists as reference.component_list writes them.
 const byComponent = new Map<string, Row[]>();
 for (const row of rows) byComponent.set(row[0], [...(byComponent.get(row[0]) ?? []), row]);
+objects['v3/reference/structure.json.gz'] = { scheme: 'babelstone-ids', version: '2025-06-27', policy: 'structure-v1' };
 objects['v3/reference/components/names.json.gz'] = { same: [...byComponent.keys()].join(''), other: { '⺡': '氵' } };
 for (const [c, list] of byComponent) {
   const groups: [number, number, number[], number[]][] = [];
@@ -297,6 +301,30 @@ describe("the IDS editor's structure", () => {
     expect([...edge.keys()].some(key => key.startsWith('https://new.test/layers/ids?c=%E6%BB%91&v='))).toBe(true);
     await expect(idsOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name one character.');
     await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
+  });
+
+  it('groups a structure under the one it is another layout of, unless a reader folded that one into it', async () => {
+    const meet = 'st:8809517f55e2790006eb57615ce80656', beside = 'st:ad2b2b78de86a82256b5b47ad68053dd', other = 'st:00000000000000000000000000000009', at = '2026-11-24T00:00:00Z';
+    const part = { id: beside, label: '⿰辵禺', by: [], chars: ['𽓻'] };
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).toEqual({ items: [{ id: meet, label: '⿺辶禺', chars: ['遇', '𽓻'], folded: [part] }] });
+    expect((await idsOf(newEnv, ctx, 'https://new.test', '𽓻') as any).structure).toEqual({ id: beside, label: '⿰辵禺' });
+    for (const [id, label] of [[meet, '⿺辶禺'], [beside, '⿰辵禺'], [other, '骨']])
+      atlasDb.query("INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,'babelstone-ids','v','structure-v1','u',?)").run(id, label, at);
+    const fold = (from: string, into: string) => atlasDb.query("INSERT OR REPLACE INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]',?,'ledger-r1',?)")
+      .run(from, into, JSON.stringify([{ asserted_by: 'reader', standing: true }]), at);
+    fold(meet, other);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).toEqual({ items: [{ id: other, label: '骨', chars: ['遇', '𽓻'],
+      folded: [{ id: meet, label: '⿺辶禺', by: ['reader'], chars: ['遇'] }, part] }] });
+    // What stands there does not depend on what else is asked for, and folds and layouts lead to one end.
+    expect((await structuresOf(newEnv, ctx, 'https://new.test', '𽓻')).items).toEqual([{ id: other, label: '骨', chars: ['𽓻'], folded: [part] }]);
+    const ji = await structureId('⿰辵丌', 'babelstone-ids', 'structure-v1'), end = await structureId('⿺辶丌', 'babelstone-ids', 'structure-v1');
+    atlasDb.query("INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,'⿰辵丌','babelstone-ids','v','structure-v1','u',?)").run(ji, at);
+    fold(meet, ji);
+    expect((await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).items.map(group => [group.id, group.label, group.chars])).toEqual([[end, '⿺辶丌', ['遇', '𽓻']]]);
+    fold(meet, beside);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).toEqual({ items: [{ id: beside, label: '⿰辵禺', chars: ['遇', '𽓻'],
+      folded: [{ id: meet, label: '⿺辶禺', by: ['reader'], chars: ['遇'] }] }] });
+    atlasDb.run("DELETE FROM current_claims WHERE predicate='folds_into'");
   });
 
   it('groups the characters and descriptions named by the structure they share and leaves out one with none', async () => {

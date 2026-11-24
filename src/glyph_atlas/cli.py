@@ -158,8 +158,9 @@ def structure(
             typer.echo(f"{value} is not in the character layer")
             continue
         found = structures.for_character(row.char)
-        typer.echo(f"{row.code_point} {row.char}  {found.label}  {found.id}" if found
-                   else f"{row.code_point} {row.char}  no description")
+        proposed = "  (proposed)" if ord(row.char[0]) in structures.SEAL else ""
+        typer.echo(f"{row.code_point} {row.char}  {found.label}  {found.id}{proposed}" if found
+                   else f"{row.code_point} {row.char}  no structure")
 
 
 @app.command()

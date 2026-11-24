@@ -22,7 +22,8 @@
   import IdsComposer from './IdsComposer.svelte'
   import StructureDialog from './StructureDialog.svelte'
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
-  import { standing } from '../lib/structures.js'
+  import { proposed, standing } from '../lib/structures.js'
+  import { formsOf } from '../lib/formOffers.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -64,30 +65,39 @@
   })
   // The 構形 of the crop's own form, which Quick Review's bar leaves off.
   const ownStructure = $derived(structureOf.get(current) ?? null)
-  // A list's forms under the 構形 each is built as, a structure where its first form stands; the forms
+  // A list's forms under the 構形 each stands under, those built as a 構形 folded into it (⿰辵禺 under
+  // ⿺辶禺) in a block of their own, a structure where its first form stands; the forms
   // with none stand together after them, uncaptioned. The grapheme's own forms come first; a related
   // character joins a 構形 of theirs where it shares one, and otherwise stands after all of them, so
   // the number keys reach the grapheme's forms before any related character.
   const relatedChars = $derived(new Set(listed.related.map(form => form.char)))
   const grouped = list => {
+    const own = ownStructure && (ownStructure.part ?? ownStructure).id
+    const block = ({ id, label }) => ({ id, label, own: id === own, forms: [] })
     const groups = new Map(), loose = [], later = new Map(), looseLater = []
     const place = (form, into, rest) => {
       const structure = structureOf.get(form.char)
       if (!structure) { rest.push(form); return }
-      const home = groups.get(structure.id) ?? into.get(structure.id)
-      if (home) { home.forms.push(form); return }
-      into.set(structure.id, { id: structure.id, label: structure.label, own: structure.id === ownStructure?.id, forms: [form] })
+      form = { ...form, proposed: proposed(form.char, structure.by) }
+      let home = groups.get(structure.id) ?? into.get(structure.id)
+      if (!home) into.set(structure.id, home = { id: structure.id, label: structure.label, blocks: [block(structure)] })
+      let built = home.blocks.find(one => one.id === (structure.part ?? structure).id)
+      if (!built) home.blocks.push(built = block(structure.part))
+      built.forms.push(form)
     }
     for (const form of list) if (!relatedChars.has(form.char)) place(form, groups, loose)
     for (const form of list) if (relatedChars.has(form.char)) place(form, later, looseLater)
-    return [...groups.values(), ...(loose.length ? [{ id: '', label: '', own: false, forms: loose }] : []),
-      ...later.values(), ...(looseLater.length ? [{ id: ' related', label: '', own: false, forms: looseLater }] : [])]
+    // A layout with a form of the grapheme stands before one with related characters alone.
+    const rank = built => built.forms.length && built.forms.every(form => relatedChars.has(form.char)) ? 1 : 0
+    for (const group of groups.values()) group.blocks.sort((a, b) => rank(a) - rank(b))
+    const plain = (id, forms) => forms.length ? [{ id, label: '', blocks: [{ id, label: '', own: false, forms }] }] : []
+    return [...groups.values(), ...plain('', loose), ...later.values(), ...plain(' related', looseLater)]
   }
   const me = $derived(signedInUser()?.id ?? null)
   const barGroups = $derived(grouped(bar))
   const captioned = $derived(barGroups.some(group => group.label))
   // The bar's forms as they stand, which the number keys follow.
-  const ordered = $derived(barGroups.flatMap(group => group.forms))
+  const ordered = $derived(barGroups.flatMap(formsOf))
   // The crop's own form as the site holds it: one value, and not disputed. A described form or a
   // registered figure (a variation sequence) can be added to the grapheme's 字体 here; encoded
   // characters already have a card row of their own. A figure the bar offers from the IVD is not on
@@ -162,7 +172,8 @@
     : item.regions ? `${item.char}\n${item.regions}` : item.code_point ?? item.char
   // A registered figure on the bar names its MJ figure, and a regional shape its regions, since either
   // can look like the character itself.
-  const chipTitle = char => { const form = bar.find(chip => chip.char === char); return form?.mj ? `${char} ${form.mj}` : form?.regions ? `${char} ${form.regions}` : char }
+  const chipTitle = char => { const form = bar.find(chip => chip.char === char); return form?.mj ? `${char} ${form.mj}` : form?.regions ? `${char} ${form.regions}`
+    : proposed(char, structureOf.get(char)?.by) && structureOf.has(char) ? `${char} · ${t('chips.derived')}` : char }
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
     if (disabled || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
@@ -186,7 +197,7 @@
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
   </div>
   {#if others && ownStructure}
-    <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span lang="zh">{ownStructure.label}</span></div>
+    <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span lang="zh">{(ownStructure.part ?? ownStructure).label}{#if proposed(current, ownStructure.by)}<sup title={t('chips.derived')}>*</sup>{/if}</span></div>
   {/if}
   {#if me && !others && captioned}
     <button type="button" class="form-arrange" {disabled} aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>
@@ -240,6 +251,7 @@
   .form-row.captioned .form-add{margin-top:17px}
   .form-row.captioned :global(.copy-value){align-self:flex-end;margin-bottom:8px}
   .form-own{display:flex;align-items:baseline;gap:8px;font-size:14px;line-height:22px}
+  .form-own sup{font-size:11px;line-height:1;color:var(--muted);margin-left:2px}
   .form-own-label{font-size:11px;color:var(--muted)}
   .crop-form :global(.form-chips){flex:1 1 0}
   .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}

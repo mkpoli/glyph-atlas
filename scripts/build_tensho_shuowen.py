@@ -3,8 +3,8 @@
 Book TE00039 of the 篆書字体データセット cuts the seal forms of the 陳昌治 edition of 説文解字 (同治十二年
 刊), the head of each entry and the 或体 below it, and files each under a Han 親字. Unicode 18.0
 encodes the small seal characters of the same edition one by one: `SealSources.txt` gives each its
-place in the edition (`kSEAL_CCZSrc`, `C-00001` onwards, in the order of the book) and the Han
-character that transcribes its structure (`kSEAL_MCJK`).
+place in the edition (`kSEAL_CCZSrc`, `C-00001` onwards, in the order of the book) and a Han
+character as its modern equivalent (`kSEAL_MCJK`).
 
 The crops are read in the order of the book: by page of the 東方學デジタル圖書館 facsimile, by
 column from the right, down each column. That sequence and the sequence of seal characters are then
