@@ -4,7 +4,7 @@
     python3 publish.py [<catalogue.sqlite>] --replacements [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
-present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
+present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`, `based_on`. A `media` table also adds its
 images to the image key map (`media_map.py`).
 
 - Ids come from out/mirror.sqlite. A new text id gets a page and slot once; the allocation and a
@@ -1432,6 +1432,24 @@ def main():
 
     def entry(cid):
         return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
+
+    # A catalogue made from published records (relabel.py) says what it was made from. A crop reviewed or a
+    # page published since, here or on the site, would be put back, so it is made again instead.
+    if "based_on" in tables:
+        based, moved_on = {m.known(r["id"]): r for r in src.execute("SELECT id, revision, page_rev FROM based_on")}, []
+        for cid, r in based.items():
+            row = cid is not None and m.atlas.execute("SELECT c.revision, p.rev FROM crops c JOIN pages p ON p.id=c.id/? WHERE c.id=?",
+                                                      (PAGE, cid)).fetchone()
+            if not row or tuple(row) != (r["revision"], r["page_rev"]):
+                moved_on.append(r["id"])
+        for i in range(0, len(numbers := sorted(cid for cid in based if cid is not None)), 200):
+            chunk = numbers[i:i + 200]
+            live = {row["id"]: row["revision"] for row in query(
+                "glyph-atlas-v3", f"SELECT id, revision FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
+            moved_on += [based[cid]["id"] for cid in chunk if live.get(cid) != based[cid]["revision"]]
+        if moved_on:
+            sys.exit(f"{len(set(moved_on))} crops were reviewed or published since the catalogue was made, for example "
+                     f"{min(moved_on)}; make it again (after answers.py, which takes the site's reviews); nothing published")
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"

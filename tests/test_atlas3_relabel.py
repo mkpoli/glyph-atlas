@@ -4,14 +4,25 @@ import sqlite3
 import sys
 
 import pytest
-from test_atlas3_publish import catalogue, crops, ids, layout, run, unit  # noqa: F401 -- the fixture
+from test_atlas3_publish import (  # noqa: F401 -- the fixture
+    catalogue,
+    copied_by_a_stopped_publication,
+    crops,
+    ids,
+    layout,
+    run,
+    unit,
+)
 from test_atlas3_withdraw import entry_of
 
 
 @pytest.fixture
-def relabel(layout):  # noqa: F811
+def relabel(layout, monkeypatch):  # noqa: F811
     sys.modules.pop("relabel", None)
     module = importlib.import_module("relabel")
+    # The layout's crops are kana, which stand here for the Han characters a relabel is between.
+    real = module.refs.script_of
+    monkeypatch.setattr(module.refs, "script_of", lambda c: module.Script.HAN if c in "あいうかゑ" else real(c))
     db = sqlite3.connect(layout[0] / "out" / "atlas-runs.sqlite")
     db.execute("CREATE TABLE IF NOT EXISTS run_text(first INTEGER, size INTEGER, text TEXT NOT NULL, PRIMARY KEY(first, size)) WITHOUT ROWID")
     db.execute("INSERT OR REPLACE INTO run_text SELECT first, size, graphemes FROM runs")
@@ -73,15 +84,51 @@ def test_a_crop_the_site_holds_otherwise_is_left_out(layout, relabel, monkeypatc
         "ex:b1: the site holds no ゑ", "ex:none: not a collected crop on the site"]
     with pytest.raises(SystemExit):
         write(relabel, monkeypatch, path, ("ex:a1", "あ", "う"))
+    monkeypatch.setattr(relabel.refs, "script_of", lambda c: relabel.Script.HIRAGANA)
+    write(relabel, monkeypatch, tmp_path / "kana.sqlite", ("ex:a1", "あ", "う"))
+    assert "left out: ex:a1: あ and う are not both Han" in capsys.readouterr().out
 
 
-def test_a_crop_reviewed_since_keeps_its_character(layout, relabel, monkeypatch, tmp_path):  # noqa: F811
-    root, publish, remote = layout
-    number = ids(root)["ex:a1"]
-    path = write(relabel, monkeypatch, tmp_path / "r.sqlite", ("ex:a1", "あ", "う"))
-    remote.dbs["glyph-atlas-v3"].execute("UPDATE crops SET revision=revision+1 WHERE id=?", (number,)).connection.commit()
-    try:
+def refused(publish, remote, monkeypatch, path):
+    before, uploaded = crops(remote), list(remote.uploaded)
+    with pytest.raises(SystemExit, match="1 crops were reviewed or published since"):
         run(publish, monkeypatch, path)
-    except SystemExit:
-        pass
-    assert labels(remote)[number] == "あ"
+    assert crops(remote) == before and remote.uploaded == uploaded
+
+
+def test_a_crop_reviewed_on_the_site_since_stops_the_publish(layout, relabel, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    path = write(relabel, monkeypatch, tmp_path / "r.sqlite", ("ex:a1", "あ", "う"))
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE crops SET revision=revision+1 WHERE id=?", (ids(root)["ex:a1"],)).connection.commit()
+    refused(publish, remote, monkeypatch, path)
+
+
+def test_a_review_the_local_copy_took_since_is_not_put_back(layout, relabel, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    path = write(relabel, monkeypatch, tmp_path / "r.sqlite", ("ex:a1", "あ", "う"))
+    copied_by_a_stopped_publication(remote, ids(root)["ex:a1"], state=1)
+    refused(publish, remote, monkeypatch, path)
+
+
+def test_a_page_published_since_stops_the_publish_for_a_crop_listed_as_it_stands(layout, relabel, monkeypatch, tmp_path):  # noqa: F811
+    root, publish, remote = layout
+    for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
+        db.execute("UPDATE crops SET state=(SELECT state FROM crops WHERE id=?) WHERE id=?", (ids(root)["ex:a1"], ids(root)["ex:a2"]))
+        db.commit()
+    path = write(relabel, monkeypatch, tmp_path / "r.sqlite", ("ex:a2", "い", "う"))
+    run(publish, monkeypatch, catalogue(tmp_path / "recut.sqlite", [unit("ex:a1", "hl:p1", {"x": 1, "y": 1, "w": 12, "h": 12}, "あ")]))
+    before = crops(remote)
+    with pytest.raises(SystemExit, match="2 crops were reviewed or published since"):
+        run(publish, monkeypatch, path)
+    assert crops(remote) == before
+
+
+def test_a_crop_in_a_reviewers_style_is_left_out(layout, relabel, monkeypatch, tmp_path, capsys):  # noqa: F811
+    root, _publish, _remote = layout
+    local = sqlite3.connect(root / "out" / "atlas.sqlite")
+    local.execute("CREATE TABLE IF NOT EXISTS reviewer_styles(crop INTEGER PRIMARY KEY)")
+    local.execute("INSERT INTO reviewer_styles VALUES(?)", (ids(root)["ex:a1"],))
+    local.commit()
+    path = write(relabel, monkeypatch, tmp_path / "r.sqlite", ("ex:a1", "あ", "う"))
+    assert sqlite3.connect(path).execute("SELECT count(*) FROM units").fetchone() == (0,)
+    assert "left out: ex:a1: has a reviewer's style" in capsys.readouterr().out

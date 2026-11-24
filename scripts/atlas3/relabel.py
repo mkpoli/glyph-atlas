@@ -10,8 +10,10 @@ out/atlas.sqlite make, under the new character and one revision on. The runs hol
 with the crops that start them listed as they stand. Nothing is cut again, so a page need not be
 exported for the few of its crops a relabel touches.
 
-A crop is left out, and listed, when the site holds it under another character than `label` or no longer
-pending, when the site does not hold the new character, or when the two are written in different scripts.
+A crop is left out, and listed, when the site holds it under another character than `label`, no longer
+pending or in a style a reviewer gave it, when the site does not hold the new character, or when either
+character is not a Han one: an export computes more for the rest. The catalogue names the revision of each
+crop and page it was made from (`based_on`), and the publisher refuses it once one of them has moved on.
 The relabel goes to the crop's store as well, or its next export leaves the crop behind the site's
 revision. Every file but the catalogue is only read here.
 """
@@ -26,9 +28,11 @@ from build import OUT, PAGE
 from publish import SUSPECT, graphemes_of, logical_sql
 
 from glyph_atlas import refs
+from glyph_atlas.schema import Script
 
 COLUMNS = ("id", "origin", "character", "family", "visual_group", "production", "category", "state", "revision",
            "quiz", "document", "style", "data")
+BASED = ("id", "revision", "page_rev")
 RUNS = ("size", "graphemes", "text", "hand_order", "first", "second", "third", "document", "vertical")
 
 
@@ -42,7 +46,7 @@ def entry_of(atlas, cid):
 def crop_of(atlas, cid):
     """A crop's row in the local copy with the names its codes stand for, or None."""
     return atlas.execute(
-        f"""SELECT c.*, {logical_sql(atlas)} AS logical, g.text AS character, h.text AS family_text, b.key AS document, p.key AS page_key,
+        f"""SELECT c.*, {logical_sql(atlas)} AS logical, p.rev AS page_rev, g.text AS character, h.text AS family_text, b.key AS document, p.key AS page_key,
         (SELECT key FROM productions WHERE id=c.production) AS production_key,
         (SELECT key FROM codes WHERE field='visual_group' AND code=c.visual_group) AS visual_key,
         (SELECT key FROM codes WHERE field='category' AND code=c.category) AS category_key,
@@ -57,11 +61,18 @@ def unit(atlas, text, crop, to=None):
     entry = {k: v for k, v in entry_of(atlas, crop["id"]).items() if k not in ("slot", "image_place", "context_image_place")}
     # A crop on no page stands on its book's: the publisher makes that page's key itself.
     page = {} if crop["page_key"] == f"book:{crop['document']}" else {"page_id": crop["page_key"]}
-    data = {**entry, **page, **({"label": to[0]} if to else {}), "suspect": bool(crop["flags"] & SUSPECT)}
+    # A suspect mark is of the label it was judged under.
+    data = {**entry, **page, **({"label": to[0]} if to else {}), "suspect": not to and bool(crop["flags"] & SUSPECT)}
     character, family = to or (crop["character"], crop["family_text"])
     return (text, "local", character, family, None if to else crop["visual_key"], crop["production_key"], crop["category_key"],
             crop["state_key"] or "pending", crop["logical"] + bool(to), crop["quiz"], crop["document"], crop["style_key"],
             json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+
+
+def styled(atlas, cid):
+    """Whether a reviewer set a crop's style, which its row then holds in place of the published one."""
+    return (atlas.execute("SELECT 1 FROM sqlite_master WHERE name='reviewer_styles'").fetchone() is not None
+            and atlas.execute("SELECT 1 FROM reviewer_styles WHERE crop=?", (cid,)).fetchone() is not None)
 
 
 def units(relabels, mirror, atlas):
@@ -83,8 +94,10 @@ def units(relabels, mirror, atlas):
             left[text] = f"is {crop['state_key']}"
         elif to is None:
             left[text] = f"the site holds no {other}"
-        elif refs.script_of(other) != refs.script_of(item["label"]):
-            left[text] = f"{other} is in another script"
+        elif {refs.script_of(other), refs.script_of(item["label"])} != {Script.HAN}:
+            left[text] = f"{item['label']} and {other} are not both Han"
+        elif styled(atlas, crop["id"]):
+            left[text] = "has a reviewer's style"
         else:
             rows.append(unit(atlas, text, crop, tuple(to)))
             moved[crop["id"]] = tuple(to)
@@ -136,8 +149,16 @@ def main():
     listed, starts = ngrams(moved, mirror, atlas, runs)
     # A corpus glyph's record is its corpus's, so its runs wait for that corpus.
     kept = [unit(atlas, text, crop) for text, first in starts if (crop := crop_of(atlas, first)) and crop["kind"] == 0]
+    if late := [text for text, first in starts if styled(atlas, first)]:
+        sys.exit(f"{late[0]} starts a run of a listed crop and has a reviewer's style; publish that run with an export")
+    based = []
+    for text in [r[0] for r in rows + kept]:
+        crop = crop_of(atlas, mirror.execute("SELECT id FROM ids WHERE text=?", (text,)).fetchone()[0])
+        based.append((text, crop["revision"], crop["page_rev"]))
     db = sqlite3.connect(args.output)
     db.execute(f"CREATE TABLE units({','.join(COLUMNS)})")
+    db.execute(f"CREATE TABLE based_on({','.join(BASED)})")
+    db.executemany(f"INSERT INTO based_on VALUES({','.join('?' * len(BASED))})", based)
     db.execute(f"CREATE TABLE unit_ngrams({','.join(RUNS)})")
     db.executemany(f"INSERT INTO units VALUES({','.join('?' * len(COLUMNS))})", rows + kept)
     db.executemany(f"INSERT INTO unit_ngrams VALUES({','.join('?' * len(RUNS))})", listed)
