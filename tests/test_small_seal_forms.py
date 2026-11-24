@@ -19,7 +19,7 @@ from glyph_atlas.importers.codh import classification_of
 from glyph_atlas.review import atlas, characters, suggestions
 from glyph_atlas.schema import Box, Classification, Document, Page, Unit
 
-#: 𾷱 of 大, 𾛷 of 假 (in 仮's family), 𽌇 of 萅 (in 春's) and 𽀅 of 叓.
+#: 𾶱 of 大, 𾛷 of 假 (in 仮's family), 𽌇 of 萅 (in 春's) and 𽀅 of 叓.
 DAI, KA, CHUN, LI = "\U0003EDB1", "\U0003E6F7", "\U0003D307", "\U0003D005"
 
 

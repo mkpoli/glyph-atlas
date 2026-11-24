@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { categoryOf } from '../../cloudflare/src/category.ts'
 import { gatherGraphemes } from '../src/lib/graphemeGroups.js'
 
-// 大 with its small seal character 𾷱, 民 with two of its own, and は with ハ, as the catalogue and the
+// 大 with its small seal character 𾶱, 民 with two of its own, and は with ハ, as the catalogue and the
 // corpus count them.
 const DAI = '\u{3EDB1}', MIN = ['\u{3F54D}', '\u{3F54E}']
 const categories = [{ label: 'は', grapheme: 'U+306F', total: 5, flagged: 1, hard: 1 }, { label: 'ハ', grapheme: 'U+306F', total: 2, flagged: 0, hard: 0 },
