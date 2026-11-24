@@ -115,10 +115,10 @@ describe('a crop’s citation', () => {
 
 describe('a character’s citation', () => {
   const card = { code_point: 'U+1B002', char: '𛀂', grapheme: { code_point: 'U+3042', char: 'あ' } };
-  it('names the grapheme family or the form alone, each with a scope its page keeps', () => {
-    expect(characterEntry('grapheme', card)).toEqual({ kind: 'grapheme', id: 'U+3042', label: 'あ', codePoint: 'U+3042', path: '/character/U+3042?scope=family' });
-    expect(characterEntry('form', card).path).toBe('/character/U+1B002?scope=exact');
-    expect(characterEntry('form', { code_point: 'U+304B U+309A', char: 'か゚' }).path).toBe('/character/U+304B-U+309A?scope=exact');
+  it('names the grapheme or the form alone, each at its own page', () => {
+    expect(characterEntry('grapheme', card)).toEqual({ kind: 'grapheme', id: 'U+3042', label: 'あ', codePoint: 'U+3042', path: '/grapheme/U+3042' });
+    expect(characterEntry('form', card).path).toBe('/character/U+1B002');
+    expect(characterEntry('form', { code_point: 'U+304B U+309A', char: 'か゚' }).path).toBe('/character/U+304B-U+309A');
   });
 });
 
@@ -148,7 +148,7 @@ describe('GET /atlas/cite/grapheme and /atlas/cite/form', () => {
   });
   it('serves a grapheme and a form, and refuses another kind or a character not in the table', async () => {
     const { db, get } = setup();
-    expect((await (await get('/atlas/cite/grapheme/U%2B1B002')).json() as any[])[0].URL).toBe('https://glyphatlas.org/character/U+3042?scope=family');
+    expect((await (await get('/atlas/cite/grapheme/U%2B1B002')).json() as any[])[0].URL).toBe('https://glyphatlas.org/grapheme/U+3042');
     expect((await (await get('/atlas/cite/form/U+1B002')).json() as any[])[0].title).toBe('𛀂');
     expect((await get('/atlas/cite/page/U%2B1B002')).status).toBe(404);
     expect((await get('/atlas/cite/form/U%2B1B003')).status).toBe(404);

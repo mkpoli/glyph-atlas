@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit'
-import { unslug } from '$lib/gallery.js'
+import { unslug } from '$lib/addresses.js'
 import { character } from '$lib/layers.js'
 import { chronology, chronologyOptions } from '$lib/chronology.js'
 

@@ -1,6 +1,9 @@
 import { t, formatDate } from './i18n.svelte.js'
 import { licenceName } from './licence.js'
 
+/** The name of a character's page or a grapheme's (`of`), as a title and a heading write it. */
+export const galleryTitle = ({ char, code_point, of }) => of === 'grapheme' ? t('cite.label.grapheme', { char, codePoint: code_point }) : `${char} (${code_point})`
+
 /** The day `now` falls on where the reader is, as a citation's access date. */
 export const today = (now = new Date()) => [now.getFullYear(), now.getMonth() + 1, now.getDate()]
 

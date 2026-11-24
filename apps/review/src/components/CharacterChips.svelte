@@ -5,6 +5,7 @@
   import Cite from './Cite.svelte'
   import { characterEntry } from '$worker/citation.ts'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import ScriptLine from './ScriptLine.svelte'
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
   import IdsLabel from './IdsLabel.svelte'
@@ -17,18 +18,22 @@
   import { cardStructures, layouts, proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
-  import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress, graphemeAddress } from '../lib/gallery.js'
+  import { t, withText, formatNumber, localize } from '../lib/i18n.svelte.js'
+  import { characterAddress, graphemeAddress } from '../lib/addresses.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
   import { cardTiers, inferred, isSeal, structureForms } from '../lib/cardTiers.js'
   import { partName } from '../lib/partFigures.js'
-  let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
+  // `narrowed` is the style group, order and years the gallery is shown with, which the pages of the
+  // grapheme and of its forms keep.
+  let { card = null, expand = $bindable('none'), narrowed = {}, onreview = null } = $props()
+  // The page is the grapheme's or the one character's, and the chip of it is marked rather than linked.
+  const whole = $derived(expand === 'grapheme')
   const { members, seals, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
-  // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
-  // widening to variants has no address of its own to cite.
-  const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(expand === 'grapheme' ? 'grapheme' : 'form', card) : null)
+  // What the gallery shows, cited: the grapheme, or the one form. A widening to variants has no address of
+  // its own to cite.
+  const entry = $derived(card?.code_point && expand !== 'variants' ? characterEntry(whole ? 'grapheme' : 'form', card) : null)
   // The Forms family this character is clustered in, by its grapheme or its own code point; none, no link.
   let clustered = $state(null)
   $effect(() => { if (page.data.forms) familyCodeSet().then(codes => { clustered = codes }) })
@@ -116,14 +121,19 @@
   {#if names.length}<span class="sharing">{#each names as name (name)}{#if composedNames > 1}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/if}{#if proposed(name, group.claimed?.[name])}<sup class="derived-mark" title="{name} · {t('chips.derived')}">*</sup>{/if}{/each}</span>{/if}
 {/snippet}
 
+{#snippet form(member)}
+  <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={isSeal(member.char) || twins.includes(member.char)} />
+  {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
+{/snippet}
+
+{#snippet head()}<ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}{/snippet}
+
 {#snippet choice(member)}
-  <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
-    aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
-    aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
-      : t('chips.showCharacter', { char: member.char })} title={isSeal(member.char) ? sealTitle(member) : glyphCount(member)} onclick={() => onselect(member.code_point)}>
-    <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={isSeal(member.char) || twins.includes(member.char)} />
-    {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
-  </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
+  {@const title = isSeal(member.char) ? sealTitle(member) : glyphCount(member)}
+  <div class="member-choice">{#if !whole && member.code_point === card.code_point}<span class="member" aria-current="page" {title}>{@render form(member)}</span><ZiLink character={member.char} compact />
+    {:else}<a class="member" href={localize(characterAddress(member.code_point, narrowed))} {title}
+      aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
+        : t('chips.showCharacter', { char: member.char })}>{@render form(member)}</a>{/if}</div>
 {/snippet}
 
 {#if card}
@@ -131,7 +141,10 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
       <div class="variant-chips">
-        {#if selfGrapheme}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char))} title={glyphCount(grapheme)}><ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}</a>{/if}
+        {#if selfGrapheme || whole}
+          <div class="member-choice">{#if whole}<span class="variant" aria-current="page" title={glyphCount(grapheme)}>{@render head()}</span><ZiLink character={grapheme.char} compact />
+            {:else}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char, narrowed))} title={glyphCount(grapheme)}>{@render head()}</a>{/if}</div>
+        {/if}
         {#each writes as v (v.code_point)}
           <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={glyphCount(v) ? `${shareLabel(v)}\n${glyphCount(v)}` : shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
         {/each}
@@ -155,8 +168,6 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.forms')}</span>
       <div class="character-members">
-        {#if members.length + seals.length > 1}<button class="family" class:active={expand === 'grapheme'} aria-pressed={expand === 'grapheme'}
-          onclick={() => expand = 'grapheme'}>{t('chips.allForms')}</button>{/if}
         {#each members as member (member.code_point)}{@render choice(member)}{/each}
         {#each written as v (v.code_point)}
           <a class="variant" href={localize(characterAddress(v.code_point))} title={relationTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} />{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if sharedWriters.has(v.code_point)}<small class="share">{t('chips.shared')}</small>{/if}<small>{#if !v.widens}{mainRelation(v)}{#if crops(v)}{' · '}{/if}{/if}{#if crops(v)}{formatNumber(crops(v))}{/if}</small></a>
@@ -196,7 +207,7 @@
       </div>
     {/if}
     {#if variants.items.length || variants.related.length || variants.derived.length}
-      {#if variants.items.length}<button class="chip chip-action include-variants" class:active={expand === 'variants'} aria-pressed={expand === 'variants'}
+      {#if variants.items.length && !whole}<button class="chip chip-action include-variants" class:active={expand === 'variants'} aria-pressed={expand === 'variants'}
         onclick={() => expand = expand === 'variants' ? 'none' : 'variants'}>{t('chips.includeVariants')}{#if variants.items.some(crops)} <small>{formatNumber(variants.items.reduce((n, v) => n + crops(v), 0))}</small>{/if}</button>{/if}
       <details class="variant-sources">
         <summary>{t('chips.variantSources')}: {Object.keys(variants.sources).join(' · ')}</summary>
@@ -227,13 +238,14 @@
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.glyphs')}</span>
-      <span>{#if expand === 'grapheme'}{t('chips.allForms')}{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
+      <span>{#if whole}<ScriptLine line={withText('cite.label.grapheme', 'char', { char: card.char, codePoint: card.code_point })} />{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
-      {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: expand === 'grapheme' ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
+      {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: whole ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
       {#if entry}<Cite {entry} class="cite-link" />{/if}
-      {#if expand !== 'grapheme' && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
+      {#if !whole && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
-    {#if card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview}
+    <!-- What a character is made from is the character's own, so a grapheme's page leaves it to its forms'. -->
+    {#if !whole && (card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview)}
       <div class="layer-chips">
         {#if card.ligature}<span class="chip">{#each card.ligature.components as c, i (i)}{#if i}{' + '}{/if}<ScriptText text={c.char} script={c.script} />{/each}</span>{/if}
         {#if card.jibo?.length}<span class="chip">字母{#each card.jibo as j, i (i)}{' '}<ScriptText text={j.char} />{/each}</span>{/if}
@@ -255,13 +267,13 @@
   .layer-label{font-size:11px;color:var(--muted);min-width:76px;line-height:43px}
   .layer-legend{padding-left:92px}
   @media(max-width:600px){.layer-legend{padding-left:0}}
-  .family{align-self:flex-start;padding:8px 14px;background:transparent}
   .character-members{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;flex:1}
-  .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
+  .variant-chips .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
-  .member{display:flex;align-items:center;gap:10px;padding:8px 12px;background:transparent}
+  .member{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:7px;background:transparent}
+  a.member:hover{border-color:var(--line-strong)}
   .member .use{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-  .active{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
+  .active,.member[aria-current],.variant[aria-current]{color:var(--accent);border-color:var(--accent);background:var(--accent-light)}
   .forms-row{font-size:12px;color:var(--muted);align-items:center}
   .forms-row .layer-label{line-height:normal}
   .forms-row small{margin-left:auto}

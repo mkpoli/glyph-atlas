@@ -30,15 +30,16 @@ const FACETS = `SELECT coalesce(char, -1), book, coalesce(production, -1), coale
   FROM crops WHERE kind = 0 GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 1, 2, 3, 4, 5, 6, 7`;
 const CORPUS = `SELECT char, coalesce(production, -1), state, quiz, count(*) FROM crops WHERE kind = 1 AND char IS NOT NULL
   GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4`;
+const FILED = 'SELECT family, kind, count(*) FROM crops WHERE kind < 2 AND char IS NULL AND family IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2';
 const BOOKS = 'SELECT book, sum(kind = 0), sum(kind = 1) FROM crops WHERE kind < 2 GROUP BY book ORDER BY book';
 const key = (text: string) => [...text].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 export function publish(db: Database, objects: Map<string, Uint8Array>, pub: string, through: number) {
   const chars = (ids: number[]) => Object.fromEntries((db.query(`SELECT g.id, g.text, coalesce(h.text, g.text) AS head FROM graphemes g
     LEFT JOIN graphemes h ON h.id = g.head WHERE g.id IN (${ids.join(',') || 'NULL'})`).all() as { id: number; text: string; head: string }[])
     .map(r => [String(r.id), [r.text, key(r.head)]]));
-  const facets = db.query(FACETS).values() as number[][], corpus = db.query(CORPUS).values() as number[][];
+  const facets = db.query(FACETS).values() as number[][], corpus = db.query(CORPUS).values() as number[][], filed = db.query(FILED).values() as number[][];
   objects.set(`v3/pub/${pub}/facets.json.gz`, gz({ pub, cells: facets, chars: chars(facets.map(r => r[0]).filter(c => c !== -1)) }));
-  objects.set(`v3/pub/${pub}/corpus.json.gz`, gz({ pub, cells: corpus, chars: chars(corpus.map(r => r[0])) }));
+  objects.set(`v3/pub/${pub}/corpus.json.gz`, gz({ pub, cells: corpus, filed, chars: chars([...corpus, ...filed].map(r => r[0])) }));
   objects.set(`v3/pub/${pub}/books.json.gz`, gz({ pub, books: Object.fromEntries((db.query(BOOKS).values() as number[][]).map(([b, x, y]) => [String(b), [x, y]])) }));
   objects.set('v3/pointer.json', gz({ pub, through_gen: through }));
 }

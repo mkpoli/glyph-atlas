@@ -9,6 +9,10 @@ token_file = "/etc/fish-bot/matrix-token"
 api_key_file = "/etc/fish-bot/gemini-key"
 model = "gemini-4-hydrogen"
 
+[deepseek]
+# Work nobody hears, at about a tenth of the price. Without this table Gemini does it.
+api_key_file = "/etc/fish-bot/deepseek-key"
+
 [github]
 # A fine-grained token with Issues read/write on this repository only, and Metadata read-only.
 token_file = "/etc/fish-bot/github-token"
@@ -71,6 +75,10 @@ days = 365
 # Web search, page reading and GitHub reads in answers to a call, at most this many an hour.
 enabled = true
 per_hour = 120
+
+[budget]
+# What model calls may cost in one day (JST), in dollars at list price. Past it no call is sent.
+daily_usd = 0.75
 
 [limits]
 context_messages = 120

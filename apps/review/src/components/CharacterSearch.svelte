@@ -36,8 +36,9 @@
     tokenLabel = '',
     ontokenclear = () => {},
     groupOf = null,
-    onchoosegroup = () => {},
     onform = () => {},
+    // How many crops the page a row opens can list, where the page knows; null where it does not.
+    countOf = () => null,
     // Rows name the code point rather than the reading.
     codePoints = false,
     // A page that searches by image gives `onimage`: the box then offers it, and an image dropped on or
@@ -82,6 +83,11 @@
     })
     return found
   })
+
+  function rowCount(item) {
+    const count = countOf(item.char)
+    return count ? t('explore.meta.glyphs', { count }) : count === 0 ? t('layers.noOccurrenceYet') : countsLabel(item.candidates) || ownLabel(item)
+  }
 
   function searchSignal() {
     pending?.abort()
@@ -310,7 +316,7 @@
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
         {#if item.variant_of}<span class="tag">{t('chips.relation.variant')}</span>{/if}
       </span>
-      <span class="candidate-counts">{countsLabel(item.candidates) || ownLabel(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
+      <span class="candidate-counts">{rowCount(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
     </span>
   </button></div>
 {/snippet}
@@ -350,7 +356,7 @@
       {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
       {#if carded}
         {#each cards as group (group.key)}
-          <div class="search-card"><GraphemeCard {group} onchoose={key => chose(onchoosegroup, key)} onform={form => chose(onform, form)} /></div>
+          <div class="search-card"><GraphemeCard {group} onform={form => chose(onform, form)} /></div>
         {/each}
         {#if others.length}
           <details class="candidate-others"><summary>{t('search.others', { count: others.length })}</summary>

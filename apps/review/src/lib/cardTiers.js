@@ -54,6 +54,15 @@ export function cardTiers(card) {
 export const structureForms = ({ members, written, described, seals, related }) =>
   [...members, ...written, ...described, ...seals, ...related.filter(v => isSeal(v.char) && !inferred(v))]
 
+/** How many crops a card's gallery can list, withheld ones among them, as it is widened: the grapheme's,
+ *  the character's, or the character's and its variants'. Null where the card counts none. */
+export function galleryCount(card, expand) {
+  const grapheme = card?.grapheme ?? card, crops = v => v?.count == null && v?.corpus_count == null ? null : (v.count ?? 0) + (v.corpus_count ?? 0)
+  if (expand === 'grapheme') return crops(grapheme)
+  const own = crops(grapheme?.members?.find(member => member.code_point === card.code_point))
+  return own === null || expand !== 'variants' ? own : (card.variants?.items ?? []).reduce((sum, v) => sum + (crops(v) ?? 0), own)
+}
+
 /** What a selection on a character's page can be marked as without a search: the 字種 and the 字体 the
  *  card lists, each once, in its order. Related characters and the derived tier write other words or
  *  are inferred, so they stay behind the search box. */

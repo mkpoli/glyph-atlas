@@ -4,7 +4,7 @@
     python3 publish.py [<catalogue.sqlite>] --replacements [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
-present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
+present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`, `based_on`. A `media` table also adds its
 images to the image key map (`media_map.py`).
 
 - Ids come from out/mirror.sqlite. A new text id gets a page and slot once; the allocation and a
@@ -42,6 +42,9 @@ images to the image key map (`media_map.py`).
   moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
   dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
   needs `--approve-styles` naming that count of crops.
+- A catalogue's `credits` (attribution, credit), as `credits.py` writes it, gives every published page
+  and crop entry that carries the attribution the credit in its place, or none where it names no one.
+  Only their bundles change, and the revisions of their pages.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -1383,6 +1386,8 @@ def main():
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
     m.titled, m.retitle = book_titles(src, tables), args.retitle
+    if "credits" in tables and tables - {"credits"}:
+        sys.exit(f"a credits catalogue holds credits alone, not {sorted(tables - {'credits'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
     # D1 apart from catalogues). A book with neither keeps its crops' years.
     years = dict(m.ids.execute("SELECT key, year FROM book_years"))
@@ -1432,6 +1437,24 @@ def main():
 
     def entry(cid):
         return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
+
+    # A catalogue made from published records (relabel.py) says what it was made from. A crop reviewed or a
+    # page published since, here or on the site, would be put back, so it is made again instead.
+    if "based_on" in tables:
+        based, moved_on = {m.known(r["id"]): r for r in src.execute("SELECT id, revision, page_rev FROM based_on")}, []
+        for cid, r in based.items():
+            row = cid is not None and m.atlas.execute("SELECT c.revision, p.rev FROM crops c JOIN pages p ON p.id=c.id/? WHERE c.id=?",
+                                                      (PAGE, cid)).fetchone()
+            if not row or tuple(row) != (r["revision"], r["page_rev"]):
+                moved_on.append(r["id"])
+        for i in range(0, len(numbers := sorted(cid for cid in based if cid is not None)), 200):
+            chunk = numbers[i:i + 200]
+            live = {row["id"]: row["revision"] for row in query(
+                "glyph-atlas-v3", f"SELECT id, revision FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
+            moved_on += [based[cid]["id"] for cid in chunk if live.get(cid) != based[cid]["revision"]]
+        if moved_on:
+            sys.exit(f"{len(set(moved_on))} crops were reviewed or published since the catalogue was made, for example "
+                     f"{min(moved_on)}; make it again (after answers.py, which takes the site's reviews); nothing published")
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
@@ -1757,6 +1780,25 @@ def main():
         if gone:
             print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
 
+    # A credit shown otherwise than it was published: each published page and crop entry that carries the
+    # catalogue's attribution takes the credit, and loses the field where that names no one.
+    credited = {}
+    if "credits" in tables:
+        credits, crops = dict(src.execute("SELECT attribution, credit FROM credits")), 0
+
+        def with_credit(record):
+            credit = credits[record["attribution"]]
+            return {**{k: v for k, v in record.items() if k != "attribution"}, **({"attribution": credit} if credit else {})}
+        for p in m.atlas.execute("SELECT id, key FROM pages WHERE rev > 0 ORDER BY id").fetchall():
+            bundle = stored(p["id"])
+            if (page := bundle.get("page")) and page.get("attribution") in credits:
+                credited[p["key"]] = with_credit({k: v for k, v in page.items() if k not in LINKS})
+            for e in bundle["crops"]:
+                if e.get("attribution") in credits:
+                    m.touched_pages[p["id"]][e["slot"]] = (with_credit({k: v for k, v in e.items() if k != "slot"}), False)
+                    crops += 1
+        print(f"credits: {crops} crops and {len(credited)} pages", flush=True)
+
     # Corpus glyphs flagged for a person, in the order the catalogue names them, after the crops above.
     # Each is the Worker's admin flag (`flagCorpus`): its finding, its first corpus row and an event of
     # kind `flag` with the wrong-character issue under a submission of the publisher, which moves the
@@ -2057,6 +2099,7 @@ def main():
     # every page of its book the site holds once this publish lands; links a catalogue carries are dropped.
     facts = {r["id"]: {k: v for k, v in json.loads(r["data"]).items() if k not in LINKS}
              for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
+    facts.update(credited)
     # The books whose pages may change: those the catalogue carries a page of, a page new to the site among them,
     # and those a page of which gained or lost a crop in this run, since a page that lost its last one leaves the chain.
     books = {row["book"] for key in facts if (row := m.atlas.execute("SELECT book FROM pages WHERE key=?", (key,)).fetchone())}

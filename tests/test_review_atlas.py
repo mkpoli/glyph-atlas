@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -388,6 +389,10 @@ def test_a_round_is_dealt_for_a_grapheme_and_its_members(dataset):
     assert client.post('/atlas/rounds', json=saved).status_code == 200
     assert client.post('/atlas/rounds', json=saved).status_code == 200
     assert {json.loads(event.evidence)["grapheme"] for event in Store(dataset).events()} == {"U+3057"}
+    # A round saved before its key was filed under し names that key in its evidence, and is the same round sent again.
+    with sqlite3.connect(Store(dataset).path) as conn:
+        assert conn.execute("UPDATE events SET evidence=replace(evidence,'U+3057','U+30B7')").rowcount == 4
+    assert client.post('/atlas/rounds', json=saved).status_code == 200
 
 
 def test_round_rejects_other_category_or_repeated_character(dataset):

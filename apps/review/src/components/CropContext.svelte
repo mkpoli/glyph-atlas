@@ -35,6 +35,11 @@
     // The record rendered with is already shown, and its photos may have loaded before hydration.
     if (rendered && supplied === rendered) { rendered = null; return }
     rendered = null
+    // A claim replaces the record and moves neither the crop nor its photos: what is on screen stays, since
+    // a photo that is already in place never loads again.
+    const on = untrack(() => data)
+    if (supplied && on && matches(supplied, on) && matches(supplied, { id, revision, image_sha256, source_revision })
+      && supplied.context_image === on.context_image && supplied.image === on.image) { data = supplied; return }
     const abort = new AbortController()
     data = null; loading = true; detailFailed = false
     contextReady = false; contextFailed = false; fullReady = false; fullFailed = fromCorpus

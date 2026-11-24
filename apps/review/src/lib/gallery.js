@@ -1,47 +1,13 @@
 import { character as layerCharacter, occurrences, candidates as layerCandidates, bookGallery } from './layers.js'
 import { writtenLabel } from './identity.js'
 import { STYLE_GROUPS, styleParam } from './style.js'
-import { keyText } from './codePoints.js'
-import { hasCharacterPage } from './issues.js'
 
-// A character's gallery: the occurrences this collection holds and the located glyphs the corpus index
-// knows about. The page server renders it and the collection view loads it the same way.
+// The gallery of a character (字体) or of a grapheme (字種): the occurrences this collection holds and the
+// located glyphs the corpus index knows about. The page server renders it and the collection view loads
+// it the same way.
 
-/** A code point or a sequence (`U+304B U+309A`) as it reads in an address: `U+304B-U+309A`. */
-export const slug = codePoint => codePoint.trim().split(/\s+/).join('-')
-/** An address's code points, or null when the address names none. */
-export const unslug = value => /^U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*$/.test(value) && keyText(value.split('-').join(' ')) !== null
-  ? value.split('-').join(' ') : null
-
-/** Whether a character opens on its whole family: the card says so, or its crops only exist there. */
-export const widensByDefault = card => card.default_scope === 'grapheme' || Boolean(card.candidates?.requires_family_scope)
-
-/**
- * The scope an address asks for: `family` is the character's grapheme family, `exact` the character
- * alone. Without one the card's default applies, and the address leaves it out.
- */
-export const expandFor = (scope, card) => scope === 'variants' ? 'variants' : scope === 'family' ? 'grapheme' : scope === 'exact' ? 'none'
-  : widensByDefault(card) ? 'grapheme' : 'none'
-export const scopeFor = (expand, card) => expand === 'variants' ? 'variants'
-  : (expand === 'grapheme') === widensByDefault(card) ? null : expand === 'grapheme' ? 'family' : 'exact'
 /** The corpus side of a widening: the grapheme family, the character and its variants, or the character. */
 export const corpusScope = expand => expand === 'grapheme' ? 'grapheme' : expand === 'variants' ? 'variants' : 'character'
-
-/** The page of a character in the collection view, with the scope, visual group, style group, order and years it is shown with. */
-export function characterAddress(codePoint, { scope = null, visual = '', style = '', order = '', years = '' } = {}) {
-  const query = new URLSearchParams(Object.entries({ scope, visual, style, order, years }).filter(([, value]) => value))
-  return '/character/' + slug(codePoint) + (query.size ? '?' + query : '')
-}
-
-/** The page of a grapheme, by its key and the text it is shown as. A grapheme of more than one character
- * has no page of its own, so its address narrows the collection to it. */
-export const graphemeAddress = (key, text) => hasCharacterPage(text) ? characterAddress(key, { scope: 'family' }) : collectionAddress({ grapheme: key })
-
-/** The collection with a search and filters: a grapheme key, a work's document id and a script group. */
-export function collectionAddress({ q = '', grapheme = '', work = '', group = 'all' } = {}) {
-  const query = new URLSearchParams(Object.entries({ q, grapheme, work, group: group === 'all' ? '' : group }).filter(([, value]) => value))
-  return '/' + (query.size ? '?' + query : '')
-}
 
 const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
 
@@ -72,37 +38,35 @@ export function bookPage(found) {
   }
 }
 
+/** A character's card, with the fields the view reads where the card states none. */
+export const galleryCard = async (codePoint, options = {}) => ({ ...bare, ...await layerCharacter(codePoint, 'none', options) })
+
 /**
- * Everything the collection view shows for one character: its card, its first page of occurrences and
- * of corpus leads, and the counts beside them. A corpus that cannot answer leaves `corpusFault` set and
- * the occurrences still shown.
+ * Everything the collection view shows for a card: its first page of occurrences and of corpus leads,
+ * and the counts beside them. A corpus that cannot answer leaves `corpusFault` set and the occurrences
+ * still shown.
  */
-export async function characterGallery(codePoint, { scope = null, visual = '', style = '', order = '', years = '' } = {}, options = {}) {
-  const card = { ...bare, ...await layerCharacter(codePoint, 'none', options) }
-  const expand = expandFor(scope, card)
+export async function cardGallery(card, expand, { visual = '', style = '', order = '', years = '' } = {}, options = {}) {
+  const codePoint = card.code_point
   style = styleParam(style)
   // A variants widening lists each character in turn, and is placed by style alone.
   order = expand === 'variants' ? '' : orderParam(order); years = expand === 'variants' ? '' : yearsParam(years)
   const dated = { order: order || undefined, years: years || undefined }
-  // The chips read which widening is in force from the card fetched with it; a variants widening
-  // changes no field of the card.
-  const widen = expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card)
   if (order === 'book') {
-    const [found, widened] = await Promise.all([bookGallery(codePoint, { scope: bookScope(expand), style: style || undefined, years: dated.years }, options), widen])
-    const { books, local, corpus } = bookPage(found), total = counts => Object.entries(counts).reduce((sum, [name, n]) => !style || name === style ? sum + n : sum, 0)
-    return { picked: { ...card, ...widened }, expand, visual: '', style, order, years, styled: true, localStyles: found.styles.local, corpusStyles: found.styles.corpus,
-      local, localAfter: null, total: total(found.styles.local), available: total(found.styles.local), withheld: found.withheld, corpus, corpusTotal: total(found.styles.corpus),
+    const found = await bookGallery(codePoint, { scope: bookScope(expand), style: style || undefined, years: dated.years }, options)
+    const { books, local, corpus } = bookPage(found)
+    return { picked: card, expand, visual: '', style, order, years, styled: true, localStyles: found.styles.local, corpusStyles: found.styles.corpus,
+      local, localAfter: null, total: found.listed.local, available: found.listed.local, withheld: found.withheld, corpus, corpusTotal: found.listed.corpus,
       corpusAfter: null, corpusFault: null, analysis: card.visual_analysis ?? null, familyTotal: null, unassignedCount: null, books, booksAfter: found.next }
   }
-  const [found, widened, leads] = await Promise.all([
+  const [found, leads] = await Promise.all([
     occurrences(codePoint, { expand, limit: 60, style: style || undefined, ...dated }, options),
-    widen,
     layerCandidates(codePoint, 60, null, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dated }, options)
       .catch(error => ({ fault: error.status === 502 ? 'error' : 'not-loaded' })),
   ])
   const corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
   return {
-    picked: { ...card, ...widened },
+    picked: card,
     expand,
     visual,
     style,

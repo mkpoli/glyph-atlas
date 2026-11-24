@@ -310,7 +310,7 @@ She also reads along. She opens a room with unread lines at random times, on ave
 the first of them (`[chat] visit_minutes`; sooner after a question or a laugh, later when she lately
 spoke there, at most `visits_per_hour` in all), and waits for a burst to end. The model then rates
 its interest from 0 to 5: it speaks from 3, adds an emoji (or, in the mood, a sticker) from 2, and otherwise only
-reads. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
+reads. It reads 20 lines and the pictures not read yet. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
 [arXiv 2501.00383](https://arxiv.org/abs/2501.00383), 2024; its thresholds were set by trial and
 error, as are these) and GroupGPT splits the decision to chime in from the reply
 ([arXiv 2603.01059](https://arxiv.org/abs/2603.01059), 2026). Each visit's interest and outcome are
@@ -437,6 +437,8 @@ Fill them:
   the account and prints a password; `!admin users issue-token bigfatfish <password>` prints a token.
   Set the account's display name to `大肥魚`.
 - `gemini-key` — the paid Google AI Studio API key for `gemini-4-hydrogen`.
+- `deepseek-key` — the DeepSeek API key, named in `[deepseek]`. It does the work nobody hears, such as
+  memory; Gemini does it when DeepSeek fails or is not configured.
 - `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
   **Metadata: read-only**. No other repository or permission is needed: the same token reads the
   public repositories for lookups. Without this file the bot still chats and looks up the web, but it
@@ -465,10 +467,14 @@ journalctl -u fish-bot -f
 ```
 
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
-estimated cost from Gemini 4 Hydrogen's Standard price table, with each Google Search query at
+estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, with each Google Search query at
 $14 per 1,000 (the free 5,000 a month are shared with the account's other projects), logged once a
-day and
-printed for the last week by
+day. `[budget] daily_usd` limits what a day may cost: a call sets $0.05 aside before it is sent and is
+settled at its real cost (one that costs more may pass the limit by the difference), and once the
+day's money is gone no call is sent until midnight JST. She opens no rooms unasked while spending
+is ahead of a pace that rises through the day; from 85% she reads 15 lines and one picture and leaves
+bystanders in a conversation alone; with none left she tells a room that calls her, once a day. A
+client without a purse sends nothing at all. The last week is printed by
 
 ```sh
 runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --db /var/lib/fish-bot/chat.sqlite3 --usage
@@ -478,11 +484,12 @@ After a change to her prompts, replay the cases in `apps/fish-bot/replay.json` o
 is a short room log that once went wrong (an invented reading, a wrong era name, an answer taken from
 old chat instead of the homeserver) or must stay cheap (small talk without lookups), with the tools
 she must use and the words she must or must not say. It reads the homeserver, GitHub and the web
-but posts nothing:
+but posts nothing. It needs a Gemini key from a project of its own and refuses the bot's; it prints
+what the run should cost, stops at `--max-usd` (0.35), and all runs of a day stop at $0.50:
 
 ```sh
 scp apps/fish-bot/fish_bot.py apps/fish-bot/replay.py apps/fish-bot/replay.json root@glyphatlas-matrix:/tmp/
-ssh root@glyphatlas-matrix 'cd /tmp && python3 replay.py --config /etc/fish-bot/config.toml'
+ssh root@glyphatlas-matrix 'cd /tmp && python3 replay.py --key-file /root/gemini-test-key --config /etc/fish-bot/config.toml'
 ```
 
 The database is `/var/lib/fish-bot/chat.sqlite3`; text older than 180 days is deleted. The bot reads

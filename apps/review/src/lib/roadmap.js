@@ -2,7 +2,7 @@
 // who holds it, and how far it has come. A work with no edition listed has none chosen yet.
 //
 // Titles, edition statements and holders are written as their catalogues give them, so they are not
-// translated. `href` opens the holder's scan, or, once a copy is published, its books on this site
+// translated; a holder no source names is left empty. `href` opens the holder's scan, or, once a copy is published, its books on this site
 // (`book`: the word the book list is searched by).
 //
 // Status: 'published' (crops are on the site), 'underway' (pages collected or being cut), 'planned'.
@@ -69,6 +69,7 @@ export const STAGES = [
       { edition: '宋濂跋本（王三）', holder: '故宮博物院', status: 'planned' }] },
     { title: '廣韻', by: '陳彭年、丘雍等', editions: [
       { edition: '清康熙四十三年（1704）序張氏澤存堂刊本', holder: '東京大學東洋文化研究所', href: commons('IOC.UTokyo-000145 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷首.pdf'), status: 'underway' },
+      { edition: '張氏澤存堂刊本（韻典網照片）', holder: '', href: 'https://github.com/nk2028/tshet-uinh-images/tree/54ebf944fb7cb73eaafe563a68fc77f2d6740b24/廣韻/澤存堂本', status: 'underway' },
       { edition: '大宋重修廣韻 宋刊本', holder: NDL, href: ndl(2545272), status: 'planned' },
       { edition: '鉅宋廣韻 宋乾道五年（1169）建寧府黃三八郎刻本（中華再造善本影印）', holder: '上海圖書館', href: commons('ZHSY000074 鉅宋廣韻五卷 (宋)陳彭年等 撰 宋乾道五年建寧府黃三八郎刻本.pdf'), status: 'planned' }] },
     { title: '集韻', by: '丁度等', editions: [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { cardTargets, cardTiers, inferred, isSeal, sealsLast, structureForms } from '../src/lib/cardTiers.js'
+import { cardTargets, cardTiers, galleryCount, inferred, isSeal, sealsLast, structureForms } from '../src/lib/cardTiers.js'
 
 // The card the site serves for 說 (U+8AAA), cut to what the target list reads.
 const card = {
@@ -107,5 +107,18 @@ describe('an inferred small seal pair', () => {
   })
   it('is told from a Han character by its block', () => {
     expect(['\u{3D000}', '\u{3FC3F}', '叓', '\u{3FC40}', undefined].map(isSeal)).toEqual([true, true, false, false, false])
+  })
+})
+
+describe('the count of a page', () => {
+  const ka = { code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EEE', char: '仮', count: 69, corpus_count: 144,
+    members: [{ code_point: 'U+4EEE', char: '仮', count: 63, corpus_count: 7 }, { code_point: 'U+5047', char: '假', count: 4, corpus_count: 48 }] },
+    variants: { items: [{ char: '叚', count: 2, corpus_count: 1 }, { char: '嘏' }] } }
+  it('is its subject\'s: the grapheme\'s total, the character\'s, or the character\'s with its variants', () => {
+    expect(['grapheme', 'none', 'variants'].map(expand => galleryCount(ka, expand))).toEqual([213, 52, 55])
+  })
+  it('is unknown where the card counts none', () => {
+    expect(galleryCount({ code_point: 'U+5047', char: '假' }, 'none')).toBe(null)
+    expect(galleryCount({ code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EEE', members: [] } }, 'grapheme')).toBe(null)
   })
 })
