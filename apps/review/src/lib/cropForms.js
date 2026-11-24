@@ -224,7 +224,7 @@ const filed = new Map()
  * File the form written as `form` (a character, a figure or a description, whether or not anyone has
  * chosen it yet) under a 構形, or with `remove` take back the reader's own claim. `target` names the
  * 構形: `{ char }` by a character or description that has it, `{ char, of }` by a regional shape of the
- * character `of`, or `{ structure }` by its id. Filing moves the form: the reader's claims of its
+ * character `of`, `{ char, head: true }` by a layout of it, or `{ structure }` by its id. Filing moves the form: the reader's claims of its
  * other 構形 are taken back in the same save. Answers `{ structures, replaced }`: the 構形 the form
  * stands under now with who says so, and those of the claims taken back.
  */

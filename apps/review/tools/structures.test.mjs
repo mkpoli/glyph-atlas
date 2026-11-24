@@ -22,7 +22,7 @@ mock.module('../src/lib/layers.js', () => ({
   },
 }))
 
-const { cardStructures, layouts, NAMES, proposed, standing } = await import('../src/lib/structures.js')
+const { cardStructures, headTarget, layouts, NAMES, proposed, standing } = await import('../src/lib/structures.js')
 
 describe('reading structures beyond NAMES', () => {
   it('chunks composable names by NAMES and merges every answer into known', async () => {
@@ -109,6 +109,16 @@ describe("the 構形 of a character's card", () => {
     expect(layouts({ id: 'st:1', label: '⿺辶禺', chars: ['遇', '\u{3D4FB}'], folded: [part] })).toEqual({ own: ['遇'], folded: [part] })
     expect(layouts({ id: 'st:1', label: '⿺辶禺', chars: ['遇'], folded: [part] })).toEqual({ own: ['遇'], folded: [] })
     expect(layouts({ id: 'st:1', label: '⿺辶禺', chars: ['遇'] })).toEqual({ own: ['遇'], folded: [] })
+  })
+
+  it('names by a layout the 構形 it is one of, and no other it stands under', () => {
+    const named = (label, part) => headTarget({ id: 'st:1', label, part }, { char: '\u{3D4FB}' })
+    const beside = { id: 'st:2', label: '⿰辵禺', by: [] }
+    expect(named('⿺辶禺', beside)).toEqual({ char: '\u{3D4FB}', head: true })
+    // ⿺辶禺 folded into 偶's ⿰人禺, which 𽓻 then stands under.
+    expect(named('⿰人禺', beside)).toBe(null)
+    expect(named('⿺辶禺', { ...beside, by: ['u1'] })).toBe(null)
+    expect(named('⿺辶禺', null)).toBe(null)
   })
 
   it('marks a seal character nobody filed as proposed', () => {
