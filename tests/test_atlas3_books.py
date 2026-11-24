@@ -179,15 +179,15 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
             characters=[("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1}))], listed=["book:a", "codh:b"])
     books(remote, monkeypatch, "--send")
     got = facts(remote.dbs["glyph-atlas-v3"])
-    assert got["titles"]["codh:b"] is None
+    assert got["titles"]["codh:b"] == "鼎左秘録", "a title the copies no longer state stays"
     assert sorted(got["dates"]) == [("book:a", "witness", 1701, "gregorian"), ("codh:b", "composed", 1600, "gregorian")]
     assert len(got["characters"]) == 1
     report = (root / "out" / "books-report.txt").read_text()
     # removed, added, changed, written: a changed row writes its DELETE and its INSERT.
-    assert "books.title\t0\t0\t0\t0\t1\t1\n" in report
+    assert "books.title\t0\t0\t0\t0\t0\t0\n" in report
     assert "book_dates\t2\t203\t0\t1\t1\t3\n" in report
     assert "book_characters\t1\t40\t1\t0\t0\t1\n" in report
-    assert "rows written: 5 " in report
+    assert "rows written: 4 " in report
 
 
 def test_an_input_of_some_documents_leaves_the_other_books_characters(layout, monkeypatch):  # noqa: F811

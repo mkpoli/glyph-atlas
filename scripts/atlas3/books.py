@@ -253,8 +253,9 @@ def statements(books, atlas, only=None):
     now = dict(atlas.execute("SELECT id, title FROM books")) if "title" in columns else \
         {r[0]: None for r in atlas.execute("SELECT id FROM books")}
     wanted = dict(books.execute("SELECT id, title FROM books"))
-    add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
-                  for b in sorted(now) if now[b] != wanted.get(b)])
+    # A book the translation gives no title keeps the one it has: its publication may have written it.
+    add("books", [[f"UPDATE books SET title = {lit(wanted[b])} WHERE id = {b};"]
+                  for b in sorted(now) if b in wanted and now[b] != wanted[b]])
     # A book whose document the input does not list keeps its characters: the input may hold only some.
     listed = {r[0] for r in books.execute("SELECT book FROM character_books")}
     for table, (cols, key, owned) in TABLES.items():
