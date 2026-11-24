@@ -9,8 +9,9 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, ownClaimQuery, setCropStructure, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
+import { cropStructures } from '../cropPanels';
 import { cropReadings } from '../cropReadings';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
@@ -418,6 +419,43 @@ describe('a form filed under a structure', () => {
     expect(await say('⿰山夅')).toEqual({ id: form, structures: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], replaced: [] });
     const both = (await say('峰\u{E0100}', false, 'other')).structures;
     expect(both.map((v: any) => [v.structure, [...v.by].sort()])).toEqual([[beside, ['other', 'reader']]]);
+  });
+
+  it('says what structure a crop is built as with no form, and takes it back', async () => {
+    const { db, env, tools, local, version, beside, above } = await forms();
+    const crop = publicId(local), say = (target: Record<string, unknown>, actor = 'reader', id: string = crypto.randomUUID()) =>
+      setCropStructure(env, { id, crop_version: version(local), ...target }, crop, actor, tools);
+    // The reader's own form on the crop is taken back with it.
+    const id = crypto.randomUUID(), saved = await say({ char: '峰' }, 'reader', id);
+    expect(saved).toEqual({ id: crop, structure: { status: 'asserted', values: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], by: ['reader'] }, form: null,
+      replaced: null, replaced_form: '⿰山夆' });
+    expect(await say({ char: '峰' }, 'reader', id)).toEqual(saved);
+    expect(db.query("SELECT crop,cut,object,method FROM assertions WHERE predicate='built_as'").all()).toEqual([{ crop: local, cut: 0, object: beside, method: 'form-picker' }]);
+    // Another structure replaces it, named by the id of one already claimed as well.
+    expect(await say({ char: '峯' })).toMatchObject({ replaced: beside, structure: { values: [{ structure: above }] } });
+    expect(await say({ structure: beside })).toMatchObject({ replaced: above, structure: { values: [{ structure: beside, label: '⿰山夆' }] } });
+    // A form chosen later leaves it, and is nobody's dispute.
+    const formed = await setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: '⿱山夆' }, crop, 'other', tools);
+    expect(formed.form).toMatchObject({ status: 'asserted', values: [{ text: '⿱山夆' }] });
+    expect((await cropStructures(env, [local])).get(local)).toMatchObject({ status: 'asserted' });
+    // Readers who name two structures disagree; another reader's claim is not mine to clear.
+    expect(await say({ char: '峯' }, 'other')).toMatchObject({ structure: { status: 'disputed' }, replaced_form: '⿱山夆' });
+    expect(await say({})).toMatchObject({ replaced: beside, structure: { values: [{ structure: above, by: ['other'] }] } });
+    await expect(say({})).rejects.toThrow('409 You have no structure on this crop to clear.');
+    await expect(say({ char: '丑' })).rejects.toThrow('422 No structure is known for 丑.');
+    await expect(setCropStructure(env, { id: crypto.randomUUID(), crop_version: 'old', char: '峰' }, crop, 'reader', tools)).rejects.toThrow('409');
+  });
+
+  it('takes back every form of the reader\'s own with a crop\'s structure, and leaves another\'s', async () => {
+    const { db, env, tools, local, version } = await forms();
+    const crop = publicId(local), form = (value: string, actor: string) => setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: value }, crop, actor, tools);
+    // A second claim under an id the reader held before, as a session joined since leaves it.
+    await form('⿱山夆', 'stranger');
+    db.exec("INSERT INTO actors(id,key,user) VALUES(7,'stranger','reader')");
+    const saved = await setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(local), char: '峰' }, crop, 'reader', tools);
+    expect(saved.form).toBeNull();
+    await form('⿱山夆', 'other');
+    expect((await setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(local), char: '峯' }, crop, 'reader', tools)).form).toMatchObject({ values: [{ text: '⿱山夆' }], by: ['other'] });
   });
 
   it('names by a layout the structure it stands under, which no claim has named', async () => {
@@ -863,7 +901,7 @@ describe('the ledger queries', () => {
     const plans: [string, unknown[]][] = [
       [cropNowQuery(), [1]], [cropSlotsQuery('has_form'), ['[1]']], [cropSlotsQuery('writes_word'), ['[1]']], [formNamesQuery(), ['["fm:1"]']],
       [wordNamesQuery(), ['["w"]']], [wordMethodsQuery(), ['["a"]']], [ownClaimQuery('has_form', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']],
-      [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
+      [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [ownClaimQuery('built_as', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
       [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],

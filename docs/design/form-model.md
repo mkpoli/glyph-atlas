@@ -97,6 +97,11 @@ that grapheme as the claim is saved or taken back (`refileRuns`, `routes/runs.ts
 finds 后日 written for 後日 under 後日. A disputed or rejected slot names none, and a crop cut again
 waits for a claim on its new cut.
 
+A crop's `built_as` claim names the structure its letterforms are built as, where no recorded form names
+their shape: ⿱网直 for a 置 whose strokes no 字体 on record has. It gives no form, so the `has_form` slot stays
+empty and a form named later is nobody's dispute; while the crop has a form, the form is what is shown.
+A reader who gives the structure alone takes back their own form on the crop.
+
 A crop's `writes_word` claim names the word it writes at its place in the text (decision 0004), or a
 gloss where no word row fits yet. Its `method` is the strongest evidence for the sense: the source's
 own gloss of a headword, a 振り仮名 over the character or its word (`rubies`), a note such as a 割書,

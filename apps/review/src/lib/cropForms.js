@@ -96,9 +96,13 @@ export function formNames(form) {
   return (form?.values ?? []).filter(value => value.text).map(value => value.text)
 }
 
+/** What a crop is built as where no form names its shape (`built_as`): its structures `{ structure, label, by }`,
+ *  several while people disagree; none once the crop has a form. */
+export const builtAs = crop => formNames(crop?.form).length ? [] : crop?.structure?.values ?? []
+
 /** The form a crop is shown as now: the form the site holds for it, or the character it is written
- *  as; none while people disagree, so that any form chosen is a claim. */
-export const formOf = crop => crop?.form?.status === 'disputed' ? ''
+ *  as; none while people disagree or while only its structure is given, so that any form chosen is a claim. */
+export const formOf = crop => crop?.form?.status === 'disputed' || builtAs(crop).length ? ''
   : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
 
 const reread = async crop => {
@@ -152,14 +156,33 @@ async function writeCharacter(crop, character) {
  * so the crop is reviewed as written with it, and the form is claimed on it. Any other form (a variant,
  * a derived shape, an IDS) is claimed alone, and the crop keeps its character; its own character,
  * chosen, is a confirmation of it. A claim replaces the reader's earlier one on the crop.
+ *
+ * `{ target }` gives the crop's structure and no form (`setCropStructure`).
  */
 export async function setForm(crop, form) {
+  if (form !== null && typeof form === 'object') return { ...await setCropStructure(crop, form.target), reviewed: false }
   const written = crop.written_character ?? crop.label
   const { family } = await listForms(written)
   if (form === written || !family.includes(form)) return { ...await claimForm(crop, form), reviewed: false }
   // The claim names the review, so the two count as one decision.
   const named = await writeCharacter(crop, form)
   return { ...await claimForm(named.crop, form, named.review), reviewed: true }
+}
+
+/**
+ * Say what 構形 `crop` is built as, its form left for later, or with `target` null take back the reader's
+ * own word. `target` names the 構形 as `setStructure` does. The reader's own form on the crop is taken
+ * back with it. Answers the crop as it now stands.
+ */
+async function setCropStructure(crop, target) {
+  const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
+  const { id, answered } = submission(['structure', crop.id, seen.crop_version, JSON.stringify(target)])
+  let result
+  try {
+    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/structure`, { id, crop_version: seen.crop_version, ...target ?? {} })
+  } catch (error) { if (error.status) answered(); throw error }
+  answered()
+  return { crop: { ...seen, structure: result.structure, form: result.form } }
 }
 
 // A form claimed on many crops at once is a batch of form picks, each 48 crops: a claim on each crop and

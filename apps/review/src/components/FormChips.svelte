@@ -4,11 +4,12 @@
   // inspector marks its crop. `groups` sets the chips under a caption each, the 構形 its forms share
   // (`{ id, label, blocks }`, each block `{ id, label, own, forms }` the forms built as it or as a 構形
   // that stands under it, `own` where the crop's own form is; a form `proposed` there is marked). The
-  // number keys follow `order`, or the chips as they stand.
+  // number keys follow `order`, or the chips as they stand. `open` are the blocks, by id, that end in a chip
+  // for a shape of theirs no form names, `{ chosen, current, title }` each, which `onopen` takes.
   import FormText from './FormText.svelte'
   import { formsOf } from '../lib/formOffers.js'
   import IdsLabel from './IdsLabel.svelte'
-  let { forms = [], groups = null, order = null, chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, children = null } = $props()
+  let { forms = [], groups = null, order = null, chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, open = new Map(), onopen = () => {}, children = null } = $props()
   const KEYS = '1234567890'
   const charOf = form => typeof form === 'string' ? form : form.char
   const place = $derived(new Map((order ?? (groups ? groups.flatMap(formsOf) : forms)).map((form, i) => [charOf(form), i])))
@@ -29,7 +30,11 @@
         {#each group.blocks as block (block.id)}
           <div class="form-block" class:own={block.own} role={block.id === group.id ? undefined : 'group'} aria-label={block.id === group.id ? undefined : block.label}>
             {#if block.label}<span class="form-group-label"><IdsLabel text={block.label} caption /></span>{/if}
-            <div class="form-group-chips">{#each block.forms as form (charOf(form))}{@render chip(form)}{/each}</div>
+            <div class="form-group-chips">{#each block.forms as form (charOf(form))}{@render chip(form)}{/each}{#if open.has(block.id)}
+              {@const shape = open.get(block.id)}
+              <button type="button" class="form-chip form-open" class:chosen={shape.chosen} class:current={shape.current} {disabled} aria-pressed={shape.chosen || shape.current}
+                title={shape.title} aria-label={shape.title} onclick={() => onopen(block)}>？</button>
+            {/if}</div>
           </div>
         {/each}
       </div>
@@ -52,6 +57,7 @@
   .form-chip{position:relative;display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;
     font-family:var(--char-font)}
   .form-chip:not(:disabled):hover{border-color:var(--accent)}
+  .form-chip.form-open{border-style:dashed;color:var(--muted)}
   .form-chip.current{border-color:var(--line-strong)}
   .form-chip.chosen{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light)}
   .form-chip sup{position:absolute;top:4px;right:4px;font-size:11px;line-height:1;color:var(--muted)}
