@@ -129,7 +129,7 @@ the local copy and the manifest, and answers equal to the published ones publish
 | 3. `reference.py`, dry run | none | nothing; its report is compared with the figures above |
 | 4. `reference.py --send` | `graphemes.head` of 11,328 rows (22,656 with the index), and of up to 56 characters without a head, their own; 2 a part for its stamp | see below |
 | 5. `answers.py`, as soon as 4 ends | one `generation` row and what the publication absorbs | Explore's tiles, browsing and the counts of the rounds file seal characters under their graphemes, once the pointer (a minute) and the copies kept at the edge (an hour at most) are read again |
-| 6. Publish the 篆書字体データセット books from a new export | `run_written`, 16,616 rows; the books' own runs | a run of these books names each crop's seal character |
+| 6. Publish the 篆書字体データセット books from a new export | `run_written`, 22,704 rows, one a crop placed on a seal character; the books' own runs | a run of these books names each crop's seal character |
 
 In step 4 the D1 rows land first and about 65,800 R2 objects follow. `mirror.lock` is held until the
 upload ends, and no publication or `answers.py` starts before. Until a card's object is uploaded, and
@@ -142,7 +142,8 @@ report printed after them lists it.
 Between 1 and 4 the 篆書 books are not published: a catalogue exported by then spells their runs by the
 Han heads, while the site files the characters under themselves. Step 6 is held until a new export of
 those books, since a catalogue made earlier keeps its old spellings. On the boxes of the committed tables
-five runs of theirs hold a small seal character (已以, 托拓, 北柩, 反取 and 反取取).
+2,884 runs of theirs hold a small seal character, most of them one 親字's forms side by side. The local copy
+of 24 November holds none of them; one filed under a seal character by step 4 stops the load.
 
 ## Limits
 
