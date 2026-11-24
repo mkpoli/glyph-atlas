@@ -123,6 +123,13 @@ def readers(classifier: Classifier, second: Recognizer):
     return of
 
 
+def headwords(entries: dict, volumes: set[str] | None, reached: set | None = None) -> int:
+    """How many headwords the table has in `volumes` (None for every volume), each counted once whatever
+    pages a scan repeats or leaves out; with `reached`, those of these half-leaves alone."""
+    return sum(len(column) for key, columns in entries.items()
+               if (volumes is None or key[0] in volumes) and (reached is None or key in reached) for column in columns.values())
+
+
 def settled(attempt, leaves: list[int]) -> tuple[int, dict]:
     """The leaf of `leaves` an opening is read as, and its outcome: the first, the one its volume's offset
     gives, unless fewer than `MOVED` headwords are read there and another leaf has that many and more. One
@@ -238,6 +245,7 @@ def main() -> int:
     documents, pages, lines, units, report = [], [], [], [], {}
     cut: set[str] = set()
     totals = defaultdict(int)
+    reached = set()  # the half-leaves the openings were read as
     enlarge = int(copy["enlarge"]) if args.enlarge is None else args.enlarge
     scale = float(copy["scale"]) if args.scale is None else args.scale
     fit = float(copy["fit"]) if args.fit is None else args.fit
@@ -311,7 +319,7 @@ def main() -> int:
             kept_here = 0
             report[page.id] = {}
             for key, counts, placed, verdicts, top in sides.values():
-                totals["headwords"] += counts["headwords"]
+                reached.add(key)
                 if "skipped" not in counts:
                     for column, (cells, _) in sorted(placed.items()):
                         if anchored and not any(verdicts.get((column, k)) for k in range(len(cells))):
@@ -355,6 +363,7 @@ def main() -> int:
         if kept_in_volume:
             documents.append(document)
 
+    totals["headwords"] = headwords(entries, wanted, None if only is None else reached)
     args.output.mkdir(parents=True, exist_ok=True)
     command = " ".join(["scripts/cut_guangyun_headwords.py", *sys.argv[1:]])
     tables.write(args.output / "documents.parquet", documents, Document)
