@@ -125,8 +125,8 @@
   let dateOrder = $state(opened?.order ?? ''), yearRange = $state(opened?.years ?? ''), decadeCounts = $state(null)
   const dateParams = () => expand === 'variants' ? {} : { order: dateOrder || undefined, years: yearRange || undefined }
   // Grouped by source (`source`), the gallery is its books, the most crops first, each with the crops of
-  // it read so far; `groupsAfter` is where the next books start and a book's `next` where its own crops do.
-  let groups = $state(opened?.groups ?? []), groupsAfter = $state(opened?.groupsAfter ?? null), growingGroup = $state(''), groupsRead = 0
+  // it read so far; `booksAfter` is where the next books start and a book's `next` where its own crops do.
+  let sourceBooks = $state(opened?.books ?? []), booksAfter = $state(opened?.booksAfter ?? null), growingBook = $state(''), failedBook = $state(''), booksRead = 0
   const bySource = $derived(dateOrder === 'source' && expand !== 'variants')
   let localStyles = $state(opened?.localStyles ?? null), corpusStyles = $state(opened?.corpusStyles ?? null)
   // Whether the corpus has answered this gallery's first page; a page the server rendered has it.
@@ -368,10 +368,9 @@
   // the view, so theirs are counted from the tiles shown.
   const shownStyles = items => Object.fromEntries(STYLE_GROUPS.map((group, rank) => [group, items.filter(item => styleRank(item) === rank).length]))
   const styles = $derived(styleCounts(visual ? shownStyles(visibleLocal) : localStyles, corpusStyles))
-  const groupPlace = $derived(new Map(groups.map((group, i) => [group.document, i])))
-  const groupOfTile = item => groups[groupPlace.get(item.document)] ?? null
+  const bookPlace = $derived(new Map(sourceBooks.map((book, i) => [book.document, i])))
   const galleryTiles = $derived.by(() => {
-    if (bySource) return [...visibleLocal, ...corpusOnly].map((item, i) => [groupPlace.get(item.document) ?? groups.length, i, item])
+    if (bySource) return [...visibleLocal, ...corpusOnly].map((item, i) => [bookPlace.get(item.document) ?? sourceBooks.length, i, item])
       .sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , item]) => item)
     if (byYear) {
       // A tile's place is its year and then its list, the collection's first: a corpus glyph of 1650 waits
@@ -413,13 +412,13 @@
   const shownItems = $derived(shownIn(items)), shownHomeCorpus = $derived(shownIn(homeCorpus))
   // The grapheme view puts a heading over each shape group; crops in no group have none. Grouped by
   // source, each book has one, and the books of a single crop, which come last, share one.
+  const sourceHead = (source, item = null) => ({ key: 'source:' + source.document, text: source.title ?? (item && workTitle(item)) ?? source.document, source,
+    count: source.count.local + source.count.corpus, date: item ? tileDate(item) : '' })
   const headingOf = item => {
     if (picked && bySource) {
-      const source = groupOfTile(item)
+      const source = sourceBooks[bookPlace.get(item.document)]
       if (!source) return null
-      const count = source.count.local + source.count.corpus
-      return count === 1 ? { key: 'single', text: t('explore.source.single') }
-        : { key: 'source:' + source.document, text: source.title ?? workTitle(item) ?? source.document, source, count, date: tileDate(item) }
+      return source.count.local + source.count.corpus === 1 ? { key: 'single', text: t('explore.source.single') } : sourceHead(source, item)
     }
     if (!picked || expand !== 'grapheme' || visualGroup(item).id === 'ungrouped') return null
     const group = visualGroup(item)
@@ -432,7 +431,7 @@
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   // While the first page loads, the collage holds placeholders of crops' usual proportions.
   const skeleton = collage(Array.from({ length: 32 }, (_, i) => [1, 1.25, 0.85, 1.1, 1.4, 0.95, 1.2, 0.8][i % 8]))
-  const hasMore = $derived(!choosing && (picked && bySource ? Boolean(groupsAfter) : picked ? !localDone || (corpusOffset < corpusTotal && Boolean(corpusAfter))
+  const hasMore = $derived(!choosing && (picked && bySource ? Boolean(booksAfter) : picked ? !localDone || (corpusOffset < corpusTotal && Boolean(corpusAfter))
     : Boolean(data?.next)))
   // The homepage's runs stand among the crops (`runTiles`), so the rows are counted with those before the cut.
   const whole = $derived.by(() => {
@@ -483,8 +482,14 @@
       if (!parts.length || parts.at(-1).key !== key) parts.push({ key, heading: heading?.text ?? '', head: heading, items: [] })
       parts.at(-1).items.push([item, i])
     })
+    // A book whose crops read so far have all left the gallery keeps its heading while it has more.
+    if (picked && bySource) {
+      const headed = new Set(parts.map(part => part.key)), place = part => part.head?.source ? bookPlace.get(part.head.source.document) : sourceBooks.length
+      for (const book of sourceBooks) if (book.next && !headed.has('source:' + book.document)) { const head = sourceHead(book); parts.push({ key: head.key, heading: head.text, head, items: [] }) }
+      parts.sort((a, b) => place(a) - place(b))
+    }
     return parts.map(part => {
-      const placed = collage(part.items.map(([item]) => tileAspect(item)))
+      const placed = part.items.length ? collage(part.items.map(([item]) => tileAspect(item))) : { block: '', tiles: [] }
       return { key: part.key || 'all', heading: part.heading, head: part.head, block: placed.block, tiles: part.items.map(([item, i], at) => [item, i, placed.tiles[at]]) }
     })
   })
@@ -593,19 +598,19 @@
   }
   // A page of the books of a gallery grouped by source, the collection's crops and the corpus's together.
   async function loadSources(id, append) {
-    if (!append) { groups = []; groupsAfter = null; groupsRead += 1 }
-    const found = await layerSources(picked.code_point, sourceParams(append ? { after: groupsAfter } : {}))
+    if (!append) { sourceBooks = []; booksAfter = null; failedBook = ''; booksRead += 1 }
+    const found = await layerSources(picked.code_point, sourceParams(append ? { after: booksAfter } : {}))
     if (closed || id !== requestId) return
-    const rows = sourcePage(found), shown = new Set(groups.map(group => group.document))
+    const rows = sourcePage(found), shown = new Set(sourceBooks.map(book => book.document))
     const counted = counts => STYLE_GROUPS.reduce((sum, name) => sum + (!style || name === style ? counts[name] ?? 0 : 0), 0)
     localStyles = found.styles.local; corpusStyles = found.styles.corpus; styled = Boolean(found.style_groups)
     localWithheld = found.withheld ?? null; localAnswered = true; corpusAnswered = true; corpusFault = null
     corpusTotal = counted(found.styles.corpus)
     // A book whose place moved since the page before is shown where it first was.
-    const fresh = rows.groups.filter(group => !shown.has(group.document)), added = item => !shown.has(item.document)
+    const fresh = rows.books.filter(book => !shown.has(book.document)), added = item => !shown.has(item.document)
     reach = append ? reach : 0
     local = [...local, ...rows.local.filter(added)]; corpus = [...corpus, ...rows.corpus.filter(added)]
-    groups = [...groups, ...fresh]; groupsAfter = found.next ?? null; corpusOffset = corpus.length
+    sourceBooks = [...sourceBooks, ...fresh]; booksAfter = found.next ?? null; corpusOffset = corpus.length
     data = { ...(data ?? {}), query: picked.char, total: counted(found.styles.local), available: counted(found.styles.local),
              categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
     if (append) return
@@ -613,18 +618,29 @@
     loadDecades(picked.code_point, expand)
   }
   const sourceParams = params => ({ scope: sourceScope(expand), style: style || undefined, years: yearRange || undefined, withheld: withheldParam(), ...params })
-  /** More of one book's crops. */
-  async function moreOfSource(group) {
-    const read = groupsRead
-    growingGroup = group.document
+  /** More of one book's crops. A read that fails is offered again on the book itself, and the rest stands. */
+  async function moreOfSource(book) {
+    if (growingBook === book.document) return
+    const read = booksRead, from = document.activeElement
+    growingBook = book.document; failedBook = ''
     try {
-      const found = await layerSources(picked.code_point, sourceParams({ document: group.document, after: group.next, per: 60 }))
-      if (closed || read !== groupsRead || !bySource) return
+      const found = await layerSources(picked.code_point, sourceParams({ document: book.document, after: book.next, per: 60 }))
+      if (closed || read !== booksRead || !bySource) return
       const rows = sourcePage(found), known = new Set([...local, ...corpus].map(item => item.id))
-      local = [...local, ...rows.local.filter(item => !known.has(item.id))]; corpus = [...corpus, ...rows.corpus.filter(item => !known.has(item.id))]
-      groups = groups.map(entry => entry.document === group.document ? { ...entry, next: rows.groups[0]?.next ?? null } : entry)
-    } catch (e) { if (!closed && read === groupsRead) error = e.message }
-    finally { if (growingGroup === group.document) growingGroup = '' }
+      const added = { local: rows.local.filter(item => !known.has(item.id)), corpus: rows.corpus.filter(item => !known.has(item.id)) }
+      // The tiles after the book's stay drawn as its new ones go in before them.
+      reach += added.local.length + added.corpus.length
+      local = [...local, ...added.local]; corpus = [...corpus, ...added.corpus]
+      const next = rows.books[0]?.next ?? null
+      sourceBooks = sourceBooks.map(entry => entry.document === book.document ? { ...entry, next } : entry)
+      // The button that was pressed leaves with the book's last crops: focus moves to the first of them.
+      if (!next) {
+        await tick()
+        const first = (added.local[0] ?? added.corpus[0])?.id
+        if (first && !from?.isConnected) [...grid.querySelectorAll('.glyph-tile')].find(tile => tileId(tile) === first)?.focus()
+      }
+    } catch { if (!closed && read === booksRead) failedBook = book.document }
+    finally { if (growingBook === book.document) growingBook = '' }
   }
   // A gallery the server rendered reads its decades once it is in the browser.
   $effect(() => { const code = picked?.code_point, scope = expand; if (code) untrack(() => loadDecades(code, scope)) })
@@ -843,7 +859,7 @@
     splitting = false
     choosing = false
     clearTimeout(searchTimer)
-    requestId += 1
+    requestId += 1; booksRead += 1
     const current = ++pickId
     picked = null
     // A year range is the last character's; another may have nothing in it.
@@ -1330,7 +1346,7 @@
   // shuffle alone, and deals the same crops again; a read on its way is kept as not asked, and asked again.
   let growing = false, current = entry()
   const capture = () => ({ data, items, error, grapheme, work, seed, query, filter, picked, expand, local, corpus, visual, analysis,
-    familyTotal, unassignedCount, corpusTotal, corpusOffset, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder, groups, groupsAfter,
+    familyTotal, unassignedCount, corpusTotal, corpusOffset, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder, sourceBooks, booksAfter,
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
     collection, groupStats, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
@@ -1347,7 +1363,7 @@
     familyTotal = back.familyTotal; unassignedCount = back.unassignedCount; corpusTotal = back.corpusTotal;
     corpusOffset = back.corpusOffset; corpusFault = back.corpusFault; localAfter = back.localAfter;
     corpusAfter = back.corpusAfter; localAnswered = back.localAnswered; style = back.style; styled = back.styled;
-    dateOrder = back.dateOrder; groups = back.groups; groupsAfter = back.groupsAfter; yearRange = back.yearRange; decadeCounts = back.decadeCounts;
+    dateOrder = back.dateOrder; sourceBooks = back.sourceBooks; booksAfter = back.booksAfter; failedBook = ''; booksRead += 1; yearRange = back.yearRange; decadeCounts = back.decadeCounts;
     decadesFor = back.decadesFor; localStyles = back.localStyles; corpusStyles = back.corpusStyles;
     corpusAnswered = back.corpusAnswered; split = back.split; sample = back.sample; sampleFault = back.sampleFault;
     collection = back.collection; groupStats = back.groupStats ?? groupStats; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
@@ -1426,6 +1442,10 @@
      book the collection cut crops from has a page. -->
 {#snippet sourceHeading(head)}
   <div class="visual-grid-heading source-heading">{#if head.source.count.local}<a class="source-title" href={localize('/books/' + encodeURIComponent(head.source.document))} lang="ja">{head.text}</a>{:else}<span class="source-title" lang="ja">{head.text}</span>{/if}{#if head.date}<span>{head.date}</span>{/if}<span>{t('explore.meta.glyphs', { count: head.count })}</span></div>
+{/snippet}
+{#snippet sourceMore(head)}
+  {@const text = t(failedBook === head.source.document ? 'common.retry' : 'explore.runs.more')}
+  <div class="source-more"><button class="quiet-link" aria-label={`${text} · ${head.text}`} aria-disabled={growingBook === head.source.document} onclick={() => moreOfSource(head.source)}>{text}</button></div>
 {/snippet}
 <section class="explore">
   <div class="page-status">
@@ -1541,9 +1561,9 @@
   {/if}
   <div class="glyph-grid collage" class:selecting bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading && mounted}>
     {#if loading && !display.length}<noscript><p class="noscript-note">{t('explore.noscript')}</p></noscript><div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
-    {:else}{#each sections as section (section.key)}{#if section.head?.source}{@render sourceHeading(section.head)}{:else if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.source?.next}<div class="source-more"><button class="quiet-link" disabled={growingGroup === section.head.source.document} onclick={() => moreOfSource(section.head.source)}>{t('explore.runs.more')}</button></div>{/if}{/each}{/if}
+    {:else}{#each sections as section (section.key)}{#if section.head?.source}{@render sourceHeading(section.head)}{:else if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.source?.next}{@render sourceMore(section.head)}{/if}{/each}{/if}
   </div>
-  {#if !choosing && !loading && !display.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
+  {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}

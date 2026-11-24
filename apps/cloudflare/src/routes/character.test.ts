@@ -24,16 +24,16 @@ beforeEach(() => edge.clear());
 // One small collection for every test, since reference objects, bundles and count shards are held per
 // isolate: 時 (with 时 and 旹 in its family, 峕 a variant), and ね with a hentaigana and corpus glyphs
 // filed under it with no character. Grapheme ids stay off the shards other test files read (7, 9).
-const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401, 事: 500, 亊: 501, 'ヿ': 510 } as Record<string, number>;
+const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401, 事: 500, 亊: 501, 'ヿ': 510, 丸: 530 } as Record<string, number>;
 // Each character's family head, which its crops' records name as their family.
-const HEAD = { 時: '時', 时: '時', 旹: '時', 峕: '峕', ね: 'ね', '𛂒': 'ね' } as Record<string, string>;
-const BOOK = { a: 1, b: 2, c: 3 };
-const PAGE_A = 7001, PAGE_B = 7002, PAGE_C = 7003;
+const HEAD = { 時: '時', 时: '時', 旹: '時', 峕: '峕', ね: 'ね', '𛂒': 'ね', 丸: '丸' } as Record<string, string>;
+const BOOK = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 };
+const PAGE_A = 7001, PAGE_B = 7002, PAGE_C = 7003, PAGE_D = 7004, PAGE_E = 7005, PAGE_F = 7006;
 const PACK = 'packs/test.bin';
 type Crop = { slot: number; page: number; kind: number; char: string | null; family?: string; style: number; state?: number; quiz?: number;
   production?: number; visual?: number; shuffle: number };
-const BOOK_OF = { [PAGE_A]: BOOK.a, [PAGE_B]: BOOK.b, [PAGE_C]: BOOK.c } as Record<number, number>;
-const YEAR = { [BOOK.a]: 1700, [BOOK.b]: 1813, [BOOK.c]: null } as Record<number, number | null>;
+const BOOK_OF = { [PAGE_A]: BOOK.a, [PAGE_B]: BOOK.b, [PAGE_C]: BOOK.c, [PAGE_D]: BOOK.d, [PAGE_E]: BOOK.e, [PAGE_F]: BOOK.f } as Record<number, number>;
+const YEAR = { [BOOK.a]: 1700, [BOOK.b]: 1813, [BOOK.c]: null, [BOOK.d]: 1890, [BOOK.e]: 1900, [BOOK.f]: 1901 } as Record<number, number | null>;
 const CROPS: Crop[] = [
   // 時: cursive, unassessed and formal, one withheld, one flagged.
   { slot: 0, page: PAGE_A, kind: 0, char: '時', style: 0, shuffle: 50, production: 2 },
@@ -52,6 +52,13 @@ const CROPS: Crop[] = [
   { slot: 4, page: PAGE_C, kind: 1, char: null, family: 'ね', style: 2, shuffle: 90, production: 1 },
   // A corpus glyph of 時 in book a, so the decades place one corpus glyph.
   { slot: 3, page: PAGE_A, kind: 1, char: '時', style: 2, shuffle: 35, production: 1 },
+  // 丸: a book of two styles with corpus glyphs, one of them withheld, and two books of one crop each.
+  { slot: 0, page: PAGE_D, kind: 0, char: '丸', style: 0, shuffle: 10 },
+  { slot: 1, page: PAGE_D, kind: 0, char: '丸', style: 4, shuffle: 20 },
+  { slot: 2, page: PAGE_D, kind: 1, char: '丸', style: 2, shuffle: 5, quiz: 0 },
+  { slot: 3, page: PAGE_D, kind: 1, char: '丸', style: 2, shuffle: 6 },
+  { slot: 0, page: PAGE_E, kind: 0, char: '丸', style: 2, shuffle: 30 },
+  { slot: 0, page: PAGE_F, kind: 0, char: '丸', style: 2, shuffle: 25 },
 ];
 const id = (c: Crop) => cropId(c.page, c.slot);
 const sourceId = (c: Crop) => `${c.kind ? 'codh' : 'hk'}:${c.page}:${c.slot}`;
@@ -81,11 +88,11 @@ beforeAll(() => {
   db = new Database(':memory:');
   const migrations = new URL('../../migrations-atlas/', import.meta.url);
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
-  db.exec(`INSERT INTO books(id,key,title) VALUES(1,'hk:a','A'),(2,'hk:b','B'),(3,'codh:c','C');
+  db.exec(`INSERT INTO books(id,key,title) VALUES(1,'hk:a','A'),(2,'hk:b','B'),(3,'codh:c','C'),(4,'hk:d','D'),(5,'hk:e','E'),(6,'hk:f','F');
     INSERT INTO productions VALUES(1,'printed',NULL),(2,'printed/woodblock',1),(3,'handwritten',NULL);
     INSERT INTO codes VALUES('state',1,'checked'),('state',2,'flagged'),('style',1,'running'),('style',4,'formal'),('style',5,'printed'),
       ('visual_group',1,'U+306D:abc'),('category',2,'kanji');
-    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${PAGE_A},'hk:a:1',1,1,9),(${PAGE_B},'hk:b:1',2,1,9),(${PAGE_C},'corpus:codh:c:0',3,1,9);
+    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${PAGE_A},'hk:a:1',1,1,9),(${PAGE_B},'hk:b:1',2,1,9),(${PAGE_C},'corpus:codh:c:0',3,1,9),(${PAGE_D},'hk:d:1',4,1,9),(${PAGE_E},'hk:e:1',5,1,9),(${PAGE_F},'hk:f:1',6,1,9);
     UPDATE generation SET gen=6;
     INSERT INTO book_dates(book,axis,kind,start,end,precision,text,label,status,calendar,source) VALUES
       (1,'witness','copied',1700,1700,'year','1700','1700','single','gregorian','s'),
@@ -146,6 +153,8 @@ beforeAll(() => {
     ids: { ね: G.ね, '𛂒': G['𛂒'] } }));
   objects.set('v3/reference/char/U+5CD5.json.gz', json({ grapheme: G.峕, data: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }),
     detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
+  objects.set('v3/reference/char/U+4E38.json.gz', json({ grapheme: G.丸, data: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸' } }),
+    detail: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 丸: G.丸 } }));
   // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ,
   // and holds no drawn form.
   const shi = [{ code_point: 'U+4E8B', char: '事' }, { code_point: 'U+4E8A', char: '亊' }];
@@ -360,6 +369,10 @@ describe('a crop a grapheme claim files', () => {
     try {
       expect(await every(time + '&limit=2')).toEqual([crop(PAGE_A, 0), crop(PAGE_A, 1), crop(PAGE_B, 0), crop(PAGE_B, 1), crop(PAGE_B, 3)]);
       expect((await get(time)).body.total).toBe(5);
+      const books = async (code: string) => (await get(`/layers/sources?code_point=${code}&scope=grapheme`)).body.groups
+        .filter((g: any) => g.document === 'hk:b').map((g: any) => [g.count.local, ids(g.items)]);
+      expect(await books('U%2B6642')).toEqual([[3, [crop(PAGE_B, 0), crop(PAGE_B, 3), crop(PAGE_B, 1)]]]);
+      expect(await books('U%2B5CD5')).toEqual([[2, [crop(PAGE_B, 2), crop(PAGE_B, 4)]]]);
       const filed = await get(other);
       expect([ids(filed.body.items), filed.body.total, filed.body.styles]).toEqual([[crop(PAGE_B, 2), crop(PAGE_B, 4)], 2, { cursive: 1, unassessed: 1, formal: 0 }]);
       db.exec(`UPDATE current_claims SET status='disputed' WHERE predicate='has_grapheme'`);
@@ -419,6 +432,16 @@ describe('a gallery grouped by source', () => {
     }
   });
 
+  it('goes on from a corpus glyph to the corpus glyphs after it, the withheld among them', async () => {
+    const found = [];
+    let after = '';
+    do {
+      const { body } = await get('/layers/sources?code_point=U%2B4E38&document=hk:d&per=1' + (after && '&after=' + after));
+      found.push([...ids(body.groups[0].items), body.groups[0].items[0].origin]); after = body.groups[0].next ?? '';
+    } while (after && found.length < 9);
+    expect(found).toEqual([[crop(PAGE_D, 0), 'collection'], [crop(PAGE_D, 1), 'collection'], [crop(PAGE_D, 2), 'corpus'], [crop(PAGE_D, 3), 'corpus']]);
+  });
+
   it('pages the books, and refuses a cursor it did not write', async () => {
     const seen: string[] = [];
     let after = '';
@@ -428,6 +451,13 @@ describe('a gallery grouped by source', () => {
       seen.push(body.groups[0].document); after = body.next ?? '';
     } while (after);
     expect(seen).toEqual(['hk:a', 'hk:b', 'codh:c']);
+    // Books of as many crops go by id, and a page holds the books that reach its crops.
+    const books = async (more: string) => { const { body } = await get('/layers/sources?code_point=U%2B4E38' + more); return [body.groups.map((g: any) => g.document), body.next] };
+    expect(await books('&limit=1')).toEqual([['hk:d'], '4.4']);
+    expect(await books('&limit=1&after=4.4')).toEqual([['hk:e'], '1.5']);
+    expect(await books('&limit=1&after=1.5')).toEqual([['hk:f'], null]);
+    expect(await books('&limit=5')).toEqual([['hk:d', 'hk:e'], '1.5']);
+    expect(await books('&limit=5&per=2')).toEqual([['hk:d', 'hk:e', 'hk:f'], null]);
     expect((await get('/layers/sources?code_point=U%2B6642&after=0S1.2.3')).status).toBe(422);
     expect((await get('/layers/sources?code_point=U%2B6642&document=hk:a&after=3.1')).status).toBe(422);
   });
@@ -436,6 +466,9 @@ describe('a gallery grouped by source', () => {
     const cursive = await get('/layers/sources?code_point=U%2B6642&style=cursive');
     expect(shape(cursive.body)).toEqual([['hk:a', 'A', 2, 0, [[crop(PAGE_A, 1), 'collection'], [crop(PAGE_A, 0), 'collection']]]]);
     expect([cursive.body.styles.local.formal, cursive.body.withheld]).toEqual([1, 0]);
+    expect(shape((await get('/layers/sources?code_point=U%2B4E38&style=formal')).body)).toEqual([['hk:d', 'D', 1, 0, [[crop(PAGE_D, 1), 'collection']]]]);
+    const ranged = (await get('/layers/sources?code_point=U%2B4E38&years=1890-1900')).body;
+    expect([ranged.groups.map((g: any) => g.document), ranged.withheld]).toEqual([['hk:d', 'hk:e'], null]);
     const books = async (more: string) => (await get('/layers/sources?code_point=U%2B6642' + more)).body.groups.map((g: any) => [g.document, g.count.local, g.count.corpus]);
     expect(await books('&years=1801-1900')).toEqual([['hk:b', 2, 0]]);
     expect(await books('&years=undated')).toEqual([['codh:c', 0, 1]]);
@@ -444,6 +477,8 @@ describe('a gallery grouped by source', () => {
   });
 
   it('merges a family’s characters and the glyphs filed under it with no character', async () => {
+    // The character's own books are kept apart from its family's.
+    expect((await get('/layers/sources?code_point=U%2B6642')).body.groups[0].document).toBe('hk:a');
     const { body } = await get('/layers/sources?code_point=U%2B6642&scope=grapheme');
     expect(shape(body)[0]).toEqual(['hk:b', 'B', 4, 0, [2, 0, 3, 1].map(slot => [crop(PAGE_B, slot), 'collection'])]);
     const ne = await get('/layers/sources?code_point=U%2B306D&scope=grapheme&per=2');

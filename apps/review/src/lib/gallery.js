@@ -68,7 +68,7 @@ export function sourcePage(found) {
   return {
     local: crops.filter(item => item.origin !== 'corpus'),
     corpus: crops.filter(item => item.origin === 'corpus').map(item => ({ ...item, label: writtenLabel(item) })),
-    groups: found.groups.map(({ items, ...group }) => group),
+    books: found.groups.map(({ items, ...book }) => book),
   }
 }
 
@@ -89,10 +89,10 @@ export async function characterGallery(codePoint, { scope = null, visual = '', s
   const widen = expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card)
   if (order === 'source') {
     const [found, widened] = await Promise.all([sources(codePoint, { scope: sourceScope(expand), style: style || undefined, years: dated.years }, options), widen])
-    const { groups, local, corpus } = sourcePage(found), total = counts => Object.entries(counts).reduce((sum, [name, n]) => !style || name === style ? sum + n : sum, 0)
+    const { books, local, corpus } = sourcePage(found), total = counts => Object.entries(counts).reduce((sum, [name, n]) => !style || name === style ? sum + n : sum, 0)
     return { picked: { ...card, ...widened }, expand, visual: '', style, order, years, styled: true, localStyles: found.styles.local, corpusStyles: found.styles.corpus,
       local, localAfter: null, total: total(found.styles.local), available: total(found.styles.local), withheld: found.withheld, corpus, corpusTotal: total(found.styles.corpus),
-      corpusAfter: null, corpusFault: null, analysis: card.visual_analysis ?? null, familyTotal: null, unassignedCount: null, groups, groupsAfter: found.next }
+      corpusAfter: null, corpusFault: null, analysis: card.visual_analysis ?? null, familyTotal: null, unassignedCount: null, books, booksAfter: found.next }
   }
   const [found, widened, leads] = await Promise.all([
     occurrences(codePoint, { expand, limit: 60, style: style || undefined, ...dated }, options),

@@ -704,7 +704,10 @@ export async function sources(env: Env, ctx: ExecutionContext, url: URL, tools: 
   const reads = ([0, 1] as const).flatMap(kind => {
     const ids = page.filter(book => kind ? book.count.corpus : book.count.local).map(book => book.id);
     if (!ids.length || (from && from[0] > kind)) return [];
-    return g.sources.flat().map(source => ({ kind, ...bookCropsQuery(source, kind, ids, { group, withheld: kind === 1 || withheld }, from && from[0] === kind ? [from[1], from[2]] : null, per + 1) }));
+    // Of the crops a claim files here, only those of these books are looked up.
+    const filed = new Set(ids), here = g.here.filter(r => r.kind === kind && filed.has(r.book)).map(r => r.id);
+    return g.sources.flat().map(source => source.by === 'claimed' ? { ...source, ids: here } : source).filter(source => source.by !== 'claimed' || source.ids.length)
+      .map(source => ({ kind, ...bookCropsQuery(source, kind, ids, { group, withheld: kind === 1 || withheld }, from && from[0] === kind ? [from[1], from[2]] : null, per + 1) }));
   });
   const rows = new Map<number, Row[]>(page.map(book => [book.id, []]));
   if (reads.length) (await env.ATLAS.batch(reads.map(({ sql, values }) => env.ATLAS.prepare(sql).bind(...values))) as D1Result<Row>[])
