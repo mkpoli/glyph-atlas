@@ -24,16 +24,18 @@ beforeEach(() => edge.clear());
 // One small collection for every test, since reference objects, bundles and count shards are held per
 // isolate: 時 (with 时 and 旹 in its family, 峕 a variant), and ね with a hentaigana and corpus glyphs
 // filed under it with no character. Grapheme ids stay off the shards other test files read (7, 9).
-const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401, 事: 500, 亊: 501, 'ヿ': 510, 丸: 530 } as Record<string, number>;
+const G = { 時: 300, 时: 301, 旹: 302, 峕: 303, ね: 400, '𛂒': 401, 事: 500, 亊: 501, 'ヿ': 510, 丸: 530, 凡: 531 } as Record<string, number>;
 // Each character's family head, which its crops' records name as their family.
-const HEAD = { 時: '時', 时: '時', 旹: '時', 峕: '峕', ね: 'ね', '𛂒': 'ね', 丸: '丸' } as Record<string, string>;
-const BOOK = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 };
+const HEAD = { 時: '時', 时: '時', 旹: '時', 峕: '峕', ね: 'ね', '𛂒': 'ね', 丸: '丸', 凡: '凡' } as Record<string, string>;
+const BOOK = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, dataset: 7, unnamed: 8, honkoku: 9, lines: 10, corpus: 11, copy: 12, hng: 13, cut: 14 };
 const PAGE_A = 7001, PAGE_B = 7002, PAGE_C = 7003, PAGE_D = 7004, PAGE_E = 7005, PAGE_F = 7006;
+// A page of each book of 凡's, from its book's id.
+const pageOf = (book: number) => 7100 + book;
 const PACK = 'packs/test.bin';
 type Crop = { slot: number; page: number; kind: number; char: string | null; family?: string; style: number; state?: number; quiz?: number;
   production?: number; visual?: number; shuffle: number };
-const BOOK_OF = { [PAGE_A]: BOOK.a, [PAGE_B]: BOOK.b, [PAGE_C]: BOOK.c, [PAGE_D]: BOOK.d, [PAGE_E]: BOOK.e, [PAGE_F]: BOOK.f } as Record<number, number>;
-const YEAR = { [BOOK.a]: 1700, [BOOK.b]: 1813, [BOOK.c]: null, [BOOK.d]: 1890, [BOOK.e]: 1900, [BOOK.f]: 1901 } as Record<number, number | null>;
+const BOOK_OF = { [PAGE_A]: BOOK.a, [PAGE_B]: BOOK.b, [PAGE_C]: BOOK.c, [PAGE_D]: BOOK.d, [PAGE_E]: BOOK.e, [PAGE_F]: BOOK.f, ...Object.fromEntries([7, 8, 9, 10, 11, 12, 13, 14].map(book => [pageOf(book), book])) } as Record<number, number>;
+const YEAR = { [BOOK.a]: 1700, [BOOK.b]: 1813, [BOOK.c]: null, [BOOK.d]: 1890, [BOOK.e]: 1900, [BOOK.f]: 1901, [BOOK.dataset]: null, [BOOK.unnamed]: null, [BOOK.honkoku]: 1800, [BOOK.lines]: 1800, [BOOK.corpus]: 1750, [BOOK.copy]: null, [BOOK.hng]: 600, [BOOK.cut]: 600 } as Record<number, number | null>;
 const CROPS: Crop[] = [
   // 時: cursive, unassessed and formal, one withheld, one flagged.
   { slot: 0, page: PAGE_A, kind: 0, char: '時', style: 0, shuffle: 50, production: 2 },
@@ -59,6 +61,17 @@ const CROPS: Crop[] = [
   { slot: 3, page: PAGE_D, kind: 1, char: '丸', style: 2, shuffle: 6 },
   { slot: 0, page: PAGE_E, kind: 0, char: '丸', style: 2, shuffle: 30 },
   { slot: 0, page: PAGE_F, kind: 0, char: '丸', style: 2, shuffle: 25 },
+  // 凡: a dataset that names no document, crops of no named book, and three copies two records each hold.
+  ...[10, 20, 30, 40].map((shuffle, slot) => ({ slot, page: pageOf(BOOK.dataset), kind: 1, char: '凡', style: 2, shuffle })),
+  { slot: 0, page: pageOf(BOOK.unnamed), kind: 1, char: '凡', style: 2, shuffle: 15 },
+  { slot: 0, page: pageOf(BOOK.honkoku), kind: 0, char: '凡', style: 2, shuffle: 10 },
+  { slot: 0, page: pageOf(BOOK.lines), kind: 0, char: '凡', style: 2, shuffle: 5 },
+  { slot: 1, page: pageOf(BOOK.lines), kind: 1, char: '凡', style: 2, shuffle: 1 },
+  { slot: 0, page: pageOf(BOOK.corpus), kind: 1, char: '凡', style: 2, shuffle: 10 },
+  { slot: 1, page: pageOf(BOOK.corpus), kind: 1, char: '凡', style: 2, shuffle: 20 },
+  { slot: 0, page: pageOf(BOOK.copy), kind: 0, char: '凡', style: 2, shuffle: 30 },
+  { slot: 0, page: pageOf(BOOK.hng), kind: 1, char: '凡', style: 2, shuffle: 20 },
+  { slot: 0, page: pageOf(BOOK.cut), kind: 1, char: '凡', style: 2, shuffle: 10 },
 ];
 const id = (c: Crop) => cropId(c.page, c.slot);
 const sourceId = (c: Crop) => `${c.kind ? 'codh' : 'hk'}:${c.page}:${c.slot}`;
@@ -88,11 +101,13 @@ beforeAll(() => {
   db = new Database(':memory:');
   const migrations = new URL('../../migrations-atlas/', import.meta.url);
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
-  db.exec(`INSERT INTO books(id,key,title) VALUES(1,'hk:a','A'),(2,'hk:b','B'),(3,'codh:c','C'),(4,'hk:d','D'),(5,'hk:e','E'),(6,'hk:f','F');
+  db.exec(`INSERT INTO books(id,key,title) VALUES(1,'hk:a','A'),(2,'hk:b','B'),(3,'codh:c','C'),(4,'hk:d','D'),(5,'hk:e','E'),(6,'hk:f','F'),(7,'hi:kuzushiji-2023','データセット'),(8,'hk',NULL),
+      (9,'hk:055a6724cf2e402237834afa675596ac','物'),(10,'hl:055A6724CF2E402237834AFA675596AC','物類'),(11,'codh:200022050','料理'),
+      (12,'hl:1793909603875BE815ED30CF80427250','料理本'),(13,'hng:fhs','経'),(14,'hng-kiridashi:fhs','経');
     INSERT INTO productions VALUES(1,'printed',NULL),(2,'printed/woodblock',1),(3,'handwritten',NULL);
     INSERT INTO codes VALUES('state',1,'checked'),('state',2,'flagged'),('style',1,'running'),('style',4,'formal'),('style',5,'printed'),
       ('visual_group',1,'U+306D:abc'),('category',2,'kanji');
-    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${PAGE_A},'hk:a:1',1,1,9),(${PAGE_B},'hk:b:1',2,1,9),(${PAGE_C},'corpus:codh:c:0',3,1,9),(${PAGE_D},'hk:d:1',4,1,9),(${PAGE_E},'hk:e:1',5,1,9),(${PAGE_F},'hk:f:1',6,1,9);
+    INSERT INTO pages(id,key,book,rev,next_slot) VALUES(${PAGE_A},'hk:a:1',1,1,9),(${PAGE_B},'hk:b:1',2,1,9),(${PAGE_C},'corpus:codh:c:0',3,1,9),(${PAGE_D},'hk:d:1',4,1,9),(${PAGE_E},'hk:e:1',5,1,9),(${PAGE_F},'hk:f:1',6,1,9),${[7, 8, 9, 10, 11, 12, 13, 14].map(book => `(${pageOf(book)},'page:${book}:1',${book},1,9)`).join()};
     UPDATE generation SET gen=6;
     INSERT INTO book_dates(book,axis,kind,start,end,precision,text,label,status,calendar,source) VALUES
       (1,'witness','copied',1700,1700,'year','1700','1700','single','gregorian','s'),
@@ -155,6 +170,8 @@ beforeAll(() => {
     detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
   objects.set('v3/reference/char/U+4E38.json.gz', json({ grapheme: G.丸, data: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸' } }),
     detail: card('丸', { grapheme: { code_point: 'U+4E38', char: '丸' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 丸: G.丸 } }));
+  objects.set('v3/reference/char/U+51E1.json.gz', json({ grapheme: G.凡, data: card('凡', { grapheme: { code_point: 'U+51E1', char: '凡' } }),
+    detail: card('凡', { grapheme: { code_point: 'U+51E1', char: '凡' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 凡: G.凡 } }));
   // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ,
   // and holds no drawn form.
   const shi = [{ code_point: 'U+4E8B', char: '事' }, { code_point: 'U+4E8A', char: '亊' }];
@@ -369,7 +386,7 @@ describe('a crop a grapheme claim files', () => {
     try {
       expect(await every(time + '&limit=2')).toEqual([crop(PAGE_A, 0), crop(PAGE_A, 1), crop(PAGE_B, 0), crop(PAGE_B, 1), crop(PAGE_B, 3)]);
       expect((await get(time)).body.total).toBe(5);
-      const books = async (code: string) => (await get(`/layers/sources?code_point=${code}&scope=grapheme`)).body.groups
+      const books = async (code: string) => (await get(`/layers/books?code_point=${code}&scope=grapheme`)).body.groups
         .filter((g: any) => g.document === 'hk:b').map((g: any) => [g.count.local, ids(g.items)]);
       expect(await books('U%2B6642')).toEqual([[3, [crop(PAGE_B, 0), crop(PAGE_B, 3), crop(PAGE_B, 1)]]]);
       expect(await books('U%2B5CD5')).toEqual([[2, [crop(PAGE_B, 2), crop(PAGE_B, 4)]]]);
@@ -406,10 +423,10 @@ describe('a gallery of the corpus', () => {
   });
 });
 
-describe('a gallery grouped by source', () => {
+describe('a gallery grouped by book', () => {
   const shape = (body: any) => body.groups.map((g: any) => [g.document, g.title, g.count.local, g.count.corpus, g.items.map((i: any) => [i.id, i.origin])]);
   it('lists the books with the most crops first, each with its first crops, the collection’s first', async () => {
-    const { body } = await get('/layers/sources?code_point=U%2B6642&per=2');
+    const { body } = await get('/layers/books?code_point=U%2B6642&per=2');
     expect(shape(body)).toEqual([
       ['hk:a', 'A', 2, 1, [[crop(PAGE_A, 1), 'collection'], [crop(PAGE_A, 0), 'collection']]],
       ['hk:b', 'B', 2, 0, [[crop(PAGE_B, 0), 'collection'], [crop(PAGE_B, 1), 'collection']]],
@@ -424,7 +441,7 @@ describe('a gallery grouped by source', () => {
       const seen: string[] = [];
       let after = '';
       do {
-        const { body } = await get(`/layers/sources?code_point=U%2B6642&document=hk:a&withheld=show&per=${per}${after && '&after=' + after}`);
+        const { body } = await get(`/layers/books?code_point=U%2B6642&document=hk:a&withheld=show&per=${per}${after && '&after=' + after}`);
         expect(body.groups.map((g: any) => g.document)).toEqual(['hk:a']);
         seen.push(...ids(body.groups[0].items)); after = body.groups[0].next ?? '';
       } while (after);
@@ -436,7 +453,7 @@ describe('a gallery grouped by source', () => {
     const found = [];
     let after = '';
     do {
-      const { body } = await get('/layers/sources?code_point=U%2B4E38&document=hk:d&per=1' + (after && '&after=' + after));
+      const { body } = await get('/layers/books?code_point=U%2B4E38&document=hk:d&per=1' + (after && '&after=' + after));
       found.push([...ids(body.groups[0].items), body.groups[0].items[0].origin]); after = body.groups[0].next ?? '';
     } while (after && found.length < 9);
     expect(found).toEqual([[crop(PAGE_D, 0), 'collection'], [crop(PAGE_D, 1), 'collection'], [crop(PAGE_D, 2), 'corpus'], [crop(PAGE_D, 3), 'corpus']]);
@@ -446,43 +463,74 @@ describe('a gallery grouped by source', () => {
     const seen: string[] = [];
     let after = '';
     do {
-      const { body } = await get('/layers/sources?code_point=U%2B6642&limit=1' + (after && '&after=' + after));
+      const { body } = await get('/layers/books?code_point=U%2B6642&limit=1' + (after && '&after=' + after));
       expect(body.groups).toHaveLength(1);
       seen.push(body.groups[0].document); after = body.next ?? '';
     } while (after);
     expect(seen).toEqual(['hk:a', 'hk:b', 'codh:c']);
     // Books of as many crops go by id, and a page holds the books that reach its crops.
-    const books = async (more: string) => { const { body } = await get('/layers/sources?code_point=U%2B4E38' + more); return [body.groups.map((g: any) => g.document), body.next] };
+    const books = async (more: string) => { const { body } = await get('/layers/books?code_point=U%2B4E38' + more); return [body.groups.map((g: any) => g.document), body.next] };
     expect(await books('&limit=1')).toEqual([['hk:d'], '4.4']);
     expect(await books('&limit=1&after=4.4')).toEqual([['hk:e'], '1.5']);
     expect(await books('&limit=1&after=1.5')).toEqual([['hk:f'], null]);
     expect(await books('&limit=5')).toEqual([['hk:d', 'hk:e'], '1.5']);
     expect(await books('&limit=5&per=2')).toEqual([['hk:d', 'hk:e', 'hk:f'], null]);
-    expect((await get('/layers/sources?code_point=U%2B6642&after=0S1.2.3')).status).toBe(422);
-    expect((await get('/layers/sources?code_point=U%2B6642&document=hk:a&after=3.1')).status).toBe(422);
+    expect((await get('/layers/books?code_point=U%2B6642&after=0S1.2.3')).status).toBe(422);
+    expect((await get('/layers/books?code_point=U%2B6642&document=hk:a&after=3.1')).status).toBe(422);
   });
 
   it('narrows to a style group and to years, the withheld shown when asked for', async () => {
-    const cursive = await get('/layers/sources?code_point=U%2B6642&style=cursive');
+    const cursive = await get('/layers/books?code_point=U%2B6642&style=cursive');
     expect(shape(cursive.body)).toEqual([['hk:a', 'A', 2, 0, [[crop(PAGE_A, 1), 'collection'], [crop(PAGE_A, 0), 'collection']]]]);
     expect([cursive.body.styles.local.formal, cursive.body.withheld]).toEqual([1, 0]);
-    expect(shape((await get('/layers/sources?code_point=U%2B4E38&style=formal')).body)).toEqual([['hk:d', 'D', 1, 0, [[crop(PAGE_D, 1), 'collection']]]]);
-    const ranged = (await get('/layers/sources?code_point=U%2B4E38&years=1890-1900')).body;
+    expect(shape((await get('/layers/books?code_point=U%2B4E38&style=formal')).body)).toEqual([['hk:d', 'D', 1, 0, [[crop(PAGE_D, 1), 'collection']]]]);
+    const ranged = (await get('/layers/books?code_point=U%2B4E38&years=1890-1900')).body;
     expect([ranged.groups.map((g: any) => g.document), ranged.withheld]).toEqual([['hk:d', 'hk:e'], null]);
-    const books = async (more: string) => (await get('/layers/sources?code_point=U%2B6642' + more)).body.groups.map((g: any) => [g.document, g.count.local, g.count.corpus]);
+    const books = async (more: string) => (await get('/layers/books?code_point=U%2B6642' + more)).body.groups.map((g: any) => [g.document, g.count.local, g.count.corpus]);
     expect(await books('&years=1801-1900')).toEqual([['hk:b', 2, 0]]);
     expect(await books('&years=undated')).toEqual([['codh:c', 0, 1]]);
     expect(await books('&withheld=show')).toEqual([['hk:a', 3, 1], ['hk:b', 2, 0], ['codh:c', 0, 1]]);
-    expect((await get('/layers/sources?code_point=U%2B6642&axis=composed')).status).toBe(422);
+    expect((await get('/layers/books?code_point=U%2B6642&axis=composed')).status).toBe(422);
   });
 
   it('merges a family’s characters and the glyphs filed under it with no character', async () => {
     // The character's own books are kept apart from its family's.
-    expect((await get('/layers/sources?code_point=U%2B6642')).body.groups[0].document).toBe('hk:a');
-    const { body } = await get('/layers/sources?code_point=U%2B6642&scope=grapheme');
+    expect((await get('/layers/books?code_point=U%2B6642')).body.groups[0].document).toBe('hk:a');
+    const { body } = await get('/layers/books?code_point=U%2B6642&scope=grapheme');
     expect(shape(body)[0]).toEqual(['hk:b', 'B', 4, 0, [2, 0, 3, 1].map(slot => [crop(PAGE_B, slot), 'collection'])]);
-    const ne = await get('/layers/sources?code_point=U%2B306D&scope=grapheme&per=2');
+    const ne = await get('/layers/books?code_point=U%2B306D&scope=grapheme&per=2');
     expect(shape(ne.body)).toEqual([['codh:c', 'C', 0, 4, [[crop(PAGE_C, 3), 'corpus'], [crop(PAGE_C, 1), 'corpus']]]]);
+  });
+
+  it('keeps two records of one copy as one book, and the crops of no recorded book last', async () => {
+    const at = (book: number, slot: number) => crop(pageOf(book), slot), { body } = await get('/layers/books?code_point=U%2B51E1');
+    expect(body.groups.map((g: any) => [g.document, g.records, g.title, g.page, g.count, ids(g.items)])).toEqual([
+      ['hl:055A6724CF2E402237834AFA675596AC', ['hl:055A6724CF2E402237834AFA675596AC', 'hk:055a6724cf2e402237834afa675596ac'], '物類', 'hl:055A6724CF2E402237834AFA675596AC',
+        { local: 2, corpus: 1 }, [at(BOOK.lines, 0), at(BOOK.honkoku, 0), at(BOOK.lines, 1)]],
+      ['codh:200022050', ['codh:200022050', 'hl:1793909603875BE815ED30CF80427250'], '料理', 'hl:1793909603875BE815ED30CF80427250',
+        { local: 1, corpus: 2 }, [at(BOOK.copy, 0), at(BOOK.corpus, 0), at(BOOK.corpus, 1)]],
+      ['hng:fhs', ['hng:fhs', 'hng-kiridashi:fhs'], '経', null, { local: 0, corpus: 2 }, [at(BOOK.cut, 0), at(BOOK.hng, 0)]],
+      ['unrecorded', ['hi:kuzushiji-2023', 'hk'], null, null, { local: 0, corpus: 5 },
+        [at(BOOK.dataset, 0), at(BOOK.unnamed, 0), at(BOOK.dataset, 1), at(BOOK.dataset, 2), at(BOOK.dataset, 3)]]]);
+    expect([body.total, body.next]).toEqual([4, null]);
+    const seen: string[] = [];
+    let after = '';
+    do {
+      const page = (await get('/layers/books?code_point=U%2B51E1&limit=1' + (after && '&after=' + after))).body;
+      seen.push(...page.groups.map((g: any) => g.document)); after = page.next ?? '';
+    } while (after);
+    expect(seen).toEqual(['hl:055A6724CF2E402237834AFA675596AC', 'codh:200022050', 'hng:fhs', 'unrecorded']);
+    for (const group of body.groups) {
+      const crops: string[] = [];
+      after = '';
+      do {
+        const page = (await get(`/layers/books?code_point=U%2B51E1&per=1&document=${group.document}` + (after && '&after=' + after))).body;
+        crops.push(...ids(page.groups[0].items)); after = page.groups[0].next ?? '';
+      } while (after && crops.length < 9);
+      expect(crops).toEqual(ids(group.items));
+    }
+    const dated = (await get('/layers/books?code_point=U%2B51E1&years=undated')).body.groups.map((g: any) => [g.document, g.count]);
+    expect(dated).toEqual([['hl:1793909603875BE815ED30CF80427250', { local: 1, corpus: 0 }], ['unrecorded', { local: 0, corpus: 5 }]]);
   });
 
   it('reads the books along the book indexes and each book’s crops in order from its own range', () => {

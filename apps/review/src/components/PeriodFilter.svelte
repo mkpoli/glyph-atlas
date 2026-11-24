@@ -1,5 +1,5 @@
 <script>
-  // A gallery's crops by the date of their books: in style order, oldest first or grouped by source, and narrowed to one
+  // A gallery's crops by the date of their books: in style order, oldest first or grouped by book, and narrowed to one
   // hundred years or to the books no source gives a year (some name only a period, such as 江戸後期). `counts` is the gallery's decades, [decade, crops]
   // with decade null for the undated, the collection's and the corpus's added together.
   import { t, formatNumber } from '../lib/i18n.svelte.js'
@@ -29,7 +29,7 @@
   <nav class="orders" aria-label={t('period.order.label')}>
     <button class:active={!order} aria-pressed={!order} onclick={() => onorder('')}>{t('period.order.style')}</button>
     <button class:active={order === 'year'} aria-pressed={order === 'year'} onclick={() => onorder('year')}>{t('period.order.year')}</button>
-    <button class:active={order === 'source'} aria-pressed={order === 'source'} onclick={() => onorder('source')}>{t('period.order.source')}</button>
+    <button class:active={order === 'book'} aria-pressed={order === 'book'} onclick={() => onorder('book')}>{t('period.order.book')}</button>
   </nav>
   <nav class="periods" aria-label={t('period.label')}>
     <button class:active={!value} aria-pressed={!value} onclick={() => onchange('')}>
