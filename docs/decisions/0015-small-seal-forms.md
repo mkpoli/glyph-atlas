@@ -61,6 +61,8 @@ A seal character's own card opens on its own crops.
   member too.
 - A selection on a Han card can be marked as a seal character, and a search for a kanji lists its seal
   characters, after its other forms and within the same 48.
+- A seal character chosen in the crop dialog names the crop, as any member does (仮 and 假): the crop is
+  reviewed as written with it, and joins the seal script. As a related character it was claimed alone.
 - Explore under a script lists that script's characters under the grapheme's head. Where the head is of
   another script, as for every seal character, each character is a tile of its own. It opens that
   character's gallery where it counts corpus glyphs, and otherwise narrows the listing to that character.
@@ -98,13 +100,17 @@ The figures are of the committed tables, before any other change the input holds
 
 ## Guards
 
-`reference.py` checks a load that moves a head, in the dry run and before anything is sent, and stops
-(`check_heads`) where
+`reference.py` checks a load that moves a head, in the dry run, before anything is sent and before the
+rest of a stopped load is, and stops (`check_heads`) where
 
 - the head of a character that is not small seal moves (`--heads` lets it): no Han head may;
 - a run is filed under a grapheme whose head moves, in the local copy of the runs, which must be there, or
   among the runs D1 has moved since the last publish;
-- a live `has_grapheme` or `written_for` claim names such a grapheme.
+- a live `written_for` claim names such a grapheme, since a card reads these by its head. The claimant is
+  asked to take it back, or the owner files the form under the head as well, which leaves the claim be.
+
+A `has_grapheme` claim is read by the head its key is filed under, so the report lists it and goes on. The
+report of run keys and claims is printed again once the rows have landed.
 
 It writes nothing. In D1 it reads each `run_moves` row with the few runs its first crop starts (the local
 copy of 24 November holds no such row), and each claim that names a grapheme, through `assertion_object`,
@@ -130,8 +136,8 @@ upload ends, and no publication or `answers.py` starts before. Until a card's ob
 for up to five minutes after in an isolate that holds the old one, the card lists its old members while
 its grapheme's gallery and rounds hold the new ones. A search reads a card its family's shard lacks from
 the card's own object. Until step 5 Explore and the rounds' counts list 𽌇 beside 春, a crop not yet saved
-is dealt in the rounds of both, and a crop of 𽌇 claimed for 春 is missing from 𽌇's listing. A claim made
-on a seal character while the rows land keeps its key.
+is dealt in the rounds of both. A claim made on a seal character while the rows land keeps its key, and the
+report printed after them lists it.
 
 Between 1 and 4 the 篆書 books are not published: a catalogue exported by then spells their runs by the
 Han heads, while the site files the characters under themselves. Step 6 is held until a new export of
