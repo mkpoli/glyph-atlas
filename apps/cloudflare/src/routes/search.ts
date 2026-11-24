@@ -231,12 +231,12 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
  *  `folded` lists each such structure of the group with who folded it and the names built as it. So
  *  does a structure that is another layout of one (⿰辵禺 of ⿺辶禺), with nobody in `by`, unless
  *  a reader folded that one under it. A
- *  name with no structure is in no group. `open` counts the crops built as a structure that wait for a
- *  form. `filed` lists, for a name readers filed under several
+ *  name with no structure is in no group. `open` counts, where it is asked for (`counted`), the crops built as a structure
+ *  that wait for a form. `filed` lists, for a name readers filed under several
  *  structures, the others with who says so and, for one that is folded, where it stands (`head`). What the descriptions give is kept at the edge by the
  *  catalogue version; the claims and folds are read each time, and an answer that could not read
  *  them gives the descriptions' alone. */
-export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string, of = '') {
+export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string, of = '', counted = false) {
   const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
   if (!named.length) throw new Problem(422, 'Name a character.');
   const whole = written(of), shaped = whole.length === 1 && [...whole[0]].length === 1 ? whole[0] : '';
@@ -265,7 +265,7 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
     groups.set(head.id, group);
   }
   const parts = [...groups.values()].flatMap(group => [group, ...group.folded ?? []]);
-  const open = await openShapeCounts(env, parts.map(part => part.id)).catch(unread(new Map<string, number>()));
+  const open = !counted ? new Map<string, number>() : await openShapeCounts(env, parts.map(part => part.id)).catch(unread(new Map<string, number>()));
   for (const part of parts) if (open.has(part.id)) part.open = open.get(part.id);
   return { items: [...groups.values()], ...(Object.keys(filed).length ? { filed } : {}) };
 }

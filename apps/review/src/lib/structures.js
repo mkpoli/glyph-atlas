@@ -47,7 +47,7 @@ export const layouts = group => {
  * J shape). The group leaves out those built as its own; one a reader filed elsewhere stands there.
  */
 export async function cardStructures(char, names) {
-  const items = (await readStructures(names)).items ?? []
+  const items = (await readStructures(names, '', { open: true })).items ?? []
   const own = items.find(group => group.chars.includes(char))
   if (!own?.chars.some(name => name !== char && /^\p{Script=Han}$/u.test(name))) return { items, twins: [] }
   const alike = await readIds(char).then(found => sortForms(char, [], found.shapes ?? []).alike.chars, () => [])

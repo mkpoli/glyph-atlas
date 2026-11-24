@@ -461,13 +461,25 @@ describe('a form filed under a structure', () => {
     expect((await openShapes(env, new URLSearchParams({ structure: above }))).structure).toEqual({ id: above, label: '⿱山夆' });
     // A page starts after where the last ended.
     const first = both[0], at = [beside, above].sort()[0], subject = db.query("SELECT subject FROM current_claims WHERE predicate='built_as' AND object=?").get(at) as { subject: string };
-    expect(await list({ after: btoa(JSON.stringify([at, subject.subject])) })).toEqual(both.slice(1));
+    expect(await list({ after: btoa(encodeURIComponent(JSON.stringify([at, subject.subject]))) })).toEqual(both.slice(1));
     expect(first).toBeDefined();
     // A form, agreed or disputed, takes a crop off; so does a structure taken back, and one claimed on an earlier cut.
     const formed = (actor: string, form: string | null) => setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form }, publicId(local), actor, tools);
     await formed('other', '⿱山夆'); expect(await list()).toEqual([[publicId(corpus), '⿱山夆']]);
     await formed('third', '⿰山夆'); expect(await list()).toEqual([[publicId(corpus), '⿱山夆']]);
     await formed('other', null); await formed('third', null); expect(await list()).toEqual(both);
+    // A shape said to be unresolved waits still.
+    db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,value,members,supporting,claims,resolver,at)
+      VALUES('x','has_form','','',?,0,'asserted',NULL,'"unresolved"','[]','[]','[]','r','n')`).run(local);
+    expect(await list()).toEqual(both);
+    // A page ends where it was read to, and a subject of any script is a cursor.
+    db.exec("DELETE FROM current_claims WHERE subject='x'");
+    const put = db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES(?,'built_as','','',?,9,'asserted',?,'[]','[]','[]','r','n')`);
+    for (let i = 0; i < 130; i++) put.run(`tsj:７:${String(i).padStart(3, '0')}`, 900000 + i, 'st:' + '0'.repeat(32));
+    const early = await openShapes(env, new URLSearchParams());
+    expect(early.items).toEqual([]);
+    expect((await openShapes(env, new URLSearchParams({ after: early.next! }))).items.length).toBe(2);
+    db.exec("DELETE FROM current_claims WHERE subject GLOB 'tsj:*'");
     await say(corpus, null); expect(await counts()).toEqual({ [beside]: 1 });
     db.exec(`UPDATE crops SET cut=cut+1 WHERE id=${local}`); expect(await list()).toEqual([]);
     await expect(openShapes(env, new URLSearchParams({ structure: 'x' }))).rejects.toThrow('Name a structure by its id.');

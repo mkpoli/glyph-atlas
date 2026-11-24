@@ -27,8 +27,8 @@ export const ids = char => get('/layers/ids', { c: char })
 /** The 構形 groups of these characters: `{ items: [{ id, label, chars, claimed, folded }], filed }`,
  *  `claimed` naming who filed a form there, `folded` the 構形 that stand under the group's, folded by a
  *  reader (`by`) or as a layout of it (⿰辵禺 of ⿺辶禺, nobody named), and `filed` the other 構形 readers filed a form under. `of` is the character whose regional shapes are
- *  among the names. */
-export const structures = (chars, of = '') => get('/layers/structures', { c: chars, of })
+ *  among the names, and `open` asks each 構形 for the crops built as it that wait for a form. */
+export const structures = (chars, of = '', { open = false } = {}) => get('/layers/structures', { c: chars, of, ...(open ? { open: 1 } : {}) })
 export const character = (codePoint, expand = 'none', options) => get('/layers/characters/' + encodeURIComponent(codePoint), { expand }, options)
 export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)
 export const graphemes = (params = {}) => get('/layers/graphemes', params)

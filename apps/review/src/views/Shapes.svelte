@@ -20,7 +20,10 @@
     return list
   }, []))
 
-  async function load(after = null) {
+  // A page can hold only crops whose forms are named by now: the next ones are read until a crop shows, at
+  // most EMPTY in a row.
+  const EMPTY = 5
+  async function load(after = null, empty = 0) {
     const turn = ++asked
     loading = true; error = ''
     if (!after) { items = []; next = null }
@@ -29,15 +32,18 @@
       if (turn !== asked) return
       items = after ? [...items, ...found.items] : found.items
       next = found.next; narrowed = found.structure
+      if (!found.items.length && next && empty < EMPTY) await load(next, empty + 1)
     } catch (failure) { if (turn === asked) error = failure.message } finally { if (turn === asked) loading = false }
   }
   $effect(() => { void wanted; load() })
   // A save that names the form, or gives another 構形 or none, takes the crop off its place here.
-  function update(id, record, kind, was) {
-    const item = items.find(each => each.id === id || each.id === was)
-    if (!item || !record || kind === 'skipped' || !('structure' in record)) return
+  // A review's answer says nothing of forms, and a redrawn box is another cut, so the crop is read again.
+  async function update(id, record, kind) {
+    const item = items.find(each => each.id === id || each.id === page.state.inspect?.was)
+    if (!item || !record || kind === 'skipped') return
+    try { if (!('structure' in record)) record = await request('/atlas/characters/' + encodeURIComponent(id)) } catch (failure) { if (failure.status !== 404) return; record = {} }
     const held = builtAs(record)
-    if (held.length !== 1 || held[0].structure !== item.structure.id) items = items.filter(each => each !== item)
+    if (id !== item.id || held.length !== 1 || held[0].structure !== item.structure.id) items = items.filter(each => each !== item)
   }
   const open = item => inspector.inspect(item.id, items, update)
 </script>
@@ -48,7 +54,7 @@
   </header>
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load()}>{t('common.retry')}</button></div>{/if}
   {#if loading && !items.length}<div class="glyph-grid" aria-busy="true">{#each Array(8) as _}<div class="glyph-skeleton"></div>{/each}</div>
-  {:else if !items.length && !error}<div class="empty"><span class="empty-mark">？</span><h2>{t('shapes.empty')}</h2></div>
+  {:else if !items.length && !next && !error}<div class="empty"><span class="empty-mark">？</span><h2>{t('shapes.empty')}</h2></div>
   {:else}
     <div class="shapes-groups">
     {#each groups as group (group.id)}
