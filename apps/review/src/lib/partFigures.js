@@ -1,19 +1,18 @@
 // The registered figures a part of a description can be written with: the variation sequences the
-// composer draws (`composer/variants.js`). A sequence its list lacks is not offered, since a description
+// composer draws (`partFiguresData.ts`). A sequence its list lacks is not offered, since a description
 // holding it could not be drawn.
-import { VARIANTS } from './composer/variants.js'
-import { figuresOf } from './mjFigures.js'
+import { figuresOf, isFigure } from './mjFigures.js'
 
-const SELECTOR = /^[\u{E0100}-\u{E01EF}]$/u
-let list = null
-// A failed read is asked again next time rather than kept.
-const listed = () => list ??= fetch(`${VARIANTS}variants.json`)
-  .then(response => response.ok ? response.json() : Promise.reject(new Error(`variants.json: ${response.status}`)))
-  .catch(error => { list = null; throw error })
+// Read with the first part chosen, apart from the editor itself.
+const listed = () => import('../../../cloudflare/src/partFiguresData.ts').then(module => module.PART_FIGURES)
 
-/** The figures of `char` among the `selectors` an export lists for it, as `{ char, mj }`, with the MJ
- *  figure of the sequence or null. A standardized sequence (U+FE00) is no registered figure. */
-export const drawnFigures = (char, selectors, registered) => [...selectors ?? ''].filter(selector => SELECTOR.test(selector))
+/** What a part became, as a title names it: a figure by its sequence, since a title draws it as the bare
+ *  character. */
+export const partName = part => isFigure(part) ? [...part].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase()).join(' ') : part
+
+/** The figures of `char` among the `selectors` listed for it, as `{ char, mj }`, with the MJ figure of
+ *  the sequence or null. */
+export const drawnFigures = (char, selectors, registered) => [...selectors ?? '']
   .map(selector => ({ char: char + selector, mj: registered.find(figure => figure.char === char + selector)?.mj ?? null }))
 
 /** The figures the part `char` can be written with. */

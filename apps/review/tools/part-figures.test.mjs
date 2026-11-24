@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { drawnFigures } from '../src/lib/partFigures.js'
+import { drawnFigures, figuresFor, partName } from '../src/lib/partFigures.js'
 
 describe('the figures of a part', () => {
   it('are the sequences the export draws, with their MJ figure where one is registered', () => {
@@ -7,8 +7,11 @@ describe('the figures of a part', () => {
     expect(drawnFigures('辶', '\u{E0101}', registered)).toEqual([{ char: '辶\u{E0101}', mj: null }])
     expect(drawnFigures('辶', '\u{E0101}\u{E0102}', registered)[1]).toEqual({ char: '辶\u{E0102}', mj: 'MJ030302' })
   })
-  it('leave out a standardized sequence, and are none for a character the export does not list', () => {
-    expect(drawnFigures('侮', '\uFE00\u{E0101}', [])).toEqual([{ char: '侮\u{E0101}', mj: null }])
+  it('are named in a title by their sequence', () => {
+    expect([partName('辶\u{E0101}'), partName('⿴囗丷')]).toEqual(['U+8FB6 U+E0101', '⿴囗丷'])
+  })
+  it('are none for a character the table does not list', async () => {
     expect(drawnFigures('一', undefined, [])).toEqual([])
+    expect(await figuresFor('⿺')).toEqual([])
   })
 })
