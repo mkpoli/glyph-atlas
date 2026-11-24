@@ -684,6 +684,9 @@ class Memory:
     edits: tuple[Edit, ...]
 
 
+STICKERS_DIR = Path(__file__).resolve().parent / "stickers"
+
+
 @dataclasses.dataclass(frozen=True)
 class Sticker:
     name: str
@@ -693,14 +696,18 @@ class Sticker:
 
     @property
     def url(self) -> str:
-        return f"https://pbs.twimg.com/media/{self.media}.png?name=orig"
+        return f"https://pbs.twimg.com/media/{self.media}.png?name=orig" if self.media else ""
+
+    def path(self, root: Path = STICKERS_DIR) -> Path | None:
+        return None if self.media else root / f"{self.name}.png"
 
 
 # 大肥鱼日常表情包, 16 stickers of 240 x 240 px by Nobu.Mashiro (@wr3162), posted on X on 2026-11-17 with
 # "欢迎大家取用！" (everyone is welcome to take them), https://x.com/wr3162/status/2122581552219734149,
 # read through https://api.fxtwitter.com/status/2122581552219734149. The post states no further terms.
-# The bot fetches each image from the post, checks it against its hash and keeps it in the homeserver's
-# media repository; this repository holds no copy.
+# The bot fetches those 16 images from the post (this repository holds no copy of them) and reads 16
+# additional 240 x 240 px stickers from apps/fish-bot/stickers/, checks each against its hash and keeps
+# it in the homeserver's media repository.
 STICKERS = (
     Sticker("stare", "staring quietly, deadpan", "HXTsf21awAA7qFi",
             "d26f47dc42ec7badd19b7314549e3f07a4bb5a12a21c670280a9af3851d5478a"),
@@ -734,6 +741,38 @@ STICKERS = (
             "b57128ad0363044f8a0ebca8171e54555b636853a699ab2bcd9b724f9b38704d"),
     Sticker("wave", "cheerful wave: hello or bye", "HXTsf2gaAAAZEas",
             "a300a01c8be5a60054057e1187a6ae93003bf18f75bf144afaaa0a4b9fd3f6cc"),
+    Sticker("rice", "hugging a steaming bowl of white rice with chopsticks: hungry, mealtime, eating", "",
+            "3f8f53315efc2cb70b0a8d31ff8d5cb045dc34e2588d65f82dcc13ec272d6974"),
+    Sticker("laugh", "laughing hard, tears of joy: lol, hilarious", "",
+            "a12cc14c30bd9d84d76b4ab3c3ca41227a59300f99621e71dd064541771dd9b7"),
+    Sticker("clap", "clapping hands enthusiastically: bravo, well done, applause", "",
+            "073d5ff4137aa1529977c084747c9e3885058943ba2f83ae294aadf981a24b10"),
+    Sticker("sparkle", "starry eyes in awe: amazed, so cool", "",
+            "7aab92d071840a5f8e363371dec86f17e10195cc1e893f142817a75c8e6ed655"),
+    Sticker("smug", "smug grin, hands on hips: proud, nailed it", "",
+            "b81ef091e3c2bb261967a2fdb2f25dde689cbdffe14162d31c24307cbe7fbbb6"),
+    Sticker("tease", "playful wink sticking out her tongue: teasing, cheeky, oops", "",
+            "895ce1be57fa814cb8e8161744e2b14240e479266b06963f8c5900c396415830"),
+    Sticker("shy", "blushing shyly, poking fingertips together: bashful, embarrassed", "",
+            "07c822226a1269f3044db1bd4c31d06d3927ee873912f3865d9491793cd12b5c"),
+    Sticker("pout", "pouting with puffed cheeks and an anger mark: annoyed, hmph", "",
+            "5c17078556635382d64141e1bed7d94b4388e9216a58e8fca61e6f40cacb1960"),
+    Sticker("no", "crossing arms in an X: no, nope, disagree", "",
+            "f8167bcc9a6c304edc715e17a5ed4bcc29273cce504d46880051351ffcd8cf73"),
+    Sticker("sorry", "palms pressed together apologetically: sorry, please", "",
+            "1a1999f979f964a72459e8d43e3ef6ef0eaf33e829bb6caa897d1af20d5147c5"),
+    Sticker("pat", "holding out a little whale plush warmly: comforting, there there", "",
+            "194825457102aae432fb631a6bd204e5342080b1c506bece3829f2e8b7275019"),
+    Sticker("salute", "crisp salute: roger that, on it", "",
+            "50e91da1e2728852ef879e8d9e4be4ea4b44141c6f7d71c78772cb2de8fa6a20"),
+    Sticker("inspect", "holding a magnifying glass up to one eye: inspecting closely, curious", "",
+            "7739c9a4f96fc3680685d99d6d013fdecccaf869b46170e9fa301484db1f42cf"),
+    Sticker("speechless", "vertical gloom lines and sideways glance: speechless, awkward", "",
+            "951e981074be3eaf2b6dc907ce4098de0083f1151bf6294929d5945b90c8d053"),
+    Sticker("facepalm", "palm on forehead with a sigh: facepalm, exasperated", "",
+            "923b771c70dbe63b69890543fe0a39ab94701a7b7d4a2584560784a20662af43"),
+    Sticker("slack", "slumped flat with a little soul floating out: slacking off, exhausted", "",
+            "1c40a84ceb887ba93890dfaa084076d0410fd73b0000dad0fc14986dd769b034"),
 )
 STICKER_SIZE = 240
 # After she sends a sticker in a room, her next turns there are offered none for this long. Asked
@@ -4376,15 +4415,16 @@ class Bot:
             return {}
         return self.store.stickers()
 
-    def ensure_stickers(self, fetch: Any = None) -> None:
+    def ensure_stickers(self, fetch: Any = None, stickers_dir: Path = STICKERS_DIR) -> None:
         """Upload the stickers the homeserver does not hold yet, each checked against its hash."""
         fetch = fetch or _download
         have = self.store.stickers()
         for sticker in STICKERS:
             if sticker.name in have:
                 continue
+            path = sticker.path(stickers_dir)
             try:
-                data = fetch(sticker.url)
+                data = path.read_bytes() if path is not None else fetch(sticker.url)
             except OSError as error:
                 log.warning("fetching sticker %s: %s", sticker.name, error)
                 continue
