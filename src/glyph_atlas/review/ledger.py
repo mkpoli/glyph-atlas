@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
+import unicodedata
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -51,6 +53,10 @@ EVIDENCE_KINDS = frozenset({"page", "source"})
 EVIDENCE_MAX = 8
 #: The longest gloss, in code points.
 GLOSS_MAX = 200
+#: The most characters read together, the code points of one of them, and of the text over it.
+RUN_MAX, RUN_PART_MAX, OVER_MAX = 12, 8, 32
+#: A reading is written in ordinary letters; only a ruby as the page writes it holds these.
+HENTAIGANA = re.compile("[\U0001B002-\U0001B11E]")
 
 
 class LedgerError(ValueError):
@@ -158,11 +164,37 @@ def check(predicate: str, claims: Sequence[Claim], *, objects: Mapping[str, str]
 
 def _shaped(shape: str | None, value: Any) -> bool:
     """Whether a value has the shape a predicate takes besides its listed values: a `gloss` is
-    `{"gloss": text}`, the sense in words where no word row fits yet, with no space around it."""
+    `{"gloss": text}`, the sense in words where no word row fits yet, with no space around it; a `reading` is
+    `{"run", "at", "reading"}` and a `ruby` `{"run", "at", "ruby"}`, the characters read together, which of
+    them the crop is, and the text over each of them or one text over them all."""
+    if not isinstance(value, dict):
+        return False
     if shape == "gloss":
-        gloss = value.get("gloss") if isinstance(value, dict) and value.keys() == {"gloss"} else None
+        gloss = value.get("gloss") if value.keys() == {"gloss"} else None
         return isinstance(gloss, str) and gloss == gloss.strip() and 0 < len(gloss) <= GLOSS_MAX
+    if shape in ("reading", "ruby"):
+        return _run_shaped(value, shape)
     return False
+
+
+def _run_part(part: Any) -> bool:
+    return (isinstance(part, str) and 0 < len(part) <= RUN_PART_MAX and part == unicodedata.normalize("NFC", part)
+            and not any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zs", "Zl", "Zp") for char in part))
+
+
+def _over(text: Any) -> bool:
+    """Letters and marks alone, so a reading never holds a space or punctuation."""
+    return (isinstance(text, str) and len(text) <= OVER_MAX and text == unicodedata.normalize("NFC", text)
+            and all(unicodedata.category(char)[0] in "LM" or unicodedata.category(char) == "Sk" for char in text))
+
+
+def _run_shaped(value: dict, field: str) -> bool:
+    run, at, texts = value.get("run"), value.get("at"), value.get(field)
+    return (value.keys() == {"run", "at", field}
+            and isinstance(run, list) and 1 <= len(run) <= RUN_MAX and all(_run_part(part) for part in run)
+            and isinstance(at, int) and not isinstance(at, bool) and 0 <= at < len(run)
+            and isinstance(texts, list) and len(texts) in (1, len(run)) and all(_over(text) for text in texts)
+            and any(texts) and (field == "ruby" or not any(HENTAIGANA.search(text) for text in texts)))
 
 
 def previous(conn: sqlite3.Connection, key: str, request: str) -> dict | None:

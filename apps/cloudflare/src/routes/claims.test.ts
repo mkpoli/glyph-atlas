@@ -9,8 +9,9 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
+import { cropReadings } from '../cropReadings';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
 
@@ -585,6 +586,68 @@ describe('a form filed under a structure', () => {
   });
 });
 
+describe('a crop read in a run', () => {
+  const read = () => {
+    const found = setup(), { env, tools, local, corpus, version } = found;
+    const body = (value = {}) => ({ id: crypto.randomUUID(), crop_version: version(local), run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'],
+      method: 'ruby', others: [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 0 }], ...value });
+    const set = (value = {}, actor = 'reader') => setReading(env, body(value), publicId(local), actor, tools);
+    const of = async (crop: number) => (await cropReadings(env, [crop])).get(crop) ?? null;
+    return { ...found, body, set, of };
+  };
+
+  it('is saved on every crop of the run at once, each with its place, and the ruby beside it as the page writes it', async () => {
+    const { db, env, tools, local, corpus, body, of } = read();
+    const first = body(), answer = await setReading(env, first, publicId(local), 'reader', tools);
+    expect(answer).toEqual({ id: publicId(local), crops: [publicId(local), publicId(corpus)], reading: { status: 'asserted',
+      values: [{ run: ['諸', '器'], at: 1, reading: ['しょ', 'き'] }], methods: ['ruby'], by: ['reader'],
+      ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }], by: ['reader'] } } });
+    expect((await of(corpus))?.values).toEqual([{ run: ['諸', '器'], at: 0, reading: ['しょ', 'き'] }]);
+    // The same save sent again is the same write.
+    expect(await setReading(env, first, publicId(local), 'reader', tools)).toEqual(answer);
+    expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 4 });
+    expect(db.query('SELECT revision,state FROM crops WHERE id=?').get(local)).toEqual({ revision: 0, state: 0 });
+  });
+
+  it('replaces the reader\'s earlier run whole, and is taken back whole, leaving another reader\'s', async () => {
+    const { corpus, local, set, of } = read();
+    await set(); await set({}, 'other');
+    expect((await of(local))?.by.sort()).toEqual(['other', 'reader']);
+    // The run shrinks to this crop, read alone and with no ruby recorded.
+    const alone = await set({ run: ['器'], at: 0, reading: ['き'], ruby: null, method: 'context', others: [] });
+    expect(alone.reading).toMatchObject({ status: 'disputed', ruby: { by: ['other'] } });
+    expect((await of(corpus))?.by).toEqual(['other']);
+    const cleared = await set({ run: null });
+    expect(cleared.reading).toMatchObject({ status: 'asserted', by: ['other'] });
+    expect((await of(corpus))?.by).toEqual(['other']);
+    await expect(set({ run: null })).rejects.toThrow('409 You have no reading on this crop to clear.');
+    await set({ run: null }, 'other');
+    expect([await of(local), await of(corpus)]).toEqual([null, null]);
+  });
+
+  it('may have one reading for all of its characters', async () => {
+    const { set } = read();
+    const answer = await set({ run: ['村', '落'], reading: ['ざいご'], ruby: ['ざいご'] });
+    expect(answer.reading.values).toEqual([{ run: ['村', '落'], at: 1, reading: ['ざいご'] }]);
+  });
+
+  it('is refused whole when it is no reading, two crops share a place, or a crop was cut again', async () => {
+    const { db, local, corpus, version, set, post, body } = read();
+    for (const value of [{ run: [] }, { run: '諸器' }, { at: 2 }, { at: 0.5 }, { reading: [] }, { reading: ['', ''] }, { reading: ['し', 'よ', 'き'] }, { reading: ['し よ', 'き'] },
+      { reading: ['𛁈よ', 'き'] }, { run: ['諸', '器 '] }, { run: Array(13).fill('諸'), reading: ['き'] }, { ruby: ['(き)'] }])
+      await expect(set(value)).rejects.toThrow('422');
+    for (const method of [undefined, 'guess']) await expect(set({ method })).rejects.toThrow('422 read_as names how it is known');
+    const other = { id: publicId(corpus), crop_version: version(corpus, 'rev1') };
+    await expect(set({ others: [{ ...other, at: 1 }] })).rejects.toThrow('422 Each place of the run is one crop.');
+    await expect(set({ others: [{ id: publicId(local), crop_version: version(local), at: 0 }] })).rejects.toThrow('422 Each place of the run is one crop.');
+    for (const others of ['x', [null]]) await expect(set({ others })).rejects.toThrow('422');
+    const stale = await set({ others: [{ ...other, crop_version: 'old', at: 0 }] }).catch(error => error);
+    expect([stale.message, stale.extra]).toEqual(['409 Some of these crops were cut again. Reload them.', { targets: [{ id: publicId(corpus) }] }]);
+    expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 0 });
+    expect(await post(`/atlas/characters/${publicId(local)}/reading`, body())).toMatchObject({ id: publicId(local), reading: { by: ['reader'] } });
+  });
+});
+
 describe('a batch of form picks', () => {
   it('claims one value on every crop at once, names its form once, and is undone by sending each replaced value back', async () => {
     const { db, env, tools, local, corpus, version, post } = setup();
@@ -772,10 +835,11 @@ describe('the ledger queries', () => {
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
       [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],
       [claimedStructuresQuery(), ['["fm:1"]']], [foldsQuery(), ['["st:1"]']], [ownFoldQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['st:1', 'u']],
+      [ownReadingsQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['[1]', 'u']], [savedRunsQuery(), ['["k"]']],
     ];
     for (const [sql, args] of plans) {
       const detail = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail);
-      expect([sql, detail.filter(d => /^SCAN (a|c|k|e|x|f|r|p|crops|assertions|assertion_actions|assertion_evidence|current_claims|forms|representations|structures|s|words|book_dates|pages|reviews)\b/.test(d))])
+      expect([sql, detail.filter(d => /^SCAN (a|c|k|e|x|f|r|p|crops|assertions|assertion_actions|assertion_evidence|current_claims|forms|representations|structures|s|words|book_dates|pages|reviews|ledger_submissions)\b/.test(d))])
         .toEqual([sql, []]);
     }
   });

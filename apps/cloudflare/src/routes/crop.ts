@@ -11,6 +11,7 @@ import { bibtex, citedVersion, cropEntry, csl, FORMATS, hayagriva, type Day, typ
 import { axisOf } from '../dating';
 import { honkokuPage } from '../honkoku';
 import { cropForms, cropGraphemes, cropWords } from '../cropPanels';
+import { cropReadings } from '../cropReadings';
 import { MARKS, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
 
 type Json = Record<string, any>;
@@ -58,18 +59,18 @@ const documentFor = ({ row, record }: FoundCrop): string | null => row.kind === 
 
 // The statuses of a grapheme slot that file its crop, as the galleries read them (`FILES`, atlas3Gallery.ts).
 const FILING = new Set(['asserted', 'accepted', 'adjudicated']);
-/** A crop's record for its inspector, with its grapheme, form, word, book's dates and the claims they
+/** A crop's record for its inspector, with its grapheme, form, reading, word, book's dates and the claims they
  *  rest on. A grapheme claim that holds names the grapheme the crop is filed under. */
 export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
   const id = found.row.id, document = documentFor(found);
   // The styles a reviewer may give it: those a publication has numbered (`setStyle`), read as they stand, since a
   // publication may number one after the isolate's code table was read.
-  const [graphemes, forms, words, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropWords(env, [id]),
-    bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
+  const [graphemes, forms, readings, words, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]),
+    cropReadings(env, [id]), cropWords(env, [id]), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
   const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
   const styles = numbered.results.map(row => row.key);
-  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null, word: words.get(id) ?? null,
-    style_choices: styles };
+  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null,
+    reading: readings.get(id) ?? null, word: words.get(id) ?? null,    style_choices: styles };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };
 }

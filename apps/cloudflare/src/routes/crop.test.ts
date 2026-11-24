@@ -154,6 +154,7 @@ describe('a crop\'s record', () => {
       // The style it is listed under, which a reviewer may change.
       style: 'unassessed', style_basis: 'none', style_editable: true, style_choices: [],
       grapheme_claim: null, form: { status: 'single', values: [{ form: 'form:1', scheme: 'unicode', text: '弌', confidence: null }], supporting: ['f1'], by: ['x'] },
+      reading: null,
       word: { status: 'single', values: [{ word: 'ja/いち', reading: 'いち', class: 'noun', form: null }], methods: ['ruby'], supporting: ['w1'], by: ['x'] },
       honkoku_url: `https://app.honkoku.org/transcription/${book.slice(3)}/5`,
       dating: { witness: { kind: 'copied', start: 1790, end: 1790, precision: 'year', qualifier: null, uncertain: false, text: '寛政二年',
@@ -441,6 +442,7 @@ describe('the crop routes\' queries', () => {
     expect(plan(db, recordQuery(), 1)).toEqual([]);
     expect(plan(db, listedCropsQuery(), '[1]')).toEqual([]);
     expect(plan(db, cropSlotsQuery(), '[1]', 'has_form')).toEqual([]);
+    expect(plan(db, cropSlotsQuery(2), '[1]', 'read_as', 'bears_ruby')).toEqual([]);
     expect(plan(db, formNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordMethodsQuery(), '[]')).toEqual([]);
