@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { categoryOf } from '../../cloudflare/src/category.ts'
-import { gatherGraphemes, rowNamed, tileOpens } from '../src/lib/graphemeGroups.js'
+import { cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../src/lib/graphemeGroups.js'
 
 // 大 with its small seal character 𾶱, 民 with two of its own, and は with ハ, as the catalogue and the
 // corpus count them.
@@ -10,6 +10,19 @@ const categories = [{ label: 'は', grapheme: 'U+306F', total: 5, flagged: 1, ha
 const counts = [['', 'U+306F', 0, 0], ['は', 'U+306F', 5, 0], ['ハ', 'U+306F', 2, 0], ['大', 'U+5927', 4, 30], [DAI, 'U+5927', 0, 2], ['民', 'U+6C11', 0, 7], [MIN[0], 'U+6C11', 0, 1], [MIN[1], 'U+6C11', 0, 1]]
 const gathered = filter => gatherGraphemes({ categories, counts, ...(filter ? { inScript: text => categoryOf(text) === filter } : {}) })
 const shown = groups => groups.map(g => [g.key, g.char, g.alone, g.count, g.members.map(m => m.label)])
+
+describe('the totals a tile states', () => {
+  it('are each form\'s and each grapheme\'s, a grapheme whose crops have no character with no form', () => {
+    const { forms, groups, keys, shapes } = cropTotals([['', 'U+3042', 0, 2], ['仮', 'U+4EEE', 63, 7], ['假', 'U+4EEE', 4, 48], ['', 'U+4EEE', 0, 89], ['か', 'U+304B', 1, 0, 1], ['か', 'U+52A0', 3, 0, 1]])
+    expect([...groups]).toEqual([['U+3042', 2], ['U+4EEE', 211], ['U+304B', 1], ['U+52A0', 3]])
+    expect([...forms]).toEqual([['仮', 70], ['假', 52], ['か', 4]])
+    expect(['U+4EEE', 'U+304B', 'U+52A0', 'U+3042'].map(key => shapes.get(key) ?? 0)).toEqual([2, 1, 1, 0])
+    expect(keys.get('か')).toBe('U+52A0')
+    // As many under each: the lower key, whichever row comes first.
+    const tied = [['か', 'U+52A0', 2, 0, 1], ['か', 'U+304B', 2, 0, 1]]
+    for (const rows of [tied, [...tied].reverse()]) expect(cropTotals(rows).keys.get('か')).toBe('U+304B')
+  })
+})
 
 describe('the graphemes a collection lists', () => {
   it('gather every form of a grapheme', () => {
@@ -52,6 +65,10 @@ describe('the graphemes a collection lists', () => {
     expect(shown(under('seal', { flagged: true })).map(g => g[0])).toEqual(['U+540F', 'U+3D005'])
     expect(shown(under('kana'))).toEqual([['U+52A0', '加', false, 1, ['か']], ['U+304B', 'か', false, 4, ['か']]])
     expect(shown(under('kana', { counts: [['か', 'U+52A0', 1, 0, 1]] })).map(g => g[0])).toEqual(['U+52A0'])
+  })
+  it('take a moved row\'s mark for a mark, so a seal character\'s own grapheme is the one most of its crops are filed under', () => {
+    const LI = '\u{3D005}', rows = [[LI, 'U+53D3', 1, 0, 1], [LI, 'U+540F', 9, 0, 1]], seal = { inScript: text => categoryOf(text) === 'seal' }
+    for (const counts of [rows, [...rows].reverse()]) expect(gatherGraphemes({ counts, ...seal }).map(g => [g.key, g.alone, g.count]).sort()).toEqual([['U+3D005', true, 9], ['U+53D3', false, 1]])
   })
   it('name the flagged corpus rows of a grapheme, and of one character under a member\u2019s key', () => {
     const row = { label: '\u{3D307}', grapheme: 'U+6625' }

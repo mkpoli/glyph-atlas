@@ -10,12 +10,13 @@
   // expects the page behind it to come back.
   //
   // A page may give the box a `browse` snippet, shown while the box is empty and focused, and a
-  // `token`: the filter that snippet chose, shown in the box until the reader removes it or types.
+  // `token`: the grapheme that snippet chose, by its head, shown in the box until the reader removes it or types.
   // A page that knows its graphemes gives `groupOf`: the candidates a query names then show as the
   // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
   // A `lead` snippet is a row the page puts above the candidates while the list is open.
   import { onMount } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import { graphemeLabel, labelParts } from '$worker/graphemeLabel.ts'
   import ScriptText from './ScriptText.svelte'
   import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
@@ -37,7 +38,8 @@
     ontokenclear = () => {},
     groupOf = null,
     onform = () => {},
-    // How many crops the page a row opens can list, where the page knows; null where it does not.
+    // How many crops the page a row opens can list, where the page knows; undefined until it does, and
+    // null where it never will.
     countOf = () => null,
     // Rows name the code point rather than the reading.
     codePoints = false,
@@ -86,7 +88,7 @@
 
   function rowCount(item) {
     const count = countOf(item.char)
-    return count ? t('explore.meta.glyphs', { count }) : count === 0 ? t('layers.noOccurrenceYet') : countsLabel(item.candidates) || ownLabel(item)
+    return count === null ? countsLabel(item.candidates) || ownLabel(item) : count === undefined ? '' : count ? t('explore.meta.glyphs', { count }) : t('layers.noOccurrenceYet')
   }
 
   function searchSignal() {
@@ -316,7 +318,7 @@
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
         {#if item.variant_of}<span class="tag">{t('chips.relation.variant')}</span>{/if}
       </span>
-      <span class="candidate-counts">{rowCount(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
+      <span class="candidate-counts">{rowCount(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText {...labelParts(item.grapheme.char)} /></span>{/if}</span>
     </span>
   </button></div>
 {/snippet}
@@ -324,7 +326,7 @@
 <div class="character-search" class:compact class:flipped style={room == null ? undefined : `--candidate-room:${room}px`} bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-    {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><ScriptText text={token} /> ×</button>{/if}
+    {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><ScriptText {...labelParts(token)} /> ×</button>{/if}
     <input bind:this={input} aria-label={label} bind:value placeholder={placeholder}
            autocomplete="off" spellcheck="false" role="combobox" aria-expanded={open}
            aria-controls={listId} aria-autocomplete="list" aria-busy={loading}
@@ -366,8 +368,8 @@
       {:else}
         {#each blocks as block (`${block.key}:${block.entries[0].index}`)}
           {#if block.grapheme?.character_count > 1}
-            <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${block.grapheme.label}`}>
-              <p class="candidate-grapheme-head" aria-hidden="true">{t('chips.grapheme')} <ScriptText text={block.grapheme.char ?? block.entries[0].item.char} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}</p>
+            <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${graphemeLabel(block.grapheme.char ?? block.entries[0].item.char)}`}>
+              <p class="candidate-grapheme-head" aria-hidden="true">{t('chips.grapheme')} <ScriptText {...labelParts(block.grapheme.char ?? block.entries[0].item.char)} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}</p>
               {#each block.entries as { item, index } (item.code_point)}{@render row(item, index, true)}{/each}
             </div>
           {:else}

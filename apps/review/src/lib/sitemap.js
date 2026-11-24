@@ -41,12 +41,13 @@ export async function pagePaths(fetch) {
 }
 
 /** A page for every single character the collection holds crops of, and for every grapheme it holds crops
- *  of, but the one whose crops are all one character's: that character's page is kept for both. */
+ *  of, but the one whose crops are all one character's: that character's page is kept for both. In the
+ *  order of their addresses as text, so the same collection is the same file. */
 export async function characterPaths(fetch) {
   const rows = (await graphemeCounts({ fetch })).map(([label, grapheme, collected, corpus, claimed]) => ({ label, grapheme, collected, corpus, claimed: claimed ? true : undefined }))
   const sole = soleForms(rows), held = rows.filter(row => row.collected > 0)
   return [...new Set([
     ...held.filter(({ grapheme }) => hasCharacterPage(keyText(grapheme) ?? '') && !sole.has(grapheme)).map(({ grapheme }) => graphemeAddress(grapheme, keyText(grapheme))),
     ...held.filter(({ label }) => hasCharacterPage(label)).map(({ label }) => characterAddress(pointOf(label))),
-  ])]
+  ])].sort()
 }

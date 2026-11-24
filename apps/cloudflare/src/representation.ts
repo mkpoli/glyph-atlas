@@ -114,7 +114,7 @@ export function typed(written: string): Representation | FormProblem | 'private'
   if (selector(chars.at(-1))) return chars.length === 2 ? { scheme: 'ivs', value, namespace: null, version: null } : 'character';
   return { scheme: 'unicode', value, namespace: null, version: null };
 }
-async function digest(text: string) {
+export async function digest(text: string) {
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
   return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }

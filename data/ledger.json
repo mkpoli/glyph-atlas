@@ -70,6 +70,16 @@
    ],
    "cardinality": "many"
   },
+  "built_as": {
+   "label": "the structure a crop's letterforms are built as, for a shape no recorded form names; the form is left for later",
+   "subject": "crop",
+   "objects": [
+    "structure"
+   ],
+   "values": [],
+   "cardinality": "one",
+   "alternatives": false
+  },
   "folds_into": {
    "label": "a structure that is one 構形 with another and stands under it (⿰糸𰌼 under ⿰糸宿): its forms are grouped with that one's",
    "subject": "structure",

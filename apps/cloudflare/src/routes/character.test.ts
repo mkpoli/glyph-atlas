@@ -378,7 +378,7 @@ describe('a gallery of the collection', () => {
       [crop(PAGE_A, 1), crop(PAGE_A, 2), crop(PAGE_A, 0), crop(PAGE_B, 0), crop(PAGE_B, 1)]);
     const ranged = await get('/layers/occurrences?code_point=U%2B6642&years=1801-1900');
     expect([ids(ranged.body.items), ranged.body.styles, ranged.body.withheld, ranged.body.years]).toEqual(
-      [[crop(PAGE_B, 0), crop(PAGE_B, 1)], { cursive: 0, unassessed: 1, formal: 1 }, null, { from: 1801, to: 1900 }]);
+      [[crop(PAGE_B, 0), crop(PAGE_B, 1)], { cursive: 0, unassessed: 1, formal: 1 }, 0, { from: 1801, to: 1900 }]);
     expect((await get('/layers/occurrences?code_point=U%2B6642&years=undated')).body.items).toEqual([]);
     // On the composed axis only book a is dated (1653); book b's crops have no composed year.
     expect(await every('/layers/occurrences?code_point=U%2B6642&order=year&axis=composed&limit=2')).toEqual(
@@ -429,10 +429,11 @@ describe('a crop a grapheme claim files', () => {
       expect(await books('U%2B5CD5')).toEqual([[2, [crop(PAGE_B, 2), crop(PAGE_B, 4)]]]);
       const filed = await get(other);
       expect([ids(filed.body.items), filed.body.total, filed.body.styles]).toEqual([[crop(PAGE_B, 2), crop(PAGE_B, 4)], 2, { cursive: 1, unassessed: 1, formal: 0 }]);
-      db.exec(`UPDATE current_claims SET status='disputed' WHERE predicate='has_grapheme'`);
+      // The claims are kept by the catalogue version, which every ledger write moves.
+      db.exec(`UPDATE current_claims SET status='disputed' WHERE predicate='has_grapheme'; INSERT INTO ledger_submissions VALUES('disputed','u','{}','{}','t')`);
       expect((await get(time)).body.total).toBe(6);
       expect(ids((await get(other)).body.items)).toEqual([crop(PAGE_B, 4)]);
-    } finally { db.exec(`DELETE FROM current_claims WHERE predicate='has_grapheme'`) }
+    } finally { db.exec(`DELETE FROM current_claims WHERE predicate='has_grapheme'; DELETE FROM ledger_submissions`) }
   });
 });
 
@@ -494,10 +495,105 @@ describe('the total of a grapheme', () => {
     finally { db.exec('DELETE FROM graphemes WHERE id=600; DELETE FROM tally WHERE char=600; DELETE FROM imports WHERE stamp=\'seal\'') }
   });
 
-  it('reads the claims once for every card of a catalogue version', async () => {
+  it('counts no claim on a crop that is neither the collection\'s nor the corpus\'s', async () => {
+    db.exec(`INSERT INTO crops(id,kind,book,char,family,style,state,quiz,shuffle) VALUES(${cropId(PAGE_E, 5)},2,5,${G.时},${G.時},0,1,1,1)`);
+    claim(cropId(PAGE_E, 5), 'U+5CD5');
+    try { expect([await totals('時'), await totals('峕')]).toEqual([{ total: [7, 2], sole: null }, { total: [1, 0], sole: 'U+5CD5' }]) }
+    finally { unclaim(); db.exec(`DELETE FROM crops WHERE id=${cropId(PAGE_E, 5)}`) }
+  });
+
+  it('counts what the gallery of a character with no card in the table lists', async () => {
+    const text = '⿰木木', asked = encodeURIComponent(text), read = async (path: string) => { edge.clear(); return (await get(path)).body };
+    expect((await read('/layers/characters/' + asked)).grapheme).toMatchObject({ count: 0, corpus_count: 0 });
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(610,'${text}',NULL);
+      INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,610,-1,1,-1,1,4,1,1700,3)`);
+    try {
+      expect((await read('/layers/characters/' + asked)).grapheme).toMatchObject({ count: 3, corpus_count: 0 });
+      for (const expand of ['none', 'grapheme']) expect((await read(`/layers/occurrences?code_point=${asked}&expand=${expand}`)).total).toBe(3);
+    } finally { db.exec('DELETE FROM graphemes WHERE id=610; DELETE FROM tally WHERE char=610') }
+  });
+
+  it('stands beside decades of the same version, whatever was reviewed since', async () => {
+    const both = async () => {
+      const { grapheme } = (await get('/layers/characters/U+4E38')).body, { local } = (await get('/layers/decades?code_point=U%2B4E38&scope=grapheme')).body;
+      return [grapheme.count, local.reduce((n: number, d: any) => n + d[1], 0)];
+    };
+    expect(await both()).toEqual([4, 4]);
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,${G.丸},${G.丸},1,-1,1,4,1,1700,1);
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,5,1,1,1,0)`);
+    try { expect(await both()).toEqual([5, 5]) } finally { db.exec(`DELETE FROM tally WHERE char=${G.丸}; DELETE FROM events`) }
+  });
+
+  it('is the same in every view, with the withheld crops said beside it', async () => {
+    const sum = (counts: object) => Object.values(counts).reduce((a, b) => a + b, 0);
+    for (const show of ['', '&withheld=show']) {
+      const gallery = async (query: string) => { const { body } = await get('/layers/occurrences?code_point=U%2B6642' + query + show); return [body.total, body.withheld, sum(body.styles)] };
+      const books = async (query: string) => { const { body } = await get('/layers/books?code_point=U%2B6642' + query + show); return [body.listed.local, body.withheld, sum(body.styles.local)] };
+      const want = show ? [5, null, 5] : [4, 1, 5];
+      for (const query of ['', '&order=year', '&years=1601-1900', '&order=year&axis=composed']) expect(await gallery(query)).toEqual(want as any);
+      for (const query of ['', '&years=1601-1900']) expect(await books(query)).toEqual(want as any);
+      // Narrowed to a style, the total and the withheld are that style's; the chips keep every style's.
+      expect(await gallery('&style=unassessed&years=1601-1900')).toEqual((show ? [2, null, 5] : [1, 1, 5]) as any);
+      expect(await books('&style=unassessed')).toEqual((show ? [2, null, 5] : [1, 1, 5]) as any);
+    }
+    const { local } = (await get('/layers/decades?code_point=U%2B6642')).body;
+    expect(local.reduce((n: number, d: any) => n + d[1], 0)).toBe(5);
+  });
+
+  it('is the same on the card and in the list where a count is below nothing, or a claimed crop\'s place counts none', async () => {
+    // A review took two crops of 峕 where the publication counts one; a claim files a glyph of a family
+    // no grapheme of the list heads.
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,${G.峕},${G.峕},1,-1,1,4,1,1700,-2);
+      INSERT INTO imports(stamp,at) VALUES('below',0)`);
+    const both = async (code: string) => {
+      edge.clear();
+      const { grapheme } = (await get('/layers/characters/' + encodeURIComponent(code))).body;
+      const rows = (await get('/atlas/graphemes/counts')).body.items.filter((row: any) => row[1] === code);
+      expect([grapheme.count, grapheme.corpus_count]).toEqual(rows.reduce(([a, b]: number[], row: any) => [a + row[2], b + row[3]], [0, 0]));
+      return [grapheme.count, grapheme.corpus_count];
+    };
+    claim(cropId(PAGE_C, 4), 'U+5CD5');
+    try {
+      expect(await both('U+5CD5')).toEqual([0, 1]);
+      db.exec(`UPDATE crops SET family=NULL WHERE id=${cropId(PAGE_C, 4)}; INSERT INTO imports(stamp,at) VALUES('placeless',0)`);
+      expect(await both('U+5CD5')).toEqual([0, 1]);
+    } finally { unclaim(); db.exec(`UPDATE crops SET family=${G.ね} WHERE id=${cropId(PAGE_C, 4)}; DELETE FROM tally WHERE char=${G.峕}; DELETE FROM imports WHERE stamp IN ('below','placeless')`) }
+  });
+
+  it('lists by book what its books hold, and reads the counts by style once, on the first page', async () => {
+    const path = '/layers/books?code_point=U%2B4E38', sum = (groups: any[]) => groups.reduce((n: number, g: any) => n + g.count.local, 0);
+    const before = (await get(path)).body;
+    expect([before.listed.local, sum(before.groups), before.styles.local]).toEqual([4, 4, { cursive: 1, unassessed: 2, formal: 1 }]);
+    // Within the hour the books stand as they are, and what they list with them; the counts by style follow the review.
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,${G.丸},${G.丸},1,-1,1,4,1,1700,1); INSERT INTO imports(stamp,at) VALUES('book',0); DELETE FROM imports WHERE stamp='book';
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,5,1,1,1,0)`);
+    let tallies = 0;
+    const counting = { ...env, ATLAS: Object.assign(Object.create(env.ATLAS), { prepare: (sql: string) => { if (sql.includes('CROSS JOIN tally')) tallies++; return env.ATLAS.prepare(sql) } }) } as unknown as Env;
+    const ask = async (more = '') => (await worker.fetch(new Request('https://glyphatlas.org' + path + more), counting, ctx)).json() as Promise<any>;
+    try {
+      const after = await ask();
+      expect([after.listed.local, sum(after.groups), after.styles.local]).toEqual([4, 4, { cursive: 1, unassessed: 2, formal: 2 }]);
+      const first = tallies;
+      await ask('&document=hk:d&per=1'); await ask('&limit=1&after=1.5');
+      expect([first, tallies]).toEqual([first, first]);
+      expect(first).toBeLessThanOrEqual(2);
+    } finally { db.exec(`DELETE FROM tally WHERE char=${G.丸}; DELETE FROM events`) }
+  });
+
+  it('keeps the decades of the copies\' dates by the catalogue and those of the texts\' by the hour', async () => {
+    const keys = () => [...edge.keys()].filter(url => url.includes('/layers/decades'));
+    const ask = async (axis: string) => { await get('/layers/decades?code_point=U%2B4E38&axis=' + axis); return keys().length };
+    expect([await ask('witness'), await ask('composed')]).toEqual([1, 2]);
+    db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,5,1,1,1,0)`);
+    try { expect([await ask('composed'), await ask('witness')]).toEqual([2, 3]) } finally { db.exec('DELETE FROM events') }
+  });
+
+  it('reads the claims once for every card, gallery and list of a catalogue version', async () => {
     let reads = 0;
     const counting = { ...env, ATLAS: Object.assign(Object.create(env.ATLAS), { prepare: (sql: string) => { if (sql.includes("'has_grapheme'")) reads++; return env.ATLAS.prepare(sql) } }) } as unknown as Env;
-    for (const code of ['U+6642', 'U+306D', 'U+4E38']) await worker.fetch(new Request('https://glyphatlas.org/layers/characters/' + code), counting, ctx);
+    const paths = ['U+6642', 'U+306D', 'U+4E38'].flatMap(code => [`/layers/characters/${code}`, `/layers/occurrences?code_point=${encodeURIComponent(code)}&expand=grapheme`,
+      `/layers/candidates?code_point=${encodeURIComponent(code)}&scope=grapheme`, `/layers/decades?code_point=${encodeURIComponent(code)}&scope=grapheme`, `/layers/books?code_point=${encodeURIComponent(code)}&scope=grapheme`]);
+    for (const path of [...paths, '/atlas/graphemes/counts', '/atlas?grapheme=U%2B6642&limit=1']) expect((await worker.fetch(new Request('https://glyphatlas.org' + path), counting, ctx)).status).toBe(200);
     expect(reads).toBe(1);
   });
 });
@@ -535,7 +631,7 @@ describe('a gallery grouped by book', () => {
       ['hk:b', 'B', 2, 0, [[crop(PAGE_B, 0), 'collection'], [crop(PAGE_B, 1), 'collection']]],
       ['codh:c', 'C', 0, 1, [[crop(PAGE_C, 0), 'corpus']]]]);
     expect([body.total, body.next, body.withheld]).toEqual([3, null, 1]);
-    expect(body.styles).toEqual({ local: { cursive: 2, unassessed: 1, formal: 1 }, corpus: { cursive: 0, unassessed: 2, formal: 0 } });
+    expect(body.styles).toEqual({ local: { cursive: 2, unassessed: 2, formal: 1 }, corpus: { cursive: 0, unassessed: 2, formal: 0 } });
     expect(body.groups.map((g: any) => g.next)).toEqual([`0.50.${crop(PAGE_A, 0)}`, null, null]);
   });
 
@@ -588,7 +684,7 @@ describe('a gallery grouped by book', () => {
     expect([cursive.body.styles.local.formal, cursive.body.withheld]).toEqual([1, 0]);
     expect(shape((await get('/layers/books?code_point=U%2B4E38&style=formal')).body)).toEqual([['hk:d', 'D', 1, 0, [[crop(PAGE_D, 1), 'collection']]]]);
     const ranged = (await get('/layers/books?code_point=U%2B4E38&years=1890-1900')).body;
-    expect([ranged.groups.map((g: any) => g.document), ranged.withheld]).toEqual([['hk:d', 'hk:e'], null]);
+    expect([ranged.groups.map((g: any) => g.document), ranged.withheld]).toEqual([['hk:d', 'hk:e'], 0]);
     const books = async (more: string) => (await get('/layers/books?code_point=U%2B6642' + more)).body.groups.map((g: any) => [g.document, g.count.local, g.count.corpus]);
     expect(await books('&years=1801-1900')).toEqual([['hk:b', 2, 0]]);
     expect(await books('&years=undated')).toEqual([['codh:c', 0, 1]]);

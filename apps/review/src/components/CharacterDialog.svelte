@@ -16,6 +16,7 @@
   import Cite from './Cite.svelte'
   import CitedCut from './CitedCut.svelte'
   import { cropEntry } from '$worker/citation.ts'
+  import { labelParts } from '$worker/graphemeLabel.ts'
   import FavouriteButton from './FavouriteButton.svelte'
   import { onMount, untrack, tick } from 'svelte'
   import { cropPixels, request, suggestionsFor } from '../lib/client.js'
@@ -267,17 +268,17 @@
     if (form != null && issue !== 'character') {
       try {
         const formed = await setForm(data, form)
-        changed?.(target, formed.crop)
+        changed?.(target, formed.crop, data)
         if (closed || current !== generation) return
         data = { ...data, ...formed.crop }; form = null
         // A form that named the crop's character was a review already; nothing more to say.
-        if (formed.reviewed && (matches || !issue)) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop); busy = false; return }
+        if (formed.reviewed && (matches || !issue)) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop, data); busy = false; return }
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const correctingCharacter = writtenDirty && Boolean(written) && (unassigned || written !== (data.written_character ?? data.label))
     // A match, and a crop fixed by its redrawn box, carry no issue.
     const resolvedIssue = value.verdict === 'match' ? null : issue
-    const pixels = cropPixels(data)
+    const pixels = cropPixels(data), was = data
     // Naming another character uses `/layers/units/:id`, which rejects extra fields; all other saves use `/atlas/characters/:id`.
     const route = correctingCharacter
       ? '/layers/units/' + encodeURIComponent(target)
@@ -299,15 +300,15 @@
       const result = await request(route, { id: submission.id, ...payload })
       inspector.remember(target, { choices: decided })
       // A save that lands after the dialog closed or moved on still decided its crop.
-      if (!closed && current === generation) saved(target, result)
-      else reviewed?.(target, result)
+      if (!closed && current === generation) saved(target, result, was)
+      else reviewed?.(target, result, was)
     } catch (e) { if (!closed && current === generation) error = e.message }
     finally { busy = false }
   }
   // A field saved for one crop may come back after the dialog has moved to another; the crop is
   // marked as changed either way, and the record on screen is replaced only when it is that crop.
-  function fieldSaved(result) {
-    changed?.(result.id, result)
+  function fieldSaved(result, was = result.id === data?.id ? data : null) {
+    changed?.(result.id, result, was)
     // Style, reading and grapheme claims leave the decision as it was.
     const decided = inspector.decided(result.id)
     if (decided?.revision != null && decided.revision === data?.revision && result.id === data.id) inspector.remember(result.id, { ...decided, revision: result.revision })
@@ -365,7 +366,7 @@
       </div>
       <div class="inspector-right">
         <div class="inspector-production">{#if productionLabel(data)}<ProductionBadge item={data} />{/if}</div>
-        <div class="inspector-title">{#if !isUnassigned(data)}<CropTitle char={data.written_character ?? data.label} script={data.script} reading={data.needs_segmentation ? null : { item: data, disabled: busy || !fresh || !Object.hasOwn(data, 'grapheme_claim'), working: value => busy = value, saved: fieldSaved }} /><ZiLink character={data.written_character ?? data.label} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{graphemeChar(data)}</span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{/if}{#if data.needs_segmentation}<ReviewState tone="waiting" text={t('corpus.state.needsSplitting')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else if data.state === 'stale'}<ReviewState tone="waiting" text={t('corpus.state.sourceChanged')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
+        <div class="inspector-title">{#if !isUnassigned(data)}<CropTitle char={data.written_character ?? data.label} script={data.script} reading={data.needs_segmentation ? null : { item: data, disabled: busy || !fresh || !Object.hasOwn(data, 'grapheme_claim'), working: value => busy = value, saved: fieldSaved }} /><ZiLink character={data.written_character ?? data.label} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{labelParts(graphemeChar(data)).text}<span lang="zh-Hans">{labelParts(graphemeChar(data)).simplified}</span></span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{/if}{#if data.needs_segmentation}<ReviewState tone="waiting" text={t('corpus.state.needsSplitting')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else if data.state === 'stale'}<ReviewState tone="waiting" text={t('corpus.state.sourceChanged')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         {#if data.source_label != null && (data.needs_segmentation || isUnassigned(data) || (data.written_character ?? data.label) !== data.source_label)}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: data.source?.corpus === 'codh-full' ? 'CODH' : (data.source?.corpus || t('corpus.genericName')) })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if !isUnassigned(data) && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         <div class="inspector-words">
           {#if !unassigned}{#key data.id + ':' + data.crop_version}<CropReading item={data} disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />{/key}{/if}

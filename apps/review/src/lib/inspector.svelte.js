@@ -42,7 +42,7 @@ export function createInspector() {
     get update() { return current() || !page.state.inspect ? updateItem : null },
     /** The problem the crop was opened to fix, for the crop it was opened on. */
     get opening() { return current() && page.state.inspect?.id === state.opened ? state.opening : null },
-    /** `update(id, record, how)` hears what happened to a crop: `saved` when a write decided it (a review, or
+    /** `update(id, record, how, was)` hears what happened to a crop, and the record it was saved from: `saved` when a write decided it (a review, or
      *  a line correction that moved its label), `changed` for a field (style, reading, word) that leaves the
      *  decision as it was, and `skipped`, with no record, when the reader declined to judge it. `opening` opens it with those problems
      *  chosen, as a round's Bad crop opens the box editor. */

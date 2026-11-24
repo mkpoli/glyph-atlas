@@ -4,8 +4,8 @@
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
-import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, tallyDeltas, type CharInfo, type SampleEntry } from '../atlas3Answers';
-import { filedClaims } from '../atlas3Gallery';
+import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, filedCounted, galleryIndex, galleryShard, productionKeys, tallyDeltas, type CharInfo, type SampleEntry } from '../atlas3Answers';
+import { filedClaimsKept, type FiledAt } from '../atlas3Gallery';
 import { addCrops, crops, fileClaims, type Rows, type Under } from '../graphemeTotals';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
@@ -13,6 +13,7 @@ import { Problem } from '../busy';
 import { categoryOf, isSeal } from '../category';
 import { tallyDates } from '../dating';
 import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
+import { digest } from '../representation';
 import { ROUND_MAX } from '../rounds';
 import { Timing } from '../timing';
 
@@ -195,27 +196,31 @@ export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Pro
 // Every crop and corpus glyph the site holds, by character and the grapheme it is filed under
 // (`graphemeTotals.ts`): what the grapheme browser, its cards and a tile's caption count, withheld crops
 // among them. `['', grapheme, …]` are the crops with no character that name it, and a row ends in 1 where
-// a claim moved some of its crops. A claim holds on its crop's effective cut, which a redrawn box moves,
-// so the edge keeps one copy per publication and catalogue stamps (reviews and ledger writes among them).
-export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
+// a claim moved some of its crops. It is the same for anyone who asks in the same minute of a
+// publication (`keptFor`), so the edge keeps it, and as of its write for a browser that wrote lately, kept
+// under the catalogue key. The browser asks each time, and by the tag of its copy is told that it still
+// stands. The tag is the rows' own, in the order of their labels, so the same counts have the same tag.
+export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<{ text: string; tag: string }> {
   const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]), version = catalogueKey(stamps);
-  const key = new Request(`${url.origin}/atlas/graphemes/counts?v=${encodeURIComponent(`${pub}:${version}`)}`);
+  const span = keptFor(env, stamps, pub);
+  const key = new Request(`${url.origin}/atlas/graphemes/counts?s=2&v=${encodeURIComponent(span ?? `${pub}:${version}`)}`);
   const cached = await caches.default.match(key);
-  if (cached) return cached.json();
-  const [collected, corpus, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedClaims(env)]);
+  if (cached) return { text: await cached.text(), tag: cached.headers.get('etag')! };
+  const [collected, corpus, filed, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedCounted(env, version),
+    filedClaimsKept(env, version)]);
   const place = (chars: Map<number, CharInfo>, char: number) => { const info = chars.get(char); return info ? { label: info.text, grapheme: info.grapheme } : null };
   const rows: Rows = new Map();
   const add = (at: Under | null, kind: number, n: number) => { if (at) addCrops(rows, at, kind, n) };
   for (const c of collected.cells) if (c.char !== -1) add(place(collected.chars, c.char), 0, c.n);
   for (const c of corpus.cells) add(place(corpus.chars, c.char), 1, c.n);
-  const family = (id: number) => { const at = place(corpus.chars, id); return at && { label: '', grapheme: at.grapheme } };
-  for (const c of corpus.filed) add(family(c.family), c.kind, c.n);
+  const family = (id: number) => { const at = place(filed.chars, id); return at && { label: '', grapheme: at.grapheme } };
+  for (const c of filed.cells) add(family(c.family), c.kind, c.n);
   fileClaims(rows, claims, r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
-  const items = [...rows.values()].filter(row => crops(row) > 0).sort((a, b) => byCodePoint(a.label, b.label) || byCodePoint(a.grapheme, b.grapheme))
-    .map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
-  const body = { items };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
-  return body;
+  const items = [...rows.values()].filter(row => crops(row) > 0).map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
+  items.sort((a, b) => byCodePoint(a[0] as string, b[0] as string) || byCodePoint(a[1] as string, b[1] as string));
+  const text = JSON.stringify({ items }), tag = `W/"${await digest(text)}"`;
+  ctx.waitUntil(caches.default.put(key, new Response(text, { headers: { 'content-type': 'application/json', etag: tag, 'cache-control': `public, max-age=${span ? KEPT_SECONDS : 3600}` } })));
+  return { text, tag };
 }
 
 // ---- The homepage gallery.
@@ -282,7 +287,7 @@ const FACETS_TTL = 3600;
 // review and quiz mark, too often for answers kept under it to be met again, so another visitor sees a
 // review once the minute ends, as an isolate's lag already lets them. The key names the publication's
 // pointer as well as its stamps: a publication moves its stamps before its answers are up. A writer,
-// whose requests come with the lag at 0, reads afresh and keeps nothing.
+// whose requests come with the lag at 0, is answered under the catalogue key its write moved.
 export const KEPT_SECONDS = 60;
 export function keptFor(env: Env, stamps: CatalogueStamps | null, pub: string, now = Date.now()): string | null {
   if (!(Number(env.CATALOGUE_LAG) > 0)) return null;
@@ -566,8 +571,8 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     written = written === null ? new Set(ids) : new Set(ids.filter(i => written!.has(i)));
   }
   // The crops grapheme claims file, read once a request (`countFacets` reads them too).
-  let filing: ReturnType<typeof filedClaims> | null = null;
-  const claimsRead = () => filing ??= filedClaims(env);
+  let filing: Promise<FiledAt[]> | null = null;
+  const claimsRead = () => filing ??= filedClaimsKept(env, version);
   // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
   // characters a claim files under another family is not, as the family's gallery lists them; a member
   // alone lists its character's crops, whatever claims file them under. A character or a search narrows
@@ -692,7 +697,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims, books }: {
   cells: Awaited<ReturnType<typeof collectedCounts>>['cells']; chars: Awaited<ReturnType<typeof collectedCounts>>['chars'];
   glyphs: Awaited<ReturnType<typeof corpusCounts>> | null; own: (Row & { id: number; kind: number })[]; counted: Filter;
-  stateOf: Map<number, StateName>; review: boolean; claims: Awaited<ReturnType<typeof filedClaims>>;
+  stateOf: Map<number, StateName>; review: boolean; claims: FiledAt[];
   books: Map<number, [number, number]> | null }) {
   const counts = Object.fromEntries(STATE_NAMES.map(s => [s, 0])) as Record<StateName, number>;
   const categories = new Map<string, Category>(), documents = new Map<number, Book>();

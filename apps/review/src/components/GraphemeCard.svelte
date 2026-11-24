@@ -4,17 +4,19 @@
   // choosing a form opens that form's own gallery. The grapheme browser shows it over a pointed tile, and
   // the search box for each grapheme a query names.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import { labelParts } from '$worker/graphemeLabel.ts'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/addresses.js'
 
   let { group, onform = () => {} } = $props()
+  const parts = $derived(group.alone ? { text: group.char, simplified: '' } : labelParts(group.char))
   const codes = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 </script>
 
 <div class="grapheme-card">
   <a class="card-head" href={localize(group.alone ? characterAddress(group.key) : graphemeAddress(group.key, group.char))}>
-    <ReferenceGlyph char={group.char} size="lg" />
+    <ReferenceGlyph char={parts.text} simplified={parts.simplified} size="lg" />
     <span><b>{t(group.alone ? 'chips.forms' : 'chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
   </a>
   <ul>

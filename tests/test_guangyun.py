@@ -84,3 +84,10 @@ def test_an_opening_is_read_as_the_leaf_the_readers_bear_out(cut, reads, leaf):
 
     assert cut.settled(attempt, [10, 9, 11]) == (leaf, {"of": leaf})
     assert (tried == [10]) == (reads[10] >= cut.MOVED)
+
+
+def test_headwords_are_counted_once_whatever_the_scan_repeats(cut):
+    entries = {("1", 7, "b"): {6: ["a", "b"], 7: ["c"]}, ("1", 8, "a"): {1: ["d"]}, ("2", 1, "a"): {1: ["e", "f"]}}
+    assert cut.headwords(entries, None) == 6
+    assert cut.headwords(entries, {"1"}) == 4
+    assert cut.headwords(entries, {"1"}, {("1", 8, "a")}) == 1

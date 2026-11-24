@@ -18,6 +18,22 @@ const headLabel = label => /^[⿰⿺]辵/u.test(label) ? '⿺辶' + label.slice(
  *  where that is not it: a reader folded the layout, or the 構形 it is a layout of, into this one. */
 export const headTarget = (stands, target) =>
   stands.part && !stands.part.by?.length && stands.label === headLabel(stands.part.label) ? { ...target, head: true } : null
+/** What names a block's 構形 of the form bar in a save: an encoded character its description puts there, else
+ *  a described form, a small seal character, a regional shape of `of`, or a layout that stands under it, else
+ *  its id where a reader's claim has named it. Null where nothing names it. */
+export function structureTarget(group, block, structureOf, of) {
+  const ranked = [], standing = group.blocks.flatMap(each => each.forms.map(form => [form, structureOf.get(form.char)])).filter(([, stands]) => stands)
+  for (const [form, stands] of standing) {
+    if (stands.by) continue
+    const [rank, target] = form.regions ? [1, { char: form.char, of }] : isSeal(form.char) ? [2, { char: form.char }] : isDescription(form.char) ? [3, { char: form.char }] : [4, { char: form.char }]
+    const head = headTarget(stands, target)
+    if ((stands.part ?? stands).id === block.id) ranked.push([rank, target])
+    else if (stands.id === block.id && head) ranked.push([rank / 10, head])
+  }
+  if (ranked.length) return ranked.sort((a, b) => b[0] - a[0])[0][1]
+  const claimed = standing.some(([, stands]) => stands.by && (stands.part ?? stands).id === block.id || stands.part?.by?.length && [stands.id, stands.part.id].includes(block.id))
+  return claimed ? { structure: block.id } : null
+}
 /** A 構形 group's names as they stand: those built as its own, then each 構形 that stands under it
  *  (`folded`, ⿰辵禺 under ⿺辶禺) with the names built as that. */
 export const layouts = group => {

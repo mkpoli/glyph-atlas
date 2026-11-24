@@ -95,6 +95,69 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
     return response
 
 
+def set_crop_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], crop: str, crop_version: str,
+                       char: str | None = None, of: str | None = None, head: bool = False, structure: str | None = None,
+                       at: str | None = None, prefix: str = "lc", mint: Callable[[], str] | None = None) -> dict:
+    """Say what structure one crop is built as where no recorded form names its shape, or with none named
+    take back the reader's own claim. The reader's own form on the crop is taken back by the same save,
+    and a form chosen later leaves the structure. The Worker's `setCropStructure` does the same."""
+    signature = ledger.canonical(request)
+    saved = ledger.previous(conn, key, signature)
+    if saved is not None:
+        return saved
+    at = at or ledger.now()
+
+    def own_of(predicate: str) -> list[sqlite3.Row]:
+        return conn.execute(
+            "SELECT a.id,a.object,r.value AS text FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
+            "WHERE a.subject=? AND a.predicate=? AND a.scope='' AND a.slot='' AND a.asserted_by=? "
+            "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+            "ORDER BY a.rowid DESC", (crop, predicate, actor)).fetchall()
+
+    def take_back(target: str, part: str, reason: str) -> None:
+        ledger.act(conn, key=f"{key}/{part}", actor=actor, request={"target": target, "action": "retract"}, target=target, action="retract",
+                   reason=reason, version_of=lambda unit: crop_version if unit == crop else None, prefix=prefix, at=at, mint=mint)
+
+    own, forms = next(iter(own_of("built_as")), None), own_of("has_form")
+    clear = char is None and structure is None
+    if clear:
+        if own is None:
+            raise LedgerError(409, "You have no structure on this crop to clear.")
+        take_back(own["id"], "retract", "cleared")
+    else:
+        named, derived = _named_structure(conn, {"char": char, "of": of, "head": head, "structure": structure}, known=True)
+        if derived is not None:
+            ensure_structure(conn, derived, actor=actor, at=at)
+        ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=crop, predicate="built_as",
+                            claims=[Claim(object=named)], objects={named: "structure"}, crop_version=crop_version, method=METHOD,
+                            prefix=prefix, at=at, mint=mint)
+        for i, form in enumerate(forms):
+            take_back(form["id"], f"form/{i}", "replaced")
+    response = {"submission": key, "subject": crop, "replaced": own["object"] if own else None,
+                "form": forms[0]["text"] if forms and not clear else None}
+    conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
+                 (key, actor, signature, ledger.canonical(response), at))
+    return response
+
+
+def built_as(conn: sqlite3.Connection, crop: str, version: str | None) -> dict | None:
+    """The structures a crop is said to be built as on this version, each with its label and who says so;
+    each competing one's while people disagree."""
+    found = conn.execute(f"SELECT {','.join(ledger.COLUMNS)} FROM current_claims WHERE subject=? AND predicate='built_as' AND scope='' AND slot=''",
+                         (crop,)).fetchone()
+    row = ledger.current_row(found) if found is not None else None
+    if row is None or row["crop_version"] != version:
+        return None
+    standing = [claim for claim in row["claims"] if (claim["standing"] if row["status"] == "disputed"
+                else any(member["assertion"] in row["supporting"] for member in claim["members"]))]
+    ids = list(dict.fromkeys(value["object"] for value in _values(row) if value.get("object")))
+    labels = dict(conn.execute("SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(ids),)).fetchall())
+    return {"status": row["status"], "by": list(dict.fromkeys(claim["asserted_by"] for claim in standing)),
+            "values": [{"structure": one, "label": labels.get(one, ""),
+                        "by": list(dict.fromkeys(claim["asserted_by"] for claim in standing
+                                                 if any(member.get("object") == one for member in claim["members"])))} for one in ids]}
+
+
 def head_of(grapheme: str) -> str:
     """The grapheme a new claim names: the head its key is filed under, so a claim kept under a key that
     has joined another family is the head's. No such character where the site does not hold it."""

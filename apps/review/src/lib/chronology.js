@@ -1,5 +1,6 @@
 import { request } from './client.js'
-import { slug } from './addresses.js'
+import { graphemeOf, slug } from './addresses.js'
+import { graphemeLabel, labelParts } from '../../../cloudflare/src/graphemeLabel.ts'
 
 // A character's crops along its time axis (編年): the address, and the Worker's decades with a sample of
 // each (`/layers/chronology`).
@@ -8,6 +9,15 @@ import { slug } from './addresses.js'
 export function chronologyAddress(codePoint, { scope = '', axis = '', style = '', production = '', script = '' } = {}) {
   const query = new URLSearchParams(Object.entries({ scope, axis, style, production, script }).filter(([, value]) => value))
   return '/chronology/' + slug(codePoint) + (query.size ? '?' + query : '')
+}
+
+/** What an axis is named by: the grapheme's label and its head's code point, or the one character with the script
+ *  its card states, which is that character's alone; `path` is the address it is kept at, whichever member's
+ *  page shows the grapheme. */
+export function chronologyName(card, scope) {
+  if (scope !== 'grapheme') return { label: card.char, parts: { text: card.char }, code_point: card.code_point, script: card.script, path: chronologyAddress(card.code_point) }
+  const { char, code_point } = graphemeOf(card)
+  return { label: graphemeLabel(char), parts: labelParts(char), code_point, script: '', path: chronologyAddress(code_point, { scope }) }
 }
 
 /** The productions the axis can be narrowed to: a top node of `data/vocab/production.yaml` each. */

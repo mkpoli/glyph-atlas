@@ -1178,6 +1178,21 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.forms_for(conn, versions)
 
+    def set_crop_structure(self, **built: Any) -> dict[str, Any]:
+        """Say what structure a crop is built as, or take the claim back (`crop_forms.set_crop_structure`),
+        and return the crop's structure and form now with what the save took back."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = crop_forms.set_crop_structure(conn, **built)
+            crop, version = built["crop"], built["crop_version"]
+            return {"id": crop, "structure": crop_forms.built_as(conn, crop, version),
+                    "form": crop_forms.forms_for(conn, {crop: version}).get(crop),
+                    "replaced": response.get("replaced"), "replaced_form": response.get("form")}
+
+    def built_as(self, crop: str, version: str | None) -> dict[str, Any] | None:
+        """The structure a crop is said to be built as (`crop_forms.built_as`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.built_as(conn, crop, version)
+
     def set_written_for(self, **written: Any) -> dict[str, Any]:
         """Say a form is written for a grapheme, or take the claim back (`crop_forms.set_written_for`), and
         return the grapheme claimed and the graphemes the form writes now."""

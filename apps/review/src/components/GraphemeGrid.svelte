@@ -13,6 +13,7 @@
   // past; the chosen grapheme is drawn from the start, and shown, however far down the list it falls.
   import { onMount, tick } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import GraphemeCard from './GraphemeCard.svelte'
   import { number } from '../lib/client.js'
   import { SLICE, nearing } from '../lib/slices.js'
@@ -23,6 +24,7 @@
   const visible = $derived(groups.slice(0, drawn))
   onMount(() => { if (value) grid.querySelector('.grapheme-tile.chosen')?.scrollIntoView({ block: 'nearest' }) })
   let shown = $state(null), place = $state({ left: 0, top: 0 }), card = $state(null), timer, touched = false, opened = false, quiet = false
+  const named = group => group.alone ? group.char : graphemeLabel(group.char), glyphs = group => group.alone ? 1 : labelSize(group.char)
   // A tile of one form that is its own grapheme has nothing more to show.
   const listed = group => group.members.length > 1 || group.members[0]?.label !== group.char
 
@@ -57,16 +59,17 @@
 
 <div class="category-options grapheme-grid" bind:this={grid}>
   {#each visible as group (group.key)}
+    {@const parts = group.alone ? { text: group.char, simplified: '' } : labelParts(group.char)}
     <div class="grapheme-cell" onfocusout={left}
          onkeydown={e => { if (e.key === 'Escape' && shown === group.key) { e.preventDefault(); e.stopPropagation(); close(); quiet = true; e.currentTarget.querySelector('.grapheme-tile')?.focus(); quiet = false } }}>
-      <button type="button" class="grapheme-tile" class:chosen={value === group.key}
+      <button type="button" class="grapheme-tile" class:pair={glyphs(group) === 2} class:trio={glyphs(group) === 3} class:chosen={value === group.key}
               onpointerdown={e => { touched = e.pointerType === 'touch'; opened = shown === group.key }}
               onpointerenter={e => { if (e.pointerType !== 'touch') show(group, e.currentTarget) }}
               onpointerleave={e => { if (e.pointerType !== 'touch') hide() }}
               onfocus={e => { if (!quiet) show(group, e.currentTarget) }} onclick={e => press(group, e.currentTarget)}
               aria-expanded={listed(group) ? shown === group.key : undefined}
-              aria-label={group.members.length > 1 ? `${group.char} · ${t('explore.grapheme.forms', { count: group.members.length })}` : undefined}>
-        <ReferenceGlyph char={group.char} size="md" />
+              aria-label={group.members.length > 1 ? `${named(group)} · ${t('explore.grapheme.forms', { count: group.members.length })}` : undefined}>
+        <ReferenceGlyph char={parts.text} simplified={parts.simplified} size="md" />
         <small>{number(group.count)}</small>
         {#if group.members.length > 1}<i class="form-count" aria-hidden="true">{group.members.length}</i>{/if}
       </button>
@@ -85,6 +88,9 @@
 <style>
   .grapheme-cell{display:contents}
   .grapheme-tile{position:relative}
+  /* Two or three glyphs leave the count of forms its corner. */
+  .grapheme-tile.pair :global(.reference-glyph span){font-size:17px}
+  .grapheme-tile.trio :global(.reference-glyph span){font-size:14px}
   .form-count{position:absolute;top:4px;right:5px;font-style:normal;font-size:9px;line-height:1;color:var(--muted)}
   .grapheme-popover{position:fixed;z-index:60;width:240px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);box-shadow:0 14px 40px var(--shadow);font-size:12px}
 </style>

@@ -2,6 +2,7 @@
   // The bar over a round's selection: how many crops are chosen, the forms of the round's grapheme to
   // mark them as, any other character found by search, a form written as an ideographic description
   // sequence instead, and the result of the last marking with its undo.
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import FormChips from './FormChips.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPick from './IdsPick.svelte'
@@ -19,7 +20,7 @@
   {/if}
   {#if count}
     <b class="selection-count">{t('bulk.selected', { count })}</b>
-    <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: grapheme })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
+    <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: graphemeLabel(grapheme) })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
     <div class="form-assign">
       <CharacterSearch compact bind:value={query} label={t('bulk.character.label')} placeholder={t('bulk.character.placeholder')}
         oninput={() => target = ''} onselect={item => { target = item.char; query = item.char }} />
