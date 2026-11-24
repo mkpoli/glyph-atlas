@@ -114,7 +114,7 @@
   const suspectsParam = only => only ? { suspects: 'only' } : {}
   // Turning the choice leaves the round as any way out does, its crops recorded; Back returns to it.
   async function toggleSuspects() {
-    if (saving || loading || loadingMore || selection.length || step !== 'select') return
+    if (saving || loading || selection.length || step !== 'select') return
     if (!(await record())) return
     const only = !onlySuspects
     await load({ target: grapheme || null, only })
