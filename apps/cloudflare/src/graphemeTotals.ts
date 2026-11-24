@@ -17,14 +17,15 @@ export function addCrops(rows: Rows, { label, grapheme }: Under, kind: number, n
   return row;
 }
 /** Moves each claimed crop from its place, where its character or its family files it (null for a crop in
- *  none of the rows), to the grapheme its claim names. */
+ *  none of the rows), to the grapheme its claim names, whose gallery lists it. No row is below nothing: a
+ *  count its publication lacks, or a claim on a crop its place does not count, takes nothing from one. */
 export function fileClaims(rows: Rows, claims: FiledAt[], place: (claim: FiledAt) => Under | null) {
+  for (const row of rows.values()) { row.collected = Math.max(0, row.collected); row.corpus = Math.max(0, row.corpus) }
   for (const claim of claims) {
     const from = place(claim), side = claim.kind === 1 ? 'corpus' : 'collected';
     if (from?.grapheme === claim.head) continue;
     const held = from && rows.get(`${from.label} ${from.grapheme}`);
-    if (from && !((held?.[side] ?? 0) > 0)) continue;
-    if (held) addCrops(rows, held, claim.kind, -1).claimed = true;
+    if (held && held[side] > 0) addCrops(rows, held, claim.kind, -1).claimed = true;
     addCrops(rows, { label: from?.label ?? '', grapheme: claim.head }, claim.kind, 1).claimed = true;
   }
 }

@@ -147,12 +147,12 @@ export async function corpusCounts(env: Env, stamps: string | null): Promise<{ p
   return { pub, cells, chars: await charsOf(env, body.chars, cells.map(c => c.char)) };
 }
 /** The crops of both kinds with no character by family, the reviews since the publication among them,
- *  with the families' texts and graphemes; null where the publication does not count them, whose reviews
- *  then have nothing to be counted from. */
-export async function filedCounted(env: Env, stamps: string): Promise<{ cells: FiledCell[]; chars: Map<number, CharInfo> } | null> {
+ *  with the families' texts and graphemes. A publication that does not count them has none, and its
+ *  reviews nothing to be counted from. */
+export async function filedCounted(env: Env, stamps: string): Promise<{ cells: FiledCell[]; chars: Map<number, CharInfo> }> {
   const { pub, through_gen } = await currentPointer(env);
   const [body, deltas] = await Promise.all([answer(env, pub, 'corpus.json.gz'), tallyDeltas(env, pub, through_gen, stamps)]);
-  if (!body.filed) return null;
+  if (!body.filed) return { cells: [], chars: new Map() };
   const cells: FiledCell[] = (body.filed as number[][]).map(([family, kind, n]) => ({ family, kind, n }));
   for (const d of deltas) if (d.char === -1 && d.filed !== -1) cells.push({ family: d.filed, kind: d.kind, n: d.n });
   return { cells, chars: await charsOf(env, body.chars, cells.map(c => c.family)) };

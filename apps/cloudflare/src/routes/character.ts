@@ -485,9 +485,11 @@ async function galleryOf(env: Env, card: Card, scope: Scope, filedOnly = false):
   return own === null || filedOnly ? NONE : { ...NONE, sources: [[{ by: 'char', key: own }]], chars: [own] };
 }
 async function cellsOf(env: Env, g: Gallery, kind: 0 | 1): Promise<Cell[]> {
+  return (await allCells(env, g)).filter(cell => cell.kind === kind);
+}
+async function allCells(env: Env, g: Gallery): Promise<Cell[]> {
   const [chars, filed] = await Promise.all([characterCounts(env, g.chars), g.filed.length ? filedCounts(env, g.filed) : new Map<number, Cell[]>()]);
-  return [...[...chars.values()].flat(), ...[...filed.values()].flat(), ...g.away.map(r => filedCell(r, -1)), ...g.here.map(r => filedCell(r, 1))]
-    .filter(cell => cell.kind === kind);
+  return [...[...chars.values()].flat(), ...[...filed.values()].flat(), ...g.away.map(r => filedCell(r, -1)), ...g.here.map(r => filedCell(r, 1))];
 }
 /** Counts by style group of the crops of a dated gallery, the withheld apart: from the cells where they can answer (no year range, or the crops of no year on the witness
  *  axis), else counted over the range's own index. */
@@ -608,8 +610,8 @@ export async function corpusOccurrences(env: Env, card: Card, q: URLSearchParams
 // Decades and the time axis.
 
 // The time axis and the books of a gallery are kept at the edge by the publication and the hour: a review
-// moves a crop to another decade, book or character there within the hour. The decades stand beside the
-// card, so they are kept by what the card is, and always add up to it.
+// moves a crop to another decade, book or character there within the hour. The decades of the copies'
+// dates stand beside the card, so they are kept by what the card is, and always add up to it.
 async function axisVersion(env: Env, now = Date.now()) {
   return `${publicationKey(await catalogueStamps(env, now))}:${Math.floor(now / 3_600_000)}`;
 }
@@ -630,7 +632,7 @@ export function composedCountQuery(source: Source, kind: 0 | 1, books: number[])
 export async function decades(env: Env, ctx: ExecutionContext, url: URL, tools: CharacterTools) {
   const q = url.searchParams, card = await characterCard(env, q.get('code_point') || '', tools, ctx), { data } = card;
   const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
-  const version = `${(await currentPointer(env)).pub}:${await catalogueVersion(env)}`;
+  const version = axis === 'composed' ? await axisVersion(env) : `${(await currentPointer(env)).pub}:${await catalogueVersion(env)}`;
   const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}`);
   return edge(ctx, key, async () => {
     const g = await galleryOf(env, card, grapheme ? 'grapheme' : 'character');
@@ -767,13 +769,13 @@ export async function bookGallery(env: Env, ctx: ExecutionContext, url: URL, too
     if (!at) throw new Problem(422, 'Invalid cursor.');
     books = found.filter(book => !book.recorded || book.n < Number(at[1]) || (book.n === Number(at[1]) && book.id > Number(at[2])));
   }
-  // The records are the hour's; where no years narrow them the counts are the card's own.
-  if (!years) for (const kind of [0, 1] as const) {
-    const list = kind ? 'corpus' : 'local', c = counted(await cellsOf(env, g, kind), () => true);
-    styles[list] = plus(c.styles, c.withheld);
-    if (!kind) held.local = c.withheld;
+  // What is listed, and withheld from it, are the records' as its books are, the hour's. The counts by style
+  // are the card's on the first page, where no years narrow them.
+  const listed = { local: total(withheld ? styles.local : plus(styles.local, held.local, -1), group), corpus: total(styles.corpus, group) }, back = total(held.local, group);
+  if (!years && document === null && !after) {
+    const cells = await allCells(env, g);
+    for (const kind of [0, 1] as const) { const c = counted(cells, cell => cell.kind === kind); styles[kind ? 'corpus' : 'local'] = plus(c.styles, c.withheld) }
   }
-  const listed = { local: total(withheld ? styles.local : plus(styles.local, held.local, -1), group), corpus: total(styles.corpus, group) };
   const page: typeof found = [], rest = books.length;
   for (let crops = 0; page.length < Math.min(rest, GALLERY_BOOKS) && crops < limit; crops += Math.min(per, page[page.length - 1].n)) page.push(books[page.length]);
 
@@ -793,7 +795,7 @@ export async function bookGallery(env: Env, ctx: ExecutionContext, url: URL, too
   const shown = [...rows.values()].flatMap(list => list.slice(0, per));
   const items = new Map((await listingItems(env, shown.map(row => row.id))).map(item => [item.id, item]));
   const last = page[page.length - 1];
-  return { code_point: data.code_point, scope, per, total: found.length, styles, listed, style_groups: STYLE_NAMES, withheld: withheld ? null : total(held.local, group),
+  return { code_point: data.code_point, scope, per, total: found.length, styles, listed, style_groups: STYLE_NAMES, withheld: withheld ? null : back,
     groups: page.map(book => {
       const list = rows.get(book)!, end = list[per - 1];
       return { document: book.key, records: book.records.map(record => record.key), title: book.title, page: book.page, count: book.count, items: list.slice(0, per).flatMap(row => { const item = items.get(publicId(row.id)); return item ? [{ ...item, origin: row.kind ? 'corpus' : 'collection' }] : [] }),

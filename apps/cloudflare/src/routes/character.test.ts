@@ -513,12 +513,64 @@ describe('the total of a grapheme', () => {
     expect(local.reduce((n: number, d: any) => n + d[1], 0)).toBe(5);
   });
 
+  it('is the same on the card and in the list where a count is below nothing, or a claimed crop\'s place counts none', async () => {
+    // A review took two crops of 峕 where the publication counts one; a claim files a glyph of a family
+    // no grapheme of the list heads.
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,${G.峕},${G.峕},1,-1,1,4,1,1700,-2);
+      INSERT INTO imports(stamp,at) VALUES('below',0)`);
+    const both = async (code: string) => {
+      edge.clear();
+      const { grapheme } = (await get('/layers/characters/' + encodeURIComponent(code))).body;
+      const rows = (await get('/atlas/graphemes/counts')).body.items.filter((row: any) => row[1] === code);
+      expect([grapheme.count, grapheme.corpus_count]).toEqual(rows.reduce(([a, b]: number[], row: any) => [a + row[2], b + row[3]], [0, 0]));
+      return [grapheme.count, grapheme.corpus_count];
+    };
+    claim(cropId(PAGE_C, 4), 'U+5CD5');
+    try {
+      expect(await both('U+5CD5')).toEqual([0, 1]);
+      db.exec(`UPDATE crops SET family=NULL WHERE id=${cropId(PAGE_C, 4)}; INSERT INTO imports(stamp,at) VALUES('placeless',0)`);
+      expect(await both('U+5CD5')).toEqual([0, 1]);
+    } finally { unclaim(); db.exec(`UPDATE crops SET family=${G.ね} WHERE id=${cropId(PAGE_C, 4)}; DELETE FROM tally WHERE char=${G.峕}; DELETE FROM imports WHERE stamp IN ('below','placeless')`) }
+  });
+
+  it('lists by book what its books hold, and reads the counts by style once, on the first page', async () => {
+    const path = '/layers/books?code_point=U%2B4E38', sum = (groups: any[]) => groups.reduce((n: number, g: any) => n + g.count.local, 0);
+    const before = (await get(path)).body;
+    expect([before.listed.local, sum(before.groups), before.styles.local]).toEqual([4, 4, { cursive: 1, unassessed: 2, formal: 1 }]);
+    // Within the hour the books stand as they are, and what they list with them; the counts by style follow the review.
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(5,0,${G.丸},${G.丸},1,-1,1,4,1,1700,1); INSERT INTO imports(stamp,at) VALUES('book',0); DELETE FROM imports WHERE stamp='book';
+      INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,5,1,1,1,0)`);
+    let tallies = 0;
+    const counting = { ...env, ATLAS: Object.assign(Object.create(env.ATLAS), { prepare: (sql: string) => { if (sql.includes('CROSS JOIN tally')) tallies++; return env.ATLAS.prepare(sql) } }) } as unknown as Env;
+    const ask = async (more = '') => (await worker.fetch(new Request('https://glyphatlas.org' + path + more), counting, ctx)).json() as Promise<any>;
+    try {
+      const after = await ask();
+      expect([after.listed.local, sum(after.groups), after.styles.local]).toEqual([4, 4, { cursive: 1, unassessed: 2, formal: 2 }]);
+      const first = tallies;
+      await ask('&document=hk:d&per=1'); await ask('&limit=1&after=1.5');
+      expect([first, tallies]).toEqual([first, first]);
+      expect(first).toBeLessThanOrEqual(2);
+    } finally { db.exec(`DELETE FROM tally WHERE char=${G.丸}; DELETE FROM events`) }
+  });
+
+  it('keeps the decades of the copies\' dates by the catalogue and those of the texts\' by the hour', async () => {
+    const keys = () => [...edge.keys()].filter(url => url.includes('/layers/decades'));
+    const ask = async (axis: string) => { await get('/layers/decades?code_point=U%2B4E38&axis=' + axis); return keys().length };
+    expect([await ask('witness'), await ask('composed')]).toEqual([1, 2]);
+    db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,5,1,1,1,0)`);
+    try { expect([await ask('composed'), await ask('witness')]).toEqual([2, 3]) } finally { db.exec('DELETE FROM events') }
+  });
+
   it('reads the claims once for every card, gallery and list of a catalogue version', async () => {
     let reads = 0;
     const counting = { ...env, ATLAS: Object.assign(Object.create(env.ATLAS), { prepare: (sql: string) => { if (sql.includes("'has_grapheme'")) reads++; return env.ATLAS.prepare(sql) } }) } as unknown as Env;
     const paths = ['U+6642', 'U+306D', 'U+4E38'].flatMap(code => [`/layers/characters/${code}`, `/layers/occurrences?code_point=${encodeURIComponent(code)}&expand=grapheme`,
       `/layers/candidates?code_point=${encodeURIComponent(code)}&scope=grapheme`, `/layers/decades?code_point=${encodeURIComponent(code)}&scope=grapheme`, `/layers/books?code_point=${encodeURIComponent(code)}&scope=grapheme`]);
-    for (const path of [...paths, '/atlas/graphemes/counts']) expect((await worker.fetch(new Request('https://glyphatlas.org' + path), counting, ctx)).status).toBe(200);
+    for (const path of [...paths, '/atlas/graphemes/counts', '/atlas?grapheme=U%2B6642&limit=1']) expect((await worker.fetch(new Request('https://glyphatlas.org' + path), counting, ctx)).status).toBe(200);
+    expect(reads).toBe(1);
+    // Asked for together by requests that find no copy, they are one read too.
+    edge.clear(); reads = 0;
+    await Promise.all(['U%2B6642', 'U%2B306D', 'U%2B4E38', 'U%2B5CD5'].map(code => worker.fetch(new Request(`https://glyphatlas.org/layers/occurrences?code_point=${code}&expand=grapheme`), counting, ctx)));
     expect(reads).toBe(1);
   });
 });

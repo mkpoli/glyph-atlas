@@ -167,7 +167,11 @@ const routes = {
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null,{text,integer}));
       const run=await runsRoute(env,ctx,url);
       if(run)return run;
-      if(path==='/atlas/graphemes/counts')return json(await browse.graphemeCounts(env,ctx,url),200,{'cache-control':'private, max-age=300'});
+      if(path==='/atlas/graphemes/counts'){
+        const headers={'cache-control':'private, no-cache',etag:await browse.countsTag(env)};
+        if(request.headers.get('if-none-match')===headers.etag)return new Response(null,{status:304,headers});
+        return json(await browse.graphemeCounts(env,ctx,url),200,headers);
+      }
       const cropped=await cropRoute(env,ctx,url);
       if(cropped)return cropped;
       const books=await booksRoute(env,url);

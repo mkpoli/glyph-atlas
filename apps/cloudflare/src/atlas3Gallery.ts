@@ -105,7 +105,14 @@ export function claimsAt<T extends FiledAt>(rows: T[], grapheme: string, members
 /** The crops grapheme claims file (`filedClaims`) as of a catalogue version, which every claim, review and
  *  publication moves: the edge keeps each version's, so the cards, galleries and counts of a version read
  *  them from D1 once per location. */
-export async function filedClaimsKept(env: Env, version: string): Promise<FiledAt[]> {
+const claimsReading = new Map<string, Promise<FiledAt[]>>();
+export function filedClaimsKept(env: Env, version: string): Promise<FiledAt[]> {
+  // Requests that ask together wait for one read; nothing is held once it is in.
+  const reading = claimsReading.get(version) ?? claimsAsOf(env, version).finally(() => claimsReading.delete(version));
+  claimsReading.set(version, reading);
+  return reading;
+}
+async function claimsAsOf(env: Env, version: string): Promise<FiledAt[]> {
   const edge = new Request(`https://glyphatlas.org/_claims/${encodeURIComponent(version)}`);
   const kept = await caches.default.match(edge).then(hit => hit ? hit.json() as Promise<FiledAt[]> : null).catch(() => null);
   if (kept) return kept;

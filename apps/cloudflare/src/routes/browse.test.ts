@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, countsTag, gallery, graphemeCounts, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
+import worker from '../index';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
 
 // The Workers cache, as far as these routes use it.
@@ -150,23 +151,22 @@ describe('crops by character and grapheme', () => {
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
     const rows = (await counted(env)).filter((row: any) => row[1] === 'U+306F');
     expect(rows).toEqual([['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 1], ['𛂞', 'U+306F', 1, 3]]);
-    expect((await graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'))).unnamed).toBe(true);
   });
-  it('count no crop with no character where the publication counts none, whatever was reviewed or claimed since', async () => {
+  it('count no crop with no character where the publication counts none, but for one a claim files', async () => {
     const { env, db, objects, pub } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
       VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0)`));
-    const url = new URL('https://glyphatlas.org/atlas/graphemes/counts'), corpus = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(`v3/pub/${pub}/corpus.json.gz`)!)));
+    const corpus = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(`v3/pub/${pub}/corpus.json.gz`)!)));
     expect(corpus.filed).toEqual([[1, 1, 1], [3, 1, 1]]);
     delete corpus.filed;
     objects.set(`v3/pub/${pub}/corpus.json.gz`, gz(corpus));
     db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
       INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES('x','has_grapheme','','',(SELECT max(id) FROM crops WHERE kind=1),0,'asserted','U+51E6','[]','[]','[]','r','t');
       INSERT INTO ledger_submissions VALUES('s','u','{}','{}','t');`);
-    const body = await graphemeCounts(env, ctx, url);
-    expect(body.unnamed).toBe(false);
-    expect(body.items.filter((row: any) => !row[0])).toEqual([]);
-    expect(body.items.every((row: any) => row[2] >= 0 && row[3] >= 0)).toBe(true);
-    expect(body.items.find((row: any) => row[0] === 'ハ')).toEqual(['ハ', 'U+306F', 3, 1]);
+    const rows = await counted(env);
+    // The one a claim files under 処 is that grapheme's, whose gallery lists it.
+    expect(rows.filter(row => !row[0])).toEqual([['', 'U+51E6', 0, 1, 1]]);
+    expect(rows.every(row => row[2] >= 0 && row[3] >= 0)).toBe(true);
+    expect(rows.find(row => row[0] === 'ハ')).toEqual(['ハ', 'U+306F', 3, 1]);
   });
   it('state no negative count', async () => {
     const { env, db } = await setup();
@@ -177,12 +177,22 @@ describe('crops by character and grapheme', () => {
     expect(rows.every(row => row[2] >= 0 && row[3] >= 0 && row[2] + row[3] > 0)).toBe(true);
     expect(rows.find(row => row[0] === '한')).toEqual(['한', 'U+D55C', 0, 1]);
   });
+  it('are asked for each time, and answered as unchanged while they stand for the same', async () => {
+    const { env: writer, db } = await setup(), env = { ...writer, CATALOGUE_LAG: '60' } as Env;
+    const tag = await countsTag(env);
+    expect([await countsTag(env), tag.startsWith('W/"')]).toEqual([tag, true]);
+    const written = await countsTag(writer);
+    db.exec(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0)`);
+    expect([await countsTag(env), (await countsTag(writer)) === written]).toEqual([tag, false]);
+    const ask = (headers = {}) => worker.fetch(new Request('https://glyphatlas.org/atlas/graphemes/counts', { headers }), env, { waitUntil: () => {}, passThroughOnException() {} } as unknown as ExecutionContext);
+    const first = await ask(), again = await ask({ 'if-none-match': first.headers.get('etag')! });
+    expect([first.status, first.headers.get('cache-control'), again.status, await again.text()]).toEqual([200, 'private, no-cache', 304, '']);
+  });
   it('are kept a minute of a publication, and answered afresh to a browser that wrote', async () => {
-    setSystemTime(new Date('2026-11-24T12:00:20Z'));
     const { env: writer, db } = await setup(), env = { ...writer, CATALOGUE_LAG: '60' } as Env;
     const of = async (as: Env) => (await counted(as)).find(row => row[0] === '한')[3];
     expect([await of(env), await of(writer)]).toEqual([1, 1]);
-    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,5,-1,3,2,0,0,1,-1,1); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,5,-1,3,2,0,0,1,-1,1); INSERT INTO events(id,crop,revision,cut,gen,actor,submission,at,kind) VALUES(4242,1,1,0,1,1,1,1,0);`);
     expect([await of(env), await of(writer)]).toEqual([1, 2]);
     expect([...edge.keys()].filter(url => url.includes('/graphemes/counts')).length).toBe(3);
   });
@@ -315,6 +325,7 @@ describe('the browse page', () => {
     const id = member.items.find((i: any) => i.origin !== 'corpus').id;
     db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
       VALUES(?,'has_grapheme','','',?,0,'asserted','U+6240','[]','[]','[]','r','2026-11-24')`).run(id, cropOf(id));
+    db.exec(`INSERT INTO ledger_submissions VALUES('s','u','{}','{}','t')`);
     const ids = async (key: string) => (await of(key)).items.map((i: any) => i.id);
     expect([(await ids('U%2B306F')).includes(id), (await ids('U%2B30CF')).includes(id)]).toEqual([false, true]);
   });
