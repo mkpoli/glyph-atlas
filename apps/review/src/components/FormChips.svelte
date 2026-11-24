@@ -7,6 +7,7 @@
   // number keys follow the chips as they stand.
   import FormText from './FormText.svelte'
   import { formsOf } from '../lib/formOffers.js'
+  import IdsLabel from './IdsLabel.svelte'
   let { forms = [], groups = null, chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, children = null } = $props()
   const KEYS = '1234567890'
   const charOf = form => typeof form === 'string' ? form : form.char
@@ -27,7 +28,7 @@
       <div class="form-group" role={group.label ? 'group' : undefined} aria-label={group.label || undefined}>
         {#each group.blocks as block (block.id)}
           <div class="form-block" class:own={block.own} role={block.id === group.id ? undefined : 'group'} aria-label={block.id === group.id ? undefined : block.label}>
-            {#if block.label}<span class="form-group-label" lang="zh" aria-hidden="true">{block.label}</span>{/if}
+            {#if block.label}<span class="form-group-label"><IdsLabel text={block.label} caption /></span>{/if}
             <div class="form-group-chips">{#each block.forms as form (charOf(form))}{@render chip(form)}{/each}</div>
           </div>
         {/each}

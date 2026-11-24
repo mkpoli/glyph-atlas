@@ -17,6 +17,7 @@
   import { untrack } from 'svelte'
   import FormChips from './FormChips.svelte'
   import FormText from './FormText.svelte'
+  import IdsLabel from './IdsLabel.svelte'
   import CopyValue from './CopyValue.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
@@ -197,7 +198,7 @@
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
   </div>
   {#if others && ownStructure}
-    <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span lang="zh">{(ownStructure.part ?? ownStructure).label}{#if proposed(current, ownStructure.by)}<sup title={t('chips.derived')}>*</sup>{/if}</span></div>
+    <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span><IdsLabel text={(ownStructure.part ?? ownStructure).label} />{#if proposed(current, ownStructure.by)}<sup title={t('chips.derived')}>*</sup>{/if}</span></div>
   {/if}
   {#if me && !others && captioned}
     <button type="button" class="form-arrange" {disabled} aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>

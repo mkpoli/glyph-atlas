@@ -14,6 +14,7 @@
   import { crossfade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import FormText from './FormText.svelte'
+  import IdsLabel from './IdsLabel.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { setStructure, setFold } from '../lib/cropForms.js'
   import { composable, NAMES, proposed } from '../lib/structures.js'
@@ -336,7 +337,7 @@
   <h3 lang="zh">
     <button type="button" class="handle" data-handle={tray.id} aria-pressed={lifted === tray.id} aria-busy={busy === tray.id} aria-disabled={!me || Boolean(busy)}
       onpointerdown={event => down(event, 'tray', tray.id)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
-      onclick={event => tap(event, 'tray', tray.id)} onkeydown={event => keys(event, 'tray', tray.id)}>{tray.label}</button>{#if foldedByMe(tray.id)}<button type="button" class="take" disabled={Boolean(busy)}
+      onclick={event => tap(event, 'tray', tray.id)} onkeydown={event => keys(event, 'tray', tray.id)}><IdsLabel text={tray.label} caption /></button>{#if foldedByMe(tray.id)}<button type="button" class="take" disabled={Boolean(busy)}
       aria-label={t('structure.split', { structure: tray.label })} title={t('structure.split', { structure: tray.label })} onclick={event => { event.stopPropagation(); split(tray.id) }}>×</button>{/if}
   </h3>
 {/snippet}
@@ -358,7 +359,7 @@
     <button type="button" class="icon-button" aria-label={t('structure.close')} onclick={() => dialog.close()}>×</button>
   </header>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="board" class:holding={held || lifted} class:dragging bind:this={board} onclick={clicked}>
+  <div class="board" class:holding={held || lifted} class:dragging data-ids-quiet={held || lifted ? '' : undefined} bind:this={board} onclick={clicked}>
     {#each heads as tray (tray.id)}
       <section class="tray" class:target={targets.includes(tray.id)} class:over={over === tray.id} class:lifted={lifted === tray.id} class:dragging={dragging && lifted === tray.id}
         class:saving={busy === tray.id} class:landed={landed === tray.id} onanimationend={() => { if (landed === tray.id) landed = null }} data-tray={tray.id}
