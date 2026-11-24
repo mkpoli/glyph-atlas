@@ -7,8 +7,8 @@ document here, and `data/tensho/<book>/characters.tsv` says what each of its box
   `scripts/build_tensho_shuowen.py` matches the order of the book with the order of the edition's
   characters in Unicode. For the other books `scripts/build_tensho_equivalents.py` takes the one seal
   character whose equivalent (`kSEAL_MCJK`) is the 親字, where the title files no other crop under
-  that 親字, or the seal character of the 親字 the crop is drawn as. The unit's code point is the seal character's
-  and its source string the 親字. The placing is by rule, so the unit is `machine` until a reviewer
+  that 親字, or the seal character of the 親字 the crop is drawn as, or the one its drawing was read as.
+  The unit's code point is the seal character's and its source string the 親字. The placing is by rule, so the unit is `machine` until a reviewer
   confirms it.
 - the 親字 itself (`placed` is `parent`), where no seal character answers it or the crop is drawn as none
   that does.

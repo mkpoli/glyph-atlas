@@ -309,17 +309,18 @@ def test_a_form_is_placed_by_its_parent_or_its_drawing(tmp_path):
     near = {tensho.crop_name({**crop, "parent_code_point": f"U+{crop['parent']}"}): held
             for crop, held in zip(crops, drawn, strict=True)}
 
-    build_tensho_equivalents.place(crops, build_tensho_equivalents.equivalents(sources), heads, near)
+    build_tensho_equivalents.place(crops, build_tensho_equivalents.equivalents(sources), heads, near,
+                                   {"U+8331_I_X0002_Y0000": "U+3D65F", "U+4E01_I_X0005_Y0000": ""})
 
     assert [(crop["placed"], crop.get("seal")) for crop in crops] == [
         # One crop under the 親字 of one seal character: its drawing is not asked.
         ("equivalent", "U+3D000"),
         # Two seal characters have the 親字: the nearer in drawing.
         ("ink", "U+3D011"),
-        # Near to a seal character of another 親字 only.
-        ("parent", None), ("", None), ("equivalent", "U+3D65F"),
-        # Two forms filed under one 親字: the one drawn as its seal character takes it.
-        ("ink", "U+3D020"), ("parent", None),
+        # Read as a seal character its 親字 does not give.
+        ("read", "U+3D65F"), ("", None), ("equivalent", "U+3D65F"),
+        # Near to a seal character of its 親字 and read as none; near to one of another 親字 only.
+        ("parent", None), ("parent", None),
         # 春, whose seal character is the one of 萅, of the same 字種.
         ("ink", "U+3D4C7"),
         # 蟲 has a seal character of its own and 虫, of its 字種, stands far from it: not a form of its entry.
@@ -327,6 +328,15 @@ def test_a_form_is_placed_by_its_parent_or_its_drawing(tmp_path):
     # 器 as a compatibility ideograph is read as the unified ideograph it is equivalent to.
     assert crops[4]["equivalent"] == "5668"
     assert crops[7]["equivalent"] == "8405"
+
+
+def test_the_tables_take_every_reading():
+    rows = {tensho.crop_name(row): row for book in SERVED
+            for row in tensho.read_tsv(tensho.DEFAULT_DATA / book / "characters.tsv")}
+    for read in tensho.read_tsv(tensho.DEFAULT_DATA / "read.tsv"):
+        row = rows[read["crop"]]
+        assert row["parent"] == read["parent"] and row["code_point"] == read["code_point"]
+        assert row["placed"] == ("read" if read["code_point"] else "parent")
 
 
 def test_the_drawing_places_a_form_on_a_seal_character_of_its_grapheme():
@@ -351,7 +361,7 @@ def test_the_tables_of_a_volume_keep_every_crop_on_a_page_of_the_library(book, c
 
     assert len(rows) == crops == len({row["sha256"] for row in rows})
     assert {row["canvas"] for row in rows} == set(pages)
-    assert {row["placed"] for row in rows} <= {"equivalent", "ink", "parent", ""}
+    assert {row["placed"] for row in rows} <= {"equivalent", "ink", "read", "parent", ""}
     for row in rows:
         page = pages[row["canvas"]]
         assert int(row["x"]) + int(row["w"]) <= int(page["width"])
@@ -359,7 +369,7 @@ def test_the_tables_of_a_volume_keep_every_crop_on_a_page_of_the_library(book, c
         if row["placed"] == "equivalent":
             assert ord(row["char"]) in tensho.SEAL
             assert row["equivalent"] == unicodedata.normalize("NFC", row["parent"])
-        elif row["placed"] == "ink":
+        elif row["placed"] in ("ink", "read"):
             assert ord(row["char"]) in tensho.SEAL and row["equivalent"]
         else:
             assert not row["char"] and (row["placed"] == "parent") == (row["parent"] != "〓")

@@ -10,12 +10,12 @@ The model is a ResNet-18 over 96 px binarised forms, with one cosine prototype f
 glyph in Sealie (OFL 1.1), and its crop of 説文解字 (TE00039) where `data/tensho/TE00039/characters.tsv`
 places one. Training bends, scales and thins or thickens the drawings.
 
-The hands of the other titles differ from both, so a second round trains on them too. The 親字 of those
+The hands of the other titles differ from both, so a second round trains on them too. The 字種 of those
 titles are split in two, and for each half a model is trained as before and on the crops of the other
 half whose first answer is a seal character of their 親字. It answers for its own half. So no crop is
-answered for by a model that saw a crop of its 親字 outside 説文解字, and the crops a title files alone under
-the 親字 of one seal character measure the models; every tenth crop of 説文解字, kept back throughout,
-measures them on that book.
+answered for by a model that saw a crop of its 字種 in those titles, and the crops a title files alone under
+the 親字 of one seal character measure the models. Every tenth crop of 説文解字 is kept back throughout and
+answered for by the model of its half, and measures them on that book.
 
     python models/seal/match.py work/tensho/dl --font cache/fonts/Sealie-Medium.ttf \\
         --seal-sources cache/ucd/SealSources.txt
@@ -200,8 +200,11 @@ def class_of(row: dict[str, str]) -> int:
     return number(row["code_point"]) - BLOCK[0]
 
 
-def half_of(row: dict[str, str]) -> int:
-    return hashlib.sha256(unified(row["parent"]).encode()).digest()[0] % 2
+def half_of(row: dict[str, str], heads: dict[str, str]) -> int:
+    """The half of a crop's 字種, so that 梨 and 棃 are in one. A crop of 説文解字 goes with the modern
+    equivalent of its seal character, the 字種 the other titles' crops of that character are of."""
+    char = f"{ord(row['equivalent']):04X}" if row["book"] == SHUOWEN else unified(row["parent"])
+    return hashlib.sha256(heads.get(char, char).encode()).digest()[0] % 2
 
 
 def found(near: np.ndarray, classes: list[int]) -> dict[str, float | int]:
@@ -238,8 +241,9 @@ def main(argv: list[str] | None = None) -> int:
             parts.append(in_parts(pool, partial(cut, archive), members))
             for member in members:
                 name = Path(member).stem
-                row = held.get(name, {"placed": "", "code_point": ""})
-                rows.append({"crop": name, "parent": name.split("_")[0].removeprefix("U+"), "book": book["id"], "placed": row["placed"], "code_point": row["code_point"]})
+                row = held.get(name, {"placed": "", "code_point": "", "equivalent": ""})
+                rows.append({"crop": name, "parent": name.split("_")[0].removeprefix("U+"), "book": book["id"], "placed": row["placed"], "code_point": row["code_point"],
+                             "equivalent": row["equivalent"]})
     forms = np.concatenate(parts)
 
     placed = [i for i, row in enumerate(rows) if row["book"] == SHUOWEN and row["placed"]]
@@ -253,19 +257,20 @@ def main(argv: list[str] | None = None) -> int:
     torch.save(net.state_dict(), args.artifacts / "first.pt")
     first = nearest(net, forms)
 
-    seals_of = seals_by_parent(equivalents(args.seal_sources), graphemes(CHARACTERS))
+    heads = graphemes(CHARACTERS)
+    seals_of = seals_by_parent(equivalents(args.seal_sources), heads)
     others = [i for i, row in enumerate(rows) if row["book"] != SHUOWEN]
     agreed = [i for i in others if rows[i]["parent"] != GETA
               and f"U+{BLOCK[0] + first[i, 0]:04X}" in seals_of(unified(rows[i]["parent"]))]
     near = first.copy()
     back: list[int] = sorted(kept_back)
     for half in (0, 1):
-        learnt = [i for i in agreed if half_of(rows[i]) != half]
+        learnt = [i for i in agreed if half_of(rows[i], heads) != half]
         net = train(np.concatenate([given, forms[learnt]]), classes + [int(first[i, 0]) for i in learnt], args.epochs)
         torch.save(net.state_dict(), args.artifacts / f"half{half}.pt")
-        asked = [i for i in others if half_of(rows[i]) == half]
+        asked = [i for i in others if half_of(rows[i], heads) == half]
         near[asked] = nearest(net, forms[asked])
-        mine = back[half::2]
+        mine = [i for i in back if half_of(rows[i], heads) == half]
         near[mine] = nearest(net, forms[mine])
 
     report = {"epochs": args.epochs, "trained_on": {"glyphs": CLASSES, "crops": len(shown), "agreed": len(agreed)},

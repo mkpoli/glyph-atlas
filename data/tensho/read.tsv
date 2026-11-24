@@ -1,0 +1,41 @@
+# Seal forms whose drawing was read against their seal character and found to be another one's, or none's: those
+# models/seal/match.py places third, those it places on another form of their 親字 than the 親字's own, and those a
+# review found (2026-11-24). code_point is the seal character the form is drawn as, empty where Unicode gives its
+# 親字 none; drawn says how. crop is the crop file's name in 篆書字体データセット.
+crop	parent	code_point	drawn
+U+24427_TE00025_0035_1_X3669_Y1921	𤐧		another left part
+U+2657B_TE00003_0356_1_X2516_Y0927	𦕻		no 心
+U+470C_TE00003_0373_1_X4004_Y2721	䜌		言 between two 糸
+U+47D2_TE00024_0034_1_X2669_Y2894	䟒		another left part
+U+4E01_TE00026_0071_1_X0713_Y1323	丁		a filled nail head
+U+4E0A_TE00003_0311_1_X2490_Y2469	上	U+3D008	the waved upright of 上
+U+4E0A_TE00026_0071_1_X1411_Y2885	上		one side stroke on an upright
+U+4E0B_TE00026_0071_1_X0950_Y2874	下		one side stroke on an upright
+U+4E1E_TE00003_0317_1_X1109_Y1697	丞		another lower part
+U+514B_TE00003_0321_1_X1084_Y1950	克		another lower part
+U+5193_TE00026_0031_1_X3976_Y3173	冓		no upper part
+U+5341_TE00026_0042_1_X3047_Y0984	十		a stroke with a knot
+U+53CB_TE00003_0313_1_X1493_Y1714	友	U+3D8B0	two 又 one over the other, which Unicode files under 㕛
+U+53CB_TE00026_0034_1_X3720_Y0954	友	U+3D8B0	two 又 one over the other, which Unicode files under 㕛
+U+53CB_TE00026_0034_1_X3956_Y1278	友	U+3D8B0	two 又 one over the other, which Unicode files under 㕛
+U+569E_TE00003_0370_1_X2547_Y1138	嚞		折 over 心
+U+5B88_TE00003_0319_1_X2500_Y1184	守		two rings under the roof
+U+5F01_TE00003_0316_1_X1290_Y0920	弁		another upper part
+U+5F01_TE00026_0058_1_X2711_Y1276	弁		another upper part
+U+6127_TE00003_0354_1_X1706_Y1162	愧		女 for 心
+U+63A7_TE00025_0010_1_X0475_Y3228	控		木 for 手
+U+63A8_TE00003_0345_1_X2883_Y1163	推		another right part
+U+65E5_TE00026_0002_1_X3061_Y3179	日	U+3E2F3	a stroke in a box
+U+65E5_TE00026_0002_1_X3301_Y2865	日		a dot in a circle
+U+6840_TE00003_0338_1_X1706_Y1174	桀		another lower part
+U+6B63_TE00025_0018_1_X4080_Y1297	正	U+3D4C4	一 filled over 止
+U+756B_TE00025_0046_1_X3905_Y1904	畫		another lower part
+U+78E8_TE00003_0368_1_X4120_Y1937	磨		麻 for 靡
+U+7D1C_TE00003_0340_1_X1521_Y0905	紜		糸 for 員
+U+7D1C_TE00025_0070_1_X0825_Y1352	紜		糸 for 員
+U+8011_TE00003_0335_1_X2516_Y1155	耑		another lower part
+U+82E6_TE00003_0335_1_X1511_Y1158	苦		another top
+U+8657_TE00003_0347_1_X2102_Y1930	虗		another lower part
+U+897F_TE00024_0019_1_X1508_Y3260	西		a bird over the nest
+U+8C46_TE00024_0028_1_X1037_Y1962	豆	U+3DE16	a lidded vessel on a spreading foot
+U+9866_TE00003_0375_1_X2610_Y2730	顦		another left part
