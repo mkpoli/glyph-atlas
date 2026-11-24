@@ -49,6 +49,8 @@ HOMESERVER = "http://127.0.0.1:6167"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 GEMINI_API_REVISION = "2026-05-20"
 GEMINI_MODEL = "gemini-4-hydrogen"
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODEL = "deepseek-flash"
 GITHUB_API = "https://api.github.com"
 JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
 
@@ -224,6 +226,15 @@ PRICE_INPUT = 1.50
 PRICE_CACHE_READ = 0.075
 PRICE_OUTPUT = 7.50
 PRICE_SEARCH_QUERY = 0.014
+# deepseek-flash (V4.1-Flash-1017) per million tokens, doubled in the peak hours (UTC, Monday to
+# Friday; Chinese public holidays are off-peak, so on those this counts too much). Summarizing follows
+# DeepSeek's temperature for data analysis. Sources: https://api-docs.deepseek.com/quick_start/pricing
+# and https://api-docs.deepseek.com/quick_start/parameter_settings (read 2026-11-24).
+DEEPSEEK_CACHE_HIT = 0.003
+DEEPSEEK_CACHE_MISS = 0.15
+DEEPSEEK_OUTPUT = 0.60
+DEEPSEEK_PEAK = ((1, 4), (6, 10))
+MEMORY_TEMPERATURE = 1.0
 # Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
 # may pass the day's limit by the difference, once.
 CALL_RESERVE = 0.05
@@ -441,6 +452,25 @@ def model_cost(usage: Any) -> float:
     return (cached * PRICE_CACHE_READ + uncached * PRICE_INPUT + output * PRICE_OUTPUT) / 1_000_000
 
 
+def deepseek_cost(usage: Any, at: datetime.datetime) -> float:
+    """The dollar cost of one DeepSeek call from its usage block, at the time it was made."""
+    if not isinstance(usage, dict):
+        return 0.0
+
+    def count(name: str) -> int | None:
+        value = usage.get(name)
+        return max(0, value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+    hit = count("prompt_cache_hit_tokens") or 0
+    miss = count("prompt_cache_miss_tokens")
+    if miss is None:
+        miss = max(0, (count("prompt_tokens") or 0) - hit)
+    utc = at.astimezone(datetime.UTC)
+    peak = utc.weekday() < 5 and any(start <= utc.hour < end for start, end in DEEPSEEK_PEAK)
+    cost = hit * DEEPSEEK_CACHE_HIT + miss * DEEPSEEK_CACHE_MISS + (count("completion_tokens") or 0) * DEEPSEEK_OUTPUT
+    return cost / 1_000_000 * (2 if peak else 1)
+
+
 def usage_report(rows: Iterable[sqlite3.Row]) -> str:
     """Each day's calls, failures, tokens and estimated dollars, one line per day."""
     days: dict[str, list[sqlite3.Row]] = {}
@@ -484,6 +514,8 @@ class Config:
     gemini_key_file: Path = Path("/etc/fish-bot/gemini-key")
     gemini_model: str = GEMINI_MODEL
     gemini_url: str = GEMINI_URL
+    deepseek_key_file: Path | None = None
+    deepseek_model: str = DEEPSEEK_MODEL
     github_token_file: Path | None = Path("/etc/fish-bot/github-token")
     github_repo: str = "mkpoli/glyph-atlas"
     user_id: str = "@bigfatfish:glyphatlas.org"
@@ -528,6 +560,7 @@ class Config:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
         matrix = raw.get("matrix") or {}
         gemini = raw.get("gemini") or {}
+        deepseek = raw.get("deepseek") or {}
         github = raw.get("github") or {}
         bot = raw.get("bot") or {}
         limits = raw.get("limits") or {}
@@ -552,8 +585,8 @@ class Config:
                 not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", item)
                 for item in digest_repos):
             raise ValueError("digest.repos must be a list of owner/name")
-        if not isinstance(matrix, dict) or not isinstance(gemini, dict) or not isinstance(github, dict):
-            raise TypeError("matrix, gemini and github must be tables")
+        if not isinstance(matrix, dict) or not isinstance(gemini, dict) or not isinstance(deepseek, dict) or not isinstance(github, dict):
+            raise TypeError("matrix, gemini, deepseek and github must be tables")
         if not isinstance(bot, dict) or not isinstance(limits, dict):
             raise TypeError("bot and limits must be tables")
 
@@ -608,6 +641,8 @@ class Config:
             gemini_key_file=key_file,
             gemini_model=str(field(gemini, "model", cls.gemini_model)),
             gemini_url=str(field(gemini, "url", cls.gemini_url)),
+            deepseek_key_file=path_field(deepseek, "api_key_file", cls.deepseek_key_file),
+            deepseek_model=str(field(deepseek, "model", cls.deepseek_model)),
             github_token_file=github_token,
             github_repo=repo,
             user_id=user_id,
@@ -2406,17 +2441,29 @@ def _resolve_grounding_url(url: str, *, timeout: float = 5.0) -> str:
         return url
 
 
-class Gemini:
-    """Calls Gemini 4 Hydrogen through the Interactions API."""
+class Model:
+    """A model behind an API: every paid request goes through a purse."""
 
-    def __init__(self, api_key: str, model: str = GEMINI_MODEL, url: str = GEMINI_URL,
-                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0):
+    name = "the model"
+
+    def __init__(self, api_key: str, model: str, url: str, timeout: float = 120.0):
         self.api_key = api_key
         self.model = model
         self.url = url
-        self.repo = repo
         self.timeout = timeout
         self.purse: Purse | None = None
+
+    def _headers(self) -> dict[str, str]:
+        raise NotImplementedError
+
+    def _bill(self, answer: Any) -> tuple[int, int, float]:
+        """An answer's tokens in, tokens out and dollars."""
+        raise NotImplementedError
+
+    def _ask(self, system: str, text: str, pictures: list[tuple[str, str]], *, kind: str,
+             timeout: float) -> str:
+        """One answer in JSON to a text and captioned pictures (data URLs)."""
+        raise NotImplementedError
 
     def _post(self, body: dict[str, Any], *, timeout: float | None = None,
               kind: str = "chat") -> dict[str, Any]:
@@ -2431,11 +2478,9 @@ class Gemini:
             # An answer that never came may still be billed, so its reserve stays spent.
             self._settle(kind, day, failed=True, cost=0.0 if error.status is not None else CALL_RESERVE)
             raise
-        usage = answer.get("usage") if isinstance(answer, dict) else None
-        tokens_in, tokens_out = usage_tokens(usage)
+        tokens_in, tokens_out, cost = self._bill(answer)
         # An answer without its token counts is charged as reserved.
-        self._settle(kind, day, tokens_in=tokens_in, tokens_out=tokens_out,
-                     cost=model_cost(usage) if tokens_in else CALL_RESERVE)
+        self._settle(kind, day, tokens_in=tokens_in, tokens_out=tokens_out, cost=cost if tokens_in else CALL_RESERVE)
         return answer
 
     def _settle(self, kind: str, day: str, **tally: Any) -> None:
@@ -2454,12 +2499,7 @@ class Gemini:
         request = urllib.request.Request(
             self.url,
             data=json.dumps(body).encode(),
-            headers={
-                "x-goog-api-key": self.api_key,
-                "Content-Type": "application/json",
-                "Api-Revision": GEMINI_API_REVISION,
-                "User-Agent": USER_AGENT,
-            },
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT, **self._headers()},
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
@@ -2470,11 +2510,117 @@ class Gemini:
                 payload = (error.read() or b"").decode(errors="replace")[:500]
             except OSError:
                 pass
-            raise ModelError(f"Gemini answered {error.code}: {payload or error.reason}", status=error.code) from None
+            raise ModelError(f"{self.name} answered {error.code}: {payload or error.reason}", status=error.code) from None
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as error:
-            raise ModelError(f"Gemini could not be reached: {getattr(error, 'reason', error)}") from None
+            raise ModelError(f"{self.name} could not be reached: {getattr(error, 'reason', error)}") from None
         except ValueError as error:
-            raise ModelError(f"Gemini answered with JSON that could not be read: {error}") from None
+            raise ModelError(f"{self.name} answered with JSON that could not be read: {error}") from None
+
+    def remember(self, room_name: str, rows: list[sqlite3.Row], names: dict[str, str],
+                 known: list[sqlite3.Row], *, bot_user_id: str, left_out: Iterable[str] = (),
+                 images: Iterable[tuple[int, str]] = ()) -> Memory:
+        """What one stretch of a room leaves in memory, with the pictures posted in it."""
+        images = list(images)
+        numbers = {index: number for number, (index, _) in enumerate(images, 1)}
+        user, keys = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id, pictures=numbers)
+        pictures = [(f"Picture {number}:", url) for number, (_, url) in enumerate(images, 1)]
+        last: Exception | None = None
+        failures = 0
+        while failures < 2:
+            try:
+                text = self._ask(MEMORY_PROMPT, user, pictures, kind="memory", timeout=MEMORY_TIMEOUT)
+                if not text.strip():
+                    raise TypeError("the answer has no message content")
+                return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
+            except SpendError:
+                raise
+            except (TypeError, ValueError, ModelError) as error:
+                last = error
+                log.warning("memory answer unusable: %s", error)
+                if not pictures:
+                    failures += 1
+                else:
+                    # Pictures the model refuses must not cost the episode: go on without them, with
+                    # both tries left.
+                    pictures = []
+                    user = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
+        raise ModelError(str(last or "no memory"))
+
+
+class DeepSeek(Model):
+    """Calls DeepSeek Flash, thinking off, for work nobody hears: it has no voice in the chat."""
+
+    name = "DeepSeek"
+
+    def __init__(self, api_key: str, model: str = DEEPSEEK_MODEL, url: str = DEEPSEEK_URL, timeout: float = 60.0):
+        super().__init__(api_key, model, url, timeout)
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def _bill(self, answer: Any) -> tuple[int, int, float]:
+        usage = answer.get("usage") if isinstance(answer, dict) else None
+        if not isinstance(usage, dict):
+            return 0, 0, 0.0
+        tokens = [value if isinstance(value, int) and not isinstance(value, bool) else 0
+                  for value in (usage.get("prompt_tokens"), usage.get("completion_tokens"))]
+        return tokens[0], tokens[1], deepseek_cost(usage, datetime.datetime.now(datetime.UTC))
+
+    def _ask(self, system: str, text: str, pictures: list[tuple[str, str]], *, kind: str,
+             timeout: float) -> str:
+        content: str | list[dict[str, Any]] = text
+        if pictures:
+            content = [{"type": "text", "text": text}]
+            for caption, url in pictures:
+                content += [{"type": "text", "text": caption}, {"type": "image_url", "image_url": {"url": url}}]
+        answer = self._post({
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "temperature": MEMORY_TEMPERATURE,
+            "max_tokens": 2000,
+        }, timeout=timeout, kind=kind)
+        choices = answer.get("choices") if isinstance(answer, dict) else None
+        message = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+        said = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(said, str):
+            raise TypeError("the answer has no message content")
+        return said
+
+
+class Gemini(Model):
+    """Calls Gemini 4 Hydrogen through the Interactions API."""
+
+    name = "Gemini"
+
+    def __init__(self, api_key: str, model: str = GEMINI_MODEL, url: str = GEMINI_URL,
+                 repo: str = "mkpoli/glyph-atlas", timeout: float = 120.0):
+        super().__init__(api_key, model, url, timeout)
+        self.repo = repo
+
+    def _headers(self) -> dict[str, str]:
+        return {"x-goog-api-key": self.api_key, "Api-Revision": GEMINI_API_REVISION}
+
+    def _bill(self, answer: Any) -> tuple[int, int, float]:
+        usage = answer.get("usage") if isinstance(answer, dict) else None
+        return (*usage_tokens(usage), model_cost(usage))
+
+    def _ask(self, system: str, text: str, pictures: list[tuple[str, str]], *, kind: str,
+             timeout: float) -> str:
+        content: str | list[dict[str, Any]] = text
+        if pictures:
+            content = [{"type": "text", "text": text}]
+            for caption, url in pictures:
+                content += [{"type": "text", "text": caption}, _image_block(url)]
+        return _interaction_text(self._post({
+            "model": self.model,
+            "system_instruction": system,
+            "input": content,
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "generation_config": {"thinking_level": MEMORY_THINKING, "max_output_tokens": 4096},
+            "store": False,
+        }, timeout=timeout, kind=kind))
 
     def decide(self, room_name: str, room_topic: str, events: list[sqlite3.Row],
                names: dict[str, str], call: Call, open_issues: list[IssueRef]) -> Decision:
@@ -2688,50 +2834,6 @@ class Gemini:
         title = next((title for title, cited in citations if cited == url and title),
                      citations[0][0] if citations else "")
         return {"title": title[:200], "content": text}
-
-    def remember(self, room_name: str, rows: list[sqlite3.Row], names: dict[str, str],
-                 known: list[sqlite3.Row], *, bot_user_id: str, left_out: Iterable[str] = (),
-                 images: Iterable[tuple[int, str]] = ()) -> Memory:
-        """What one stretch of a room leaves in memory, with the pictures posted in it."""
-        images = list(images)
-        numbers = {index: number for number, (index, _) in enumerate(images, 1)}
-        user, keys = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id, pictures=numbers)
-        content: str | list[dict[str, Any]] = user
-        if images:
-            content = [{"type": "text", "text": user}]
-            for number, (_, url) in enumerate(images, 1):
-                content += [{"type": "text", "text": f"Picture {number}:"},
-                            _image_block(url)]
-        body: dict[str, Any] = {
-            "model": self.model,
-            "system_instruction": MEMORY_PROMPT,
-            "input": content,
-            "response_format": {"type": "text", "mime_type": "application/json"},
-            "generation_config": {"thinking_level": MEMORY_THINKING, "max_output_tokens": 4096},
-            "store": False,
-        }
-        last: Exception | None = None
-        failures = 0
-        while failures < 2:
-            try:
-                answer = self._post(body, timeout=MEMORY_TIMEOUT, kind="memory")
-                text = _interaction_text(answer)
-                if not text.strip():
-                    raise TypeError("the answer has no message content")
-                return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
-            except SpendError:
-                raise
-            except (TypeError, ValueError, ModelError) as error:
-                last = error
-                log.warning("memory answer unusable: %s", error)
-                if not images:
-                    failures += 1
-                else:
-                    # Pictures the model refuses must not cost the episode: go on without them, with
-                    # both tries left.
-                    images = []
-                    body["input"] = format_memory(room_name, rows, names, known, bot_user_id=bot_user_id)[0]
-        raise ModelError(str(last or "no memory"))
 
     def digest(self, language: str, room_name: str, changes: list[dict[str, Any]],
                other_rooms: dict[str, list[sqlite3.Row]]) -> str:
@@ -3552,12 +3654,15 @@ class Bot:
     """The account, the rooms it reads, and the loop that turns a call into a decision."""
 
     def __init__(self, config: Config, store: Store, matrix: Matrix, gemini: Gemini,
-                 github: GitHub | None = None, state: State | None = None):
+                 github: GitHub | None = None, state: State | None = None, deepseek: DeepSeek | None = None):
         self.config = config
         self.store = store
         self.matrix = matrix
         self.gemini = gemini
         self.gemini.purse = Purse(store, config.daily_usd)
+        self.deepseek = deepseek
+        if deepseek is not None:
+            deepseek.purse = self.gemini.purse
         self.github = github
         self.state = state or State()
         self.user_id = config.user_id
@@ -4198,10 +4303,10 @@ class Bot:
         names.update({str(fact["subject"]): self.store.any_display_name(str(fact["subject"])) or _localpart(str(fact["subject"]))
                       for fact in known if str(fact["subject"]).startswith("@") and str(fact["subject"]) not in names})
         try:
-            memory = self.gemini.remember(self._room(room_id)[0] or room_id, segment, names, known,
-                                          bot_user_id=self.user_id, left_out=self._left_out(),
-                                          images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
-                                                               lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
+            memory = self._remember(self._room(room_id)[0] or room_id, segment, names, known,
+                                    bot_user_id=self.user_id, left_out=self._left_out(),
+                                    images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
+                                                         lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
         except SpendError as error:
             # It waits for the next day's money and is not given up.
             log.info("remembering waits: %s", error)
@@ -4227,6 +4332,17 @@ class Bot:
             return
         self.store.save_memory(room_id, segment, people, memory)
         log.info("remembered %s messages of %s: %s new or changed facts", len(segment), room_id, len(memory.edits))
+
+    def _remember(self, *args: Any, **kwargs: Any) -> Memory:
+        """The stretch read by DeepSeek, at a tenth of the price, or by Gemini when that fails."""
+        if self.deepseek is not None:
+            try:
+                return self.deepseek.remember(*args, **kwargs)
+            except SpendError:
+                raise
+            except ModelError as error:
+                log.warning("DeepSeek could not remember, asking Gemini: %s", error)
+        return self.gemini.remember(*args, **kwargs)
 
     def recall(self, room_id: str, events: list[sqlite3.Row], names: dict[str, str]) -> dict[str, Any]:
         """What she remembers that bears on the last lines of a room."""
@@ -4888,6 +5004,8 @@ def main(argv: list[str] | None = None) -> None:
         matrix = Matrix(config.homeserver, _secret(config.token_file))
         gemini = Gemini(_secret(config.gemini_key_file), config.gemini_model, config.gemini_url,
                         config.github_repo)
+        deepseek = (DeepSeek(_secret(config.deepseek_key_file), config.deepseek_model)
+                    if config.deepseek_key_file is not None else None)
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from None
     if args.check:
@@ -4910,7 +5028,7 @@ def main(argv: list[str] | None = None) -> None:
     github = None
     if config.github_token_file and config.github_token_file.exists():
         github = GitHub(_secret(config.github_token_file), config.github_repo)
-    bot = Bot(config, store, matrix, gemini, github, State(args.state))
+    bot = Bot(config, store, matrix, gemini, github, State(args.state), deepseek)
     try:
         if args.recap:
             try:

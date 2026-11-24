@@ -2970,3 +2970,94 @@ def test_a_call_is_read_even_when_many_lines_followed_it(tmp_path, monkeypatch):
     bot.turn(ROOM, "$call", task="called")
     _, trigger, read = bot.gemini.turns[-1]
     assert read[trigger] == "$call"
+
+
+def deepseek_answer(text, **usage):
+    return {"choices": [{"message": {"content": text}}], "usage": usage}
+
+
+def test_deepseek_costs_double_in_its_peak_hours():
+    usage = {"prompt_cache_hit_tokens": 1_000_000, "prompt_cache_miss_tokens": 2_000_000, "completion_tokens": 500_000}
+    utc = fish_bot.datetime.UTC
+    monday = fish_bot.datetime.datetime(2026, 11, 23, 2, tzinfo=utc)
+    calm = 0.003 + 2 * 0.15 + 0.5 * 0.60
+    assert fish_bot.deepseek_cost(usage, monday) == pytest.approx(2 * calm)
+    assert fish_bot.deepseek_cost(usage, monday.replace(hour=5)) == pytest.approx(calm)
+    assert fish_bot.deepseek_cost(usage, monday.replace(day=22)) == pytest.approx(calm)
+    assert fish_bot.deepseek_cost({"prompt_tokens": 1_000_000}, monday.replace(hour=5)) == pytest.approx(0.15)
+    assert fish_bot.deepseek_cost(None, monday) == 0.0
+
+
+def test_deepseek_remembers_with_pictures_from_the_shared_money(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    model = fish_bot.DeepSeek("key")
+    model.purse = fish_bot.Purse(store, 1.0)
+    sent = []
+
+    def send(body, **_):
+        sent.append(body)
+        return deepseek_answer('{"summary": "They read a scan.", "facts": []}', prompt_tokens=5000, completion_tokens=100)
+
+    monkeypatch.setattr(model, "_send", send)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AAAA")])
+    assert memory.summary == "They read a scan."
+    assert sent[0]["thinking"] == {"type": "disabled"}
+    assert sent[0]["messages"][1]["content"][-1] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+    row = store.usage(1)[0]
+    assert (row["kind"], row["calls"], row["tokens_in"], row["tokens_out"]) == ("memory", 1, 5000, 100)
+    assert 0 < row["cost"] < 0.002
+
+
+def test_deepseek_drops_pictures_it_refuses(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    model.purse = OpenPurse()
+
+    def send(body, **_):
+        if isinstance(body["messages"][1]["content"], list):
+            raise fish_bot.ModelError("DeepSeek answered 400", status=400)
+        return deepseek_answer('{"summary": "Talked.", "facts": []}')
+
+    monkeypatch.setattr(model, "_send", send)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AAAA")])
+    assert memory.summary == "Talked."
+
+
+@pytest.mark.parametrize("answer", [{}, {"choices": []}, {"choices": ["odd"]}, {"choices": [{"message": None}]}, []])
+def test_an_odd_deepseek_answer_is_an_error(answer, monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    model.purse = OpenPurse()
+    monkeypatch.setattr(model, "_send", lambda body, **_: answer)
+    with pytest.raises(fish_bot.ModelError):
+        model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER)
+
+
+def test_memory_goes_to_gemini_only_when_deepseek_fails(tmp_path):
+    bot, _, _ = make_bot(tmp_path)
+
+    class Helper:
+        error = None
+
+        def remember(self, *_, **__):
+            if self.error:
+                raise self.error
+            return fish_bot.Memory(summary="by DeepSeek", keywords=(), edits=())
+
+    bot.deepseek = Helper()
+    rows = [message_row("hi")]
+    assert bot._remember("Room", rows, {}, [], bot_user_id=USER).summary == "by DeepSeek"
+    assert bot.gemini.memories == []
+    bot.deepseek.error = fish_bot.ModelError("DeepSeek answered 402", status=402)
+    bot._remember("Room", rows, {}, [], bot_user_id=USER)
+    assert len(bot.gemini.memories) == 1
+    bot.deepseek.error = fish_bot.SpendError("spent")
+    with pytest.raises(fish_bot.SpendError):
+        bot._remember("Room", rows, {}, [], bot_user_id=USER)
+
+
+def test_deepseek_is_configured_by_its_key_file(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[deepseek]\napi_key_file = "deepseek-key"\n[budget]\ndaily_usd = 0.5\n')
+    config = fish_bot.Config.load(path)
+    assert config.deepseek_key_file == tmp_path / "deepseek-key" and config.daily_usd == 0.5
+    path.write_text("")
+    assert fish_bot.Config.load(path).deepseek_key_file is None

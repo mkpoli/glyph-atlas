@@ -9,6 +9,10 @@ token_file = "/etc/fish-bot/matrix-token"
 api_key_file = "/etc/fish-bot/gemini-key"
 model = "gemini-4-hydrogen"
 
+[deepseek]
+# Work nobody hears, at about a tenth of the price. Without this table Gemini does it.
+api_key_file = "/etc/fish-bot/deepseek-key"
+
 [github]
 # A fine-grained token with Issues read/write on this repository only, and Metadata read-only.
 token_file = "/etc/fish-bot/github-token"
