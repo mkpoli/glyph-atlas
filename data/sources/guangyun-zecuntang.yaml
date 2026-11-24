@@ -58,10 +58,10 @@ copies:
     confirm: 1
     search: 3
     dating:
-      - literal: 康熙四十三年（1704）序
+      - literal: 康熙四十三年序
         start: 1704
         end: 1704
-        kind: publication
+        kind: unknown
         evidence: https://kanseki.ioc.u-tokyo.ac.jp/user/query_detail_im.php?nu=148400
     volumes:
       - {volume: "1", label: 上平聲卷第一, files: "IOC.UTokyo-000146 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷一.pdf", offset: -4}
@@ -77,7 +77,7 @@ dating:
     evidence: 澤存堂本卷首 大中祥符元年六月五日牒（東京大學東洋文化研究所 倉石文庫10505）
 notes:
   - "The work's date is the edict printed in its front matter: 又準大中祥符元年六月五日勅 … 宜改爲大宋重修廣韻牒至準勅故牒, after one of 景德四年十一月十五日 (read on the 東文研 copy's 卷首, Wikimedia Commons IOC.UTokyo-000145, PDF pages 9 and 10). The 四庫全書總目提要 dates the book's completion otherwise, 大中祥符四年書成 (Kanripo KR1j0055, WYG, commit 73c10150ef3adc3e429e31605b15758df8f96406); that date is not recorded as a claim."
-  - The 東文研 catalogue gives its copy as 康熙四十三年序 張氏澤存堂 刊本 (record 148400, read 2026-11-24); 朱彝尊's preface on the same copy is dated 康熙四十有三年六月.
+  - The 東文研 catalogue gives its copy as 康熙四十三年序 張氏澤存堂 刊本, in one record with its 大廣益會玉篇三十卷 (148400, 1函4冊, read 2026-11-24). 1704 is the year of a preface, and no source read states when this copy was printed; 朱彝尊's preface in the 廣韻 itself is dated 康熙四十有三年六月. The date's kind is left to its wording.
   - The photographs are 2592 px openings, one leaf's verso on the right and the next leaf's recto on the left. Which library's copy they show is stated nowhere in the repository, so the image licence is unknown and the crops cut from them stay out of every publication until the holder is known.
   - The photographs carry only the work's date: nothing states which impression of the 澤存堂 printing that copy is.
   - The photographs' volume offsets were found by fitting (2026-11-20), each confirmed by the readers on six openings of its volume.
