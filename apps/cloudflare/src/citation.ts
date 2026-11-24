@@ -18,7 +18,7 @@ export type Source = {
 };
 export type Entry = {
   kind: Kind; id: string; label: string | null; codePoint?: string;
-  /** What a citation key names it by, when other than its label: a grapheme's head. */
+  /** The one character that names it, when other than its label: a grapheme's head. */
   key?: string;
   /** The form the site holds for a crop, when it is other than its label. */
   form?: string;
@@ -237,11 +237,12 @@ export function licenceUrl(licence: string | undefined): string | null {
 }
 
 /** The entry as schema.org describes it, for the page's JSON-LD: a crop as an image of its source, a
- *  grapheme or form as a term of the site's set. `image` is the crop's absolute image address, if shown. */
+ *  grapheme or form as a term of the site's set, a grapheme by its head and its label's others beside it. `image` is the crop's absolute image address, if shown. */
 export function linkedData(entry: Entry, origin: string, image: string | null = null): Json {
   const site = { '@type': 'Dataset', name: SITE, url: origin + '/' };
-  if (entry.kind !== 'crop') return { '@type': 'DefinedTerm', name: entry.label ?? entry.codePoint, termCode: entry.codePoint,
-    url: origin + entry.path, inDefinedTermSet: site };
+  if (entry.kind !== 'crop') return { '@type': 'DefinedTerm', name: entry.key ?? entry.label ?? entry.codePoint,
+    ...(entry.key ? { alternateName: [...entry.label!].filter(char => char !== entry.key) } : {}),
+    termCode: entry.codePoint, url: origin + entry.path, inDefinedTermSet: site };
   const source = entry.source ?? {};
   const licence = licenceUrl(source.licence);
   const credit = source.attribution ?? source.holder;
