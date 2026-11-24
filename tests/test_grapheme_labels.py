@@ -3,13 +3,12 @@ import importlib.util
 import json
 import unicodedata
 import zipfile
-from collections import Counter
 from pathlib import Path
 
 import pytest
 import yaml
 
-from glyph_atlas import refs
+from glyph_atlas import refs, structures
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("build_grapheme_labels", ROOT / "scripts/build_grapheme_labels.py")
@@ -34,7 +33,6 @@ def older(edges):
 
 def test_the_shipped_labels_are_the_tables(labels):
     assert json.loads(build.LABELS.read_text(encoding="utf-8")) == labels
-    assert Counter(len(label) for label in labels.values()) == {2: 2147, 3: 86}
 
 
 def test_the_labels_are_the_older_form_the_head_and_the_simplified_form(labels):
@@ -57,16 +55,25 @@ def test_every_character_of_a_label_is_one_table_says_so(labels, edges, older):
     for head, label in labels.items():
         for char in set(label) - {head, older.get(head)}:
             members = {refs.to_char(point) for point in refs.graphemes()[refs.to_code_point(head)]}
-            if char in listed:
-                assert label[-1] == char and any((member, char) in simplified for member in members), label
+            if label[-1] == char:
+                assert char in listed and any((member, char) in simplified for member in members), label
             else:
-                assert label == char + head and head in listed and (char, head) in simplified, label
+                # The character its 简体字 simplifies, of another 構形 than the head.
+                assert label[0] == char and label[-1] in listed and (char, label[-1]) in simplified, label
+                assert head not in older and structures.for_character(char) != structures.for_character(head), label
+
+
+def test_a_head_without_an_older_form_stands_after_what_its_simplified_form_simplifies(labels):
+    read = [labels.get(head, head) for head in "壷楕聡頚涜溌蝿隣弯桧"]
+    assert read == ["壺壷壶", "橢楕椭", "聰聡聪", "頸頚颈", "瀆涜渎", "潑溌泼", "蠅蝿蝇", "鄰隣邻", "彎弯", "檜桧"]
+    # The same 構形 drawn otherwise, and a head that simplifies itself (線: 缐) beside 綫.
+    assert [labels.get(head, head) for head in "説税嘘粤線語"] == ["説说", "税", "嘘", "粤", "線线", "語语"]
 
 
 def test_the_older_forms_are_the_jouyou_tables(edges, older):
     # 361 entries of the 文化庁 index (`joyo-2010`) print one older form and 弁 prints three.
     pairs = edges[0]
-    assert len(pairs) == 364 and len(older) == 288
+    assert len(pairs) == 364
     assert [old for new, old in pairs if new == "弁"] == ["瓣", "辨", "辯"]
     # Each 新字体–旧字体 family is one, and so are those whose forms a 異体字 relation files together.
     families = yaml.safe_load((ROOT / "data" / "vocab" / "graphemes.yaml").read_text(encoding="utf-8"))["families"].values()

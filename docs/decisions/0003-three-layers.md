@@ -34,25 +34,30 @@ The browsing hierarchy is **grapheme → character → form** (clarified 2026-09
   belong to their Han character's family ([0015](0015-small-seal-forms.md)).
   **The label of a grapheme** (2026-11-24) is what stands for it where the site names one: its 旧字体, its
   head and its 简体字, each once. 圖図图, 龍竜龙, 語语, 馬马, 國国 (the head is the 简体字), 假仮, 步歩. A grapheme with
-  neither is its head alone. 2,233 graphemes have a label of two characters (2,147) or three (86).
+  neither is its head alone.
   - The **旧字体** is the older form the 常用漢字表 (2010) prints beside the head, where it is a character of the
     same grapheme. The pairs are the `joyo/variant` edges of `kanji-variants.tsv` (CJKVI, `joyo-variants.txt`,
     異体字（常用漢字表）), which are the 364 the 文化庁 index of the table prints (`joyo-2010` in `graphemes.yaml`,
-    compared 2026-11-24). 288 graphemes have one: the 271 families below, and 徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺,
+    compared 2026-11-24). The 271 families below have one, and so have 徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺,
     whose two forms `characters.tsv` files together for another reason. 併即戻概涙状虚錬餅温黄 and 弁 have none, as
     the older form (倂卽戾槪淚狀虛鍊餠溫黃, 辨瓣辯) is of another grapheme, whose crops this one does not count.
-    Neither have the 62 whose older form is a compatibility ideograph ([0013](0013-finer-forms.md)).
+    Neither have those whose older form is a compatibility ideograph ([0013](0013-finer-forms.md)).
   - The **简体字** is a character of the grapheme that the 通用规范汉字表 (2013) lists (Unihan 18.0.0 kTGH, in
     `tongyong-guifan.tsv`) and that Unihan gives as the simplified form of another of its characters
     (kSimplifiedVariant, kTraditionalVariant). Of two the first in the table stands: 线 (1336) before 缐 (7459)
     for 線, 铁 before 𫓧 for 鉄. A relation of another source alone (冦 寇, 第一批异体字) gives none. Nor is
-    there one where the simplified form of the head or of its 旧字体 is of another grapheme (豊 豐: 丰; 閣: 阁;
-    滷: 卤), or where the table lists the head itself (确黹砷簧晅): the form left is of some other member.
-  - A head that is the 简体字, with no 旧字体, stands after the character Unihan says it simplifies: 彎弯, 稅税.
+    there one where the simplified form of the head or of its 旧字体 is of another grapheme (労 勞: 劳; 対: 对;
+    実: 实; 関: 关; 駆: 驱; 験: 验; 縄: 绳; 緑: 绿; 豊 豐: 丰; 閣: 阁), so 對対 stands beside 圖図图, or where the
+    table lists the head itself (确黹砷簧晅): the form left is of some other member.
+  - A head with no 旧字体 stands after the character of the grapheme that Unihan simplifies to its 简体字, where
+    that is of another 構形 ([0012](0012-structure-layer.md)): 彎弯, whose head is the 简体字, 壺壷壶, 聰聡聪.
+    A head that simplifies in the grapheme itself is such a character (線: 缐), and stands first.
 
-  A form that differs by a near-identical glyph, and that no table gives, is not added: 靑 青, 說 説 (説说). The
-  label is for showing: the key, the address (`/grapheme/U+4EEE`), the order of a list, search, a citation key
-  and a file name are the head's, and the glyphs are never one character. A badge beside a written character
+  A form of the head's own 構形 that the 常用漢字表 does not print is not added: 靑 青, 說 説 (説说), 稅 税. The
+  label is for showing, the 旧字体 and the head set as `ja` and the 简体字 as `zh-Hans`: the key, the address
+  (`/grapheme/U+4EEE`, `/chronology/U+4EEE?scope=grapheme`), the order of a list, search, a citation key, a
+  file name and what a copy button copies are the head's. JSON-LD names the term by the head, with the others as
+  `alternateName`. The glyphs are never one character. A badge beside a written character
   names its grapheme by the head alone; a crop with no character is named by the label, which then stands for
   the grapheme. `scripts/build_grapheme_labels.py` writes the table (`apps/cloudflare/src/graphemeLabels.json`).
 - **Character** keeps the written identity and code point. 仮 (`U+4EEE`) and 假

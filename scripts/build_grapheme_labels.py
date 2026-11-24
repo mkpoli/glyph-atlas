@@ -11,9 +11,11 @@ edges of source `unihan`), the first in the table's order where there are more (
 where the table lists the head too (确), nor where the simplified form it lists of the head or of the 旧字体 is
 of another grapheme (豊 豐: 丰; 閣: 阁): a 简体字 left in the grapheme is then some other member's.
 
-A head that is the 简体字, and that the 常用漢字表 prints no older form of, stands after the character it
-simplifies (彎弯). A grapheme keeps its head as its key, address and place in a list: the label is what it is
-shown as.
+A head the 常用漢字表 prints no older form of stands after the character Unihan simplifies to the 简体字 instead,
+where the head is neither that character nor another that simplifies in the grapheme (線): 彎弯, whose head is
+the 简体字, and 壺壷壶. One of the same 構形 as the head (`glyph_atlas.structures`: 說 説, 稅 税) differs from it by
+a near-identical glyph, and is not added. A grapheme keeps its head as its key, address and place in a list:
+the label is what it is shown as.
 
     uv run scripts/build_grapheme_labels.py [--unihan cache/variants/18.0.0/Unihan.zip]
 
@@ -33,7 +35,7 @@ from pathlib import Path
 
 import yaml
 
-from glyph_atlas import refs
+from glyph_atlas import refs, structures
 
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ROOT / "data" / "vocab" / "kanji-variants.tsv"
@@ -133,15 +135,13 @@ def labels() -> dict[str, str]:
     out = {}
     for head in older.keys() | within.keys():
         old, found = older.get(head, ""), min(within.get(head, []), default=None)
-        simple = found[1] if found else ""
-        if simple == head:
-            # The head is the 简体字; without an older form it stands after the character it simplifies.
-            parts = [old or found[2], head]
-        else:
-            own = [form for char in (head, old) for form in simplified.get(char, [])]
-            elsewhere = bool(own) and not any(grapheme(form) == head for form in own)
-            parts = [old, head, "" if head in listed or elsewhere else simple]
-        label = "".join(dict.fromkeys("".join(parts)))
+        simple, full = found[1:] if found else ("", "")
+        own = [form for char in (head, old) for form in simplified.get(char, [])]
+        if simple != head and (head in listed or own and not any(grapheme(form) == head for form in own)):
+            simple = full = ""
+        if simplified.get(head) or full and structures.for_character(full) == structures.for_character(head):
+            full = ""
+        label = "".join(dict.fromkeys((old or full) + head + simple))
         if label != head:
             out[head] = label
     return dict(sorted(out.items()))
