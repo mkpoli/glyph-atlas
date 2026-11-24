@@ -80,7 +80,7 @@ try {
       const rows = [...document.querySelectorAll('.character-layers .layer-row')]
       const number = chip => { const shown = chip.querySelector('.use') ?? [...chip.querySelectorAll('small')].pop()
         return shown ? Number(shown.textContent.replace(/[^0-9]/g, '')) : 0 }
-      return [[...rows[0].querySelectorAll(':scope > .variant-chips > .variant')].map(number),
+      return [[...rows[0].querySelectorAll(':scope > .variant-chips .variant')].map(number),
         [...rows[1].querySelectorAll(':scope > .character-members > .member-choice > .member')].map(number)]
     })()`)
     assert(grapheme.some(Boolean) || forms.some(Boolean), 'no chip states a count')
