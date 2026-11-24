@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { issueTitle, issueHint } from '../lib/issues.js'
+  import { placeBeside } from '../lib/popoverPlace.js'
   import { t } from '../lib/i18n.svelte.js'
 
   let { issue } = $props()
@@ -11,23 +12,7 @@
   let returningFocus = false
   let timer
 
-  function position() {
-    const scrollTop = popup.scrollTop
-    popup.style.maxHeight = ''
-    const anchor = trigger.getBoundingClientRect()
-    const box = popup.getBoundingClientRect()
-    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8))
-    const below = anchor.bottom + 6
-    const spaceBelow = Math.max(0, window.innerHeight - 8 - below)
-    const spaceAbove = Math.max(0, anchor.top - 6 - 8)
-    const placeBelow = box.height <= spaceBelow || (box.height > spaceAbove && spaceBelow >= spaceAbove)
-    popup.style.maxHeight = `${placeBelow ? spaceBelow : spaceAbove}px`
-    popup.scrollTop = scrollTop
-    const height = popup.getBoundingClientRect().height
-    const top = placeBelow ? below : anchor.top - height - 6
-    popup.style.left = `${left}px`
-    popup.style.top = `${top}px`
-  }
+  const position = () => placeBeside(popup, trigger)
   function show() {
     clearTimeout(timer)
     if (!popup.matches(':popover-open')) popup.showPopover()
