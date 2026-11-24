@@ -1071,15 +1071,18 @@ def router(store: Store) -> APIRouter:
         """One character: its layers, the forms of its grapheme, and the ink that carries it."""
         row = known(code_point)
         view = character_view(row, layer(), expand=expand, state=state, limit=limit, offset=offset)
-        # A described form a reviewer said is written for this grapheme joins its 字体 row, as on the
-        # Worker's card. A form the card already lists as a member or a variant is not listed twice.
+        # A described form a crop of this grapheme carries joins its 字体 row and is derived no more, as
+        # on the Worker's card. A form the card already lists as a member or a variant is not listed twice.
         grapheme = (view.get("grapheme") or {}).get("code_point")
         if grapheme:
             listed = {member["char"] for member in (view.get("grapheme") or {}).get("members", [])}
-            for group in ("items", "related", "derived"):
+            for group in ("items", "related"):
                 listed |= {entry["char"] for entry in view["variants"].get(group, []) if entry.get("char")}
-            view["variants"] = {**view["variants"],
-                                "forms": [form for form in store.written_forms(grapheme) if form["char"] not in listed]}
+            crops = [unit.id for unit, *_ in layer().rows(row.code_point, expand="grapheme")]
+            forms = [form for form in store.carried_forms(crops) if form["char"] not in listed]
+            carried = {form["char"] for form in forms}
+            view["variants"] = {**view["variants"], "forms": forms,
+                                "derived": [entry for entry in view["variants"]["derived"] if entry["char"] not in carried]}
         return {"query": row.code_point, "expand": expand, **view}
 
     @api.get("/layers/occurrences")

@@ -1217,10 +1217,10 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.claimed_structures(conn, names)
 
-    def written_forms(self, grapheme: str) -> list[dict[str, Any]]:
-        """The described forms a grapheme's card carries (`crop_forms.written_forms`)."""
+    def carried_forms(self, crops: Iterable[str]) -> list[dict[str, Any]]:
+        """The described forms these crops are claimed to have (`crop_forms.carried_forms`)."""
         with self._lock, self._connection() as conn:
-            return crop_forms.written_forms(conn, grapheme)
+            return crop_forms.carried_forms(conn, crops)
 
     def resolve_claims(self, version_of, subjects: Iterable[str] | None = None) -> int:
         """Resolve the slots of `subjects` again, or every slot; `version_of` names each crop's current version."""

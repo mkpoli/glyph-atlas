@@ -19,14 +19,15 @@ const pointOf = char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).
 const entry = item => ({ char: item.char, code_point: item.code_point ?? pointOf(item.char), script: item.script ?? '' })
 // A derived form keeps whether it is encoded and how it was made, which the picker shows.
 const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? null, encoded: item.encoded, routes: item.routes })
-// A form a reviewer said is written for the grapheme has no character of its own: its value, often an
-// IDS, is its name, and no character page can be linked.
-const linkedEntry = item => ({ char: item.char, code_point: null, script: 'han', lang: '', form: item.form, count: item.count, corpus_count: item.corpus_count })
+// A form the grapheme's crops carry has no character of its own: its value, an IDS or a figure, is its
+// name, and no character page can be linked.
+const carriedEntry = item => ({ char: item.char, code_point: null, script: 'han', lang: '', form: item.form, count: item.count, corpus_count: item.corpus_count })
 
 const HAN = /^\p{Script=Han}$/u
 // The language whose fonts draw a BabelStone region's shape (U+6236 戶 is drawn as 戸 under `ja`).
 const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja', K: 'ko', P: 'ko-KP', V: 'vi' }
 const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
+// A form claimed on a crop joins its grapheme's forms, so a claim drops the cards read here.
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…) but one
@@ -37,14 +38,14 @@ const cards = new Map()
  * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the
  * variants the sources attest that a gallery widens to or that one is written for the other. The
  * characters related otherwise (a loan, a homograph, a grapheme this form also writes) follow as
- * `related`, the derived shapes last, and the described forms a reviewer said are written for the
- * grapheme (`written_for`) with the variants. A character the layer does not know offers itself alone.
+ * `related`, the derived shapes last, and the described forms and figures the grapheme's crops
+ * carry with the variants. A character the layer does not know offers itself alone.
  * A compatibility ideograph (說 U+F96F) is offered nowhere but for a crop written as it: its figure
  * is one of the registered sequences of the character it stands for. `alike` are the forms left out
  * because another stands for them (`sortForms`), and `family` every encoded member of the grapheme.
  */
 export function listForms(char) {
-  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [], family: [] })
+  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], grapheme: null, alike: [], family: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
@@ -71,15 +72,16 @@ export function listForms(char) {
       // The card's order: a form that writes this grapheme first (後: 后), then the others.
       const forms = [...found.items ?? [], ...(found.related ?? []).filter(v => v.written || writers.has(v.char))].filter(v => !writes.has(v.char) && offered(v) && !twin(v))
         .sort((a, b) => writers.has(b.char) - writers.has(a.char))
-      const linked = (found.forms ?? []).map(linkedEntry)
-      const variants = [...figures.map(figureEntry), ...shapes, ...forms.map(entry), ...linked]
+      // One drawn as the bare character is among the forms set apart.
+      const apart = new Set([...alike.figures.map(figure => figure.char), ...alike.shapes.map(shape => shape.text)])
+      const carried = (found.forms ?? []).filter(form => !apart.has(form.char)).map(carriedEntry)
+      const variants = [...figures.map(figureEntry), ...shapes, ...forms.map(entry), ...carried]
       const related = [...found.items ?? [], ...found.related ?? []].filter(v => !forms.includes(v) && offered(v) && !twin(v)).map(entry)
       const derived = (found.derived ?? []).map(derivedEntry)
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
-      const memberChars = new Set(members.map(m => m.char))
       return { members, variants: fresh(variants), related: fresh(related), derived: fresh(derived),
-        linked: linked.filter(item => !memberChars.has(item.char)), grapheme: card?.grapheme ?? null, family: family.map(v => v.char),
+        grapheme: card?.grapheme ?? null, family: family.map(v => v.char),
         alike: [...alike.figures.map(figureEntry), ...alike.shapes.map(shapeEntry),
           ...[...family, ...found.items ?? [], ...found.related ?? []].filter(twin)
             .filter((v, i, all) => all.findIndex(other => other.char === v.char) === i).map(entry)] }
@@ -130,6 +132,7 @@ async function claimForm(crop, form, review = null) {
     result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form, ...(named ? { review: named } : {}) })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
+  cards.clear()
   return { crop: { ...seen, form: result.form }, replaced: result.replaced ?? null }
 }
 
@@ -184,6 +187,7 @@ async function sendPicks(picks) {
       throw Object.assign(error ?? new Error(), { marked, kept })
     }
     answered()
+    cards.clear()
     const byId = new Map(part.map(({ crop }) => [crop.id, crop]))
     for (const { id: target, form, replaced } of result.crops ?? []) if (byId.has(target)) marked.push({ crop: { ...byId.get(target), form }, replaced: replaced ?? null })
   }
@@ -195,28 +199,6 @@ async function sendPicks(picks) {
 export const markForms = async (crops, form) => sendPicks(await picksOf(crops, form))
 /** Take back `markForms`: each crop's replaced value is claimed again, or the reader's claim taken back. */
 export const unmarkForms = marked => sendPicks(marked.map(({ crop, replaced }) => ({ crop, form: replaced })))
-
-// One submission id per form, grapheme and direction, so a retry after a lost answer is the same write.
-const writtenFor = new Map()
-/**
- * Say that `form` is written for `grapheme` (a key, `U+4E07`), or with `remove` take back the reader's
- * own claim. A form can be written for several graphemes, so removing one leaves the others. Answers
- * `{ grapheme, written_for }`: the grapheme claimed, and each one the form writes now, with who says so.
- *
- * The claim is about the form, not the crop, so it survives every recut. The cards read here are
- * dropped, since the grapheme's forms now carry one more.
- */
-export async function setWrittenFor(form, grapheme, remove = false) {
-  const key = [form, grapheme, remove].join('\u0000')
-  if (!writtenFor.has(key)) writtenFor.set(key, crypto.randomUUID())
-  try {
-    const result = await request(`/atlas/forms/${encodeURIComponent(form)}/written_for`, { id: writtenFor.get(key), grapheme,
-      ...(remove ? { remove: true } : {}) })
-    writtenFor.delete(key)
-    cards.clear()
-    return result
-  } catch (error) { if (error.status) writtenFor.delete(key); throw error }
-}
 
 // One submission id per form, target and direction, so a retry after a lost answer is the same write.
 // A save the site answered drops every id kept for its form: the same filing made again later is a

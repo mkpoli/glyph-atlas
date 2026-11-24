@@ -118,20 +118,20 @@ def written_for(conn: sqlite3.Connection, form: str) -> list[dict]:
     return found
 
 
-def written_forms(conn: sqlite3.Connection, grapheme: str) -> list[dict]:
-    """The described forms a grapheme's card carries from reviewers' claims, by their value.
+def carried_forms(conn: sqlite3.Connection, crops: Iterable[str]) -> list[dict]:
+    """The described forms and registered figures these crops are claimed to have, the most used first.
 
     A form a reviewer writes as an IDS, or a registered figure written as a variation sequence (突󠄃),
-    has no character of its own, so no card row holds it; the claim
-    that it is written for the grapheme is how it joins the grapheme's 字体. The Worker counts its crops;
-    the review service leaves the count at zero rather than walking every unit."""
+    has no character of its own, so no card row holds it; it is one of the 字体 of the grapheme whose
+    crops carry it."""
     rows = conn.execute(
-        "SELECT c.subject AS form,r.scheme,r.value FROM current_claims c "
-        "JOIN forms f ON f.id=c.subject JOIN representations r ON r.id=f.anchor "
-        "WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme IN ('ids','ivs') "
-        "AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value", (grapheme,)).fetchall()
+        "SELECT c.object AS form,r.scheme,r.value,count(*) AS n FROM current_claims c "
+        "JOIN forms f ON f.id=c.object JOIN representations r ON r.id=f.anchor "
+        "WHERE c.subject IN (SELECT value FROM json_each(?)) AND c.predicate='has_form' AND c.scope='' AND c.slot='' "
+        "AND r.scheme IN ('ids','ivs') AND c.status IN ('asserted','accepted','adjudicated') "
+        "GROUP BY c.object ORDER BY n DESC,r.value", (json.dumps(list(crops)),)).fetchall()
     return [{"char": row["value"], "code_point": None, "form": row["form"], "scheme": row["scheme"],
-             "count": 0, "corpus_count": 0} for row in rows]
+             "count": row["n"], "corpus_count": 0} for row in rows]
 
 
 def set_written_for(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str, grapheme: str,

@@ -8,8 +8,8 @@ import { currentPointer } from '../atlas3Answers';
 import { SHARDS, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
-import { bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, copyOf, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
-  wordSpellingsQuery, writtenFormsQuery, writtenFormUseQuery, writtenVariants } from './character';
+import { carriedFormsQuery, bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, copyOf, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
+  wordSpellingsQuery, writtenVariants } from './character';
 import worker from '../index';
 
 // The Workers cache.
@@ -231,31 +231,50 @@ describe('a character page', () => {
     expect([status, body.char]).toEqual([200, '⿰日寺']);
   });
 
-  it('lists a described form a reviewer said is written for the grapheme, counted by the family\'s crops', async () => {
-    const form = 'fm:' + '1'.repeat(32), representation = 'rp:' + '2'.repeat(32);
-    const derivedForm = 'fm:' + '3'.repeat(32), derivedRepresentation = 'rp:' + '4'.repeat(32);
-    // A registered figure, 時 with a variation selector, and a second code point, which is no such form.
-    const figure = 'fm:' + '5'.repeat(32), figureRepresentation = 'rp:' + '6'.repeat(32);
-    const encoded = 'fm:' + '7'.repeat(32), encodedRepresentation = 'rp:' + '8'.repeat(32);
-    db.exec(`INSERT INTO forms(id,anchor,created_by,created_at) VALUES
-        ('${form}','${representation}','reader','now'),('${derivedForm}','${derivedRepresentation}','reader','now'),
-        ('${figure}','${figureRepresentation}','reader','now'),('${encoded}','${encodedRepresentation}','reader','now');
-      INSERT INTO representations(id,scheme,value,namespace,version) VALUES
-        ('${representation}','ids','⿰木木',NULL,NULL),('${derivedRepresentation}','ids','⿰日寺',NULL,NULL),
-        ('${figureRepresentation}','ivs','時\u{E0101}',NULL,NULL),('${encodedRepresentation}','unicode','旹',NULL,NULL);`);
-    for (const [written, value] of [[form, '⿰木木'], [derivedForm, '⿰日寺'], [figure, '時\u{E0101}'], [encoded, '旹']])
-      db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
-        VALUES(?,'written_for','',?,NULL,NULL,'asserted',?,'[{"object":"U+6642","assertion":"a"}]','[]','[]','r','now')`)
-        .run(written, 'U+6642', 'U+6642');
-    const target = cropId(PAGE_A, 0);
-    db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
-      VALUES(?,'has_form','','',?,0,'asserted',?,'[]','[]','[]','r','now')`).run(publicId(target), target, form);
-    const { body } = await get('/layers/characters/U+6642');
-    // The derived form is one of the family's 字体 by the claim, and derived no more.
-    expect(body.variants.derived).toEqual([]);
-    expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
-      { char: '⿰日寺', code_point: null, form: derivedForm, scheme: 'ids', count: 0, corpus_count: 0 },
-      { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
+  it('lists the described forms and figures the family\'s crops are claimed to have, counted by them', async () => {
+    const forms: Record<string, [string, string, string]> = {};
+    const named = (digit: string, scheme: string, value: string) => {
+      forms[value] = ['fm:' + digit.repeat(32), 'rp:' + digit.repeat(32), scheme];
+      db.query('INSERT INTO representations(id,scheme,value) VALUES(?,?,?)').run(forms[value][1], scheme, value);
+      db.query("INSERT INTO forms(id,anchor,created_by,created_at) VALUES(?,?,'reader','now')").run(forms[value][0], forms[value][1]);
+    };
+    named('1', 'ids', '⿰木木'); named('3', 'ids', '⿰日寺'); named('5', 'ivs', '時\u{E0101}'); named('7', 'unicode', '旹');
+    const claim = (page: number, slot: number, value: string, status = 'asserted', cut = 0) => {
+      const target = cropId(page, slot);
+      db.query("DELETE FROM current_claims WHERE subject=? AND predicate='has_form'").run(publicId(target));
+      db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+        VALUES(?,'has_form','','',?,?,?,?,'[]','[]','[]','r','now')`).run(publicId(target), target, cut, status, forms[value][0]);
+    };
+    let version = 0;
+    // A claim is saved with its submission, which moves the catalogue's version.
+    const listed = async (code = 'U+6642') => {
+      db.query("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,'reader','','','now')").run(`carried-${++version}`);
+      return (await get('/layers/characters/' + code)).body.variants;
+    };
+    const row = (value: string, count: number, corpus_count = 0) => ({ char: value, code_point: null, form: forms[value][0], scheme: forms[value][2], count, corpus_count });
+    claim(PAGE_A, 0, '⿰木木'); claim(PAGE_B, 0, '⿰木木'); claim(PAGE_C, 0, '時\u{E0101}'); claim(PAGE_A, 1, '⿰日寺');
+    // A code point of its own is no such form; nor is one people dispute, or one claimed on an earlier cut.
+    claim(PAGE_A, 2, '旹'); claim(PAGE_B, 2, '⿰日寺', 'disputed'); claim(PAGE_B, 3, '⿰日寺', 'asserted', -1);
+    const found = await listed();
+    expect(found.forms).toEqual([row('⿰木木', 2), row('⿰日寺', 1), row('時\u{E0101}', 0, 1)]);
+    // The derived form is one of the family's 字体 by the crop that has it, and derived no more.
+    expect(found.derived).toEqual([]);
+    // Taken back on its crop, it is derived again.
+    db.query("DELETE FROM current_claims WHERE subject=? AND predicate='has_form'").run(publicId(cropId(PAGE_A, 1)));
+    const back = await listed();
+    expect([back.forms.map((f: any) => f.char), back.derived.map((v: any) => v.char)]).toEqual([['⿰木木', '時\u{E0101}'], ['⿰日寺']]);
+    // A crop given another character takes its form along, and back.
+    const moved = cropId(PAGE_A, 0);
+    db.query('UPDATE crops SET char=? WHERE id=?').run(G.峕, moved);
+    expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([1, [row('⿰木木', 1)]]);
+    db.query('UPDATE crops SET char=? WHERE id=?').run(G.時, moved);
+    expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([2, []]);
+    // So does one a reader files under another grapheme.
+    db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES(?,'has_grapheme','','',?,0,'asserted','U+5CD5','[]','[]','[]','r','now')`).run(publicId(moved), moved);
+    expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([1, [row('⿰木木', 1)]]);
+    db.exec("DELETE FROM current_claims WHERE predicate IN ('has_form','has_grapheme')");
+    expect(db.query('SELECT count(*) AS n FROM carried_forms').get()).toEqual({ n: 0 });
   });
 
   it('lists the drawn forms of a grapheme among its members, and gives each a page under that grapheme', async () => {
@@ -647,8 +666,7 @@ describe('every query of the character routes', () => {
       [visualQuery(), [1], 'crop_visual'], [composedQuery(), [], 'book_date_axis'], [graphemeIdsQuery(), ['["時"]'], 'sqlite_autoindex_graphemes'], [writeFamiliesQuery(), ['[302]'], 'grapheme_head'],
       [corpusFormsQuery(), ['[1]'], 'INTEGER PRIMARY KEY'], [datingQuery(), ['["a"]'], 'PRIMARY KEY'], [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'],
       [wordSpellingsQuery(), ['時'], 'word_spelling_spelling'], [productionsQuery(), ['printed', 8, 'printed/'], 'SCAN productions'],
-      [writtenFormsQuery(), ['U+6642'], 'current_claim_object'],
-      [writtenFormUseQuery(), ['["fm:1"]', '[300,301,302]'], 'current_claim_object']] as [string, unknown[], string][]) {
+      [carriedFormsQuery(), ['[300,301,302]', '[]', '[1]'], 'carried_form_grapheme']] as [string, unknown[], string][]) {
       const found = plan(sql, values);
       expect(found).toContain(index);
       // The productions are a few dozen rows; every other table is read by key or index.
