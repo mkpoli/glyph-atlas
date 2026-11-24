@@ -88,6 +88,9 @@ through みんなで翻刻.
   (CC BY-SA 4.0) and cjkvi-variants. A variant relation between two characters is a fact without
   creative expression, so a relation table that states no licence (cjkvi-variants) is used as public
   domain, and Wikidata's statements are used under CC0 whichever dictionary they cite.
+- 通用规范汉字表 (`data/vocab/tongyong-guifan.tsv`): the positions of its 8,105 characters, from Unihan 18.0.0 kTGH
+  (Unicode License v3). The labels of graphemes (`apps/cloudflare/src/graphemeLabels.json`) draw on it, on Unihan's
+  simplified forms and on the 常用漢字表's older forms as CJKVI gives them.
 
 ## Composer drawings
 

@@ -7,7 +7,7 @@
   import { useInspector } from '$lib/inspector.svelte.js'
   import { useSession } from '$lib/session.svelte.js'
   import { canonicalAddress, graphemeOf } from '$lib/addresses.js'
-  import { galleryTitle } from '$lib/citation.js'
+  import { galleryName, galleryTitle } from '$lib/citation.js'
   import { t } from '$lib/i18n.svelte.js'
   import { characterEntry, linkedData } from '$worker/citation.ts'
   let { gallery } = $props()
@@ -27,7 +27,7 @@
   const entry = $derived(gallery.expand === 'variants' ? null : characterEntry(own.of === 'grapheme' ? 'grapheme' : 'form', gallery.picked))
 </script>
 
-{#if shown}<Seo title={galleryTitle(shown)} description={t('meta.character.description', { character: shown.char, codePoint: named })}
+{#if shown}<Seo title={galleryTitle(shown)} description={t('meta.character.description', { character: galleryName(shown), codePoint: named })}
      path={here ? canonicalAddress(gallery.picked, gallery.expand) : undefined}
      image={image && here ? new URL(image, page.url.origin).href : null} data={here && entry ? linkedData(entry, page.url.origin) : null} />{:else}<Seo />{/if}
 
