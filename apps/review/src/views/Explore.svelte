@@ -38,7 +38,7 @@
   import { markForms, unmarkForms } from '../lib/cropForms.js'
   import { isDescription } from '../lib/ids.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
-  import { arrowTarget, toggled, withRange } from '../lib/selection.js'
+  import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades, bookGallery as layerBooks } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize, formatNumber, formatCompactNumber } from '../lib/i18n.svelte.js'
@@ -1014,6 +1014,13 @@
     oncontextmenu: event => { if (swallow || press) event.preventDefault() } })
   function clearSelection() { selected = new Set(); anchor = null; bulkError = '' }
   function selectShown() { selected = new Set([...tiles, ...runTiles.filter(run => run.at < tiles.length)].filter(selectable).map(tile => tile.id)); bulkError = '' }
+  // Grouped by book, a heading's box takes the crops under it that nobody has reviewed, of those on the page.
+  const sectionTiles = section => section.tiles.filter(([, i]) => i < reach).map(([item]) => item)
+  const sectionOffered = tiles => tiles.filter(item => selectable(item) && !reviewed(item))
+  function chooseSection(tiles, offered) {
+    if (!selecting) startSelecting()
+    selected = withSection(selected, tiles, offered); anchor = null; bulkError = ''
+  }
   const tileId = tile => tile?.dataset.unit ?? tile?.dataset.corpus
   /** Focus the tile at `index` of the tiles shown, scrolled into view. */
   function focusTile(index) {
@@ -1443,10 +1450,16 @@
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
-<!-- A book's heading in a gallery grouped by book: its title, date and how many crops it holds. Only a
-     book the collection cut crops from has a page. -->
-{#snippet bookHeading(head)}
-  <div class="visual-grid-heading book-heading">{#if head.book.page}<a class="book-title" href={localize('/books/' + encodeURIComponent(head.book.page))} lang="ja">{head.text}</a>{:else}<span class="book-title" lang={head.book.document === 'unrecorded' ? undefined : 'ja'}>{head.text}</span>{/if}{#if head.date}<span>{head.date}</span>{/if}<span>{t('explore.meta.glyphs', { count: head.count })}</span></div>
+<!-- A section's heading. Grouped by book, it has the box that takes its unreviewed crops and says how many of its
+     crops on the page are chosen. Only a book the collection cut crops from has a page. -->
+{#snippet sectionHeading(section)}
+  {@const head = section.head}{@const tiles = sectionTiles(section)}{@const offered = sectionOffered(tiles)}{@const state = sectionChosen(selected, tiles, offered)}
+  <div class="visual-grid-heading section-heading" class:book-heading={head.book}>
+    {#if reviewer && byBook && (offered.length || state !== 'none')}<button class="section-select" role="checkbox" aria-checked={state === 'some' ? 'mixed' : state === 'all'} aria-label={`${t('bulk.selectUnreviewed')} · ${section.heading}`} title={t('bulk.selectUnreviewed')} onclick={() => chooseSection(tiles, offered)}><span aria-hidden="true">{state === 'all' ? '✓' : state === 'some' ? '–' : ''}</span></button>{/if}
+    {#if head.book?.page}<a class="book-title" href={localize('/books/' + encodeURIComponent(head.book.page))} lang="ja">{head.text}</a>{:else if head.book}<span class="book-title" lang={head.book.document === 'unrecorded' ? undefined : 'ja'}>{head.text}</span>{:else}<span>{section.heading}</span>{/if}
+    {#if head.date}<span>{head.date}</span>{/if}{#if head.book}<span>{t('explore.meta.glyphs', { count: head.count })}</span>{/if}
+    {#if byBook && state !== 'none'}<span class="section-count">{formatNumber(tiles.filter(item => selected.has(item.id)).length)} / {formatNumber(tiles.length)}</span>{/if}
+  </div>
 {/snippet}
 {#snippet bookMore(head)}
   {@const text = t(failedBook === head.book.document ? 'common.retry' : 'explore.runs.more')}
@@ -1566,7 +1579,7 @@
   {/if}
   <div class="glyph-grid collage" class:selecting bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading && mounted}>
     {#if loading && !display.length}<noscript><p class="noscript-note">{t('explore.noscript')}</p></noscript><div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
-    {:else}{#each sections as section (section.key)}{#if section.head?.book}{@render bookHeading(section.head)}{:else if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
+    {:else}{#each sections as section (section.key)}{#if section.heading}{@render sectionHeading(section)}{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
   </div>
   {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: galleryName(subject ?? picked) })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
@@ -1663,9 +1676,16 @@
   :global(.glyph-tile.selected) .tile-select{opacity:1;z-index:5;background:var(--accent-solid);border-color:var(--accent-solid)}
   .selecting :global(.glyph-tile:focus-visible){z-index:2}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
-  .book-heading{display:flex;align-items:baseline;gap:10px;font-size:13px}
+  .section-heading{display:flex;align-items:baseline;gap:10px}
+  .book-heading{font-size:13px}
   .book-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;color:var(--ink)}
-  .book-heading span:not(.book-title){flex:none;font-variant-numeric:tabular-nums}
+  .section-heading > span:not(.book-title){font-variant-numeric:tabular-nums}
+  .book-heading > span:not(.book-title),.section-count{flex:none}
+  .section-select{position:relative;flex:none;align-self:center;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 var(--ga-font-ui);padding:0}
+  .section-select::after{content:'';position:absolute;inset:-11px -8px}
+  .section-select:hover{border-color:var(--accent-solid)}
+  .section-select:not([aria-checked="false"]){background:var(--accent-solid);border-color:var(--accent-solid)}
+  .section-count{color:var(--ink)}
   .book-more{grid-column:1/-1;padding:8px 2px;background:var(--paper)}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
   .tile-year{flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}

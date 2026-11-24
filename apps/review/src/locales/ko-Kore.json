@@ -26,6 +26,7 @@
   "bulk.apply.runs": "文字 雙과 세 文字 묶음은 여러 글자로 이루어져 確認만 할 수 있습니다",
   "bulk.chooseFirst": "글자를 고르세요",
   "bulk.selectAll": "보이는 것 모두 選擇",
+  "bulk.selectUnreviewed": "檢討하지 않은 크롭 選擇",
   "bulk.clear": "選擇 解除",
   "bulk.done.other": "{count}個를 {char}(으)로 고쳤습니다",
   "bulk.kept.other": "{count}個는 이미 그 글자로 確認되어 있었습니다",
