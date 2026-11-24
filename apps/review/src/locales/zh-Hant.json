@@ -740,6 +740,8 @@
   "reading.whole": "整詞讀",
   "reading.ruby": "旁註原樣",
   "reading.rubyOf": "「{char}」的旁註",
+  "reading.left": "左訓",
+  "reading.leftOf": "「{char}」的左訓",
   "reading.letters": "此假名的字體",
   "reading.jibo": "字母「{char}」",
   "reading.needed": "請填寫讀音。",

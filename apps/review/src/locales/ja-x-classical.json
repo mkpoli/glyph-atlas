@@ -721,6 +721,8 @@
   "reading.whole": "一語讀ミ",
   "reading.ruby": "振リ假名ノ字體",
   "reading.rubyOf": "{char}ノ振リ假名",
+  "reading.left": "左訓",
+  "reading.leftOf": "{char}ノ左訓",
   "reading.letters": "此ノ假名ノ字體",
   "reading.jibo": "字母{char}",
   "reading.needed": "讀ミヲ記スベシ。",

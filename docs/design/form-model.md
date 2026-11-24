@@ -118,7 +118,8 @@ A crop's `read_as` claim says how it is read at its place: the run of characters
 own place in the run (from 0) and the reading, over each character (諸器 しょ・き) or over them all
 (村落 ざいご). The reading is in ordinary kana or letters, as the reader reads it, and `method` names what it
 rests on, as for `writes_word`. A `bears_ruby` claim gives the 振り仮名 beside the same run as the page
-writes it, hentaigana included (𛁈よ・き). The two are slots of their own, so two readers who read a run
+writes it, hentaigana included (𛁈よ・き), and a `bears_left_ruby` claim the 左訓 on its left (もろもろのうつわ), split
+as the page splits it. Each is a slot of its own, so two readers who read a run
 alike agree whatever each records of the ruby. A save claims the same run on each of its crops that is
 published, at the version its reader saw, and replaces the reader's earlier runs that it meets, whole.
 A character of the run with no published crop is named in the run alone. A reading names no word: the word

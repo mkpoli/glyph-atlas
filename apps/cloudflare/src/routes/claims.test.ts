@@ -665,7 +665,7 @@ describe('a crop read in a run', () => {
     const first = body(), answer = await setReading(env, first, publicId(local), 'reader', tools);
     expect(answer).toEqual({ id: publicId(local), crops: [publicId(local), publicId(corpus)], reading: { status: 'asserted',
       values: [{ run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], by: ['reader'], methods: ['ruby'] }], methods: ['ruby'], by: ['reader'],
-      ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'], by: ['reader'] }], by: ['reader'] } } });
+      ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'], by: ['reader'] }], by: ['reader'] }, left: null } });
     expect((await of(corpus))?.values).toMatchObject([{ run: ['諸', '器'], at: 0, reading: ['しょ', 'き'] }]);
     // The same save sent again is the same write.
     expect(await setReading(env, first, publicId(local), 'reader', tools)).toEqual(answer);
@@ -697,6 +697,20 @@ describe('a crop read in a run', () => {
     // Standing alone, a value still names everyone who holds it.
     await set({ run: null }, 'third');
     expect(await held()).toEqual([['しょき', ['other', 'reader'], ['ruby']]]);
+  });
+
+  it('keeps a 左訓 beside the ruby, split its own way, and drops either the save leaves out', async () => {
+    const { corpus, set, of } = read();
+    const both = await set({ left: ['もろもろのうつわ'] });
+    expect(both.reading).toMatchObject({ ruby: { values: [{ ruby: ['𛁈よ', 'き'] }] }, left: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['もろもろのうつわ'], by: ['reader'] }] } });
+    expect((await of(corpus))?.left?.values).toMatchObject([{ at: 0, ruby: ['もろもろのうつわ'] }]);
+    const left = await set({ ruby: null, left: ['もろもろの', 'うつわ'] });
+    expect(left.reading).toMatchObject({ ruby: null, left: { values: [{ ruby: ['もろもろの', 'うつわ'] }] } });
+    expect((await set()).reading).toMatchObject({ ruby: { status: 'asserted' }, left: null });
+    await expect(set({ left: ['a b'] })).rejects.toThrow('422');
+    await set({ left: ['うつわ'] });
+    expect((await set({ run: null })).reading).toBeNull();
+    expect(await of(corpus)).toBeNull();
   });
 
   it('may have one reading for all of its characters', async () => {
