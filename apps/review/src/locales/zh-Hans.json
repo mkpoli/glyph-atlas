@@ -680,7 +680,6 @@
   "quiz.suspectToggle.only": "◆ 只看可疑项",
   "quiz.suspect.readsAs": "疑为{character}",
   "quiz.suspect.doubtful": "存疑",
-  "quiz.suspect.none.other": "已发放的{count}个字形中没有可疑项。",
   "quiz.skipCharacter": "跳过第{number}字",
   "quiz.skipSelected": "{skip}所选",
   "quiz.skippedNotSaved": "已跳过{count}个 · 未保存",

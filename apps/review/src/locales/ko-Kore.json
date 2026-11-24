@@ -687,7 +687,6 @@
   "quiz.suspectToggle.only": "◆ 疑心스러운 것만",
   "quiz.suspect.readsAs": "{character}처럼 보임",
   "quiz.suspect.doubtful": "確認 必要",
-  "quiz.suspect.none.other": "只今까지 받은 {count}個 中 疑心스러운 것이 없습니다.",
   "quiz.skipCharacter": "文字 {number} 건너뛰기",
   "quiz.skipSelected": "選擇 項目 {skip}",
   "quiz.skippedNotSaved": "{count}件 건너뜀 · 貯藏 안 됨",
