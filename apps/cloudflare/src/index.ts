@@ -12,7 +12,7 @@ import { typefaceFile } from './typefaces';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { idsOf, structuresOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
-import { AVATAR_PATH, avatar, setAvatar } from './avatar';
+import { AVATAR_PATH, PICTURE_PATH, avatar, picture, setAvatar } from './avatar';
 import { ranking } from './routes/ranking';
 import { connections } from './connections';
 import { flagCorpus, flaggedCorpus, reject, reviewerActors, reviewers, submissions } from './routes/admin';
@@ -143,8 +143,10 @@ const routes = {
         if(path==='/api/admin/submissions')return json(await submissions(env,q,await reviewerActors(env,Object.fromEntries(q),{text})));
         throw new Problem(404,'Unknown endpoint.');
       }
-      const picture=path.match(AVATAR_PATH);
-      if(picture)return await avatar(env,picture[1],picture[2]);
+      const upload=path.match(AVATAR_PATH);
+      if(upload)return await avatar(env,upload[1],upload[2]);
+      const pictured=path.match(PICTURE_PATH);
+      if(pictured)return await picture(env,pictured[1]);
       if(path==='/api/account/connections'){const me=await viewer(env,request,true);if(!me)throw new Problem(401,'Sign in to see your account.');return json(await connections(env,me.id))}
       if(path==='/api/favourites'||path==='/api/favourites/crops'){
         // A browser that has never signed in has starred nothing, and reading starts no session.
