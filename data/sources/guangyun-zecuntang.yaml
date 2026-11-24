@@ -27,7 +27,7 @@ copies:
     revision: 54ebf944fb7cb73eaafe563a68fc77f2d6740b24
     path: 廣韻/澤存堂本
     holder: null
-    attribution: "nk2028『tshet-uinh-images』廣韻/澤存堂本; its README names 韻典網 as the source and no holding library"
+    attribution: nk2028『tshet-uinh-images』廣韻/澤存堂本（韻典網）
     licence: unknown
     image_kind: flat-reproduction
     enlarge: 1
@@ -45,7 +45,7 @@ copies:
     repository: https://commons.wikimedia.org/wiki/Category:廣韻
     holder: 東京大學東洋文化研究所
     shelfmark: 倉石文庫 10505
-    attribution: 東京大学東洋文化研究所所蔵漢籍善本全文影像資料庫（Wikimedia Commons IOC.UTokyo-000146 to 000150）
+    attribution: 東京大学東洋文化研究所所蔵漢籍善本全文影像資料庫（Wikimedia Commons IOC.UTokyo-000146–000150）
     licence: PD
     licence_evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000146_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷一.pdf
     image_kind: flat-reproduction
