@@ -29,7 +29,7 @@
 
 {#if shown}<Seo title={galleryTitle(shown)} description={t('meta.character.description', { character: shown.char, codePoint: named })}
      path={here ? canonicalAddress(gallery.picked, gallery.expand) : undefined}
-     image={image && !moved ? new URL(image, page.url.origin).href : null} data={moved || !entry ? null : linkedData(entry, page.url.origin)} />{:else}<Seo />{/if}
+     image={image && here ? new URL(image, page.url.origin).href : null} data={here && entry ? linkedData(entry, page.url.origin) : null} />{:else}<Seo />{/if}
 
 <!-- Each navigation brings a gallery of its own, so the view starts again from it. -->
 {#key gallery}

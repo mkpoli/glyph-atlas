@@ -42,7 +42,7 @@ characters out:
 | Rule | Where |
 | --- | --- |
 | A normalised corpus's glyph names a family and no member of it when the family has several; a glyph's `family_members` | `corpus/identity.py`, `importers/codh.py` |
-| The family scope a card's corpus counts ask for, and the gallery's default scope | `corpus/api.py`, `review/characters.py`, `scripts/export_graphemes.py` |
+| The family scope a card's corpus counts ask for, and the default scope it states | `corpus/api.py`, `review/characters.py`, `scripts/export_graphemes.py` |
 | The forms a cluster may be named by; a seal character has no clustering of its own | `form_clusters.py` |
 | The members of a merged class the classifier votes for | `review/suggestions.py` |
 | The members of a visual grouping, and the stored grouping a card keeps | `visual_samples.py`, `scripts/export_graphemes.py` |
@@ -73,7 +73,7 @@ A seal character's key was a grapheme's, and is a member's. As for every member 
 - A round under a member's key (`/review/U+3D307`) deals that character's crops alone, on every page, and
   saves no other. A round under the grapheme's key deals the seal characters with the rest; one narrowed
   to a script deals the corpus glyphs of that script's members.
-- A listing under a member's key (`/explore?grapheme=U+3D307`) holds that character alone.
+- A listing under a member's key (`/?grapheme=U+3D307`) holds that character alone.
 - A new `has_grapheme` or `written_for` claim, one kept on a device among them, is recorded under the head.
   A `written_for` claim is taken back by the key it was recorded under, or by a member's.
 

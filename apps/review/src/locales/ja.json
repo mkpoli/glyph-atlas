@@ -438,8 +438,6 @@
   "links.licence": "ライセンス：{license}",
   "layers.crops.count.one": "切り出し{count}件",
   "layers.crops.count.other": "切り出し{count}件",
-  "layers.familySamples": "系列のサンプル",
-  "layers.familySamples.count.other": "系列のサンプル{count}件",
   "layers.inCollection.count": "このコレクションに{count}件",
   "layers.lineMatches.count.one": "行の一致{count}件",
   "layers.lineMatches.count.other": "行の一致{count}件",

@@ -466,8 +466,6 @@
   "links.licence": "라이선스: {license}",
   "layers.crops.count.one": "크롭 {count}개",
   "layers.crops.count.other": "크롭 {count}개",
-  "layers.familySamples": "패밀리 예시",
-  "layers.familySamples.count.other": "패밀리 예시 {count}개",
   "layers.inCollection.count": "이 모음에 {count}개",
   "layers.lineMatches.count.one": "행 일치 {count}개",
   "layers.lineMatches.count.other": "행 일치 {count}개",

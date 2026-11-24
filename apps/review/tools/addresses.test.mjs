@@ -1,12 +1,12 @@
 import { describe, expect, it, mock } from 'bun:test'
 
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: key => key }))
-const { canonicalAddress, characterAddress, expandFor, galleryAddress, galleryPage, graphemeAddress, soleForm } = await import('../src/lib/addresses.js')
+const { canonicalAddress, characterAddress, expandFor, galleryAddress, galleryPage, graphemeAddress } = await import('../src/lib/addresses.js')
 
-const member = (char, count = 0, corpus_count = 0) => ({ char, code_point: 'U+' + char.codePointAt(0).toString(16).toUpperCase(), count, corpus_count })
-const grapheme = (members, count, corpus_count) => ({ ...members[0], members, count, corpus_count })
-const KA = grapheme([member('仮', 63, 7), member('假', 4, 48), member('𪝒')], 67, 144)
-const GU = grapheme([member('遇', 26, 42), member('𨔆'), member('𠓱')], 26, 42)
+const member = char => ({ char, code_point: 'U+' + char.codePointAt(0).toString(16).toUpperCase() })
+const grapheme = (members, sole) => ({ ...members[0], members, sole })
+const KA = grapheme([member('仮'), member('假'), member('𪝒')], null)
+const GU = grapheme([member('遇'), member('𨔆')], 'U+9047')
 const ka = { code_point: 'U+5047', char: '假', grapheme: KA }, gu = { code_point: 'U+9047', char: '遇', grapheme: GU }
 
 describe('an address', () => {
@@ -24,6 +24,7 @@ describe('an address', () => {
     expect(galleryAddress(ka, 'none', { order: 'book' })).toBe('/character/U+5047?order=book')
     expect(galleryAddress(ka, 'variants')).toBe('/character/U+5047?scope=variants')
     expect(galleryAddress({ code_point: 'U+9047', char: '遇' }, 'grapheme')).toBe('/grapheme/U+9047')
+    expect(galleryAddress({ code_point: 'U+304B U+309A', char: 'か゚' }, 'grapheme')).toBe('/?grapheme=U%2B304B+U%2B309A')
   })
   it('of a grapheme of more than one character narrows the collection', () => {
     expect(graphemeAddress('U+4EEE', '仮')).toBe('/grapheme/U+4EEE')
@@ -45,13 +46,7 @@ describe('the address search engines keep', () => {
   })
   it('of a grapheme is its one form\'s where that form holds every crop of it', () => {
     expect(canonicalAddress(gu, 'grapheme')).toBe('/character/U+9047')
-    expect(canonicalAddress({ code_point: 'U+9047', char: '遇', grapheme: grapheme([member('遇'), member('𨔆', 2)], 2, 0) }, 'grapheme')).toBe('/character/U+28506')
-  })
-  it('of a grapheme stays its own where crops are filed under it alone, or no form holds any', () => {
-    expect(soleForm(grapheme(GU.members, 26, 43))).toBe(null)
-    expect(soleForm(grapheme([member('遇'), member('𨔆')], 0, 0))).toBe(null)
-    expect(soleForm(grapheme([member('遇')], 0, 3))).toBe(null)
-    expect(soleForm(grapheme([member('遇')], 0, 0)).char).toBe('遇')
-    expect(soleForm({ char: '遇', code_point: 'U+9047' }).char).toBe('遇')
+    expect(canonicalAddress({ code_point: 'U+9047', char: '遇', grapheme: grapheme(GU.members, 'U+28506') }, 'grapheme')).toBe('/character/U+28506')
+    expect(canonicalAddress({ code_point: 'U+9047', char: '遇' }, 'grapheme')).toBe('/grapheme/U+9047')
   })
 })

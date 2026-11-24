@@ -446,8 +446,6 @@
   "links.licence": "许可：{license}",
   "layers.crops.count.one": "{count}张裁切",
   "layers.crops.count.other": "{count}张裁切",
-  "layers.familySamples": "字族样本",
-  "layers.familySamples.count.other": "{count}个字族样本",
   "layers.inCollection.count": "图谱中{count}个",
   "layers.lineMatches.count.one": "{count}处行匹配",
   "layers.lineMatches.count.other": "{count}处行匹配",

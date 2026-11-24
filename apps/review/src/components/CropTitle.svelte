@@ -13,6 +13,7 @@
   import { graphemeChoices } from '../lib/cropGraphemes.js'
   import { hasCharacterPage, isSingle, pointOf } from '../lib/issues.js'
   import { graphemeAddress } from '../lib/addresses.js'
+  import { keyText } from '../lib/codePoints.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   let { char = '', script = '', size = 'lg', reading = null } = $props()
   // The script is the character's own, by its code point; the record's statement is used only for a
@@ -23,7 +24,12 @@
   const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'symbol', 'mixed', 'unknown']
   const key = $derived(own !== 'unknown' ? own : KNOWN.includes(scriptInfo(char, script).key) ? scriptInfo(char, script).key : 'unknown')
   const name = $derived(hentaigana ? t('script.hentaigana') : t(`script.${key}`))
-  const href = $derived(hasCharacterPage(char) ? localize(graphemeAddress(pointOf(char), char)) : null)
+  // The record's own grapheme while the title shows the record's character, so the link needs no redirect.
+  const head = $derived.by(() => {
+    const item = reading?.item, filed = item?.grapheme?.code_point ?? item?.grapheme
+    return typeof filed === 'string' && char === (item.written_character ?? item.label) && hasCharacterPage(keyText(filed) ?? '') ? filed : pointOf(char)
+  })
+  const href = $derived(hasCharacterPage(char) ? localize(graphemeAddress(head, keyText(head) ?? char)) : null)
 
   const claim = $derived(reading?.item?.grapheme_claim ?? null)
   const disputed = $derived(claim?.status === 'disputed')

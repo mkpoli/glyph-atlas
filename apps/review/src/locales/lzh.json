@@ -423,8 +423,6 @@
   "links.licence": "許用：{license}",
   "layers.crops.count.one": "截{count}",
   "layers.crops.count.other": "截{count}",
-  "layers.familySamples": "族樣",
-  "layers.familySamples.count.other": "族樣{count}",
   "layers.inCollection.count": "此集{count}",
   "layers.lineMatches.count.one": "同行{count}",
   "layers.lineMatches.count.other": "同行{count}",

@@ -28,7 +28,7 @@ export const graphemeAddress = (key, text, shown = {}) => hasCharacterPage(text)
 /** The grapheme a card's character is a form of: a card that names none is its own. */
 export const graphemeOf = card => card.grapheme ?? card
 /** The page a card's gallery is on, as it is widened. */
-export const galleryAddress = (card, expand, shown = {}) => expand === 'grapheme' ? pageAddress('grapheme', graphemeOf(card).code_point, shown)
+export const galleryAddress = (card, expand, shown = {}) => expand === 'grapheme' ? graphemeAddress(graphemeOf(card).code_point, graphemeOf(card).char, shown)
   : characterAddress(card.code_point, { ...shown, scope: expand === 'variants' ? 'variants' : null })
 /** The page a path names, `{ of: 'character' | 'grapheme', codePoint }`, or null. */
 export function galleryPage(path) {
@@ -36,18 +36,11 @@ export function galleryPage(path) {
   return codePoint ? { of, codePoint } : null
 }
 
-/** The form that holds every crop of a grapheme, whose page shows the same gallery; null where several
- *  forms hold crops or some are filed under the grapheme alone. A grapheme of no crop has one only as its
- *  single member. */
-export function soleForm(grapheme) {
-  const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0), members = grapheme.members ?? [grapheme], used = members.filter(crops)
-  return used.length === 1 && crops(used[0]) === crops(grapheme) ? used[0] : !used.length && !crops(grapheme) && members.length === 1 ? members[0] : null
-}
 /** The address search engines keep for a page, without its language: a page whose gallery is another
- *  page's names that one, so a grapheme of one form is indexed at the form's. */
+ *  page's names that one, so a grapheme whose crops are all one form's (`sole`) is indexed at the form's. */
 export function canonicalAddress(card, expand) {
-  const sole = expand === 'grapheme' ? soleForm(graphemeOf(card)) : null
-  return sole ? characterAddress(sole.code_point) : galleryAddress(card, expand === 'variants' ? 'none' : expand)
+  const { sole } = expand === 'grapheme' ? graphemeOf(card) : {}
+  return sole ? characterAddress(sole) : galleryAddress(card, expand === 'variants' ? 'none' : expand)
 }
 
 /** The collection with a search and filters: a grapheme key, a work's document id and a script group. */

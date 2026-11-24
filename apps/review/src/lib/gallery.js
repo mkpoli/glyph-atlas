@@ -52,25 +52,21 @@ export async function cardGallery(card, expand, { visual = '', style = '', order
   // A variants widening lists each character in turn, and is placed by style alone.
   order = expand === 'variants' ? '' : orderParam(order); years = expand === 'variants' ? '' : yearsParam(years)
   const dated = { order: order || undefined, years: years || undefined }
-  // The chips read which widening is in force from the card fetched with it; a variants widening
-  // changes no field of the card.
-  const widen = expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card)
   if (order === 'book') {
-    const [found, widened] = await Promise.all([bookGallery(codePoint, { scope: bookScope(expand), style: style || undefined, years: dated.years }, options), widen])
-    const { books, local, corpus } = bookPage(found), total = counts => Object.entries(counts).reduce((sum, [name, n]) => !style || name === style ? sum + n : sum, 0)
-    return { picked: { ...card, ...widened }, expand, visual: '', style, order, years, styled: true, localStyles: found.styles.local, corpusStyles: found.styles.corpus,
-      local, localAfter: null, total: total(found.styles.local), available: total(found.styles.local), withheld: found.withheld, corpus, corpusTotal: total(found.styles.corpus),
+    const found = await bookGallery(codePoint, { scope: bookScope(expand), style: style || undefined, years: dated.years }, options)
+    const { books, local, corpus } = bookPage(found)
+    return { picked: card, expand, visual: '', style, order, years, styled: true, localStyles: found.styles.local, corpusStyles: found.styles.corpus,
+      local, localAfter: null, total: found.listed.local, available: found.listed.local, withheld: found.withheld, corpus, corpusTotal: found.listed.corpus,
       corpusAfter: null, corpusFault: null, analysis: card.visual_analysis ?? null, familyTotal: null, unassignedCount: null, books, booksAfter: found.next }
   }
-  const [found, widened, leads] = await Promise.all([
+  const [found, leads] = await Promise.all([
     occurrences(codePoint, { expand, limit: 60, style: style || undefined, ...dated }, options),
-    widen,
     layerCandidates(codePoint, 60, null, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dated }, options)
       .catch(error => ({ fault: error.status === 502 ? 'error' : 'not-loaded' })),
   ])
   const corpus = (leads.glyph_items ?? []).map(item => ({ ...item, label: writtenLabel(item), origin: 'corpus' }))
   return {
-    picked: { ...card, ...widened },
+    picked: card,
     expand,
     visual,
     style,

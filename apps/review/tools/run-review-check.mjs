@@ -130,7 +130,7 @@ function startMockApi(state) {
       if (path === '/atlas/groups/stats') return Response.json({ groups: [{ group: 'all', total: 86, reviewed: 0, need_fixing: 0 }] })
       if (path === '/atlas/forms') return Response.json({ families: [] })
       if (path === '/pages') return Response.json({ detail: 'not found' }, { status: 404 })
-      if (path === '/atlas/corpus/characters') return Response.json({ items: [] })
+      if (path === '/atlas/graphemes/counts') return Response.json({ items: [] })
       if (path === '/layers/gallery') return Response.json({ status: 'ok', items: [] })
 
       if (path === '/atlas' && url.searchParams.get('purpose') === 'browse') {

@@ -5,6 +5,7 @@
   import Cite from './Cite.svelte'
   import { characterEntry } from '$worker/citation.ts'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import ScriptLine from './ScriptLine.svelte'
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
   import IdsLabel from './IdsLabel.svelte'
@@ -17,13 +18,15 @@
   import { cardStructures, layouts, proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
-  import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
+  import { t, withText, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/addresses.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
   import { cardTiers, inferred, isSeal, structureForms } from '../lib/cardTiers.js'
-  let { card = null, expand = $bindable('none'), onreview = null } = $props()
+  // `narrowed` is the style group, order and years the gallery is shown with, which the pages of the
+  // grapheme and of its forms keep.
+  let { card = null, expand = $bindable('none'), narrowed = {}, onreview = null } = $props()
   // The page is the grapheme's or the one character's, and the chip of it is marked rather than linked.
   const whole = $derived(expand === 'grapheme')
   const { members, seals, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
@@ -121,10 +124,12 @@
   {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
 {/snippet}
 
+{#snippet head()}<ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}{/snippet}
+
 {#snippet choice(member)}
   {@const title = isSeal(member.char) ? sealTitle(member) : glyphCount(member)}
   <div class="member-choice">{#if !whole && member.code_point === card.code_point}<span class="member" aria-current="page" {title}>{@render form(member)}</span><ZiLink character={member.char} compact />
-    {:else}<a class="member" href={localize(characterAddress(member.code_point))} {title}
+    {:else}<a class="member" href={localize(characterAddress(member.code_point, narrowed))} {title}
       aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
         : t('chips.showCharacter', { char: member.char })}>{@render form(member)}</a>{/if}</div>
 {/snippet}
@@ -134,8 +139,10 @@
     <div class="layer-row">
       <span class="layer-label">{t('chips.grapheme')}</span>
       <div class="variant-chips">
-        {#if selfGrapheme || whole}<svelte:element this={whole ? 'span' : 'a'} class="variant" aria-current={whole ? 'page' : undefined}
-          href={whole ? undefined : localize(graphemeAddress(grapheme.code_point, grapheme.char))} title={glyphCount(grapheme)}><ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}</svelte:element>{/if}
+        {#if selfGrapheme || whole}
+          <div class="member-choice">{#if whole}<span class="variant" aria-current="page" title={glyphCount(grapheme)}>{@render head()}</span><ZiLink character={grapheme.char} compact />
+            {:else}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char, narrowed))} title={glyphCount(grapheme)}>{@render head()}</a>{/if}</div>
+        {/if}
         {#each writes as v (v.code_point)}
           <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={glyphCount(v) ? `${shareLabel(v)}\n${glyphCount(v)}` : shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
         {/each}
@@ -229,11 +236,11 @@
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.glyphs')}</span>
-      <span><ScriptText text={card.char} script={card.script} /></span>
+      <span>{#if whole}<ScriptLine line={withText('cite.label.grapheme', 'char', { char: card.char, codePoint: card.code_point })} />{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: whole ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
       {#if entry}<Cite {entry} class="cite-link" />{/if}
-      {#if !whole && card.candidates?.known && !card.candidates.requires_family_scope && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
+      {#if !whole && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
     </div>
     <!-- What a character is made from is the character's own, so a grapheme's page leaves it to its forms'. -->
     {#if !whole && (card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview)}
@@ -259,7 +266,7 @@
   .layer-legend{padding-left:92px}
   @media(max-width:600px){.layer-legend{padding-left:0}}
   .character-members{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;flex:1}
-  .variant-chips > .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
+  .variant-chips .variant, .character-members > .variant{min-height:43px;box-sizing:border-box;align-items:center}
   .member-choice{display:flex;flex-direction:column;align-items:center;gap:4px}
   .member{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:7px;background:transparent}
   a.member:hover{border-color:var(--line-strong)}

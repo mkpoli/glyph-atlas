@@ -6,16 +6,16 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
-  import { graphemeAddress } from '../lib/addresses.js'
+  import { characterAddress, graphemeAddress } from '../lib/addresses.js'
 
   let { group, onform = () => {} } = $props()
   const codes = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 </script>
 
 <div class="grapheme-card">
-  <a class="card-head" href={localize(graphemeAddress(group.key, group.char))}>
+  <a class="card-head" href={localize(group.alone ? characterAddress(group.key) : graphemeAddress(group.key, group.char))}>
     <ReferenceGlyph char={group.char} size="lg" />
-    <span><b>{t('chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
+    <span><b>{t(group.alone ? 'chips.forms' : 'chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
   </a>
   <ul>
     {#each group.members as member (member.label)}

@@ -1,9 +1,10 @@
 import { HREFLANG, LOCALES, localize } from './i18n.svelte.js'
 import { familyCodes } from './forms.js'
-import { catalogue } from './client.js'
+import { graphemeCounts } from './client.js'
 import { hasCharacterPage, pointOf } from './issues.js'
 import { characterAddress, graphemeAddress } from './addresses.js'
 import { keyText } from './codePoints.js'
+import { soleForms } from '../../../cloudflare/src/graphemeTotals.ts'
 
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
 const xml = body => new Response(`<?xml version="1.0" encoding="UTF-8"?>\n${body}\n`, {
@@ -39,12 +40,13 @@ export async function pagePaths(fetch) {
   return paths
 }
 
-/** A page for every single character the collection holds crops of, and for every grapheme it holds
- *  several forms of: one form's page stands for a grapheme of no other. */
+/** A page for every single character the collection holds crops of, and for every grapheme it holds crops
+ *  of, but the one whose crops are all one character's: that character's page is kept for both. */
 export async function characterPaths(fetch) {
-  const { categories } = await catalogue({ limit: 1 }, { fetch })
-  const held = categories.filter(category => category.total > 0), forms = new Map()
-  for (const { label, grapheme } of held) if (grapheme) forms.set(grapheme, (forms.get(grapheme) ?? new Set()).add(label))
-  return [...new Set([...[...forms].filter(([key, labels]) => labels.size > 1 && hasCharacterPage(keyText(key) ?? '')).map(([key]) => graphemeAddress(key, keyText(key))),
-    ...held.filter(({ label }) => hasCharacterPage(label)).map(({ label }) => characterAddress(pointOf(label)))])]
+  const rows = (await graphemeCounts({ fetch })).map(([label, grapheme, collected, corpus, claimed]) => ({ label, grapheme, collected, corpus, claimed: claimed ? true : undefined }))
+  const sole = soleForms(rows), held = rows.filter(row => row.collected > 0)
+  return [...new Set([
+    ...held.filter(({ grapheme }) => hasCharacterPage(keyText(grapheme) ?? '') && !sole.has(grapheme)).map(({ grapheme }) => graphemeAddress(grapheme, keyText(grapheme))),
+    ...held.filter(({ label }) => hasCharacterPage(label)).map(({ label }) => characterAddress(pointOf(label))),
+  ])]
 }

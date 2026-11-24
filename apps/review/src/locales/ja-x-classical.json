@@ -416,8 +416,6 @@
   "links.licence": "許諾：{license}",
   "layers.crops.count.one": "截片{count}",
   "layers.crops.count.other": "截片{count}",
-  "layers.familySamples": "字族見本",
-  "layers.familySamples.count.other": "字族見本{count}",
   "layers.inCollection.count": "此集ニ{count}",
   "layers.lineMatches.count.one": "行一致{count}",
   "layers.lineMatches.count.other": "行一致{count}",

@@ -434,8 +434,6 @@
   "issue.suggested": "Gợi ý",
   "links.licence": "Giấy phép: {license}",
   "layers.crops.count.other": "{count} vùng cắt",
-  "layers.familySamples": "Mẫu của tự tộc",
-  "layers.familySamples.count.other": "{count} mẫu của tự tộc",
   "layers.inCollection.count": "{count} trong bộ sưu tập này",
   "layers.lineMatches.count.other": "{count} kết quả khớp theo dòng",
   "layers.noOccurrenceYet": "chưa xuất hiện lần nào",

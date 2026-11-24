@@ -32,7 +32,7 @@
   import RunTile from '../components/RunTile.svelte'
   import { KEPT, frequent, runsWith } from '../lib/frequentRuns.js'
   import SiteLinks from '../components/SiteLinks.svelte'
-  import { catalogue, character, cropPixels, request, shuffleSeed, number, stored, remember, saveFile } from '../lib/client.js'
+  import { catalogue, character, cropPixels, request, shuffleSeed, number, stored, remember, saveFile, graphemeCounts } from '../lib/client.js'
   import { paint } from '../lib/collageImage.js'
   import { holderName, licenceName } from '../lib/licence.js'
   import { markForms, unmarkForms } from '../lib/cropForms.js'
@@ -50,7 +50,7 @@
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
-  import { cardTargets } from '../lib/cardTiers.js'
+  import { cardTargets, galleryCount } from '../lib/cardTiers.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the progress line and, for a search, a grapheme or a work, the collection's rows; without
   // rows the view loads them and the corpus sample itself, with the same seed and filters.
@@ -137,7 +137,8 @@
   // A run the collection holds no crop of, read one character at a time: its characters are tabs, and
   // the gallery on show is the chosen one's.
   let split = $state(null), splitting = false
-  $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point, of: expand === 'grapheme' ? 'grapheme' : 'character' } : null })
+  const subject = $derived(picked?.code_point ? { char: picked.char, code_point: picked.code_point, of: expand === 'grapheme' ? 'grapheme' : 'character' } : null)
+  $effect(() => { shown = subject })
   /**
    * The address says what is on show, so it can be shared and reloaded: a character's page or a
    * grapheme's with what it is narrowed to, or the collection with its search and filters. The view changes what it
@@ -180,43 +181,45 @@
   // first focused; the Flagged view has no use for them. A service without them (the local review
   // service has none) or a failed read leaves the tiles counting crops for the rest of the visit.
   // The frequent graphemes above the collection need them too, and offer to read them again after a failure.
-  let corpusCounts = $state(null), corpusCountsAsked = false, corpusCountsFailed = $state(false)
-  async function loadCorpusCounts(fresh = false) {
-    if (flagged || corpusCountsAsked) return
-    corpusCountsAsked = true; corpusCountsFailed = false
+  let cropCounts = $state(null), countsAsked = false, countsFailed = $state(false)
+  async function loadCounts(fresh = false) {
+    if (flagged || countsAsked) return
+    countsAsked = true; countsFailed = false
     try {
       // Read again after a claim, past the copy the browser keeps for a few minutes.
-      const found = await request('/atlas/corpus/characters', undefined, fresh ? { cache: 'no-store' } : {})
+      const found = await graphemeCounts(fresh ? { cache: 'no-store' } : {})
       if (closed) return
-      corpusCounts = found.items
+      cropCounts = found
       // Under a script group, an empty listing waits for these counts to tell whether the corpus holds its grapheme.
       if (filter !== 'all' && !picked && !loading && data) openEmptyGrapheme(data)
     }
-    catch { if (!closed) corpusCountsFailed = true }
+    catch { if (!closed) countsFailed = true }
   }
-  // How many glyphs the site holds of each written form and of each grapheme, the collection's and the
-  // corpus's together, whatever the filters: a tile reads its form's count and its grapheme's.
+  // How many crops the site holds of each written form and of each grapheme, the collection's and the
+  // corpus's together and withheld ones among them, whatever the filters: a tile reads its form's count
+  // and its grapheme's.
   // The catalogue's own array, which a further page keeps, so paging does not gather them again.
   const wholeCategories = $derived(data?.categories ?? [])
-  // Counts show once both halves are in, or the corpus's has failed; without the catalogue's they
-  // would undercount.
+  // Without them a tile shows no count: the catalogue's own leave out the corpus.
   const tileCounts = $derived.by(() => {
-    if (!wholeCategories.length || (!corpusCounts && !corpusCountsFailed)) return null
+    if (!cropCounts) return null
     const forms = new Map(), groups = new Map(), keys = new Map()
     // A form one source files under another grapheme than the other (扵 under 於, or under its own), or
     // some of whose glyphs a claim reads as another grapheme, counts among the forms of each, and keys
     // the grapheme most of its glyphs are filed under, the collection's and the corpus's together.
     const shapes = new Map(), under = new Map()
-    const add = (label, key, n) => {
-      forms.set(label, (forms.get(label) ?? 0) + n); groups.set(key, (groups.get(key) ?? 0) + n)
+    for (const [label, key, collected, glyphs] of cropCounts) {
+      const n = collected + glyphs
+      groups.set(key, (groups.get(key) ?? 0) + n)
+      // The crops with no character are the grapheme's alone.
+      if (!label) continue
+      forms.set(label, (forms.get(label) ?? 0) + n)
       const sums = under.get(label) ?? new Map()
       sums.set(key, (sums.get(key) ?? 0) + n); under.set(label, sums)
       if (!keys.has(label) || sums.get(key) > sums.get(keys.get(label))) keys.set(label, key)
       if (!shapes.has(key)) shapes.set(key, new Set())
       shapes.get(key).add(label)
     }
-    for (const c of wholeCategories) add(c.label, c.grapheme ?? c.label, c.total)
-    for (const [label, key, n] of corpusCounts ?? []) add(label, key, n)
     return { forms, groups, keys, shapes, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
   })
   /** Each count's place among `counts`, most first; equal counts share a place. */
@@ -246,7 +249,7 @@
     return { text: all > form ? t('tile.countWithin', { count: form, all }) : t('tile.count', { count: form }), lines, ranks }
   }
   // Read once the first rows show: the database answers one read at a time, and the rows come first.
-  $effect(() => { if (!flagged && !loading) untrack(loadCorpusCounts) })
+  $effect(() => { if (!flagged && !loading) untrack(loadCounts) })
   // The hover panel's details, less what the caption under it shows whole. A line the caption also
   // gives comes as `{ cut, whole, short }`: the panel shows `whole` where the caption cuts its `cut`
   // part short or hides it (`markCut`), and `short`, what the line adds, where it shows it whole: the
@@ -264,15 +267,14 @@
       tile.toggleAttribute('data-cut-' + part, !!shown && (!shown.offsetParent || shown.scrollWidth > shown.clientWidth + 1))
     }
   }
-  // Tiles count corpus glyphs only while choosing one opens its gallery: with a work chosen, a tile
-  // narrows the work's listing instead, and corpus glyphs belong to no work.
+  // A tile opens its gallery only while corpus glyphs are listed: with a work chosen, it narrows the
+  // work's listing instead, and corpus glyphs belong to no work.
   const countsCorpus = $derived(!flagged && !work)
-  // The characters the catalogue counts, gathered under their graphemes: 仮 and 假 are one tile. The
-  // catalogue's counts are the whole collection's crops (`local`), whatever the filters, so a script
-  // group keeps its own script's characters; while `countsCorpus`, a tile adds the corpus glyphs of its
-  // characters (`corpus`), so characters held only as corpus glyphs are listed too.
+  // The characters the site counts, gathered under their graphemes: 仮 and 假 are one tile, and its count
+  // the grapheme's total, whatever the filters. A script group keeps its own script's characters, and a
+  // work the graphemes the collection holds crops of.
   const graphemes = $derived.by(() => {
-    const groups = gatherGraphemes({ categories, corpus: countsCorpus ? corpusCounts ?? [] : [], flagged,
+    const groups = gatherGraphemes({ categories, counts: cropCounts, flagged, collected: Boolean(work),
       ...(filter === 'all' ? {} : { inScript: text => categoryOf(text) === filter }) })
     // Fewest first puts the graphemes the site holds fewest glyphs of at the top.
     const direction = order === 'fewest' ? -1 : 1
@@ -391,9 +393,12 @@
   const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
   const display = $derived(picked && expand === 'grapheme' && !byBook
     ? [...baseDisplay].sort((a, b) => groupOrder(a) - groupOrder(b) || byId(visualGroup(a).id, visualGroup(b).id)) : baseDisplay)
-  // The counts above the gallery are of the crops it shows.
+  // The counts above a listing are of the crops it shows.
   const shownIn = list => list.filter(item => !hidden(item)).length
-  const shownEditable = $derived(shownIn(editable)), shownCorpusOnly = $derived(shownIn(corpusOnly))
+  // Those above a gallery are of every crop it lists, the withheld it leaves out counted apart.
+  const listedLocal = $derived(visual ? visibleLocal.length : localAnswered ? data?.total ?? 0 : 0)
+  // The page's count is its subject's total.
+  const pageCount = $derived(galleryCount(picked, expand) ?? listedLocal + corpusTotal + (localWithheld ?? 0))
   const shownItems = $derived(shownIn(items)), shownHomeCorpus = $derived(shownIn(homeCorpus))
   // The grapheme view puts a heading over each shape group; crops in no group have none. Grouped by
   // book, each book has one; after them the books of a single crop share one, and the crops of no recorded book.
@@ -533,12 +538,6 @@
         localStyles = found.styles ?? null; styled = Boolean(found.style_groups)
         data = { ...(data ?? {}), query: picked.char, total: found.counts.total, available: found.counts.exact_total,
                  categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
-        // The chips come from the card, and the card says which widening is in force: refetch it so a
-        // chip that was just switched on reads as on.
-        // A variants widening changes no field of the card, and a further page none at all.
-        if (!append && expand !== 'variants') layerCharacter(picked.code_point, expand)
-          .then(card => { if (!closed && id === requestId) picked = { ...picked, ...card } })
-          .catch(() => {})
         if (append) return
         loadDecades(picked.code_point, expand)
         // The corpus leads are fetched whole, because their service pins located anchors first and a
@@ -587,19 +586,17 @@
     const found = await layerBooks(picked.code_point, bookParams(append ? { after: booksAfter } : {}))
     if (closed || id !== requestId) return
     const rows = bookPage(found), held = new Set(galleryBooks.flatMap(book => book.records))
-    const counted = counts => STYLE_GROUPS.reduce((sum, name) => sum + (!style || name === style ? counts[name] ?? 0 : 0), 0)
     localStyles = found.styles.local; corpusStyles = found.styles.corpus; styled = Boolean(found.style_groups)
     localWithheld = found.withheld ?? null; localAnswered = true; corpusAnswered = true; corpusFault = null
-    corpusTotal = counted(found.styles.corpus)
+    corpusTotal = found.listed.corpus
     // A book whose place moved since the page before is shown where it first was.
     const fresh = rows.books.filter(book => !book.records.some(record => held.has(record))), added = item => !held.has(item.document)
     reach = append ? reach : 0
     local = [...local, ...rows.local.filter(added)]; corpus = [...corpus, ...rows.corpus.filter(added)]
     galleryBooks = [...galleryBooks, ...fresh]; booksAfter = found.next ?? null; corpusOffset = corpus.length
-    data = { ...(data ?? {}), query: picked.char, total: counted(found.styles.local), available: counted(found.styles.local),
+    data = { ...(data ?? {}), query: picked.char, total: found.listed.local, available: found.listed.local,
              categories: data?.categories ?? [], documents: data?.documents ?? [], counts: data?.counts ?? {} }
     if (append) return
-    layerCharacter(picked.code_point, expand).then(card => { if (!closed && id === requestId) picked = { ...picked, ...card } }).catch(() => {})
     loadDecades(picked.code_point, expand)
   }
   const bookParams = params => ({ scope: bookScope(expand), style: style || undefined, years: yearRange || undefined, withheld: withheldParam(), ...params })
@@ -632,11 +629,11 @@
   // The decades of the gallery on show, for the period filter; they depend on the character and scope only.
   let decadesFor = ''
   function loadDecades(code, scope) {
-    const key = `${code} ${scope} ${showWithheld}`
+    const key = `${code} ${scope}`
     if (scope === 'variants') { decadeCounts = null; decadesFor = ''; return }
     if (key === decadesFor) return
     decadesFor = key; decadeCounts = null
-    decades(code, { scope: scope === 'grapheme' ? 'grapheme' : 'character', withheld: showWithheld ? 'show' : null })
+    decades(code, { scope: scope === 'grapheme' ? 'grapheme' : 'character' })
       .then(found => { if (!closed && decadesFor === key) decadeCounts = [...found.local, ...found.corpus] })
       .catch(() => { if (decadesFor === key) decadesFor = '' })
   }
@@ -693,12 +690,12 @@
   }
   $effect(() => {
     if (!bare) return
-    if (runKind === 'grapheme') untrack(loadCorpusCounts)
+    if (runKind === 'grapheme') untrack(loadCounts)
     else if (homeRuns?.kind !== runKind) untrack(() => loadHomeRuns(runKind))
   })
   let shownGraphemes = null
   const frequentGraphemes = $derived.by(() => {
-    if (runKind !== 'grapheme' || !corpusCounts) return null
+    if (runKind !== 'grapheme' || !cropCounts) return null
     const next = graphemes.filter(group => group.count > 0).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).slice(0, KEPT)
       .map(group => ({ text: group.char, n: group.count, key: group.key }))
     const same = shownGraphemes?.length === next.length && next.every((group, i) => group.key === shownGraphemes[i].key && group.n === shownGraphemes[i].n)
@@ -900,7 +897,7 @@
       const updated = await character(id)
       // A grapheme claim moves the glyph between families, and their tiles count it there.
       const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
-      if (updated.origin === 'corpus' && before && corpusCountsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...updated })) { corpusCountsAsked = false; loadCorpusCounts(true) }
+      if (updated.origin === 'corpus' && before && countsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...updated })) { countsAsked = false; loadCounts(true) }
       const replace = item => {
         if (item.id !== id) return [item]
         const { issue: _issue, box_pending: _boxPending, written_character: _written, identity_status: _status, identity_basis: _basis, ...rest } = item
@@ -1328,7 +1325,7 @@
   const capture = () => ({ data, items, error, grapheme, work, seed, query, filter, picked, expand, local, corpus, visual, analysis,
     familyTotal, unassignedCount, corpusTotal, corpusOffset, corpusFault, localAfter, corpusAfter, localAnswered, style, styled, dateOrder, galleryBooks, booksAfter,
     yearRange, decadeCounts, decadesFor: decadeCounts ? decadesFor : '', localStyles, corpusStyles, corpusAnswered, split, sample, sampleFault,
-    collection, groupStats, localWithheld, corpusCounts, corpusCountsAsked: Boolean(corpusCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
+    collection, groupStats, localWithheld, cropCounts, countsAsked: Boolean(cropCounts), runs, runsFailed, runsFor: runs || runsFailed ? runsFor : null,
     runKind, homeRuns, scattered, scatteredFor: scattered.length ? scatteredFor : null, charRuns,
     charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
   beforeNavigate(navigation => {
@@ -1346,8 +1343,8 @@
     dateOrder = back.dateOrder; galleryBooks = back.galleryBooks; booksAfter = back.booksAfter; failedBook = ''; booksRead += 1; yearRange = back.yearRange; decadeCounts = back.decadeCounts;
     decadesFor = back.decadesFor; localStyles = back.localStyles; corpusStyles = back.corpusStyles;
     corpusAnswered = back.corpusAnswered; split = back.split; sample = back.sample; sampleFault = back.sampleFault;
-    collection = back.collection; groupStats = back.groupStats ?? groupStats; localWithheld = back.localWithheld; corpusCounts = back.corpusCounts;
-    corpusCountsAsked = back.corpusCountsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
+    collection = back.collection; groupStats = back.groupStats ?? groupStats; localWithheld = back.localWithheld; cropCounts = back.cropCounts;
+    countsAsked = back.countsAsked; runs = back.runs; runsFailed = back.runsFailed; runsFor = back.runsFor;
     runKind = back.runKind; homeRuns = back.homeRuns; scattered = back.scattered; scatteredFor = back.scatteredFor;
     charRuns = back.charRuns; charRunsFor = back.charRunsFor; confirmedHere = back.confirmedHere;
     loading = false; reach = untrack(() => display.length)
@@ -1429,10 +1426,10 @@
 {/snippet}
 <section class="explore">
   <div class="page-status">
-    <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : shown ? galleryTitle(shown) : t('explore.heading.atlas')}</h1>
+    <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : subject ? galleryTitle(subject) : t('explore.heading.atlas')}</h1>
     <SiteLinks />
     {#if picked}
-      <div class="collection-meta"><span class="live-dot"></span><span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span></div>
+      <div class="collection-meta"><span class="live-dot"></span><span>{t('explore.meta.glyphs', { count: pageCount })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span></div>
     {:else}
       <button type="button" class="collection-meta meta-button" onclick={event => session.showProgress(event.currentTarget)} title={t('explore.collectionProgress')}>
         <span class="live-dot"></span>
@@ -1447,7 +1444,7 @@
       </button>
     {/if}
   </div>
-  <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) loadCorpusCounts() }}>
+  <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) loadCounts() }}>
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
          form in a tile's popover opens that form's own gallery. -->
     {#snippet browse(close)}
@@ -1467,7 +1464,7 @@
     <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
          them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
-      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} lead={run ? runLead : null}
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : null} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
@@ -1509,22 +1506,22 @@
   {#if split}<div class="split-term"><span>{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}<ScriptText text={split.term} />{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}</span>
     <div class="split-tabs" role="group" aria-label={t('explore.byCharacter')}>{#each split.parts as part}<button type="button" aria-pressed={split.active === part} onclick={() => openPart(part)}><ScriptText text={part} /></button>{/each}</div></div>{/if}
   {#if picked}
-    <CharacterChips card={picked} bind:expand />
+    <CharacterChips card={picked} bind:expand narrowed={{ style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) }} />
     {#if charRuns?.char === picked.char && charRuns.items.length}<RunStrip runs={charRuns.items} heading={t('explore.runs.with', { char: picked.char })} />{/if}
     {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
     {#if picked && expand !== 'variants'}<PeriodFilter counts={decadeCounts} value={yearRange} order={dateOrder} onchange={value => { yearRange = value; load() }} onorder={value => { dateOrder = value; if (value === 'book') visual = ''; load() }} />{/if}
     {#if expand === 'grapheme' && !byBook}<VisualGroups {analysis} count={familyTotal} unassigned={unassignedCount} value={visual} onchange={value => { visual = value; load() }} />{/if}
     <p class="find-count" role="status">
-      {t('explore.meta.glyphs', { count: display.length })}
-      {#if shownEditable}<span class="separator">·</span> {t('explore.count.here', { count: shownEditable })}{/if}
-      {#if shownCorpusOnly}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: shownCorpusOnly })}{/if}
+      {t('explore.meta.glyphs', { count: listedLocal + corpusTotal })}
+      {#if listedLocal}<span class="separator">·</span> {t('explore.count.here', { count: listedLocal })}{/if}
+      {#if corpusTotal}<span class="separator">·</span> {t('explore.count.fromCorpus', { count: corpusTotal })}{/if}
       {#if corpusFault}<span class="separator">·</span> <span class="corpus-fault" role="status">{t('explore.samplesUnavailable')}</span> <button class="quiet-link" onclick={() => load()}>{t('common.retry')}</button>{/if}
       {@render withheldToggle(true)}
       {@render reviewedToggle()}
       {#if loading}<span class="find-pending"> …</span>{/if}
     </p>
   {/if}
-  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={corpusCountsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { corpusCountsAsked = false; loadCorpusCounts(true) }}
+  {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={countsFailed ? t('explore.graphemes.failed') : ''} onretry={() => { countsAsked = false; loadCounts(true) }}
       address={group => graphemeAddress(group.key, group.text)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
     {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
