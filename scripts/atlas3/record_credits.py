@@ -11,7 +11,8 @@ A corpus glyph's record is in a pack named by its content, so it is written agai
 record is the published one with its `attribution` and `text_attribution` as `glyph_atlas.credit_line`
 gives them, and nothing else changed; a record whose credits stay is left where it is. `--books` is the
 start of the book keys. `--packs` is a folder with the packs `--list` names. The publish's
-`record_places` (id, object, offset, size) points each glyph at its new record.
+`record_places` names each glyph's new place and the place it replaces, and stops where the glyph's record
+has been published since.
 """
 from __future__ import annotations
 
@@ -73,7 +74,7 @@ def main(argv: list[str] | None = None) -> None:
         if buffer:
             name = f"packs/{hashlib.sha256(buffer).hexdigest()}.bin"
             (args.output / name).write_bytes(buffer)
-            rows.extend((i, name, offset, size) for i, offset, size in pending)
+            rows.extend((i, name, offset, size, *old) for i, offset, size, old in pending)
             buffer.clear()
             pending.clear()
     by_pack: dict[str, list] = {}
@@ -81,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
         by_pack.setdefault(place[0], []).append((i, place))
     for name, entries in sorted(by_pack.items()):
         with (args.packs / name.removeprefix("packs/")).open("rb") as pack:
-            for i, (_, offset, size) in sorted(entries, key=lambda e: e[1][1]):
+            for i, (held, offset, size) in sorted(entries, key=lambda e: e[1][1]):
                 pack.seek(offset)
                 record = json.loads(pack.read(size))
                 if record["id"] != i:
@@ -91,12 +92,13 @@ def main(argv: list[str] | None = None) -> None:
                 raw = json.dumps(new, ensure_ascii=False, separators=(",", ":")).encode()
                 if len(buffer) + len(raw) > PACK:
                     close()
-                pending.append((i, len(buffer), len(raw)))
+                pending.append((i, len(buffer), len(raw), (held, offset, size)))
                 buffer.extend(raw)
     close()
     db = sqlite3.connect(args.output / "records.sqlite")
-    db.execute("CREATE TABLE record_places(id TEXT PRIMARY KEY, object TEXT NOT NULL, offset INTEGER NOT NULL, size INTEGER NOT NULL)")
-    db.executemany("INSERT INTO record_places VALUES(?, ?, ?, ?)", rows)
+    db.execute("CREATE TABLE record_places(id TEXT PRIMARY KEY, object TEXT NOT NULL, offset INTEGER NOT NULL, size INTEGER NOT NULL, "
+               "old_object TEXT NOT NULL, old_offset INTEGER NOT NULL, old_size INTEGER NOT NULL)")
+    db.executemany("INSERT INTO record_places VALUES(?, ?, ?, ?, ?, ?, ?)", rows)
     db.commit()
     print(f"{len(rows)} of {len(found)} records in {len({r[1] for r in rows})} packs -> {args.output}", flush=True)
 

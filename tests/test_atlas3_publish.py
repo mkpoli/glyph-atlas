@@ -827,7 +827,8 @@ def test_a_corpus_record_is_written_again_with_the_credit_a_reader_should_see(la
     record_credits.main([str(tmp_path / "out1"), "--books", "book:", "--packs", str(fetched)])
     assert "0 of 0 records" in capsys.readouterr().out
     record_credits.main([str(tmp_path / "out2"), "--books", "codh:", "--packs", str(fetched)])
-    (glyph, pack, offset, size), = sqlite3.connect(tmp_path / "out2" / "records.sqlite").execute("SELECT * FROM record_places")
+    (glyph, pack, offset, size, *replaced), = sqlite3.connect(tmp_path / "out2" / "records.sqlite").execute("SELECT * FROM record_places")
+    assert replaced == [PACK[1], 40, len(raw)]
     new = json.loads((tmp_path / "out2" / pack).read_bytes()[offset:offset + size])
     assert new == {**old, "text_attribution": "橋本雄太, Honkoku-Lines v2.0; みんなで翻刻 (CC BY-SA 4.0)"}
 
@@ -840,8 +841,14 @@ def test_a_corpus_record_is_written_again_with_the_credit_a_reader_should_see(la
     capsys.readouterr()
     run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
     assert "nothing changed" in capsys.readouterr().out
+    # A record published since the catalogue was written is kept, not put back.
     with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
-        db.execute(f"INSERT INTO record_places VALUES('ex:a1', '{PACK[2]}', 0, 1)")
+        db.execute("UPDATE record_places SET offset = 7, old_offset = 41")
+    with pytest.raises(SystemExit, match="published since the catalogue was written, e.g. codh:g1"):
+        run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
+        db.execute("DELETE FROM record_places")
+        db.execute(f"INSERT INTO record_places VALUES('ex:a1', '{PACK[2]}', 0, 1, '{PACK[1]}', 0, 1)")
     with pytest.raises(SystemExit, match="no published record, e.g. ex:a1"):
         run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
 
