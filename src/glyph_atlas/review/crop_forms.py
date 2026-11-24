@@ -123,13 +123,15 @@ def written_forms(conn: sqlite3.Connection, grapheme: str) -> list[dict]:
 
     A form a reviewer writes as an IDS, or a registered figure written as a variation sequence (突󠄃),
     has no character of its own, so no card row holds it; the claim
-    that it is written for the grapheme is how it joins the grapheme's 字体. The Worker counts its crops;
+    that it is written for the grapheme is how it joins the grapheme's 字体, under its key or a member's. The Worker counts its crops;
     the review service leaves the count at zero rather than walking every unit."""
+    keys = [grapheme, *refs.graphemes().get(refs.grapheme(grapheme) or grapheme, [])]
     rows = conn.execute(
-        "SELECT c.subject AS form,r.scheme,r.value FROM current_claims c "
+        "SELECT DISTINCT c.subject AS form,r.scheme,r.value FROM current_claims c "
         "JOIN forms f ON f.id=c.subject JOIN representations r ON r.id=f.anchor "
-        "WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme IN ('ids','ivs') "
-        "AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value", (grapheme,)).fetchall()
+        "WHERE c.predicate='written_for' AND c.object IN (SELECT value FROM json_each(?)) AND c.scope='' "
+        "AND r.scheme IN ('ids','ivs') "
+        "AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value", (json.dumps(keys),)).fetchall()
     return [{"char": row["value"], "code_point": None, "form": row["form"], "scheme": row["scheme"],
              "count": 0, "corpus_count": 0} for row in rows]
 

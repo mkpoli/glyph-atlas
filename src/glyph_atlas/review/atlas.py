@@ -1628,7 +1628,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
         previous = ledger_call(store.claim_submission, key=key, request=request)
         if previous is not None:
-            return {"id": form, "written_for": store.written_for(form)}
+            return {"id": form, "grapheme": refs.grapheme(edit.grapheme) or edit.grapheme, "written_for": store.written_for(form)}
         return ledger_call(store.set_written_for, key=key, actor=edit.client_id, request=request, form=form,
                            grapheme=edit.grapheme, remove=edit.remove)
 

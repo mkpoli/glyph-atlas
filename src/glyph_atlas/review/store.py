@@ -1183,7 +1183,7 @@ class Store:
         return the grapheme claimed and the graphemes the form writes now."""
         with self._lock, self._connection() as conn, self._transaction(conn):
             crop_forms.set_written_for(conn, **written)
-            return {"id": written["form"], "grapheme": refs.grapheme(written["grapheme"]), "written_for": crop_forms.written_for(conn, written["form"])}
+            return {"id": written["form"], "grapheme": refs.grapheme(written["grapheme"]) or written["grapheme"], "written_for": crop_forms.written_for(conn, written["form"])}
 
     def written_for(self, form: str) -> list[dict[str, Any]]:
         """The graphemes a form is written for (`crop_forms.written_for`)."""
