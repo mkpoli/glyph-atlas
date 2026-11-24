@@ -20,7 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import { charOf, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
+  import { charOf, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -51,6 +51,7 @@
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
   import { cardTargets, galleryCount } from '../lib/cardTiers.js'
+  import { afterBurst, countsMoved, withSummary } from '../lib/galleryCounts.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the progress line and, for a search, a grapheme or a work, the collection's rows; without
   // rows the view loads them and the corpus sample itself, with the same seed and filters.
@@ -177,9 +178,10 @@
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
-  // The corpus glyphs of every character, as [label, grapheme, glyphs], read once when the search box is
-  // first focused; the Flagged view has no use for them. A service without them (the local review
-  // service has none) or a failed read leaves the tiles counting crops for the rest of the visit.
+  // Every crop by character and grapheme (`graphemeCounts`), read once the first rows show, and again
+  // after a save that moves a crop between them; the Flagged view has no use for them. Without them (the
+  // local review service has none, or a read failed) the grapheme browser counts the catalogue's crops, and a
+  // tile states no count.
   // The frequent graphemes above the collection need them too, and offer to read them again after a failure.
   let cropCounts = $state(null), countsAsked = false, countsFailed = $state(false)
   async function loadCounts(fresh = false) {
@@ -195,31 +197,15 @@
     }
     catch { if (!closed) countsFailed = true }
   }
+  // The catalogue's own array, which a further page keeps, so paging does not gather them again.
+  const wholeCategories = $derived(data?.categories ?? [])
   // How many crops the site holds of each written form and of each grapheme, the collection's and the
   // corpus's together and withheld ones among them, whatever the filters: a tile reads its form's count
   // and its grapheme's.
-  // The catalogue's own array, which a further page keeps, so paging does not gather them again.
-  const wholeCategories = $derived(data?.categories ?? [])
   // Without them a tile shows no count: the catalogue's own leave out the corpus.
   const tileCounts = $derived.by(() => {
     if (!cropCounts) return null
-    const forms = new Map(), groups = new Map(), keys = new Map()
-    // A form one source files under another grapheme than the other (扵 under 於, or under its own), or
-    // some of whose glyphs a claim reads as another grapheme, counts among the forms of each, and keys
-    // the grapheme most of its glyphs are filed under, the collection's and the corpus's together.
-    const shapes = new Map(), under = new Map()
-    for (const [label, key, collected, glyphs] of cropCounts) {
-      const n = collected + glyphs
-      groups.set(key, (groups.get(key) ?? 0) + n)
-      // The crops with no character are the grapheme's alone.
-      if (!label) continue
-      forms.set(label, (forms.get(label) ?? 0) + n)
-      const sums = under.get(label) ?? new Map()
-      sums.set(key, (sums.get(key) ?? 0) + n); under.set(label, sums)
-      if (!keys.has(label) || sums.get(key) > sums.get(keys.get(label))) keys.set(label, key)
-      if (!shapes.has(key)) shapes.set(key, new Set())
-      shapes.get(key).add(label)
-    }
+    const { forms, groups, keys, shapes } = cropTotals(cropCounts)
     return { forms, groups, keys, shapes, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
   })
   /** Each count's place among `counts`, most first; equal counts share a place. */
@@ -242,7 +228,7 @@
     if (all > form) {
       const percent = form / all * 100
       const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
-      const group = { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key).size,
+      const group = { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key) ?? 0,
         rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }
       lines.push(t('tile.countGrapheme', group)); ranks.push(t('tile.rankGrapheme', group))
     }
@@ -890,14 +876,39 @@
     const left = tiles()
     left[Math.min(at, left.length - 1)]?.focus()
   }
+  const tileById = id => [...local, ...corpus, ...items, ...sample, ...scattered.flatMap(run => run?.crops ?? [])].find(row => row.id === id)
+  // A save that moves a crop between characters or graphemes moves the counts: the tiles', the card's
+  // and the open gallery's are read again once a burst of saves is over, and the crops on show stay.
+  async function readCountsAgain() {
+    if (closed) return
+    if (countsAsked) { countsAsked = false; loadCounts(true) }
+    const code = picked?.code_point, id = requestId
+    if (!code || !localAnswered) return
+    try {
+      const [card, found, leads] = await Promise.all([layerCharacter(code, 'none', { cache: 'no-store' }),
+        byBook ? layerBooks(code, bookParams({ limit: 1, per: 1 })) : occurrences(code, { expand, limit: 1, style: style || undefined, withheld: withheldParam(), ...dateParams() }),
+        byBook ? null : layerCandidates(code, 1, null, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dateParams() }).catch(() => null)])
+      if (closed || id !== requestId || picked?.code_point !== code) return
+      picked = { ...picked, ...card }
+      localWithheld = found.withheld ?? null
+      const totals = byBook ? { total: found.listed.local, available: found.listed.local } : { total: found.counts.total, available: found.counts.exact_total }
+      data = { ...(data ?? {}), ...totals }
+      localStyles = byBook ? found.styles.local : found.styles ?? null
+      // A corpus that cannot answer keeps what it answered.
+      if (byBook) { corpusStyles = found.styles.corpus; corpusTotal = found.listed.corpus }
+      else if (leads) { corpusStyles = leads.styles ?? null; corpusTotal = leads.glyphs ?? 0; familyTotal = leads.family_total ?? null; unassignedCount = leads.unassigned_count ?? null }
+      decadesFor = ''; loadDecades(code, expand)
+    } catch { /* The counts stand until the next save or visit. */ }
+  }
+  const countAgain = afterBurst(readCountsAgain, 800)
+  onDestroy(() => countAgain.cancel())
   async function updateItem(id, result) {
     // A skip writes nothing, so the tile stands.
     if (!result) return
     try {
       const updated = await character(id)
-      // A grapheme claim moves the glyph between families, and their tiles count it there.
-      const before = [...(corpus ?? []), ...(sample ?? [])].find(row => row.id === id)
-      if (updated.origin === 'corpus' && before && countsAsked && claimedGrapheme(before) !== claimedGrapheme({ ...before, ...updated })) { countsAsked = false; loadCounts(true) }
+      const before = tileById(id)
+      if (countsMoved(before, { ...before, ...updated })) countAgain()
       const replace = item => {
         if (item.id !== id) return [item]
         const { issue: _issue, box_pending: _boxPending, written_character: _written, identity_status: _status, identity_basis: _basis, ...rest } = item
@@ -917,8 +928,7 @@
       if (updated.origin !== 'corpus') {
         const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
           reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 })
-        if (!closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
-          reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+        if (!closed) data = withSummary(data, summary, picked)
       }
     } catch (e) { if (!closed) error = e.message }
   }
@@ -1024,6 +1034,7 @@
   }
   /** Tiles changed (`null` takes one out of the gallery); `now` is each crop as it is, which a run's crops take. */
   function patch(change, now = change) {
+    if (Object.entries(now).some(([id, next]) => { const before = tileById(id); return !next || countsMoved(before, { ...before, ...next }) })) countAgain()
     const apply = list => list.flatMap(item => (item.id in change ? (change[item.id] ? [change[item.id]] : []) : [item]))
     items = apply(items); local = apply(local); corpus = apply(corpus); sample = apply(sample)
     runCrops(now)
@@ -1035,6 +1046,8 @@
       scattered = scattered.map(run => run?.crops ? { ...run, crops: run.crops.map(crop => now[crop.id] ? mergeCropPatch(crop, now[crop.id]) : crop) } : run)
   }
   async function runCropUpdated(id, delta) {
+    const before = tileById(id)
+    if (countsMoved(before, mergeCropPatch(before ?? {}, delta ?? {}))) countAgain()
     const merge = list => list.map(item => item.id === id ? mergeCropPatch(item, delta) : item)
     items = merge(items); local = merge(local); corpus = merge(corpus); sample = merge(sample)
     if (delta?.state === 'checked') confirmedHere = new Set([...confirmedHere, id])
@@ -1045,8 +1058,7 @@
       runsChanged()
       const summary = await catalogue({ grapheme, document: work, q: query, group: filter, state: flagged ? 'attention' : 'all',
         reported: flagged ? (showReported ? 'show' : 'hide') : null, withheld: withheldParam(), limit: 1 }).catch(() => null)
-      if (summary && !closed) data = { ...(data ?? {}), counts: summary.counts, categories: summary.categories, documents: summary.documents, total: summary.total, available: summary.available,
-        reported_count: summary.reported_count, withheld_count: summary.withheld_count }
+      if (summary && !closed) data = withSummary(data, summary, picked)
     }
   }
   /** Tiles the site refused, read again so the grid shows what they are now. */
@@ -1207,7 +1219,7 @@
       const shown = new Set([...items, ...local, ...corpus, ...sample, ...scattered.flatMap(run => run?.crops ?? [])].map(item => item.id))
       const restored = waiting.length ? null : restoredCrops(done.before, answered)
       if (restored && Object.keys(restored).every(id => shown.has(id))) patch(restored)
-      else await load()
+      else { countAgain(); await load() }
       runsChanged()
       readGroupStats()
     } catch (e) { bulkError = e.message }
@@ -1464,7 +1476,7 @@
     <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
          them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
-      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : null} lead={run ? runLead : null}
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}

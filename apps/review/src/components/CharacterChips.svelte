@@ -11,7 +11,7 @@
   import IdsLabel from './IdsLabel.svelte'
   import OriginText from './OriginText.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { countsLabel } from '../lib/layers.js'
+  import { matchesLabel } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
   import { idsCard } from '../lib/idsCard.js'
   import { isFigure } from '../lib/mjFigures.js'
@@ -240,7 +240,7 @@
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: whole ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
       {#if entry}<Cite {entry} class="cite-link" />{/if}
-      {#if !whole && card.candidates?.known && countsLabel(card.candidates)}<small>{countsLabel(card.candidates)}</small>{/if}
+      {#if !whole && card.candidates?.known && matchesLabel(card.candidates)}<small>{matchesLabel(card.candidates)}</small>{/if}
     </div>
     <!-- What a character is made from is the character's own, so a grapheme's page leaves it to its forms'. -->
     {#if !whole && (card.ligature || card.jibo?.length || card.origin?.length || card.derived?.length || card.expansions?.some(o => o.key !== 'grapheme') || onreview)}
