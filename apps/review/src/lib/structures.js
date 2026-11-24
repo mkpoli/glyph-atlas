@@ -1,11 +1,12 @@
 import { structures as readStructures } from './layers.js'
 import { isDescription } from './ids.js'
+import { isSeal } from './cardTiers.js'
 
 const HAN = /^\p{Script=Han}/u
 /** How many written values one reading asks for. */
 export const NAMES = 48
-/** A written value that can have a 構形: a Han character or a description. */
-export const composable = char => HAN.test(char ?? '') || isDescription(char)
+/** A written value that can have a 構形: a Han or small seal character, or a description. */
+export const composable = char => HAN.test(char ?? '') || isSeal(char) || isDescription(char)
 
 /**
  * The 構形 each written value stands under, by its text: `{ id, label, by, others, part }`, `by` who

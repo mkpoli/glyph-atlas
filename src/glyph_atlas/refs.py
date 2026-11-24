@@ -454,22 +454,6 @@ def regional_shapes(char: str) -> list[dict[str, str]]:
             for text, named in found.items()] if len(found) > 1 else []
 
 
-def shape_structures(shapes: list[dict[str, str]], own: Any) -> list[dict[str, Any]]:
-    """`shapes` (`regional_shapes`), each with its 構形 as `structure` where that is not `own`, its
-    character's: `{"id", "label"}`, or None for a shape that names none. 臭 is ⿱自犬 and its J shape
-    ⿱自大 is the structure of 𦤀; a shape that spells its character's structure carries nothing."""
-    from . import structures
-
-    found = []
-    for shape in shapes:
-        structure = structures.for_name(shape["text"])
-        if (structure and structure.id) == (own and own.id):
-            found.append(shape)
-        else:
-            found.append({**shape, "structure": {"id": structure.id, "label": structure.label} if structure else None})
-    return found
-
-
 def substitutes(component: str) -> list[dict[str, Any]]:
     """What may stand in `component`'s place: each substitution of han-component-variants.tsv naming
     it, as `{"char", "count"}`, most contexts first, at most `SUBSTITUTES_SHOWN`."""
@@ -488,7 +472,7 @@ def ids_of(char: str) -> dict[str, Any]:
     structure = structures.for_character(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences, "shapes": shape_structures(regional_shapes(char), structure),
+    return {"char": char, "sequences": sequences, "shapes": structures.encoded_shapes(char, regional_shapes(char)),
             "structure": {"id": structure.id, "label": structure.label} if structure else None,
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
@@ -513,11 +497,13 @@ STRUCTURE_CHARS = 48
 
 
 def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
-                     folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None) -> dict[str, Any]:
+                     folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None,
+                     of: str = "") -> dict[str, Any]:
     """The 構形 of each character or description named, as groups of those that share one, in the
     order named, as the Worker's `/layers/structures` answers. A name stands under the structure
     readers filed its form under (`claimed`, by name: `{id, label, by}` each, the one that holds first),
-    and the group names who says so; with no claim it stands under the one its description gives. A
+    and the group names who says so; with no claim it stands under the one its description gives, and a
+    regional shape of `of` under that character's. A
     structure a reader folded into another (`folds`, by id: `{head, by}`) stands under that one, and
     the group lists it in `folded` with the names built as it. A name with no structure is in no
     group. `filed` lists the other structures a name was filed under."""
@@ -526,6 +512,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
 
     built: dict[str, dict[str, Any]] = {}
     filed: dict[str, list[dict[str, Any]]] = {}
+    shapes = {shape["text"] for shape in regional_shapes(of)} if of else set()
     for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
         claims = list((claimed or {}).get(name, ()))
         if claims:
@@ -534,7 +521,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
                 filed[name] = [dict(other) for other in claims[1:]]
             continue
         try:
-            structure = structures.for_name(name)
+            structure = structures.for_name(of) if name in shapes else structures.for_name(name)
         except ValueError:
             continue
         if structure:

@@ -189,8 +189,8 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
   if (cached) return await cached.json();
   const described = await characterIds(env, char, ctx);
   const sequences: string[] = described?.sequences ?? [];
-  // A shape whose 構形 is not the character's carries its own, or null for none.
-  const shapes: { text: string; regions: string; structure?: { id: string; label: string } | null }[] = described?.shapes ?? [];
+  // A shape another character encodes again names it in `chars` (臭's ⿱自大 is 𦤀).
+  const shapes: { text: string; regions: string; chars?: string[] }[] = described?.shapes ?? [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.ATLAS.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];
@@ -251,18 +251,19 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
   }
   return { items: [...groups.values()], ...(Object.keys(filed).length ? { filed } : {}) };
 }
+// Raised when derivedStructures answers differently for the same catalogue, so no older answer is served.
+const DERIVED_SHAPE = 2;
 // The structure each name's description gives, by name; a name with none is left out. A name that is
-// a regional shape of `of` has the structure that character's shard gives the shape.
+// a regional shape of `of` has that character's structure.
 async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[], of: string): Promise<Record<string, { id: string; label: string }>> {
-  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of)}&v=${encodeURIComponent(`${DERIVED_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
   const [whole, ...described] = await Promise.all([of ? characterIds(env, structureKey(of), ctx) : null,
     ...named.map(name => characterIds(env, structureKey(name), ctx))]);
-  const shapes = new Map((whole?.shapes ?? []).map(shape => [shape.text as string, ('structure' in shape ? shape.structure : whole!.structure) as { id: string; label: string } | null]));
+  const shapes = new Set((whole?.shapes ?? []).map(shape => shape.text as string));
   const found = Object.fromEntries(named.flatMap((char, i) => {
-    // A shape's own structure, as a save that names the shape finds it.
-    const structure = shapes.has(char) ? shapes.get(char) : described[i]?.structure;
+    const structure = shapes.has(char) ? whole!.structure : described[i]?.structure;
     return structure ? [[char, structure]] : [];
   }));
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));

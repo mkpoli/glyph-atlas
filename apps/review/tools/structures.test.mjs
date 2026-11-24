@@ -60,6 +60,13 @@ describe('reading structures beyond NAMES', () => {
     await expect(standing([FAIL])).rejects.toThrow('429')
   })
 
+  it('asks for a small seal character beside its Han equivalent', async () => {
+    calls.length = 0
+    const result = await standing(['臭', '\u{3EC9F}', 'あ'])
+    expect(calls.map(call => call.chars)).toEqual(['臭\u{3EC9F}'])
+    expect(result.has('\u{3EC9F}')).toBe(true)
+  })
+
   it('returns known unchanged when no name is composable', async () => {
     calls.length = 0
     const initial = new Map([['a', { id: '1', label: 'a', by: null, others: [], part: null }]])

@@ -403,8 +403,9 @@ async function namedStructure(env: Env, input: Json, tools: ClaimTools, ctx: Exe
   const [described, read] = await Promise.all([characterIds(env, structureKey(of ?? char), ctx), structureSource(env, ctx)]);
   // No policy object: no reference load has carried structures yet.
   const source = read ?? tools.fail(503, 'The structures are being loaded.');
-  const shape = of === null ? null : (described?.shapes ?? []).find(one => one.text === char) ?? tools.fail(422, `${char} is no shape of ${of}.`);
-  const structure: { id: string; label: string } = (shape && 'structure' in shape ? shape.structure : described?.structure) ?? tools.fail(422, `No structure is known for ${char}.`);
+  // A regional shape is a spelling of its character's structure.
+  if (of !== null && !(described?.shapes ?? []).some(one => one.text === char)) tools.fail(422, `${char} is no shape of ${of}.`);
+  const structure: { id: string; label: string } = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
   // A shard and a policy from two loads would name a row its id does not describe.
   if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
   return { structure, source };

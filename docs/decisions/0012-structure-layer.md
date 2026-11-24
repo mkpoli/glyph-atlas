@@ -62,6 +62,25 @@ structure. A character the IRG unifies with another has that character's structu
 unless the list gives the two as encoded apart (丷 and 八 are one component inside 兌 and two
 characters on their own).
 
+A character encoded apart whose own description is a regional shape of another character joins that
+character's structure, where the 異体字 graph gives the two as one character encoded twice (Unihan's
+kZVariant, CJKVI's duplicates) and CJKVI never gives them as non-cognate. 𦤀 `⿱自大` is 臭's J shape
+and has 臭's `⿱自犬`; 𠾖 `⿳吅大吅` has 器's `⿳吅犬吅`. 柿 `⿰木市` is the K shape of 杮 `⿰木巿` and
+keeps its own: CJKVI gives the two as characters that only look alike. A stated equivalence is not
+enough, since yitizi's equivalences join 新字体 to 旧字体 (㠀 and 島). 30 characters form 15 groups,
+each with the structure of the character whose shape the other is. An id still names its canonical
+text, so the policy is unchanged; `⿱自大` keeps its id, and no character has it. The groups follow
+the 異体字 graph, which the policy does not pin; a test lists them, so a rebuilt graph that changes
+one is met with a decision.
+
+A small seal character (Unicode's Seal block) is proposed the structure of its Han equivalent, the
+`kSEAL_MCJK` of SealSources.txt: 𾲟 has 臭's `⿱自犬`, and 𽌇 has 萅's `⿱艸旾`, apart from 春
+`⿱𡗗日`. The file calls the value the modern CJK equivalent and says nothing of structure. The value
+follows the seal form's composition in most cases (𽀅 has 叓, where 吏 is written today) and not in
+all: 書 is 聿 over 者 in seal (說文 从聿者聲) and has 書. How many differ is not measured; a reader's
+claim overrides the proposal. 94 Han characters are the value of several seal characters (折, 殺, 民),
+which are drawn apart; those seal characters have no structure.
+
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟
 and 饣 with 言, 金, 糸 and 食 (說, 説 and 说 are one structure). Characters the IRG lists as
@@ -77,9 +96,9 @@ encoded apart share a structure when only a unified component separates them (�
   A structure is compared among the forms of one character, where this does no harm.
 - A description two characters hold names one of them: the character whose own structure it is,
   else the lowest code point.
-- A character's regional shape, chosen as a form, is a description like any other: where it is
-  another character's own structure it names that one (臭 is `⿱自犬`; its J shape `⿱自大` is the
-  structure of 𦤀). 190 of the 11,694 regional shapes do, and 13 approximate or subtracting ones name none.
+- A character's regional shape, chosen as a form, is a spelling of that character's structure,
+  even where the same description written alone is another character's: 杮's K shape `⿰木市`
+  stands under 杮's `⿰木巿`, and written alone it names 柿.
 - A label can hold BabelStone's number for an unencoded component (即 is `⿰{18}卩`); such a
   structure has no written IDS.
 - The id does not carry the versions of the two component tables. `structures.TABLES` pins their
@@ -90,7 +109,8 @@ encoded apart share a structure when only a unified component separates them (�
   it is inside the characters built from it (切, 坞). Its ids are new ones under the same policy.
   A written `⿰亻？` is 亻 beside a part no character names: it has a structure of its own and is
   not 𠇇's, since `？` stands for any such part.
-- A character the source does not describe has no structure: 々, 〻, 〇, and every script but Han.
+- A character the source does not describe has no structure: 々, 〻, 〇, and every script but Han
+  and small seal.
 
 ## Cases and sources
 

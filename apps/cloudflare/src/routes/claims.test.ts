@@ -341,8 +341,8 @@ describe('a form filed under a structure', () => {
     const wind = await structureId('⿱山風', SOURCE.scheme, SOURCE.policy);
     const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
       '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']], '嵐': [['⿱山風'], null, [wind, '⿱山風']],
-      // 嶺 has one regional shape with the character's structure and one with 峯's.
-      '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J', structure: { id: above, label: '⿱山夆' } }], [beside, '⿰山夆']],
+      // 嶺's regional shapes are spellings of its structure, even the one that is 峯's own.
+      '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J' }], [beside, '⿰山夆']],
       // A description the load read: the form's own, which spells 峰 with another drawing of 夆.
       '⿰山夅': [['⿰山夅'], null, [beside, '⿰山夆']] };
     const shards = new Map<string, Record<string, unknown>>();
@@ -426,8 +426,8 @@ describe('a form filed under a structure', () => {
   it('names a structure by a regional shape of a character', async () => {
     const { env, tools, form, beside, above } = await forms();
     const by = (char: string, of: string) => setStructure(env, { id: crypto.randomUUID(), char, of }, form, 'reader', tools);
-    expect((await by('⿱山夆', '嶺')).structures.map((v: any) => v.structure)).toEqual([above]);
-    expect((await by('⿱山領', '嶺')).structures.map((v: any) => v.structure).sort()).toEqual([beside, above].sort());
+    expect((await by('⿱山夆', '嶺')).structures.map((v: any) => v.structure)).toEqual([beside]);
+    expect((await by('⿱山領', '嶺')).structures.map((v: any) => v.structure)).toEqual([beside]);
     await expect(by('⿱山今', '嶺')).rejects.toThrow('422 ⿱山今 is no shape of 嶺.');
   });
 
@@ -511,8 +511,8 @@ describe('a form filed under a structure', () => {
     expect((await foldsOf(env, [beside])).get(beside)?.head.id).toBe(wind);
     const moved = await fold({ char: '峯' }, { char: '嵐' });
     expect(moved).toEqual({ structure: above, folds_into: { id: wind, label: '⿱山風', by: ['reader'] }, replaced: beside });
-    // A regional shape names its structure, here 峯's.
-    expect((await fold({ char: '⿱山夆', of: '嶺' }, { char: '峰' })).structure).toBe(above);
+    // A regional shape names its character's structure, here 嶺's, though the same text alone is 峯's.
+    expect((await fold({ char: '⿱山夆', of: '嶺' }, { char: '峯' })).structure).toBe(beside);
   });
 
   it('refuses a fold into itself, one that leads back, and a structure no claim has named', async () => {

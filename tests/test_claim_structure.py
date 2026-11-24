@@ -65,6 +65,18 @@ def test_a_filing_refuses_what_names_nothing(dataset):  # noqa: F811
     file(client, "fm:" + "0" * 32, char="峰", status=404)
 
 
+def test_a_regional_shape_has_its_characters_structure(dataset):  # noqa: F811
+    """杮's K shape ⿰木市 stands under 杮's ⿰木巿; written alone it is 柿's."""
+    client = TestClient(create_app(dataset))
+    shingle, alone = structures.for_character("杮"), structures.for_ids("⿰木市")
+    assert shingle.id != alone.id
+    assert client.get("/layers/structures", params={"c": "⿰木市", "of": "杮"}).json()["items"] == [
+        {"id": shingle.id, "label": shingle.label, "chars": ["⿰木市"]}]
+    assert groups(client, "⿰木市")[0]["id"] == alone.id
+    assert file(client, "⿰木市", char="⿰木市", of="杮")["structures"][0]["structure"] == shingle.id
+    file(client, "⿰木市", char="⿱山夆", of="杮", status=422)
+
+
 def fold(client: TestClient, source: dict, into: dict | None, *, reviewer: str = "ann", status: int = 200) -> dict:
     body = {"id": str(uuid4()), "client_id": reviewer, "from": source, **({"into": into} if into else {"remove": True})}
     response = client.post("/atlas/structures/folds", json=body)
