@@ -62,20 +62,19 @@ A seal character's own card opens on its own crops.
 - A selection on a Han card can be marked as a seal character, and a search for a kanji lists its seal
   characters, after its other forms and within the same 48.
 - Explore under a script lists that script's characters under the grapheme's head. Where the head is of
-  another script, as for every seal character, each character is a tile of its own and opens its own
-  gallery.
+  another script, as for every seal character, each character is a tile of its own. It opens that
+  character's gallery where it counts corpus glyphs, and otherwise narrows the listing to that character.
 
 ## Keys that name a member
 
-A seal character's key was a grapheme's key, and is a member's. Each reader of a key takes it to the
-head the character table gives now:
+A seal character's key was a grapheme's, and is a member's. As for every member (ハ, 萅):
 
-- A round dealt, open or kept on a device under a member's key is its grapheme's, when it is asked for
-  (`/review/U+3D307`, `/review/U+30CF`) and when it is saved. A round narrowed to a script deals the
-  corpus glyphs of that script's members.
-- A `has_grapheme` or `written_for` claim on it is read as the head's, and taken back by either key. A
-  new claim names a head.
-- A run is found by either spelling, as the next section says.
+- A round under a member's key (`/review/U+3D307`) deals that character's crops alone, on every page, and
+  saves no other. A round under the grapheme's key deals the seal characters with the rest; one narrowed
+  to a script deals the corpus glyphs of that script's members.
+- A listing under a member's key (`/explore?grapheme=U+3D307`) holds that character alone.
+- A new `has_grapheme` or `written_for` claim, one kept on a device among them, is recorded under the head.
+  A `written_for` claim is taken back by the key it was recorded under, or by a member's.
 
 ## Measures
 
@@ -95,8 +94,22 @@ From the committed tables, on Unicode 18.0:
 | `list/graphemes/` pages | 107 before, 135 after, all changed |
 | `names`, `ids/`, `components/`, `structure.json.gz` | none |
 
-The figures are of the committed tables, before any other change the input holds. A dry run that
-counts more `graphemes` than 11,328, or moves a Han head, is stopped and read.
+The figures are of the committed tables, before any other change the input holds.
+
+## Guards
+
+`reference.py` checks a load that moves a head, in the dry run and before anything is sent, and stops
+(`check_heads`) where
+
+- the head of a character that is not small seal moves (`--heads` lets it): no Han head may;
+- a run is filed under a grapheme whose head moves, in the local copy of the runs, which must be there, or
+  among the runs D1 has moved since the last publish;
+- a live `has_grapheme` or `written_for` claim names such a grapheme.
+
+It writes nothing. In D1 it reads each `run_moves` row with the few runs its first crop starts (the local
+copy of 24 November holds no such row), and each claim that names a grapheme, through `assertion_object`,
+with its actions: three or four rows a claim. The local copy of that day holds 11,328 heads to move, all
+small seal, and no run key with one.
 
 ## Rollout
 
@@ -108,26 +121,22 @@ the local copy and the manifest, and answers equal to the published ones publish
 | 1. Merge and deploy | none | A seal character is a related character, as before, last in its 構形 on cards and form bars; its crops are its own grapheme's. The local review service has the new families at once |
 | 2. `export_graphemes.py` | none: the reference input alone | nothing |
 | 3. `reference.py`, dry run | none | nothing; its report is compared with the figures above |
-| 4. `reference.py --send` | `graphemes.head` of 11,328 rows (22,656 with the index), 2 a part for its stamp | see below |
+| 4. `reference.py --send` | `graphemes.head` of 11,328 rows (22,656 with the index), and of up to 56 characters without a head, their own; 2 a part for its stamp | see below |
 | 5. `answers.py`, as soon as 4 ends | one `generation` row and what the publication absorbs | Explore's tiles, browsing and the counts of the rounds file seal characters under their graphemes, once the pointer (a minute) and the copies kept at the edge (an hour at most) are read again |
-| 6. Publish the 篆書字体データセット books from a new export | `run_written`, 16,616 rows; 5 `runs` rows moved, with their indexes and counts | no change: the runs are filed by the head, and read by either spelling throughout |
+| 6. Publish the 篆書字体データセット books from a new export | `run_written`, 16,616 rows; the books' own runs | a run of these books names each crop's seal character |
 
 In step 4 the D1 rows land first and about 65,800 R2 objects follow. `mirror.lock` is held until the
 upload ends, and no publication or `answers.py` starts before. Until a card's object is uploaded, and
 for up to five minutes after in an isolate that holds the old one, the card lists its old members while
-its grapheme's gallery and rounds hold the new ones; a seal character is a member on a card or related
-on it, never both. A search reads a card its family's shard lacks from the card's own object. Explore's
-tiles and the rounds' counts stay under the seal characters' own keys until step 5, and a round asked
-for by one of them is dealt as its grapheme's.
+its grapheme's gallery and rounds hold the new ones. A search reads a card its family's shard lacks from
+the card's own object. Until step 5 Explore and the rounds' counts list 𽌇 beside 春, a crop not yet saved
+is dealt in the rounds of both, and a crop of 𽌇 claimed for 春 is missing from 𽌇's listing. A claim made
+on a seal character while the rows land keeps its key.
 
 Between 1 and 4 the 篆書 books are not published: a catalogue exported by then spells their runs by the
 Han heads, while the site files the characters under themselves. Step 6 is held until a new export of
-those books, since a catalogue made earlier keeps its old spellings. Five runs hold a small seal
-character, on the boxes of the committed tables (已以, 托拓, 北柩, 反取 and 反取取). They are spelled by
-the seal character until step 6, and `check.py` reports them. A run of two or three is read by its folded
-spelling and by each with a seal character of those families that `run_stats` counts, at most 64 keys
-probed; a run no seal spelling counts reads one spelling. That reading can go once `check.py` reports
-none.
+those books, since a catalogue made earlier keeps its old spellings. On the boxes of the committed tables
+five runs of theirs hold a small seal character (已以, 托拓, 北柩, 反取 and 反取取).
 
 ## Limits
 
