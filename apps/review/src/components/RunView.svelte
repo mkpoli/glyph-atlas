@@ -127,7 +127,7 @@
   })
   $effect(() => {
     if (!sentinel) return
-    const observer = new IntersectionObserver(([entry]) => { nearEnd = entry.isIntersecting }, { rootMargin: '0px 0px 1200px 0px' })
+    const observer = new IntersectionObserver(entries => { nearEnd = entries.at(-1).isIntersecting }, { rootMargin: '0px 0px 1200px 0px' })
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
