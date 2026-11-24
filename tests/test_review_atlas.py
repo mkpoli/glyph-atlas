@@ -2152,6 +2152,7 @@ def test_group_stats_count_each_script_group_and_review_state(dataset):
     assert saved.status_code == 200
     after = {entry['group']: entry for entry in client.get('/atlas/groups/stats').json()['groups']}
     assert after['all']['need_fixing'] == by_group['all']['need_fixing'] + 1
+    assert after['all']['reviewed'] == by_group['all']['reviewed'] + 1
 
 
 def test_a_batch_of_form_picks_and_line_correction_match_the_worker(dataset):
@@ -2195,4 +2196,3 @@ def test_a_batch_of_form_picks_and_line_correction_match_the_worker(dataset):
     })
     assert undone.status_code == 200, undone.text
     assert all(entry["form"] is None for entry in undone.json()["crops"])
-    assert after['all']['reviewed'] == by_group['all']['reviewed'] + 1
