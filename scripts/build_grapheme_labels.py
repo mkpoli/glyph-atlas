@@ -34,7 +34,7 @@ def heads() -> dict[str, str]:
     for line in lines[1:]:
         row = line.split("\t")
         points = row[grapheme].split() if len(row) > grapheme else []
-        out[row[char]] = "".join(chr(int(point[2:], 16)) for point in points) or row[char]
+        out[row[char]] = "".join(chr(int(point.replace("U+", "0x"), 0)) for point in points) or row[char]
     return out
 
 
@@ -50,8 +50,9 @@ def labels() -> dict[str, str]:
             stated[new][old].add(source)
     out = {}
     for new in sorted(stated):
-        ranked = sorted(stated[new], key=lambda old: (-len(stated[new][old]), old))
-        if len(ranked) > 1 and len(stated[new][ranked[0]]) == len(stated[new][ranked[1]]):
+        sources = stated[new]
+        ranked = sorted(sources, key=lambda old, sources=sources: (-len(sources[old]), old))
+        if len(ranked) > 1 and len(sources[ranked[0]]) == len(sources[ranked[1]]):
             raise SystemExit(f"{new}: as many sources state {ranked[0]} as {ranked[1]}")
         out[new] = ranked[0]
     return out
