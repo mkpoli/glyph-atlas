@@ -659,6 +659,7 @@
   "quiz.suspectToggle.only": "◆ 疑ハシキモノノミ",
   "quiz.suspect.readsAs": "{character}ニ似タリ",
   "quiz.suspect.doubtful": "疑ハシ",
+  "quiz.suspect.none": "疑ハシキモノ最早無之",
   "quiz.skipCharacter": "第{number}字ヲ保留ス",
   "quiz.skipSelected": "選ビタルヲ{skip}",
   "quiz.skippedNotSaved": "保留{count} · 保存セズ",

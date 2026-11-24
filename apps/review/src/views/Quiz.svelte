@@ -109,12 +109,16 @@
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
   // The crops the classifier doubts (`suspect`), dealt alone when the reader asks. Each round keeps which way
-  // it was dealt, since its cursor goes on in the same list, and turning the choice deals it again.
-  let onlySuspects = $state(stored('atlas.quiz.suspects-only', false) === true)
+  // it was dealt, since its cursor goes on in the same list. A visit that names no round takes the last choice.
+  let onlySuspects = $state(false)
   const suspectsParam = only => only ? { suspects: 'only' } : {}
-  function toggleSuspects() {
-    if (saving || loading || selection.length || step !== 'select') return
-    load({ target: grapheme || null, replace: true, only: !onlySuspects }).then(() => remember('atlas.quiz.suspects-only', onlySuspects))
+  // Turning the choice leaves the round as any way out does, its crops recorded; Back returns to it.
+  async function toggleSuspects() {
+    if (saving || loading || loadingMore || selection.length || step !== 'select') return
+    if (!(await record())) return
+    const only = !onlySuspects
+    await load({ target: grapheme || null, only })
+    if (onlySuspects === only) remember('atlas.quiz.suspects-only', only)
   }
   const selection = $derived(Object.keys(selected).filter(id => selected[id]))
   // A crop skipped in the review step stays selected so the reader can go back to it, but it is no
@@ -183,9 +187,9 @@
   function address(how) {
     // Back or Forward came while this round was being dealt or saved: the page follows that entry instead.
     if (page.state !== followedState) return
-    const state = { round: { entry, grapheme, production } }
+    const state = { round: { entry, grapheme, production, suspects: onlySuspects } }
     followedState = state
-    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production)), state)
+    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production, onlySuspects)), state)
     addressed = true
   }
   // Back and Forward bring the entry's round back, once nothing is being dealt or saved: from this page's
@@ -199,21 +203,24 @@
   })
   function locationRound() {
     const { path } = delocalize(location.pathname), key = path.startsWith('/review/') ? unslug(path.slice(8)) : null
-    return { entry: null, grapheme: key ?? '', production: new URLSearchParams(location.search).get('production') ?? '' }
+    const query = new URLSearchParams(location.search)
+    return { entry: null, grapheme: key ?? '', production: query.get('production') ?? '',
+      suspects: query.get('suspects') === 'only' || !key && stored('atlas.quiz.suspects-only', false) === true }
   }
   function follow(round) {
     if (round.entry && round.entry === entry) return
     const index = round.entry ? history.findIndex(each => each.entry === round.entry)
-      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production))
+      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production)
+        && each.onlySuspects === Boolean(round.suspects))
     if (index >= 0 && index === historyIndex) address('replace')
     else if (index >= 0) visit(index, { followed: true })
-    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' })
+    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) })
   }
   async function chooseCategory(target) {
     categoryOpen = false
     if (target === grapheme || saving) return
     if (!(await record())) return
-    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production)
+    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production && round.onlySuspects === onlySuspects)
     if (previous >= 0) visit(previous)
     else load({ target })
   }
@@ -226,7 +233,8 @@
     try {
       const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending', ...suspectsParam(only) })
       if (closed || id !== requestId) return
-      data = summary
+      // A summary of suspects alone counts for a round it deals, and not for the one on screen.
+      if (!only || !grapheme) data = summary
       const epochKey = 'atlas.review-epoch'
       if (stored(epochKey, null) !== (summary.review_epoch ?? null)) {
         last = null; completed = 0; history = []; historyIndex = -1
@@ -248,8 +256,8 @@
         available = available.filter(c => c.label !== chosen)
         chosen = null
       }
-      // Opened on suspects alone with none left to deal, a round deals the rest.
-      if (!chosen && only && !grapheme) return await load({ target, replace, scope, seed: dealt, how, only: false })
+      // Opened on suspects alone, or taken to a material, with none to deal, a round deals the rest.
+      if (!chosen && only && (!grapheme || scope !== production)) return await load({ target, replace, scope, seed: dealt, how, only: false })
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ grapheme: '', members: [], items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
@@ -259,7 +267,7 @@
           address(how)
         } else {
           if (!grapheme) items = []
-          else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
+          else { error = t(only ? 'quiz.suspect.none' : 'quiz.noOtherCharacters'); errorStatus = 0 }
           // Asked for by an address, the address now names the round still on screen.
           if (how === 'replace') address('replace')
         }
@@ -717,7 +725,7 @@
   const CARRIED = 'atlas.quiz.carried'
   function reloadKeepingRound() {
     try {
-      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, seed: roundSeed,
+      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, suspects: onlySuspects, seed: roundSeed,
         ...$state.snapshot({ choices, selected, skipped }) }))
     } catch { /* The page reloads without the choices. */ }
     location.reload()
@@ -729,7 +737,7 @@
     catch { return null }
   }
   async function resume(round) {
-    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace' })
+    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace', only: Boolean(round.suspects) })
     if (grapheme !== round.grapheme) return
     // Only the crops dealt again: a crop decided elsewhere meanwhile has left the round.
     const dealt = new Set(items.map(item => item.id))
@@ -765,7 +773,7 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
-      last = { id: roundId, count: answers.length, grapheme, production }
+      last = { id: roundId, count: answers.length, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last); completed += answers.length
       if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeName)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
@@ -787,7 +795,7 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
-      last = { id: roundId, count: 0, grapheme, production }
+      last = { id: roundId, count: 0, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last)
       if (!kept) announceSaved(seen.length + passed.length, graphemeName)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
@@ -810,9 +818,9 @@
       // Crops a publication changed since stay as published; the round keeps its count for them.
       const { refused } = kept ? { refused: 0 } : undoOutcome(await sent)
       // A round stored by an older version may name a scope the menu no longer offers.
-      const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
+      const target = last.grapheme, only = Boolean(last.suspects), scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - Math.max(0, last.count - refused)); last = null
-      remember('atlas.last-round', null); await load({ target, scope })
+      remember('atlas.last-round', null); await load({ target, scope, only })
       if (refused) error = t('review.undoRefused', { count: refused })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
@@ -858,7 +866,8 @@
     last = stored('atlas.last-round', null)
     const kept = carried(), round = page.state.round
     if (kept) resume(kept)
-    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' } : { target: initialGrapheme || null, how: 'replace' })
+    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
+      : { target: initialGrapheme || null, how: 'replace', only: locationRound().suspects })
     return () => { closed = true }
   })
 </script>

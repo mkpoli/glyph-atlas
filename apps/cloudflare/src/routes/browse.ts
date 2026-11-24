@@ -610,7 +610,9 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   // The listing.
   const filter: Filter = { chars: named, book, category, state: wantedState, withheld, productions, named: review };
   const listedCount = (f: Filter) => cells.reduce((n, c) => n + (matches(f, c) ? c.n : 0), 0);
-  const exclude = new Set<number>(own.map(row => row.id));
+  // A page reads past the crops it leaves out, so a round's are those of its own characters.
+  const inRound = members && new Set(members.ids);
+  const exclude = new Set<number>(own.filter(row => !inRound || (row.char !== null && inRound.has(row.char))).map(row => row.id));
   const wantsRows = limit > 0;
   // The review priorities a crop may hold (`review_priority` gives 0 to 2), and any other a count names.
   const priorities = [...new Set([0, 1, 2, ...cells.flatMap(c => c.priority === null ? [] : [c.priority])])].sort((a, b) => a - b);
