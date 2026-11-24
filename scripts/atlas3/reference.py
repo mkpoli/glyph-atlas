@@ -28,7 +28,7 @@ R2 objects under `v3/reference/`, gzipped JSON, each read by key:
   (`glyph_atlas.structures`: its id and label, or null), by the character itself, in the shard of the
   character (IDS_DIGITS). A regional shape is a spelling of its character's 構形, and names in
   `chars` the characters that encode it again (臭's ⿱自大 is 𦤀). A small seal character has no
-  description and its Han equivalent's 構形. A description the site names a character or a form by
+  description and is proposed its Han equivalent's 構形. A description the site names a character or a form by
   (`export_character_variants.py --described`) is a key of its own, with its 構形.
 - `structure.json.gz`: the scheme, source version and policy the shards' structures were read under,
   which a `structures` row records.
@@ -585,7 +585,7 @@ def put_ids(objects, notes):
         structures[shard(char, IDS_DIGITS)][char] = [json.loads(sequences), shaped,
                                                      [structure.id, structure.label] if structure else None]
         notes["descriptions with a structure" if is_sequence(char) else "characters with a structure"] += structure is not None
-    # A small seal character has no description and the structure of its Han equivalent.
+    # A small seal character has no description and is proposed the structure of its Han equivalent.
     for seal in structure_layer.seal_equivalents():
         try:
             structure = structure_layer.for_character(seal)

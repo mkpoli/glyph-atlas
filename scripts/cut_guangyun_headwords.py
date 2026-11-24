@@ -123,6 +123,20 @@ def readers(classifier: Classifier, second: Recognizer):
     return of
 
 
+def settled(attempt, leaves: list[int]) -> tuple[int, dict]:
+    """The leaf of `leaves` an opening is read as, and its outcome: the first, the one its volume's offset
+    gives, unless fewer than `MOVED` headwords are read there and another leaf has that many and more. One
+    chance reading neither moves a leaf nor holds an opening to a wrong one."""
+    leaf = leaves[0]
+    read, sides = attempt(leaf)
+    if read < MOVED:
+        for other in leaves[1:]:
+            found_read, found_sides = attempt(other)
+            if found_read >= MOVED and found_read > read:
+                leaf, read, sides = other, found_read, found_sides
+    return leaf, sides
+
+
 def shrunk(box: Box, times: int) -> Box:
     """A box of the enlarged opening on the opening at its own size: the smallest box of whole pixels that holds it."""
     left, top = box.x // times, box.y // times
@@ -253,7 +267,7 @@ def main() -> int:
             boxes = [box for box, _ in detector.boxes_at(image, scale)]
             unit = leaf_text.side(boxes)
             found = leaf_text.axes(leaf_text.big(boxes, unit), unit) if boxes else []
-            even = leaf_text.flat(found, COLUMNS, image.width) if copy["image_kind"] == "flat-reproduction" else None
+            even = leaf_text.flat(found, COLUMNS, image.width) if copy.get("comb") else None
             middle = even[0] if even else leaf_text.gutter(found, image.width, COLUMNS) if found else None
             halves = {}
             if middle is not None:
@@ -289,15 +303,8 @@ def main() -> int:
                     sides[name] = (key, counts, placed, verdicts, top)
                 return read, sides
 
-            read, sides = attempt(base)
-            leaf = base
-            if not read:
-                for other in leaves[1:]:
-                    found_read, found_sides = attempt(other)
-                    # One chance reading does not move the leaf.
-                    if found_read > max(read, MOVED - 1):
-                        read, sides, leaf = found_read, found_sides, other
-                drift += leaf - base
+            leaf, sides = settled(attempt, leaves)
+            drift += leaf - base
             page = Page(id=f"{prefix}:{number}:{opening}", document_id=document.id, seq=opening - 1, image=url,
                         width=width, height=height, image_kind=copy["image_kind"],
                         transcription={"source": SOURCE, "entry": f"{number}:{leaf}b,{leaf + 1}a", "revision": source["revision"]})

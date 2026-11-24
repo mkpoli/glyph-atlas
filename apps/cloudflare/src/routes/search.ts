@@ -5,9 +5,9 @@
 // A card's `data` is in the summary shard of its family head. A list reads the name list and the
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
-import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
+import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, structureSource, type NameIndex } from '../atlas3Reference';
 import { compatibility, structureKey, written } from '../representation';
-import { claimedStructures, foldsOf } from './claims';
+import { claimedStructures, foldsOf, standingOf } from './claims';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
@@ -217,7 +217,9 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
  *  readers filed its form under, the one most of them name, and `claimed` names who says so; with no
  *  claim it stands under the one its description gives, a regional shape of `of` under the one that
  *  character's descriptions give it. A structure a reader folded into another stands under that one:
- *  `folded` lists each such structure of the group with who folded it and the names built as it. A
+ *  `folded` lists each such structure of the group with who folded it and the names built as it. So
+ *  does a structure that is another layout of one (⿰辵禺 of ⿺辶禺), with nobody in `by`, unless
+ *  a reader folded that one under it. A
  *  name with no structure is in no group. `filed` lists, for a name readers filed under several
  *  structures, the others with who says so and, for one that is folded, where it stands (`head`). What the descriptions give is kept at the edge by the
  *  catalogue version; the claims and folds are read each time, and an answer that could not read
@@ -231,16 +233,17 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
     claimedStructures(env, named).catch(unread(new Map() as Awaited<ReturnType<typeof claimedStructures>>))]);
   const built = new Map(named.flatMap(char => { const structure = claimed.get(char)?.[0] ?? derived[char]; return structure ? [[char, structure] as const] : [] }));
   const others = named.flatMap(char => (claimed.get(char) ?? []).slice(1));
-  const folds = await foldsOf(env, [...built.values(), ...others].map(structure => structure.id)).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>));
+  const standing = await standingOf([...built.values(), ...others], () => structureSource(env, ctx),
+    ids => foldsOf(env, ids).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>)));
   const groups = new Map<string, Group>();
   const filed: Record<string, { id: string; label: string; by: string[]; head?: string }[]> = {};
   for (const [char, structure] of built) {
-    const fold = folds.get(structure.id), head = fold?.head ?? structure;
+    const fold = standing(structure), head = fold?.head ?? structure;
     const group = groups.get(head.id) ?? { id: head.id, label: head.label, chars: [] };
     group.chars.push(char);
     const [claim, ...rest] = claimed.get(char) ?? [];
     if (claim) group.claimed = { ...group.claimed, [char]: claim.by };
-    if (rest.length) filed[char] = rest.map(other => folds.has(other.id) ? { ...other, head: folds.get(other.id)!.head.id } : other);
+    if (rest.length) filed[char] = rest.map(other => { const under = standing(other); return under ? { ...other, head: under.head.id } : other });
     if (fold) {
       group.folded ??= [];
       let part = group.folded.find(one => one.id === structure.id);

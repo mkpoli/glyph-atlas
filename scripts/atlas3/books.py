@@ -207,6 +207,10 @@ def dates_of(atlas, documents):
     known = dict(atlas.execute("SELECT key, id FROM books"))
     if missing := sorted(set(documents) - set(known)):
         sys.exit(f"not books of the site: {', '.join(missing)}")
+    # An input made for other books would otherwise clear a book's dates and leave its claims standing.
+    stated = {r[0] for r in given("date_claims").execute("SELECT DISTINCT subject FROM date_claims")}
+    if silent := sorted(set(documents) - stated):
+        sys.exit(f"the book facts input claims no date of {', '.join(silent)}; nothing sent")
     out = sqlite3.connect(":memory:")
     out.executescript("CREATE TABLE books(id INTEGER PRIMARY KEY, title TEXT NOT NULL, origin TEXT NOT NULL);\n"
                       + "\n".join(f"CREATE TABLE {t}({','.join(cols)}, PRIMARY KEY({','.join(key)})) WITHOUT ROWID;"
@@ -232,8 +236,8 @@ def dates_of_books(books, atlas, only, add):
 
 def statements(books, atlas, only=None):
     """Groups of statements that turn the local copy's book facts into the translation's; a row's
-    statements stay in one group. With `only`, book ids, the dates of those books and nothing else. Also, per table, the rows removed, added and changed, and the rows
-    written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
+    statements stay in one group. With `only`, book ids, the dates of those books and nothing else.
+    Also, per table, the rows removed, added and changed, and the rows written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
     groups, changes = [], {}
 
     def add(table, rows, removed=0, added=0):
@@ -249,8 +253,9 @@ def statements(books, atlas, only=None):
     now = dict(atlas.execute("SELECT id, title FROM books")) if "title" in columns else \
         {r[0]: None for r in atlas.execute("SELECT id FROM books")}
     wanted = dict(books.execute("SELECT id, title FROM books"))
-    add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
-                  for b in sorted(now) if now[b] != wanted.get(b)])
+    # A book the translation gives no title keeps the one it has: its publication may have written it.
+    add("books", [[f"UPDATE books SET title = {lit(wanted[b])} WHERE id = {b};"]
+                  for b in sorted(now) if b in wanted and now[b] != wanted[b]])
     # A book whose document the input does not list keeps its characters: the input may hold only some.
     listed = {r[0] for r in books.execute("SELECT book FROM character_books")}
     for table, (cols, key, owned) in TABLES.items():

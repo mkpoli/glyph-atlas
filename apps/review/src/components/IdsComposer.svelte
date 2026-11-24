@@ -19,31 +19,17 @@
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
-  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
+  import OperatorIcon from './OperatorIcon.svelte'
+  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, layout, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
-  // Each operator's name, the key that puts it, and its icon: the box it fills (the accent) and the
-  // places of its parts inside it (dashed), each a line or a box as [left, top, right, bottom] in a
-  // unit square; ⿻ is two boxes over each other, the first in the accent. 〾 marks its part as a
-  // variant, drawn as a wave.
+  // The key that puts each operator, and its name.
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
-  const ICON = {
-    '⿰': [[.5, 0, .5, 1]], '⿱': [[0, .5, 1, .5]], '⿲': [[.33, 0, .33, 1], [.67, 0, .67, 1]], '⿳': [[0, .33, 1, .33], [0, .67, 1, .67]],
-    '⿴': [[.25, .25, .75, .75]], '⿵': [[.25, .3, .75, 1]], '⿶': [[.25, 0, .75, .7]], '⿷': [[.3, .25, 1, .75]],
-    '⿸': [[.35, .35, 1, 1]], '⿹': [[0, .35, .65, 1]], '⿺': [[.35, 0, 1, .65]], '⿻': [[.25, .25, 1, 1]],
-    '⿼': [[0, .25, .7, .75]], '⿽': [[0, 0, .65, .65]], '⿾': [[.5, .1, .5, .9]], '⿿': [[.2, .2, .8, .8]],
-    '㇯': [[.3, .3, .7, .7]], '〾': [],
-  }
-  const OUTER = { '⿻': [0, 0, .75, .75] }
   const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
-  // How the box tree lays a node's parts out: in a row, in a column, the second inside the first, or
-  // one over the other.
-  const LAYOUT = { '⿰': 'row', '⿲': 'row', '⿱': 'column', '⿳': 'column', '⿻': 'stack', '㇯': 'stack', '⿾': 'stack', '⿿': 'stack', '〾': 'stack' }
-  const layout = op => LAYOUT[op] ?? 'enclosure'
   const HISTORY = 100
   // Where the preview's drawings come from and the terms they carry.
   const SOURCES = 'https://github.com/mkpoli/glyph-atlas/blob/main/docs/licensing.md#composer-drawings'
@@ -252,18 +238,6 @@
   }
 </script>
 
-{#snippet icon(op, size)}
-  {@const [x0, y0, x1, y1] = OUTER[op] ?? [0, 0, 1, 1]}
-  <svg viewBox="-1.5 -1.5 23 23" width={size} height={size} aria-hidden="true" class="ids-icon">
-    {#each ICON[op] as [a, b, c, d], i (i)}
-      {#if a === c || b === d}<line class="inner" x1={a * 20} y1={b * 20} x2={c * 20} y2={d * 20} />
-      {:else}<rect class="inner" x={a * 20} y={b * 20} width={(c - a) * 20} height={(d - b) * 20} />{/if}
-    {/each}
-    {#if op === '〾'}<path class="inner" d="M3 10q2.5-4 5 0t5 0 5 0" />{/if}
-    <rect x={x0 * 20} y={y0 * 20} width={(x1 - x0) * 20} height={(y1 - y0) * 20} />
-  </svg>
-{/snippet}
-
 {#snippet box(part, path, parent)}
   {@const selected = samePath(chosen, path)}
   {#if isNode(part)}
@@ -272,7 +246,7 @@
       <div class="ids-head">
         <button type="button" class="ids-op" data-path={pathKey(path)} aria-pressed={selected} {disabled}
           aria-label={t('form.ids.node', { name: name(part.op), sequence: write(part) })} title={`${part.op} ${name(part.op)}`}
-          onclick={() => choose(path)}>{@render icon(part.op, 14)}</button>
+          onclick={() => choose(path)}><OperatorIcon op={part.op} size={14} /></button>
         <button type="button" class="ids-unwrap" tabindex="-1" {disabled} aria-label={t('form.ids.unwrapNode', { what })} title={t('form.ids.unwrap')}
           onclick={() => remove(path)}>×</button>
       </div>
@@ -302,7 +276,7 @@
   <div class="ids-operators" role="group" aria-label={t('form.ids.operators')}>
     {#each OPERATORS as [op] (op)}
       <button type="button" class="ids-key" data-op={op} {disabled} aria-label={name(op)}
-        title={t('form.ids.operatorTitle', { op, name: name(op), key: KEY[op] })} onclick={() => operator(op)}>{@render icon(op, 22)}</button>
+        title={t('form.ids.operatorTitle', { op, name: name(op), key: KEY[op] })} onclick={() => operator(op)}><OperatorIcon {op} /></button>
     {/each}
   </div>
   <div class="ids-view">
@@ -373,9 +347,6 @@
   @media (max-width:520px){.ids-operators{grid-template-columns:repeat(6,minmax(0,1fr))}}
   .ids-key{display:grid;place-items:center;padding:5px 0;min-width:0}
   .ids-key:not(:disabled):hover,.ids-key:focus-visible{border-color:var(--accent)}
-  .ids-icon{display:block;overflow:visible}
-  .ids-icon :is(rect,line,path){fill:none;stroke:var(--accent);stroke-width:1.6}
-  .ids-icon .inner{stroke:var(--ink-soft);stroke-dasharray:2 1.5}
 
   .ids-view{display:flex;align-items:flex-start;gap:12px}
   .ids-view > .ids-tree{flex:1;min-width:0}

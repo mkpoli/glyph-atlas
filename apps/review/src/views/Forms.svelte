@@ -452,7 +452,7 @@
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
         {#if compact}{#if unnamed(c)}<span class="cluster-open">{t('forms.unnamed', { count: number(unnamed(c)) })}</span>{/if}
-        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} inline /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
         {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
       </span>
       <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
@@ -476,7 +476,7 @@
     <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)}>
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(stray.count)}</span>
-        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} /></span></span>
+        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} inline /></span></span>
       </span>
       <span class="cluster-samples">{#each stray.glyphs as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
     </button>

@@ -17,6 +17,9 @@ export const notoDraws = char => {
   return (code >= 0x3400 && code <= 0x4DB5) || (code >= 0x4E00 && code <= 0x9FEF)
 }
 
+/** A 構形 group's forms as they stand on the bar, those built as its own and as each 構形 under it. */
+export const formsOf = group => group.blocks.flatMap(block => block.forms)
+
 /** The figures and shapes of `char` the bar offers, and the `alike` ones it leaves out because
  *  another form on the bar stands for them: the bare character, a figure a shape describes, or a
  *  character a shape is. `alike.chars` are the characters drawn as the bare character. */
