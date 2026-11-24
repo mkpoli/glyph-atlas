@@ -6,17 +6,22 @@
   // was composed, and can be narrowed to a script, a style group or a kind of production.
   import { untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
+  import Seo from '../components/Seo.svelte'
   import ScriptText from '../components/ScriptText.svelte'
   import Glyph from '../components/Glyph.svelte'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { t, localize, formatNumber, formatYear } from '../lib/i18n.svelte.js'
-  import { chronology, chronologyAddress, PRODUCTIONS } from '../lib/chronology.js'
+  import { chronology, chronologyAddress, chronologyName, PRODUCTIONS } from '../lib/chronology.js'
   import { galleryAddress } from '../lib/addresses.js'
   import { STYLE_GROUPS } from '../lib/style.js'
   import { dateLabel, eventLabel, sourceName, HUTIME_FORM } from '../lib/dating.js'
 
   let { card, options, first, inspect } = $props()
   let chosen = $state(untrack(() => ({ ...options }))), axis = $state(untrack(() => first)), loading = $state(false), failed = $state(''), request = 0
+
+  // What the axis is of, as its scope stands: the grapheme, by its head, or the one character. A script
+  // the card states is its character's.
+  const named = $derived(chronologyName(card, chosen.scope))
 
   // One decade is this many pixels wide in the strip; a folded gap is GAP wide, and folds at least FOLD decades.
   const DECADE = 64, GAP = 40, FOLD = 5
@@ -105,11 +110,13 @@
   </button>
 {/snippet}
 
+<Seo title={`${named.label} · ${t('nav.chronology')}`} description={t('meta.chronology.description', { character: named.label, codePoint: named.code_point })} path={named.path} />
+
 <section class="explore chronology" aria-busy={loading}>
   <div class="page-status"><SiteLinks /></div>
   <header class="heading">
     <a class="quiet-link" href={gallery()}>← {t('chronology.gallery')}</a>
-    <h1><span class="glyph"><ScriptText text={card.char} script={card.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
+    <h1><span class="glyph"><ScriptText {...named.parts} script={named.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
     <p class="summary">{t('chronology.dated', { count: dated })}{#if undated}{' · '}{t('chronology.yearless', { count: undated })}{/if}{#if buckets.length}{' · '}{dateLabel({ start: buckets[0].decade, end: buckets.at(-1).decade + 9, precision: 'years' })}{/if}</p>
   </header>
 

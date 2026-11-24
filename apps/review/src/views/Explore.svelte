@@ -40,7 +40,7 @@
   import { isFigure } from '../lib/mjFigures.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { bulkActionPlan, bulkFormChoices, bulkReviewBatches, bulkReviewBody, bulkReviewOutcome } from '../lib/bulkForms.js'
-  import { arrowTarget, toggled, withRange } from '../lib/selection.js'
+  import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades, bookGallery as layerBooks } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize, formatNumber, formatCompactNumber } from '../lib/i18n.svelte.js'
@@ -48,7 +48,8 @@
   import { corpusScope, bookPage, bookScope, styleCounts } from '../lib/gallery.js'
   import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
-  import { galleryTitle } from '../lib/citation.js'
+  import { galleryName, galleryTitle } from '../lib/citation.js'
+  import { graphemeLabel, labelParts } from '$worker/graphemeLabel.ts'
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
@@ -237,7 +238,7 @@
     if (all > form) {
       const percent = form / all * 100
       const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
-      const group = { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key) ?? 0,
+      const group = { grapheme: graphemeLabel(graphemeChar(item) || charOf(key)), count: all, forms: tileCounts.shapes.get(key) ?? 0,
         rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }
       lines.push(t('tile.countGrapheme', group)); ranks.push(t('tile.rankGrapheme', group))
     }
@@ -304,7 +305,8 @@
   const tileGrapheme = item => graphemeChar(item) ?? (tileCounts?.keys.has(item.label) ? charOf(tileCounts.keys.get(item.label)) : null)
   // The grapheme beside the written form: always when the form is unassigned, else only when it is written
   // otherwise than the form; katakana counts as its own writing (ハ stands alone, 𛂞 は and 嶋 島 do not).
-  const shownGrapheme = item => { const g = tileGrapheme(item); return g && (isUnassigned(item) || kanaFolded(g) !== kanaFolded(item.label ?? '')) ? g : null }
+  // Alone it stands for the grapheme, by its label; beside a form it is the head.
+  const shownGrapheme = item => { const g = tileGrapheme(item); return !g ? null : isUnassigned(item) ? graphemeLabel(g) : kanaFolded(g) !== kanaFolded(item.label ?? '') ? g : null }
   // A tile's name for a screen reader: its form, then its grapheme where the caption shows one.
   const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${shownGrapheme(item)})` : shownLabel(item)
   const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')
@@ -693,7 +695,7 @@
   const frequentGraphemes = $derived.by(() => {
     if (runKind !== 'grapheme' || !cropCounts) return null
     const next = graphemes.filter(group => group.count > 0).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).slice(0, KEPT)
-      .map(group => ({ text: group.char, n: group.count, key: group.key }))
+      .map(group => ({ text: graphemeLabel(group.char), parts: labelParts(group.char), char: group.char, n: group.count, key: group.key }))
     const same = shownGraphemes?.length === next.length && next.every((group, i) => group.key === shownGraphemes[i].key && group.n === shownGraphemes[i].n)
     return same ? shownGraphemes : (shownGraphemes = next)
   })
@@ -1029,6 +1031,20 @@
     oncontextmenu: event => { if (swallow || press) event.preventDefault() } })
   function clearSelection() { selected = new Set(); anchor = null; bulkError = '' }
   function selectShown() { selected = new Set([...tiles, ...runTiles.filter(run => run.at < tiles.length)].filter(selectable).map(tile => tile.id)); bulkError = '' }
+  // Grouped by book, a heading's box takes the crops under it that nobody has reviewed, of those on the page.
+  const sectionTiles = section => section.tiles.filter(([, i]) => i < reach).map(([item]) => item)
+  const sectionOffered = tiles => tiles.filter(item => selectable(item) && !reviewed(item) && !lostImages.has(item.image))
+  // A crop whose image did not arrive cannot be judged: no heading's box takes it, and it is no longer chosen.
+  let lostImages = $state(new Set())
+  function lose(item) {
+    lostImages = new Set(lostImages).add(item.image)
+    if (selected.has(item.id)) selected = new Set([...selected].filter(id => id !== item.id))
+  }
+  function chooseSection(tiles, offered) {
+    if (!offered.length && sectionChosen(selected, tiles, offered) === 'none') return
+    if (!selecting) startSelecting()
+    selected = withSection(selected, tiles, offered); anchor = null; bulkError = ''
+  }
   const tileId = tile => tile?.dataset.unit ?? tile?.dataset.corpus
   /** Focus the tile at `index` of the tiles shown, scrolled into view. */
   function focusTile(index) {
@@ -1045,8 +1061,9 @@
     const index = tile ? tiles.findIndex(item => item.id === tileId(tile)) : -1
     if (event.key.startsWith('Arrow')) {
       const nodes = [...grid.querySelectorAll('.glyph-tile')], byId = new Map(nodes.map(node => [tileId(node), node]))
-      // Without a tile in focus the first arrow goes to the first tile.
-      const to = index < 0 ? 0 : arrowTarget(tiles.map(item => byId.get(item.id)?.getBoundingClientRect() ?? { left: 0, top: 0, width: 0, height: 0 }), index, event.key)
+      // Without a tile in focus the first arrow goes to the first tile, of the section whose box has the focus.
+      const under = event.target.closest?.('.section-heading')?.nextElementSibling?.querySelector('.glyph-tile')
+      const to = index < 0 ? Math.max(0, under ? tiles.findIndex(item => item.id === tileId(under)) : 0) : arrowTarget(tiles.map(item => byId.get(item.id)?.getBoundingClientRect() ?? { left: 0, top: 0, width: 0, height: 0 }), index, event.key)
       if (to != null) { event.preventDefault(); focusTile(to) }
       return
     }
@@ -1347,7 +1364,7 @@
       : Number(getComputedStyle(grid.querySelector('.collage-block')).getPropertyValue('--collage-cols'))
     const holders = [...new Set(crops.map(creditOf).filter(Boolean))]
     // The page as the reader has it now: the gallery may show another character before the image is done.
-    const char = picked?.char, site = t('app.name'), day = new Date().toLocaleDateString('sv')
+    const char = picked && galleryName(subject ?? picked), file = picked?.char ?? 'collection', site = t('app.name'), day = new Date().toLocaleDateString('sv')
     let address = location.href
     try { address = decodeURI(address) } catch { /* An address that does not decode is written as it stands. */ }
     // The page's own paper, ink and quiet text, read as the colours the theme resolves them to.
@@ -1361,7 +1378,7 @@
         filter: ink === 'bw' ? 'grayscale(1) contrast(1.05)' : '', signal: sheetJob.signal,
         credit: drawn => [[site, char, t('explore.meta.glyphs', { count: drawn }), address, day].filter(Boolean), holders],
         onprogress: (done, total) => { sheeting = { done, total } } })
-      saveFile(blob, `glyph-atlas-${char ?? 'collection'}-${total - missing}.jpg`)
+      saveFile(blob, `glyph-atlas-${file}-${total - missing}.jpg`)
     } catch (fault) {
       // The button says so for a while, then offers the image again.
       if (!sheetJob.signal.aborted) { sheetFailed = true; sheetFault = setTimeout(() => { sheetFailed = false }, 6000) }
@@ -1476,21 +1493,27 @@
      hover details. The square grid positions the label and footer at its top and bottom through display:contents. -->
 {#snippet tileCaption(item)}
   <span class="tile-caption">
-    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
+    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText {...isUnassigned(item) ? labelParts(tileGrapheme(item)) : { text: shownGrapheme(item) }} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
     <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
 <!-- One crop of the gallery, placed in the collage by `style` (`lib/collage.js`). -->
 <!-- A run's select box, drawn inside its tile (`RunTile`), which ticks its own caption. -->
 {#snippet runMarks(item)}{#if selected.has(item.id) || !runChecked(item)}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}{/snippet}
-{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} title={runTitle(item)} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => showRun(item, event.currentTarget)) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} />{@render tileCaption(item)}</button>{/if}{/snippet}
+{#snippet tile(item, i, style)}{#if item.origin === 'run'}<RunTile run={item} {style} title={runTitle(item)} selected={selected.has(item.id)} checked={runChecked(item)} marks={reviewer && selectable(item) ? runMarks : undefined} {...pressing(item, i)} onclick={event => { if (selecting && !selectable(item)) event.preventDefault(); else tileClick(event, item, i, () => showRun(item, event.currentTarget)) }} />{:else if item.origin === 'corpus'}<button class="glyph-tile corpus collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-corpus={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspectCorpus', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && selectable(item) && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span>{#if item.proxyable && item.image}<Glyph {item} alt={t('explore.tile.located', { label: shownLabel(item) })} eager={i < 24} onerror={() => lose(item)} />{:else}<span class="corpus-open"><b>{@render tileLabel(item)}</b><small>{t('character.image.unavailable')}</small></span>{/if}{@render tileCaption(item)}</button>{:else}<button class="glyph-tile collage-cell" {style} onpointerenter={event => markCut(event.currentTarget)} onfocus={event => markCut(event.currentTarget)} data-unit={item.id} title={tileTitle(item)} class:decided-checked={tileState(item) === 'checked'} class:decided-flagged={!flagged && waiting(tileState(item))} class:selected={selected.has(item.id)} {...pressing(item, i)} onclick={event => tileClick(event, item, i, () => inspect(item.id, display, updateItem))} aria-label={t('explore.tile.inspect', { label: tileName(item) }) + (selected.has(item.id) ? t('bulk.tileSelected') : '')}>{#if reviewer && (selected.has(item.id) || !confirmedHere.has(item.id))}<span class="tile-select" aria-hidden="true" title={t('bulk.select')}>{selected.has(item.id) ? '✓' : ''}</span>{/if}<span class="tile-details">{#if tileCount(item)}{@const count = tileCount(item)}<span>{count.text}</span>{#each count.ranks as line}<span>{line}</span>{/each}{/if}{#each panelDetails(item) as line}{#if line.cut}<span class="panel-whole" data-part={line.cut}><ScriptLine line={line.whole} /></span>{#if line.short}<span class="panel-short" data-part={line.cut}>{line.short}</span>{/if}{:else}<span><ScriptLine {line} /></span>{/if}{/each}<span class="tile-id">{item.id}</span></span><Glyph {item} eager={i < 24} onerror={() => lose(item)} />{@render tileCaption(item)}</button>{/if}{/snippet}
 <!-- The search term in its scripts' colours, and the code points `readable` adds to it. -->
 {#snippet term()}<ScriptText text={query} />{readable.slice(query.length)}{/snippet}
 
-<!-- A book's heading in a gallery grouped by book: its title, date and how many crops it holds. Only a
-     book the collection cut crops from has a page. -->
-{#snippet bookHeading(head)}
-  <div class="visual-grid-heading book-heading">{#if head.book.page}<a class="book-title" href={localize('/books/' + encodeURIComponent(head.book.page))} lang="ja">{head.text}</a>{:else}<span class="book-title" lang={head.book.document === 'unrecorded' ? undefined : 'ja'}>{head.text}</span>{/if}{#if head.date}<span>{head.date}</span>{/if}<span>{t('explore.meta.glyphs', { count: head.count })}</span></div>
+<!-- A section's heading. Grouped by book, it has the box that takes its unreviewed crops and says how many of its
+     crops on the page are chosen. Only a book the collection cut crops from has a page. -->
+{#snippet sectionHeading(section)}
+  {@const head = section.head}{@const tiles = sectionTiles(section)}{@const offered = sectionOffered(tiles)}{@const state = sectionChosen(selected, tiles, offered)}
+  <div class="visual-grid-heading section-heading" class:book-heading={head.book}>
+    {#if reviewer && byBook && tiles.length}<button class="section-select" role="checkbox" aria-disabled={!offered.length && state === 'none'} aria-checked={state === 'some' ? 'mixed' : state === 'all'} aria-label={`${t('bulk.selectUnreviewed')} · ${section.heading}`} title={t('bulk.selectUnreviewed')} onclick={() => chooseSection(tiles, offered)}><span aria-hidden="true">{state === 'all' ? '✓' : state === 'some' ? '–' : ''}</span></button>{/if}
+    {#if head.book?.page}<a class="book-title" href={localize('/books/' + encodeURIComponent(head.book.page))} lang="ja">{head.text}</a>{:else if head.book}<span class="book-title" lang={head.book.document === 'unrecorded' ? undefined : 'ja'}>{head.text}</span>{:else}<span>{section.heading}</span>{/if}
+    {#if head.date}<span>{head.date}</span>{/if}{#if head.book}<span>{t('explore.meta.glyphs', { count: head.count })}</span>{/if}
+    {#if byBook && state !== 'none'}<span class="section-count">{formatNumber(tiles.filter(item => selected.has(item.id)).length)} / {formatNumber(tiles.length)}</span>{/if}
+  </div>
 {/snippet}
 {#snippet bookMore(head)}
   {@const text = t(failedBook === head.book.document ? 'common.retry' : 'explore.runs.more')}
@@ -1538,7 +1561,7 @@
     <div class="toolbar-query">
       <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
-                       token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
+                       token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: graphemeLabel(charOf(grapheme)) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
                        onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
       <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
@@ -1566,7 +1589,7 @@
       </div>
       <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
+        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={{ ...withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char }), ...labelParts(chosenGrapheme.char) }} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
         {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
         <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
@@ -1594,7 +1617,7 @@
     </p>
   {/if}
   {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={countsFailed ? t('explore.graphemes.failed') : ''} onretry={() => loadCounts(true)}
-      address={group => graphemeAddress(group.key, group.text)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
+      address={group => graphemeAddress(group.key, group.char)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
     {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
   {#if picked}
@@ -1610,9 +1633,9 @@
   {/if}
   <div class="glyph-grid collage" class:selecting bind:this={grid} aria-label={flagged ? t('explore.heading.flagged') : t('explore.grid.collection')} aria-busy={loading && mounted}>
     {#if loading && !display.length}<noscript><p class="noscript-note">{t('explore.noscript')}</p></noscript><div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
-    {:else}{#each sections as section (section.key)}{#if section.head?.book}{@render bookHeading(section.head)}{:else if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
+    {:else}{#each sections as section (section.key)}{#if section.heading}{@render sectionHeading(section)}{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
   </div>
-  {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
+  {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: galleryName(subject ?? picked) })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} bind:targetKind={bulkTargetKind} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
@@ -1707,9 +1730,17 @@
   :global(.glyph-tile.selected) .tile-select{opacity:1;z-index:5;background:var(--accent-solid);border-color:var(--accent-solid)}
   .selecting :global(.glyph-tile:focus-visible){z-index:2}
   .visual-grid-heading{grid-column:1/-1;font-size:14px;padding:20px 2px 12px;color:var(--muted);background:var(--paper)}
-  .book-heading{display:flex;align-items:baseline;gap:10px;font-size:13px}
+  .section-heading{display:flex;align-items:baseline;gap:10px}
+  .book-heading{font-size:13px}
   .book-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;color:var(--ink)}
-  .book-heading span:not(.book-title){flex:none;font-variant-numeric:tabular-nums}
+  .section-heading > span:not(.book-title){font-variant-numeric:tabular-nums}
+  .book-heading > span:not(.book-title),.section-count{flex:none}
+  .section-select{position:relative;flex:none;align-self:center;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid var(--muted);border-radius:5px;background:var(--surface);color:var(--on-color);font:700 11px/1 var(--ga-font-ui);padding:0}
+  .section-select::after{content:'';position:absolute;inset:-11px -8px}
+  .section-select:hover:not([aria-disabled="true"]){border-color:var(--accent-solid)}
+  .section-select[aria-disabled="true"]{border-color:var(--line);cursor:default}
+  .section-select:not([aria-checked="false"]){background:var(--accent-solid);border-color:var(--accent-solid)}
+  .section-count{color:var(--ink)}
   .book-more{grid-column:1/-1;padding:8px 2px;background:var(--paper)}
   /* The copy's year, the tile's one date: in the footer's small type, its digits all one width. */
   .tile-year{flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}

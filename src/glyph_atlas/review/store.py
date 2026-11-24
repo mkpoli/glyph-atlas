@@ -30,7 +30,7 @@ import re
 import sqlite3
 import threading
 from collections import Counter
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dc_field
@@ -1206,6 +1206,21 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.forms_for(conn, versions)
 
+    def set_crop_structure(self, **built: Any) -> dict[str, Any]:
+        """Say what structure a crop is built as, or take the claim back (`crop_forms.set_crop_structure`),
+        and return the crop's structure and form now with what the save took back."""
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            response = crop_forms.set_crop_structure(conn, **built)
+            crop, version = built["crop"], built["crop_version"]
+            return {"id": crop, "structure": crop_forms.built_as(conn, crop, version),
+                    "form": crop_forms.forms_for(conn, {crop: version}).get(crop),
+                    "replaced": response.get("replaced"), "replaced_form": response.get("form")}
+
+    def built_as(self, crop: str, version: str | None) -> dict[str, Any] | None:
+        """The structure a crop is said to be built as (`crop_forms.built_as`)."""
+        with self._lock, self._connection() as conn:
+            return crop_forms.built_as(conn, crop, version)
+
     def set_written_for(self, **written: Any) -> dict[str, Any]:
         """Say a form is written for a grapheme, or take the claim back (`crop_forms.set_written_for`), and
         return the grapheme claimed and the graphemes the form writes now."""
@@ -1245,10 +1260,10 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.claimed_structures(conn, names)
 
-    def written_forms(self, grapheme: str) -> list[dict[str, Any]]:
-        """The described forms a grapheme's card carries (`crop_forms.written_forms`)."""
+    def carried_forms(self, boxes: Mapping[str, str | None]) -> list[dict[str, Any]]:
+        """The described forms these crops are claimed to have (`crop_forms.carried_forms`)."""
         with self._lock, self._connection() as conn:
-            return crop_forms.written_forms(conn, grapheme)
+            return crop_forms.carried_forms(conn, boxes)
 
     def resolve_claims(self, version_of, subjects: Iterable[str] | None = None) -> int:
         """Resolve the slots of `subjects` again, or every slot; `version_of` names each crop's current version."""

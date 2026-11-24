@@ -717,6 +717,20 @@ class FormsEdit(BaseModel):
     crops: list[FormPick] = Field(min_length=1, max_length=48)
 
 
+class CropStructureEdit(BaseModel):
+    """A reviewer's structure for one crop whose shape no form names, on the evidence version they saw; with
+    none named their own is cleared."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    crop_version: str = Field(min_length=1, max_length=1024)
+    char: str | None = Field(default=None, min_length=1, max_length=256)
+    of: str | None = Field(default=None, min_length=1, max_length=8)
+    head: bool = False
+    structure: str | None = Field(default=None, pattern=r"^st:[0-9a-f]{32}$")
+
+
 class WrittenForEdit(BaseModel):
     """A reviewer saying that a form is written for a grapheme, or taking their own claim back."""
 
@@ -1180,6 +1194,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # The pixels a claim made in this inspector is about, named as the Worker names them.
         result["crop_version"] = evidence.record_version(result)
         result["form"] = store.forms_for({unit_id: result["crop_version"]}).get(unit_id)
+        result["structure"] = store.built_as(unit_id, result["crop_version"])
         return result
 
     def crop_now(subject: str) -> str | None:
@@ -1678,6 +1693,20 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         if recut:
             return JSONResponse({"detail": "Some of these crops were cut again. Reload them.", "targets": recut}, status_code=409)
         return {"id": str(edit.id), "crops": ledger_call(store.set_forms, key=key, actor=edit.client_id, request=request, picks=picks)}
+
+    @api.post("/atlas/characters/{unit_id:path}/structure")
+    def set_crop_structure(unit_id: str, edit: CropStructureEdit) -> dict:
+        """Say what structure a crop is built as where no recorded form names its shape, as the Worker does."""
+        key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
+        previous = ledger_call(store.claim_submission, key=key, request=request)
+        if previous is None:
+            version = crop_now(unit_id)
+            if version is None:
+                raise HTTPException(404, "This crop is not in the collection, or has no image to make a claim about.")
+            if edit.crop_version != version:
+                raise HTTPException(409, "This crop was cut again. Reload it.")
+        return ledger_call(store.set_crop_structure, key=key, actor=edit.client_id, request=request, crop=unit_id,
+                           crop_version=edit.crop_version, char=edit.char, of=edit.of, head=edit.head, structure=edit.structure)
 
     @api.post("/atlas/forms/{form}/written_for")
     def set_written_for(form: str, edit: WrittenForEdit) -> dict:
