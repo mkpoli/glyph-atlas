@@ -21,7 +21,8 @@ character. Only a small part is filtered, joined or sorted in SQL.
   shard holds them), its derived forms with the component pairs their substitutions rest on, the
   graphemes it writes, and the writers of its family head with `shared` worked out. `ids` gives the
   grapheme id of each character the object names that has one, for the count shards. A character
-  page reads this one object.
+  page reads this object, and the IDS shards of the character and its parts for the forms its parts
+  take as registered figures.
 - `summary/<shard>.json.gz`: each card's `data` under its family head, in the shard of the head, so a
   family's members are one read and a reader takes only the families it asks for. 4,096 shards keep
   one near 41 KB of JSON. `graphemeMembers` reads its key's shard; a search list reads one per family
@@ -81,7 +82,7 @@ layout lacks. The component index left D1: as 1.46M rows it was 30 MB and a firs
   gzipped: 117,448 cards (largest 14 KB), 4,096 summary shards (largest 10 KB gzipped), 10,630
   component lists and their names (largest, 一, 134 KB), 256 IDS shards, 108 list pages and the
   68 KB name list. The translation holds one object at a time: 186 MB resident at most, in 3 min 48 s.
-- A character page reads one reference object; the IDS editor one shard and D1; a name search the
+- A character page reads one card object and at most 11 IDS shards; the IDS editor one shard and D1; a name search the
   name list and the family shards it shows; a component search the component names and two to
   eight lists. Over the 234,391 alias queries, at 8 and at 48 a list, a search reads at most three
   summary shards and one reading or card object besides: four objects in all at most, 99.8% two or

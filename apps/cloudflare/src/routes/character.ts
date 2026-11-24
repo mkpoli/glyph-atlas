@@ -214,13 +214,18 @@ function derivedOf(object: CharacterObject) {
   });
 }
 // The derived forms that write a part of the character as a registered figure, the largest parts first.
-// A character described in several ways takes the forms of each.
+// A character described in several ways takes the forms of each. The card stands without them when its
+// descriptions cannot be read.
 async function figuresOf(env: Env, ctx: ExecutionContext, char: string) {
-  const sequences = [...char].length === 1 ? (await characterIds(env, char, ctx))?.sequences ?? [] : [];
+  if ([...char].length !== 1) return [];
+  try { return await readFigures(env, ctx, char) }
+  catch (error) { console.log(JSON.stringify({ event: 'part_figures_unread', message: String(error) })); return [] }
+}
+async function readFigures(env: Env, ctx: ExecutionContext, char: string) {
+  const sequences = (await characterIds(env, char, ctx))?.sequences ?? [];
   const parts = [...new Set(sequences.flatMap(partsOf))];
   const described = new Map(await Promise.all(parts.map(async part => [part, (await characterIds(env, part, ctx))?.sequences[0]] as const)));
-  const seen = new Set<string>();
-  return sequences.flatMap(sequence => figureForms(sequence, part => described.get(part))).filter(form => !seen.has(form.char) && seen.add(form.char))
+  return figureForms(sequences, part => described.get(part))
     .map(form => ({ char: form.char, code_point: null, encoded: false, routes: [form.route.map(made => ({ ...made, pairs: [] }))], sources: [PART_FIGURES] }));
 }
 const sum = (cells: Cell[] | undefined, kind: number) => (cells ?? []).filter(c => c.kind === kind).reduce((n, c) => n + c.n, 0);
