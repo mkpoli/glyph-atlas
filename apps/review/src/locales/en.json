@@ -551,7 +551,6 @@
   "pages.draw.hint": "Turn on Draw, then drag across a mark to box it. Scroll to zoom; drag to move.",
   "pages.draw.off": "Draw",
   "pages.draw.on": "Drawing",
-  "pages.draw.unavailable": "Boxes can’t be drawn on this page: its photo or its size is missing.",
   "pages.loading": "Loading…",
   "pages.next": "Next page →",
   "pages.source.openIn": "Open in ",

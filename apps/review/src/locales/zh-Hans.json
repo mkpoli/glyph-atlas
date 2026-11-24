@@ -537,7 +537,6 @@
   "pages.draw.hint": "打开“绘制”，在标记上拖动即可画框。滚动缩放，拖动平移。",
   "pages.draw.off": "绘制",
   "pages.draw.on": "正在绘制",
-  "pages.draw.unavailable": "照片不在缓存中，或页面未记录尺寸，此页无法画框。",
   "pages.loading": "加载中…",
   "pages.next": "下一页 →",
   "pages.source.openIn": "在查看器中打开：",

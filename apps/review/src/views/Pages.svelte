@@ -183,8 +183,6 @@
       {#if data.drawable}
         <button class="draw-toggle" class:active={drawing} aria-pressed={drawing} onclick={() => drawing = !drawing}
                 title={t('pages.draw.hint')}>{drawing ? t('pages.draw.on') : t('pages.draw.off')} <kbd>D</kbd></button>
-      {:else}
-        <span class="page-note">{t('pages.draw.unavailable')}</span>
       {/if}
       <div class="zoom-controls">
         <button aria-label={t('pages.zoom.out')} onclick={() => zoomCentre(0.8)}>−</button>
