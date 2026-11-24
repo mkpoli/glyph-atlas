@@ -23,7 +23,7 @@ export function fileClaims(rows: Rows, claims: FiledAt[], place: (claim: FiledAt
     const from = place(claim), side = claim.kind === 1 ? 'corpus' : 'collected';
     if (from?.grapheme === claim.head) continue;
     const held = from && rows.get(`${from.label} ${from.grapheme}`);
-    if (from && !held?.[side]) continue;
+    if (from && !((held?.[side] ?? 0) > 0)) continue;
     if (held) addCrops(rows, held, claim.kind, -1).claimed = true;
     addCrops(rows, { label: from?.label ?? '', grapheme: claim.head }, claim.kind, 1).claimed = true;
   }

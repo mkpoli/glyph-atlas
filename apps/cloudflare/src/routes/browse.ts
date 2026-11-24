@@ -4,8 +4,8 @@
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
-import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, tallyDeltas, type CharInfo, type SampleEntry } from '../atlas3Answers';
-import { filedClaims } from '../atlas3Gallery';
+import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, filedCounted, galleryIndex, galleryShard, productionKeys, tallyDeltas, type CharInfo, type SampleEntry } from '../atlas3Answers';
+import { filedClaims, filedClaimsKept } from '../atlas3Gallery';
 import { addCrops, crops, fileClaims, type Rows, type Under } from '../graphemeTotals';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
@@ -195,26 +195,28 @@ export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Pro
 // Every crop and corpus glyph the site holds, by character and the grapheme it is filed under
 // (`graphemeTotals.ts`): what the grapheme browser, its cards and a tile's caption count, withheld crops
 // among them. `['', grapheme, …]` are the crops with no character that name it, and a row ends in 1 where
-// a claim moved some of its crops. A claim holds on its crop's effective cut, which a redrawn box moves,
-// so the edge keeps one copy per publication and catalogue stamps (reviews and ledger writes among them).
+// a claim moved some of its crops. It is the same for anyone who asks in the same minute of a
+// publication (`keptFor`), so the edge keeps it; a browser that wrote lately is answered as of its write.
 export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
   const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]), version = catalogueKey(stamps);
-  const key = new Request(`${url.origin}/atlas/graphemes/counts?v=${encodeURIComponent(`${pub}:${version}`)}`);
+  const span = keptFor(env, stamps, pub);
+  const key = new Request(`${url.origin}/atlas/graphemes/counts?v=${encodeURIComponent(span ?? `${pub}:${version}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return cached.json();
-  const [collected, corpus, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedClaims(env)]);
+  const [collected, corpus, filed, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedCounted(env, version),
+    filedClaimsKept(env, version)]);
   const place = (chars: Map<number, CharInfo>, char: number) => { const info = chars.get(char); return info ? { label: info.text, grapheme: info.grapheme } : null };
   const rows: Rows = new Map();
   const add = (at: Under | null, kind: number, n: number) => { if (at) addCrops(rows, at, kind, n) };
   for (const c of collected.cells) if (c.char !== -1) add(place(collected.chars, c.char), 0, c.n);
   for (const c of corpus.cells) add(place(corpus.chars, c.char), 1, c.n);
-  const family = (id: number) => { const at = place(corpus.chars, id); return at && { label: '', grapheme: at.grapheme } };
-  for (const c of corpus.filed) add(family(c.family), c.kind, c.n);
+  const family = (id: number) => { const at = place(filed.chars, id); return at && { label: '', grapheme: at.grapheme } };
+  for (const c of filed.cells) add(family(c.family), c.kind, c.n);
+  for (const row of rows.values()) { row.collected = Math.max(0, row.collected); row.corpus = Math.max(0, row.corpus) }
   fileClaims(rows, claims, r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
-  const items = [...rows.values()].filter(row => crops(row) > 0).sort((a, b) => byCodePoint(a.label, b.label) || byCodePoint(a.grapheme, b.grapheme))
-    .map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
+  const items = [...rows.values()].filter(row => crops(row) > 0).map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
   const body = { items };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
+  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${span ? KEPT_SECONDS : 3600}` } })));
   return body;
 }
 

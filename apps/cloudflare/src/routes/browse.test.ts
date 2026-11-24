@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, gallery, graphemeCounts, groupStats, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
@@ -133,13 +133,14 @@ describe('the statistics by script group', () => {
   });
 });
 
-const counted = (env: Env) => graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'));
+const counted = async (env: Env): Promise<any[]> => (await graphemeCounts(env, ctx, new URL('https://glyphatlas.org/atlas/graphemes/counts'))).items
+  .sort((a: any, b: any) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]));
 describe('crops by character and grapheme', () => {
   it('count every crop of each, withheld ones and those with no character among them', async () => {
     // Two corpus glyphs and a withheld crop of は's family name it with no character.
     const { env } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
       VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0),(${cropId(c, 22)},0,3,NULL,2,2,0,0,0,7,0,0,0)`));
-    expect((await counted(env)).items).toEqual([['', 'U+306F', 1, 2], ['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 0], ['処', 'U+51E6', 1, 0], ['所', 'U+6240', 6, 1],
+    expect(await counted(env)).toEqual([['', 'U+306F', 1, 2], ['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 0], ['処', 'U+51E6', 1, 0], ['所', 'U+6240', 6, 1],
       ['한', 'U+D55C', 0, 1], ['𛂞', 'U+306F', 1, 3]]);
   });
   it('follow the reviews since the publication, also those that name a crop', async () => {
@@ -147,8 +148,45 @@ describe('crops by character and grapheme', () => {
       VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0)`));
     db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
       INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
-    const rows = (await counted(env)).items.filter((row: any) => row[1] === 'U+306F');
+    const rows = (await counted(env)).filter((row: any) => row[1] === 'U+306F');
     expect(rows).toEqual([['は', 'U+306F', 6, 4], ['ハ', 'U+306F', 3, 1], ['𛂞', 'U+306F', 1, 3]]);
+  });
+  it('count the crops with no character from the count shards where the corpus answer does not name them', async () => {
+    const { env, db, objects, pub } = await setup((db, c) => db.exec(`INSERT INTO crops(id,kind,book,char,family,production,style,state,quiz,shuffle,cut,revision,flags)
+      VALUES(${cropId(c, 20)},1,3,NULL,1,2,0,0,1,5,0,0,0),(${cropId(c, 21)},1,3,NULL,3,2,0,0,1,6,0,0,0)`));
+    const corpus = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(`v3/pub/${pub}/corpus.json.gz`)!)));
+    expect(corpus.filed).toEqual([[1, 1, 1], [3, 1, 1]]);
+    delete corpus.filed;
+    objects.set(`v3/pub/${pub}/corpus.json.gz`, gz(corpus));
+    for (let shard = 0; shard < 256; shard++) objects.set(`v3/pub/${pub}/counts/${shard}.json.gz`, gz({ pub, chars: {}, families: shard === 1 ? { 1: [[1, 0, 0, 1, null, null, 1]] } : shard === 3 ? { 3: [[1, 0, 0, 1, null, null, 1]] } : {} }));
+    const unnamed = async () => (await counted(env)).filter(row => !row[0]);
+    expect(await unnamed()).toEqual([['', 'U+306F', 0, 2]]);
+    // A review that names one is taken from that base, and a claim moves the other from it.
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,-1,1,3,2,0,0,1,-1,-1),(1,1,2,1,3,2,1,0,1,-1,1);
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES('x','has_grapheme','','',(SELECT max(id) FROM crops WHERE kind=1),0,'asserted','U+51E6','[]','[]','[]','r','t');
+      INSERT INTO ledger_submissions VALUES('s','u','{}','{}','t');`);
+    expect(await unnamed()).toEqual([['', 'U+51E6', 0, 1, 1]]);
+    // Without either there is no base to count from, which is an error and no empty list.
+    objects.delete(`v3/pub/${pub}/counts/7.json.gz`); edge.clear();
+    await expect(counted(env)).rejects.toThrow('counts/7.json.gz is missing');
+  });
+  it('state no negative count', async () => {
+    const { env, db } = await setup();
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,0,5,-1,1,2,0,0,1,-1,-1),(1,1,-1,1,3,2,0,0,1,-1,-1);
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+        SELECT 'x','has_grapheme','','',id,0,'asserted','U+51E6','[]','[]','[]','r','t' FROM crops WHERE kind=0 AND char IS NULL LIMIT 1;`);
+    const rows = await counted(env);
+    expect(rows.every(row => row[2] >= 0 && row[3] >= 0 && row[2] + row[3] > 0)).toBe(true);
+    expect(rows.find(row => row[0] === '한')).toEqual(['한', 'U+D55C', 0, 1]);
+  });
+  it('are kept a minute of a publication, and answered afresh to a browser that wrote', async () => {
+    setSystemTime(new Date('2026-11-24T12:00:20Z'));
+    const { env: writer, db } = await setup(), env = { ...writer, CATALOGUE_LAG: '60' } as Env;
+    const of = async (as: Env) => (await counted(as)).find(row => row[0] === '한')[3];
+    expect([await of(env), await of(writer)]).toEqual([1, 1]);
+    db.exec(`INSERT INTO tally(gen,kind,char,family,book,production,state,style,quiz,decade,n) VALUES(1,1,5,-1,3,2,0,0,1,-1,1); INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind) VALUES(1,1,0,1,1,1,1,0);`);
+    expect([await of(env), await of(writer)]).toEqual([1, 2]);
+    expect([...edge.keys()].filter(url => url.includes('/graphemes/counts')).length).toBe(3);
   });
 });
 
@@ -245,7 +283,7 @@ describe('the browse page', () => {
     expect(of('所')).toEqual([['U+51E6', 1, 1], ['U+6240', 4, 2]]);
     expect(body.counts).toEqual({ pending: 10, seen: 1, flagged: 1, checked: 2, hard: 1, skipped: 0 });
     // 所 keeps five of its six crops and no glyph; the claimed two are 処's, in rows marked as moved.
-    expect((await counted(env)).items.filter((row: any) => ['U+51E6', 'U+6240'].includes(row[1]))).toEqual([['処', 'U+51E6', 1, 0], ['所', 'U+51E6', 1, 1, 1], ['所', 'U+6240', 5, 0, 1]]);
+    expect((await counted(env)).filter((row: any) => ['U+51E6', 'U+6240'].includes(row[1]))).toEqual([['処', 'U+51E6', 1, 0], ['所', 'U+51E6', 1, 1, 1], ['所', 'U+6240', 5, 0, 1]]);
     // Each family's listing agrees with its count: 処 lists the claimed 所, and 所 leaves it out.
     const ids = (body: any) => body.items.map((item: any) => item.id).sort();
     const sho = await get(env, '/atlas?grapheme=U%2B51E6&limit=60'), so = await get(env, '/atlas?grapheme=U%2B6240&limit=60');
