@@ -221,12 +221,12 @@ export const writtenFormUseQuery = () => `SELECT c.object AS form,
     AND c.cut=k.cut+(r.x IS NOT NULL) AND c.object IN (SELECT value FROM json_each(?1))
     AND (k.char IN (SELECT value FROM json_each(?2)) OR k.family IN (SELECT value FROM json_each(?2)))
   GROUP BY c.object`;
-async function writtenForms(env: Env, card: Card, rows: Json[], predicted: Json[]) {
+async function writtenForms(env: Env, card: Card, rows: Json[]) {
   const head = card.detail.grapheme?.code_point ?? card.detail.code_point;
   const family = await familyOf(env, card);
   if (!head || !family.members.length) return [];
   const linked = (await env.ATLAS.prepare(writtenFormsQuery()).bind(head).all<{ form: string; scheme: string; value: string }>()).results;
-  const known = new Set([...(card.detail.grapheme?.members ?? []).map((m: Json) => m.char), ...rows.map(r => r.char), ...predicted.map(r => r.char)]);
+  const known = new Set([...(card.detail.grapheme?.members ?? []).map((m: Json) => m.char), ...rows.map(r => r.char)]);
   const fresh = linked.filter(row => !known.has(row.value));
   if (!fresh.length) return [];
   const used = (await env.ATLAS.prepare(writtenFormUseQuery()).bind(JSON.stringify(fresh.map(row => row.form)), JSON.stringify(family.members))
@@ -288,8 +288,11 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const rows = [...shown, ...lent.map(w => ({ char: w.char, code_point: cp(w.char), widens: false, written: true, relations: w.relations }))]
       .map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
         count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
-    const predicted = derived.map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
-    const forms = await writtenForms(env, card, rows, predicted);
+    const forms = await writtenForms(env, card, rows);
+    // A derived form a reviewer said is written for the family is one of its 字体, and is predicted no more.
+    const said = new Set(forms.map(form => form.char));
+    const predicted = derived.filter(entry => !said.has(entry.char))
+      .map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const used = new Set(rows.flatMap(row => row.sources));
     // The grapheme a character of another script also writes is cited on its own card too.
     for (const w of lends) for (const relation of w.relations) used.add(relation.source);
