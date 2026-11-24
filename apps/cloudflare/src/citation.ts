@@ -18,6 +18,8 @@ export type Source = {
 };
 export type Entry = {
   kind: Kind; id: string; label: string | null; codePoint?: string;
+  /** What a citation key names it by, when other than its label: a grapheme's head. */
+  key?: string;
   /** The form the site holds for a crop, when it is other than its label. */
   form?: string;
   /** The page's address on the site, without a language prefix: the site sends it to the reader's language. */
@@ -97,8 +99,8 @@ export function cropEntry(record: Json, version: string | null = record.crop_ver
 export function characterEntry(kind: 'grapheme' | 'form', card: Json): Entry {
   const named = kind === 'grapheme' && card.grapheme?.code_point ? card.grapheme : card;
   const codePoint = String(named.code_point);
-  const char = text(named.char) ?? null;
-  return { kind, id: slug(codePoint), label: char && kind === 'grapheme' ? graphemeLabel(char) : char, codePoint,
+  const char = text(named.char) ?? null, label = char && kind === 'grapheme' ? graphemeLabel(char) : char;
+  return { kind, id: slug(codePoint), label, ...(char && label !== char ? { key: char } : {}), codePoint,
     path: `/${kind === 'grapheme' ? 'grapheme' : 'character'}/${slug(codePoint)}` };
 }
 
@@ -119,8 +121,9 @@ export const title = (entry: Entry): string => entry.label ?? (entry.kind === 'c
 /** A short key a bibliography cites the entry by: `glyphatlas-敢-k3x9a2`, `glyphatlas-あ-grapheme`. A
  *  label that is not letters (a description sequence) is named by its code points. */
 export function citationKey(entry: Entry): string {
-  const label = entry.label && /^[\p{L}\p{M}\p{N}]{1,4}$/u.test(entry.label) ? entry.label
-    : entry.label ? [...entry.label].map(c => 'U' + c.codePointAt(0)!.toString(16).toUpperCase()).join('') : entry.kind;
+  const named = entry.key ?? entry.label;
+  const label = named && /^[\p{L}\p{M}\p{N}]{1,4}$/u.test(named) ? named
+    : named ? [...named].map(c => 'U' + c.codePointAt(0)!.toString(16).toUpperCase()).join('') : entry.kind;
   const tail = entry.kind !== 'crop' ? entry.kind : entry.token ?? versionToken(entry.id, entry.id + '@') ?? 'crop';
   return `glyphatlas-${label}-${tail}`;
 }
