@@ -31,8 +31,9 @@ export type Limiter = { limit(options: { key: string }): Promise<{ success: bool
 export type Tools = { limiter: Limiter; store: Store; now?: () => number; log?: (line: string) => void };
 
 // The site's built files, crop images, font files, Cloudflare's own paths and the health check cost no
-// query. Static files that exist are answered before the Worker runs.
-const UNCOUNTED = ['/_app/', '/atlas/media/', '/atlas/fonts/', '/cdn-cgi/'];
+// query. A user's picture costs one row at most, and a sister site asks for a page of them in its reader's
+// name, so a reader locked out here must not blank them there. Static files that exist are answered before the Worker runs.
+const UNCOUNTED = ['/_app/', '/atlas/media/', '/atlas/fonts/', '/api/avatars/', '/cdn-cgi/'];
 /** Whether a request to `path` counts against its address: every page and API answer that reads data. */
 export const counted = (path: string) => path !== '/health' && !UNCOUNTED.some(prefix => path.startsWith(prefix));
 
