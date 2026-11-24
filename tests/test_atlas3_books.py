@@ -107,6 +107,17 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert "variant_sources" in facts(db)["site"]
 
 
+def test_a_missing_input_leaves_the_last_translation(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch)
+    translation = (root / "out" / "books.sqlite").read_bytes()
+    (root / "source-metadata.sqlite").unlink()
+    with pytest.raises(SystemExit, match="source-metadata.sqlite is missing"):
+        books(remote, monkeypatch)
+    assert (root / "out" / "books.sqlite").read_bytes() == translation
+
+
 def test_named_documents_take_their_dates_and_leave_every_other_fact(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root)
