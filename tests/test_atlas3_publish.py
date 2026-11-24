@@ -908,7 +908,7 @@ def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path)
     assert pages[ids(root)["codh:x1"] // PAGE] == "corpus:codh:codh:b:x:0"
 
 
-def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, tmp_path):
+def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, tmp_path, capsys):
     root, publish, remote = layout
     path = tmp_path / "corpus.sqlite"
     db = sqlite3.connect(path)
@@ -931,6 +931,15 @@ def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, 
         held.commit()
     run(publish, monkeypatch, path)
     assert titles()["gy:1"] == "given by hand"
+    # Asked to, it takes the catalogue's whatever D1 holds, and a second run has nothing to change.
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE books SET title='of another hand' WHERE key='gy:1'")
+    remote.dbs["glyph-atlas-v3"].commit()
+    run(publish, monkeypatch, path, "--retitle")
+    assert titles()["gy:1"] == "廣韻 卷一"
+    assert dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT key, title FROM books")) == titles()
+    capsys.readouterr()
+    run(publish, monkeypatch, path, "--retitle")
+    assert "nothing changed" in capsys.readouterr().out
 
 
 def test_two_new_boxes_on_one_glyph_stop_the_publish(layout, monkeypatch, tmp_path):
