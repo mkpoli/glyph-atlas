@@ -9,7 +9,7 @@ import { filedClaims } from '../atlas3Gallery';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { categoryOf } from '../category';
+import { categoryOf, isSeal } from '../category';
 import { tallyDates } from '../dating';
 import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
 import { ROUND_MAX } from '../rounds';
@@ -441,20 +441,18 @@ export async function page(env: Env, stages: Stage[], start: number, cursor: str
 }
 
 // The members of a grapheme a round names, by the grapheme table: は's family is は, ハ and its
-// hentaigana. A key that names no family is its own text alone; a key that names a family's member
-// rather than the family is refused. The head comes first, then the members by id.
+// hentaigana. A key that names no family is its own text alone, and so is one that names a family's
+// member: its round is that member's. The head comes first, then the members by id, the small seal
+// characters after every other: the interface's number keys follow the list.
 export const graphemeQuery = () => 'SELECT id,text,head FROM graphemes WHERE text=?';
 export const membersQuery = () => 'SELECT id,text FROM graphemes WHERE head=? ORDER BY id';
 export async function graphemeMembers(env: Env, key: string): Promise<{ ids: number[]; texts: string[] }> {
   const own = compose(graphemeText(key));
   const row = await env.ATLAS.prepare(graphemeQuery()).bind(own).first<{ id: number; text: string; head: number | null }>();
   if (!row) return { ids: [], texts: [own] };
-  if (row.head !== null && row.head !== row.id) {
-    const head = await env.ATLAS.prepare('SELECT text FROM graphemes WHERE id=?').bind(row.head).first<{ text: string }>();
-    throw new Problem(422, `${graphemeText(key)} is filed under ${head?.text}.`);
-  }
-  const members = (await env.ATLAS.prepare(membersQuery()).bind(row.id).all<{ id: number; text: string }>()).results;
-  const all = [{ id: row.id, text: row.text }, ...members.filter(m => m.id !== row.id)];
+  if (row.head !== null && row.head !== row.id) return { ids: [row.id], texts: [row.text] };
+  const members = (await env.ATLAS.prepare(membersQuery()).bind(row.id).all<{ id: number; text: string }>()).results.filter(m => m.id !== row.id);
+  const all = [{ id: row.id, text: row.text }, ...members.filter(m => !isSeal(m.text)), ...members.filter(m => isSeal(m.text))];
   return { ids: all.map(m => m.id), texts: all.map(m => m.text) };
 }
 
@@ -560,12 +558,16 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const productions = scopeIds(production, keys);
 
   // The characters a listing names: a round's grapheme members, a browse page's family (every character
-  // filed under the grapheme), a character, a search. A name the site holds no crop of names none.
+  // filed under the grapheme, or, under a member's key, that character alone), a character, a search. A
+  // name the site holds no crop of names none.
   const byText = new Map([...chars].map(([id, info]) => [info.text, id]));
   let named: Set<number> | null = null, written: Set<number> | null = null;
   const narrow = (ids: Iterable<number>) => { const next = new Set(ids); named = named === null ? next : new Set([...named].filter(id => next.has(id))); };
   if (members) narrow(members.ids);
   const family = grapheme && !scoped ? new Set([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id)) : null;
+  const member = family && !family.size ? byText.get(graphemeText(grapheme!)) : undefined;
+  if (member !== undefined) family!.add(member);
+  const filed = member === undefined ? grapheme : chars.get(member)!.grapheme;
   if (family) narrow(family);
   for (const value of [character, searched]) if (value) {
     const id = byText.get(value) ?? (await env.ATLAS.prepare(graphemeQuery()).bind(value).first<{ id: number }>())?.id;
@@ -577,12 +579,12 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   let filing: ReturnType<typeof filedClaims> | null = null;
   const claimsRead = () => filing ??= filedClaims(env);
   // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
-  // characters a claim files under another family is not, as the family's gallery lists them; a
-  // character or a search narrows those as it narrows the rest. A crop with no character is counted
-  // under none, and is listed by none.
+  // characters a claim files under another family is not, as the family's gallery lists them; a member
+  // alone lists only its own character's crops, and a character or a search narrows either as it narrows
+  // the rest. A crop with no character is counted under none, and is listed by none.
   const claims = family ? await claimsRead() : [];
-  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== grapheme).map(r => r.id));
-  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
+  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== filed).map(r => r.id));
+  const here = claims.filter(r => member === undefined && r.kind === 0 && r.head === filed && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
     && r.state !== null && r.quiz !== null).map(r => ({ ...r, char: r.char!, state: r.state!, quiz: r.quiz! }));
   // -2 matches nothing: a book, script or state the site does not know.
   const book = documentKey ? (await env.ATLAS.prepare(bookQuery()).bind(documentKey).first<{ id: number }>())?.id ?? -2 : null;
@@ -632,10 +634,12 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     total = mine.length;
   } else {
     // A grapheme's round of pending crops deals its corpus glyphs after its collected crops. Corpus
-    // glyphs belong to no book of the collection, so a round narrowed to one deals none.
-    const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched
-      && (category === null || members!.texts.every(member => categoryOf(member) === groupParam));
-    const corpusFilter: Filter = { ...filter, state: 0, category: null };
+    // glyphs belong to no book of the collection, so a round narrowed to one deals none. A corpus glyph
+    // has no category of its own, so a round narrowed to a script deals those of the members it holds: a
+    // kanji round of 春 leaves out its small seal character.
+    const inScript = scoped && category !== null ? new Set(members!.ids.filter((_, i) => categoryOf(members!.texts[i]) === groupParam)) : null;
+    const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched && inScript?.size !== 0;
+    const corpusFilter: Filter = { ...filter, state: 0, category: null, ...(inScript ? { chars: inScript } : {}) };
     // A round deals what another reviewer skipped first, then the collected crops, then the corpus
     // glyphs, each crop once. Four seeds in five deal the collected crops by priority, each priority in
     // turn from the seed's point; the fifth deals them all together.

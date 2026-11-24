@@ -10,7 +10,8 @@
   // the family.
   // The forms stand under their 構形, on the bar: 説 and 說 under one, 峰 and 峯 under two, a figure
   // of the IVD with its character. A form with no structure, and a grapheme of another script, stand
-  // last without a caption. A form's 構形 is read before the form is shown, so the chips, and the
+  // last without a caption. A small seal character stands last in its 構形 and takes a number key only
+  // after every other form has one. A form's 構形 is read before the form is shown, so the chips, and the
   // number keys with them, keep their places.
   // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
   // or encoded, is filed under another 構形.
@@ -24,7 +25,7 @@
   import StructureDialog from './StructureDialog.svelte'
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
   import { proposed, standing } from '../lib/structures.js'
-  import { formsOf } from '../lib/formOffers.js'
+  import { groupForms, keyOrder } from '../lib/formOffers.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -66,39 +67,12 @@
   })
   // The 構形 of the crop's own form, which Quick Review's bar leaves off.
   const ownStructure = $derived(structureOf.get(current) ?? null)
-  // A list's forms under the 構形 each stands under, those built as a 構形 folded into it (⿰辵禺 under
-  // ⿺辶禺) in a block of their own, a structure where its first form stands; the forms
-  // with none stand together after them, uncaptioned. The grapheme's own forms come first; a related
-  // character joins a 構形 of theirs where it shares one, and otherwise stands after all of them, so
-  // the number keys reach the grapheme's forms before any related character.
   const relatedChars = $derived(new Set(listed.related.map(form => form.char)))
-  const grouped = list => {
-    const own = ownStructure && (ownStructure.part ?? ownStructure).id
-    const block = ({ id, label }) => ({ id, label, own: id === own, forms: [] })
-    const groups = new Map(), loose = [], later = new Map(), looseLater = []
-    const place = (form, into, rest) => {
-      const structure = structureOf.get(form.char)
-      if (!structure) { rest.push(form); return }
-      form = { ...form, proposed: proposed(form.char, structure.by) }
-      let home = groups.get(structure.id) ?? into.get(structure.id)
-      if (!home) into.set(structure.id, home = { id: structure.id, label: structure.label, blocks: [block(structure)] })
-      let built = home.blocks.find(one => one.id === (structure.part ?? structure).id)
-      if (!built) home.blocks.push(built = block(structure.part))
-      built.forms.push(form)
-    }
-    for (const form of list) if (!relatedChars.has(form.char)) place(form, groups, loose)
-    for (const form of list) if (relatedChars.has(form.char)) place(form, later, looseLater)
-    // A layout with a form of the grapheme stands before one with related characters alone.
-    const rank = built => built.forms.length && built.forms.every(form => relatedChars.has(form.char)) ? 1 : 0
-    for (const group of groups.values()) group.blocks.sort((a, b) => rank(a) - rank(b))
-    const plain = (id, forms) => forms.length ? [{ id, label: '', blocks: [{ id, label: '', own: false, forms }] }] : []
-    return [...groups.values(), ...plain('', loose), ...later.values(), ...plain(' related', looseLater)]
-  }
   const me = $derived(signedInUser()?.id ?? null)
-  const barGroups = $derived(grouped(bar))
+  const barGroups = $derived(groupForms(bar, { structureOf, related: relatedChars, own: (ownStructure?.part ?? ownStructure)?.id, proposed }))
   const captioned = $derived(barGroups.some(group => group.label))
-  // The bar's forms as they stand, which the number keys follow.
-  const ordered = $derived(barGroups.flatMap(formsOf))
+  // The bar's forms in the order the number keys reach them.
+  const ordered = $derived(keyOrder(barGroups))
   // The crop's own form as the site holds it: one value, and not disputed. A described form or a
   // registered figure (a variation sequence) can be added to the grapheme's 字体 here; encoded
   // characters already have a card row of their own. A figure the bar offers from the IVD is not on
@@ -137,7 +111,7 @@
     linking = true; linkError = ''
     try {
       const result = await setWrittenFor(saved.form, grapheme)
-      linkedByMe = Boolean(me && (result?.written_for ?? []).find(value => value.grapheme === grapheme)?.by?.includes(me))
+      linkedByMe = Boolean(me && (result?.written_for ?? []).find(value => value.grapheme === (result.grapheme ?? grapheme))?.by?.includes(me))
       await reload()
     } catch (error) { linkError = error.message }
     finally { linking = false }
@@ -192,7 +166,7 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable" class:captioned>
-    <FormChips groups={barGroups} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
+    <FormChips groups={barGroups} order={ordered} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={chosen ?? current} />{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>

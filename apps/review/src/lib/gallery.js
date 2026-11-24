@@ -1,4 +1,4 @@
-import { character as layerCharacter, occurrences, candidates as layerCandidates } from './layers.js'
+import { character as layerCharacter, occurrences, candidates as layerCandidates, bookGallery } from './layers.js'
 import { writtenLabel } from './identity.js'
 import { STYLE_GROUPS, styleParam } from './style.js'
 import { keyText } from './codePoints.js'
@@ -51,12 +51,25 @@ export function styleCounts(...lists) {
   return Object.fromEntries(STYLE_GROUPS.map(group => [group, lists.reduce((sum, counts) => sum + (counts[group] ?? 0), 0)]))
 }
 
-/** An address's order (`year`, oldest first) and year range (`1601-1700`, or `undated`), or '' for none. */
-export const orderParam = value => value === 'year' ? 'year' : ''
+/** An address's order (`year`, oldest first, or `book`, grouped by the books the crops come from) and year range (`1601-1700`, or `undated`), or '' for none. */
+export const orderParam = value => ['year', 'book'].includes(value) ? value : ''
 export function yearsParam(value) {
   if (value === 'undated') return value
   const found = /^(-?\d{1,4})-(-?\d{1,4})$/.exec(value ?? '')
   return found && Number(found[1]) <= Number(found[2]) ? value : ''
+}
+
+/** The scope a gallery grouped by book is read in. */
+export const bookScope = expand => expand === 'grapheme' ? 'grapheme' : undefined
+/** A page of a gallery grouped by book as its tiles, the collection's and the corpus's apart, and its
+ *  books, each with how many crops it holds and the cursor of its next ones. */
+export function bookPage(found) {
+  const crops = found.groups.flatMap(group => group.items)
+  return {
+    local: crops.filter(item => item.origin !== 'corpus'),
+    corpus: crops.filter(item => item.origin === 'corpus').map(item => ({ ...item, label: writtenLabel(item) })),
+    books: found.groups.map(({ items, ...book }) => book),
+  }
 }
 
 /**
@@ -71,11 +84,19 @@ export async function characterGallery(codePoint, { scope = null, visual = '', s
   // A variants widening lists each character in turn, and is placed by style alone.
   order = expand === 'variants' ? '' : orderParam(order); years = expand === 'variants' ? '' : yearsParam(years)
   const dated = { order: order || undefined, years: years || undefined }
+  // The chips read which widening is in force from the card fetched with it; a variants widening
+  // changes no field of the card.
+  const widen = expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card)
+  if (order === 'book') {
+    const [found, widened] = await Promise.all([bookGallery(codePoint, { scope: bookScope(expand), style: style || undefined, years: dated.years }, options), widen])
+    const { books, local, corpus } = bookPage(found), total = counts => Object.entries(counts).reduce((sum, [name, n]) => !style || name === style ? sum + n : sum, 0)
+    return { picked: { ...card, ...widened }, expand, visual: '', style, order, years, styled: true, localStyles: found.styles.local, corpusStyles: found.styles.corpus,
+      local, localAfter: null, total: total(found.styles.local), available: total(found.styles.local), withheld: found.withheld, corpus, corpusTotal: total(found.styles.corpus),
+      corpusAfter: null, corpusFault: null, analysis: card.visual_analysis ?? null, familyTotal: null, unassignedCount: null, books, booksAfter: found.next }
+  }
   const [found, widened, leads] = await Promise.all([
     occurrences(codePoint, { expand, limit: 60, style: style || undefined, ...dated }, options),
-    // The chips read which widening is in force from the card fetched with it; a variants widening
-    // changes no field of the card.
-    expand === 'none' || expand === 'variants' ? card : layerCharacter(codePoint, expand, options).catch(() => card),
+    widen,
     layerCandidates(codePoint, 60, null, { scope: corpusScope(expand), visual_group: visual || undefined, style: style || undefined, ...dated }, options)
       .catch(error => ({ fault: error.status === 502 ? 'error' : 'not-loaded' })),
   ])

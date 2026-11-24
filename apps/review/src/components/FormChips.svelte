@@ -4,14 +4,14 @@
   // inspector marks its crop. `groups` sets the chips under a caption each, the 構形 its forms share
   // (`{ id, label, blocks }`, each block `{ id, label, own, forms }` the forms built as it or as a 構形
   // that stands under it, `own` where the crop's own form is; a form `proposed` there is marked). The
-  // number keys follow the chips as they stand.
+  // number keys follow `order`, or the chips as they stand.
   import FormText from './FormText.svelte'
   import { formsOf } from '../lib/formOffers.js'
   import IdsLabel from './IdsLabel.svelte'
-  let { forms = [], groups = null, chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, children = null } = $props()
+  let { forms = [], groups = null, order = null, chosen = null, current = null, disabled = false, label = '', title = form => form, onchoose, children = null } = $props()
   const KEYS = '1234567890'
   const charOf = form => typeof form === 'string' ? form : form.char
-  const place = $derived(new Map((groups ? groups.flatMap(formsOf) : forms).map((form, i) => [charOf(form), i])))
+  const place = $derived(new Map((order ?? (groups ? groups.flatMap(formsOf) : forms)).map((form, i) => [charOf(form), i])))
 </script>
 
 {#snippet chip(form)}

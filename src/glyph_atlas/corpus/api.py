@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .. import refs
 from ..clusters import is_one_character
 from . import crops as crops_module
 from . import index as index_module
@@ -591,10 +592,13 @@ class CorpusAPI:
         from .identity import NORMALIZED_CORPORA, family_of
         result = _count_row(char, summary, len(self.index.glyphs.for_char(char)))
         family = family_of(codepoint(char)) if is_one_character(char) else None
-        ambiguous = bool(family and family["character_count"] > 1 and any(
+        # A normalised corpus writes no small seal character under its Han character: one is neither
+        # uncertain itself nor makes the others so.
+        transcribed = refs.transcribed(family["members"]) if family and not refs.is_small_seal(char) else []
+        ambiguous = len(transcribed) > 1 and any(
             set(_count_row(member["char"], self.index.summary(member["char"]), 0).get("corpora") or []) & NORMALIZED_CORPORA
-            for member in family["members"]
-        ))
+            for member in transcribed
+        )
         result["requires_family_scope"] = ambiguous
         result["n_family_glyphs"] = sum(
             _count_row(member["char"], self.index.summary(member["char"]), len(self.index.glyphs.for_char(member["char"]))).get("n_glyphs") or 0

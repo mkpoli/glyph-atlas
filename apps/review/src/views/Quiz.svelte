@@ -23,7 +23,7 @@
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { isDescription } from '../lib/ids.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
-  import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import { dealsFor, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/gallery.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -238,7 +238,7 @@
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
       let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
       for (let tries = 0; tries < 8; tries++) {
-        chosen = tries === 0 && target && available.some(c => c.label === target) ? target
+        chosen = tries === 0 && target && available.some(c => dealsFor(c, target)) ? target
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
         result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,

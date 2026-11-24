@@ -10,7 +10,7 @@ import { cropGraphemes } from '../cropPanels';
 import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
-import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyText, ledgerPage, type LedgerTools, type Member,
+import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyHeads, keyText, ledgerPage, type LedgerTools, type Member,
   ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, RUN_MAX, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
@@ -224,8 +224,14 @@ async function namingId(form: string) {
   return `cf:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
-// A character with no family of its own names the head of the family it is filed under.
-export const graphemeHeadQuery = () => 'SELECT g.id,coalesce(g.head,g.id)=g.id AS head,h.text AS family FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?';
+/** The grapheme a new claim names: the head its key is filed under, so a claim made on a page read, or
+ *  kept on a device, before its key joined another family is the head's. 422 for a character the site
+ *  does not hold. */
+async function claimedHead(env: Env, key: unknown, tools: ClaimTools): Promise<string> {
+  if (!graphemeKey(key)) return tools.fail(422, 'Name a grapheme by its code points.');
+  const head = (await keyHeads(env, [key])).get(key)!;
+  return (await headKeys(env, [head])).length ? head : tools.fail(422, 'No such character.');
+}
 /** Set the reader's grapheme for one crop, named by its key (`U+5F8C`), or take back their own claim
  *  with `grapheme: null`; answer with the crop's grapheme slot and the grapheme the save took back. */
 export async function setGrapheme(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
@@ -241,13 +247,9 @@ export async function setGrapheme(env: Env, input: Json, named: string, actor: s
   }
   let member: Member | null = null;
   if (input.grapheme !== null) {
-    if (!graphemeKey(input.grapheme)) tools.fail(422, 'Name a grapheme by its code points.');
-    if (!(await headKeys(env, [input.grapheme])).length) {
-      const row = await env.ATLAS.prepare(graphemeHeadQuery()).bind(keyText(input.grapheme)).first<{ family: string | null }>();
-      tools.fail(422, row ? `This character is filed under ${row.family}.` : 'No such character.');
-    }
-    member = { object: input.grapheme, value: null, confidence: null, confidence_scheme: null };
-    checkClaims('has_grapheme', [member], { [input.grapheme]: 'grapheme' }, tools.fail);
+    const grapheme = await claimedHead(env, input.grapheme, tools);
+    member = { object: grapheme, value: null, confidence: null, confidence_scheme: null };
+    checkClaims('has_grapheme', [member], { [grapheme]: 'grapheme' }, tools.fail);
   }
   const crop = await ledger.crop(env, named);
   const own = await env.ATLAS.prepare(ownClaimQuery('has_grapheme', ownedActors(actor))).bind(crop.id, actor).first<Own>();
@@ -282,21 +284,24 @@ export const ownWrittenForQuery = (owned: string) => `SELECT a.id FROM assertion
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
 /** Say that a form is written for a grapheme (`remove` false), or take back the reader's own claim
  *  (`remove` true). A form can be written for several graphemes; each is a claim of its own. The answer
- *  names the form's graphemes now, so a picker can show the form on another crop of the family. */
+ *  names the grapheme claimed and the form's graphemes now, so a picker can show the form on another crop
+ *  of the family. */
 export async function setWrittenFor(env: Env, input: Json, form: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx);
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form, input });
   const saved = await savedSubmission(env, key, signature, tools.fail);
   if (saved) return { id: form, written_for: await writtenForOf(env, form), replaced: saved.replaced ?? null };
   if (!FORM_ID.test(form) || !await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) tools.fail(404, 'No such form.');
-  const grapheme = input.grapheme == null ? null : tools.text(input.grapheme, 64, 'grapheme', true)!;
-  if (!graphemeKey(grapheme)) tools.fail(422, 'Name a grapheme by its code points.');
-  if (!(await headKeys(env, [grapheme])).length) {
-    const row = await env.ATLAS.prepare(graphemeHeadQuery()).bind(keyText(grapheme)).first<{ family: string | null }>();
-    tools.fail(422, row ? `This character is filed under ${row.family}.` : 'No such character.');
-  }
+  const named = input.grapheme == null ? null : tools.text(input.grapheme, 64, 'grapheme', true)!;
+  if (!graphemeKey(named)) return tools.fail(422, 'Name a grapheme by its code points.');
   const remove = input.remove === true;
-  const own = await env.ATLAS.prepare(ownWrittenForQuery(ownedActors(actor))).bind(form, grapheme, actor).first<{ id: string }>();
+  const ownOf = (grapheme: string) => env.ATLAS.prepare(ownWrittenForQuery(ownedActors(actor))).bind(form, grapheme, actor).first<{ id: string }>();
+  // A claim is taken back by the key it was recorded under, or by one that key heads.
+  let grapheme = remove ? named : await claimedHead(env, named, tools), own = await ownOf(grapheme);
+  if (remove && !own) {
+    const head = (await keyHeads(env, [named])).get(named)!;
+    if (head !== named) { grapheme = head; own = await ownOf(head); }
+  }
   const linked = (await writtenForOf(env, form)).some(value => value.grapheme === grapheme);
   if (remove && !own) tools.fail(409, `You have not said this form writes ${keyText(grapheme)}.`);
   const at = new Date().toISOString();
@@ -305,7 +310,7 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
   if (!remove && own && linked) {
     await env.ATLAS.prepare('INSERT OR IGNORE INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
       .bind(key, actor, signature, JSON.stringify({ submission: key, subject: form, replaced: null }), at).run();
-    return { id: form, written_for: await writtenForOf(env, form), replaced: null };
+    return { id: form, grapheme, written_for: await writtenForOf(env, form), replaced: null };
   }
   const plan: Plan = { statements: [], keys: [] };
   if (own) {
@@ -321,7 +326,7 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
     plan.statements.push(...claim.statements); plan.keys.push(...claim.keys);
   }
   await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, subject: form, replaced: remove ? grapheme : null }, ledger);
-  return { id: form, written_for: await writtenForOf(env, form), replaced: remove ? grapheme : null };
+  return { id: form, grapheme, written_for: await writtenForOf(env, form), replaced: remove ? grapheme : null };
 }
 
 // A form's `has_structure` claims: the 構形 the form is filed under (docs/decisions/0012-structure-layer.md).

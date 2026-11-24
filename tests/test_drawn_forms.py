@@ -47,7 +47,7 @@ def test_a_drawn_form_is_a_private_use_representation_in_the_tables_namespace():
 
 def test_a_drawn_form_is_a_character_of_the_family_it_writes():
     info = refs.grapheme_info("U+4E8B")
-    assert [member["code_point"] for member in info["members"]][-3:] == ["U+F0000", "U+F0001", "U+F0002"]
+    assert [member["code_point"] for member in info["members"]][-4:] == ["U+F0000", "U+F0001", "U+F0002", "U+3D8B7"]
     row = refs.character("U+F0000")
     assert (row.char, row.grapheme, str(row.script), row.name) == (RU, "U+4E8B", "han", None)
     assert refs.grapheme_info("U+F0000")["code_point"] == "U+4E8B"

@@ -9,7 +9,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
 import { cropReadings } from '../cropReadings';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
@@ -204,9 +204,23 @@ describe('the crop grapheme picker', () => {
     expect(await familyClaims(env, QUEEN, [2])).toEqual({ away: [], here: [] });
   });
 
-  it('names only a grapheme that heads its family, on the generic route too', async () => {
+  it('records a claim under the head its key is filed under, and compares what is sent again as it was sent', async () => {
     const { db, local, version, pick, post } = graphemes();
-    await expect(pick('U+4ECE')).rejects.toThrow('422 This character is filed under 從.');
+    // 𽌇 headed itself when this pick was kept on a device; by the time it is sent it is filed under 春.
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(5,'春',5),(6,'\u{3D307}',5);`);
+    const id = crypto.randomUUID(), kept = await pick('U+3D307', 'reader', id);
+    expect(kept.grapheme_claim).toMatchObject({ status: 'asserted', values: [{ grapheme: 'U+6625', char: '春' }] });
+    expect(await pick('U+3D307', 'reader', id)).toEqual(kept);
+    await expect(pick('U+6625', 'reader', id)).rejects.toThrow('409');
+    const again = crypto.randomUUID(), claim = (object: string, named: string = crypto.randomUUID()) => post('/atlas/claims', { id: named,
+      crop_version: version(local), subject: publicId(local), predicate: 'has_grapheme', claims: [{ object }] }) as Promise<any>;
+    const made = await claim('U+3D307', again);
+    expect(made.current[0]).toMatchObject({ predicate: 'has_grapheme', status: 'asserted', object: 'U+6625' });
+    expect(await claim('U+3D307', again)).toEqual(made);
+  });
+
+  it('names only a grapheme the site holds, on the generic route too', async () => {
+    const { local, version, pick, post } = graphemes();
     await expect(pick('U+9999')).rejects.toThrow('422 No such character.');
     await expect(pick('後')).rejects.toThrow('422 Name a grapheme by its code points.');
     await expect(pick('U+005F8C')).rejects.toThrow('422 Name a grapheme by its code points.');
@@ -214,11 +228,9 @@ describe('the crop grapheme picker', () => {
     await expect(pick(null)).rejects.toThrow('409 You have no grapheme on this crop to clear.');
     const claim = (object: string) => post('/atlas/claims', { id: crypto.randomUUID(), crop_version: version(local), subject: publicId(local),
       predicate: 'has_grapheme', claims: [{ object }] }) as Promise<any>;
-    await expect(claim('U+4ECE')).rejects.toThrow('422 U+4ECE cannot be the object of has_grapheme.');
     await expect(claim('U+005F8C')).rejects.toThrow('422 U+005F8C cannot be the object of has_grapheme.');
     await expect(claim('U+110000')).rejects.toThrow('422 U+110000 cannot be the object of has_grapheme.');
     expect((await claim(AFTER)).current[0]).toMatchObject({ predicate: 'has_grapheme', status: 'asserted', object: AFTER });
-    expect(db.query(graphemeHeadQuery()).get('从')).toEqual({ id: 4, head: 0, family: '從' });
   });
 
   it('files the crop under the family its grapheme is filed under after a publication moves it', async () => {
@@ -306,14 +318,29 @@ describe('a form written for a grapheme', () => {
     await expect(add(AFTER, true)).rejects.toThrow('409 You have not said this form writes 後.');
   });
 
-  it('takes back only the reader\'s own claim, and names only a grapheme that heads its family', async () => {
+  it('records a form under the head its key is filed under, and takes it back by either', async () => {
+    const { db, form, add } = await forms();
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(5,'春',5),(6,'\u{3D307}',5);`);
+    const id = crypto.randomUUID(), spring = { grapheme: 'U+6625', char: '春', by: ['reader'] };
+    expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, grapheme: 'U+6625', written_for: [spring], replaced: null });
+    // Sent again, the claim answers as any saved one does.
+    expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, written_for: [spring], replaced: null } as any);
+    await expect(add('U+6625', false, 'reader', id)).rejects.toThrow('409');
+    // The page the claim was made on still names 𽌇.
+    expect(await add('U+3D307', true)).toMatchObject({ written_for: [], replaced: 'U+6625' });
+    // A claim is taken back by its own key whatever the table holds of it.
+    await add(AFTER);
+    db.exec('DELETE FROM graphemes WHERE id=1');
+    expect(await add(AFTER, true)).toMatchObject({ written_for: [], replaced: AFTER });
+  });
+
+  it('takes back only the reader\'s own claim, and names only a grapheme the site holds', async () => {
     const { db, env, tools, form, add } = await forms();
     await add(AFTER);
     await add(AFTER, false, 'other');
     expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='written_for'").get()).toEqual({ n: 2 });
     expect((await add(AFTER, true, 'other')).written_for).toEqual([{ grapheme: AFTER, char: '後', by: ['reader'] }]);
     await expect(add(AFTER, true, 'third')).rejects.toThrow('409 You have not said this form writes 後.');
-    await expect(add('U+4ECE')).rejects.toThrow('422 This character is filed under 從.');
     await expect(add('U+9999')).rejects.toThrow('422 No such character.');
     await expect(add('後')).rejects.toThrow('422 Name a grapheme by its code points.');
     await expect(add('U+005F8C')).rejects.toThrow('422 Name a grapheme by its code points.');

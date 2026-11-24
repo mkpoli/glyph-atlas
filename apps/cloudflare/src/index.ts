@@ -34,7 +34,7 @@ import { OPEN, opened } from './open';
 import { sendContact } from './contact';
 import { communityCounts } from './community';
 import { communityPreview } from './preview';
-import { cards, characterCard, characterPage, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
+import { bookGallery, cards, characterCard, characterPage, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
 import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 type Json = Record<string, any>;
@@ -220,6 +220,7 @@ const routes = {
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
       if(path==='/layers/gallery'){const timing=new Timing();const body=await browse.gallery(env,ctx,q,timing);return json(body,200,{'server-timing':timing.header()})}
       if(path==='/layers/decades')return json(await decades(env,ctx,url,characterTools));
+      if(path==='/layers/books')return json(await bookGallery(env,ctx,url,characterTools));
       if(path==='/layers/chronology')return json(await chronology(env,ctx,url,characterTools));
       if(path==='/layers/summary')return json(await browse.siteValue(env,'corpus_index'));
       if(path==='/layers/graphemes'||path==='/layers/ligatures')return json(await cards(env,path.endsWith('ligatures')?'ligatures':'graphemes',q,ctx));

@@ -94,15 +94,13 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
     return response
 
 
-def _head_of(grapheme: str) -> str:
-    """`grapheme` when it heads its family; the head's text when it is a member, and no such character otherwise."""
+def head_of(grapheme: str) -> str:
+    """The grapheme a new claim names: the head its key is filed under, so a claim kept under a key that
+    has joined another family is the head's. No such character where the site does not hold it."""
     head = refs.grapheme(grapheme)
     if head is None and grapheme not in refs.graphemes():
         raise LedgerError(422, "No such character.")
-    head = head or grapheme
-    if head != grapheme:
-        raise LedgerError(422, f"This character is filed under {refs.from_code_points(head.split())}.")
-    return head
+    return head or grapheme
 
 
 def written_for(conn: sqlite3.Connection, form: str) -> list[dict]:
@@ -152,11 +150,19 @@ def set_written_for(conn: sqlite3.Connection, *, key: str, actor: str, request: 
     at = at or ledger.now()
     if conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is None:
         raise LedgerError(404, "No such form.")
-    _head_of(grapheme)
-    own = conn.execute(
-        "SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='written_for' AND a.scope='' AND a.slot=? "
-        "AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
-        "ORDER BY a.rowid DESC LIMIT 1", (form, grapheme, actor)).fetchone()
+
+    def own_of(key: str) -> sqlite3.Row | None:
+        return conn.execute(
+            "SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='written_for' AND a.scope='' AND a.slot=? "
+            "AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+            "ORDER BY a.rowid DESC LIMIT 1", (form, key, actor)).fetchone()
+
+    if remove:
+        # A claim is taken back by the key it was recorded under, or by one that key heads.
+        grapheme = grapheme if own_of(grapheme) else refs.grapheme(grapheme) or grapheme
+    else:
+        grapheme = head_of(grapheme)
+    own = own_of(grapheme)
     linked = any(value["grapheme"] == grapheme for value in written_for(conn, form))
     if remove and own is None:
         raise LedgerError(409, f"You have not said this form writes {refs.from_code_points(grapheme.split())}.")

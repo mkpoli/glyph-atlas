@@ -12,7 +12,7 @@ import { listingItems } from '../atlas3Listing';
 import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { idsCharacter } from '../category';
+import { idsCharacter, isSeal } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
 import { drawnForm, drawnFormsOf } from '../representation';
@@ -77,14 +77,16 @@ export function describedCard(value: string) {
   return { data, detail };
 }
 
-/** A grapheme with its drawn forms (docs/decisions/0014-drawn-forms.md) after its characters: each is a
- *  member the reference object does not hold, since only the site's table names it. */
+/** A grapheme with its drawn forms (docs/decisions/0014-drawn-forms.md) after its characters and before
+ *  its small seal characters: each is a member the reference object does not hold, since only the site's
+ *  table names it. */
 function withDrawn(grapheme: Json): Json {
   if (!grapheme?.members) return grapheme;
   const listed = new Set(grapheme.members.map((m: Json) => m.char));
   const drawn = drawnFormsOf(grapheme.char).filter(char => !listed.has(char));
   if (!drawn.length) return grapheme;
-  const members = [...grapheme.members, ...drawn.map(char => ({ code_point: cp(char), char, script: drawnForm(char)!.script, drawn: true }))];
+  const members = [...grapheme.members.filter((m: Json) => !isSeal(m.char)),
+    ...drawn.map(char => ({ code_point: cp(char), char, script: drawnForm(char)!.script, drawn: true })), ...grapheme.members.filter((m: Json) => isSeal(m.char))];
   return { ...grapheme, members, character_count: members.length };
 }
 const drawnIn = (card: Json) => card?.grapheme ? { ...card, grapheme: withDrawn(card.grapheme) } : card;
@@ -221,12 +223,12 @@ export const writtenFormUseQuery = () => `SELECT c.object AS form,
     AND c.cut=k.cut+(r.x IS NOT NULL) AND c.object IN (SELECT value FROM json_each(?1))
     AND (k.char IN (SELECT value FROM json_each(?2)) OR k.family IN (SELECT value FROM json_each(?2)))
   GROUP BY c.object`;
-async function writtenForms(env: Env, card: Card, rows: Json[], predicted: Json[]) {
+async function writtenForms(env: Env, card: Card, rows: Json[]) {
   const head = card.detail.grapheme?.code_point ?? card.detail.code_point;
   const family = await familyOf(env, card);
   if (!head || !family.members.length) return [];
   const linked = (await env.ATLAS.prepare(writtenFormsQuery()).bind(head).all<{ form: string; scheme: string; value: string }>()).results;
-  const known = new Set([...(card.detail.grapheme?.members ?? []).map((m: Json) => m.char), ...rows.map(r => r.char), ...predicted.map(r => r.char)]);
+  const known = new Set([...(card.detail.grapheme?.members ?? []).map((m: Json) => m.char), ...rows.map(r => r.char)]);
   const fresh = linked.filter(row => !known.has(row.value));
   if (!fresh.length) return [];
   const used = (await env.ATLAS.prepare(writtenFormUseQuery()).bind(JSON.stringify(fresh.map(row => row.form)), JSON.stringify(family.members))
@@ -288,8 +290,11 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const rows = [...shown, ...lent.map(w => ({ char: w.char, code_point: cp(w.char), widens: false, written: true, relations: w.relations }))]
       .map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
         count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
-    const predicted = derived.map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
-    const forms = await writtenForms(env, card, rows, predicted);
+    const forms = await writtenForms(env, card, rows);
+    // A derived form a reviewer said is written for the family is one of its 字体, and is predicted no more.
+    const said = new Set(forms.map(form => form.char));
+    const predicted = derived.filter(entry => !said.has(entry.char))
+      .map(entry => ({ ...entry, count: count(entry.char, 0), corpus_count: count(entry.char, 1) }));
     const used = new Set(rows.flatMap(row => row.sources));
     // The grapheme a character of another script also writes is cited on its own card too.
     for (const w of lends) for (const relation of w.relations) used.add(relation.source);
@@ -612,6 +617,147 @@ export async function decades(env: Env, ctx: ExecutionContext, url: URL, tools: 
   });
 }
 
+// A gallery grouped by book: the books a character's crops (or its family's) come from, the most crops
+// first, each with its first crops, the collection's and then the corpus's. Two records of one copy, a
+// corpus's and the collection's, are one book, and the crops whose book no record names come last. The
+// records and their counts are kept at the edge as the decades are; the crops are read from the database.
+type BookCell = [kind: number, group: StyleGroup, quiz: number, n: number];
+type BookRecord = { id: number; key: string; title: string | null; year: number | null; cells: BookCell[] };
+const GALLERY_BOOKS = 60, BOOK_CROPS = 60;
+/** The key of the crops whose book no record names. */
+export const UNRECORDED = 'unrecorded';
+// The くずし字データセット of the 東京大学史料編纂所 is published as one record and names no crop's document.
+const DATASETS = new Set(['hi:kuzushiji-2023']);
+// Records of one copy under unrelated keys, by the record they are kept with: the CODH corpus's of the
+// same 国文学研究資料館 書誌ID, and the two みんなで翻刻 entries of NDL 2539136.
+const COPIES: Record<string, string> = {
+  'hl:48ADDF6AFC3EC1002E472AA1137F87AE': 'codh:100241706', 'hl:B7B8D4E48A5270A5A9660A5790907EFA': 'codh:100249476', 'hl:0C3E70E736947328B7062BED6947A189': 'codh:100249376',
+  'hl:0E1D76C249C4E0E52A3D34F9E68389BB': 'codh:100249537', 'hl:1793909603875BE815ED30CF80427250': 'codh:200022050', 'hl:32399C08071CC4F9BEACC53997F08325': 'codh:100249371',
+  'hl:7970d9964e0cfeafe30321827a62beae': 'hl:6E29B9B929C04E82EA49008079FA75D8',
+};
+/** The copy a record is of: みんなで翻刻's entry under either of its prefixes, HNG's text in either of its
+ *  sets, the record `COPIES` keeps it with, and any other record's own key. */
+export function copyOf({ key, title }: { key: string; title: string | null }): string {
+  if (title === null || DATASETS.has(key)) return UNRECORDED;
+  if (COPIES[key]) return copyOf({ key: COPIES[key], title });
+  const honkoku = /^h[lk]:([0-9a-f]{32})$/i.exec(key), hng = /^hng(?:-kiridashi)?:(.+)$/.exec(key);
+  return honkoku ? `honkoku:${honkoku[1].toLowerCase()}` : hng ? `hng:${hng[1]}` : key;
+}
+const bookIndex = (source: Source) => source.by === 'claimed' ? '' : ` INDEXED BY ${source.by === 'char' ? 'crop_char_book' : 'crop_family_book'}`;
+/** One source's crops counted by book, style and withheld flag, with one crop of each to name the book by. */
+export function bookCellsQuery(source: Source, kind: 0 | 1) {
+  const { where, values } = sourceWhere(source, kind);
+  return { sql: `SELECT book,style,quiz,count(*) AS n,min(id) AS sample FROM crops${bookIndex(source)} WHERE ${[...where, ...(source.by === 'char' ? ['kind<2'] : [])].join(' AND ')}`
+    + ' GROUP BY book,style,quiz', values };
+}
+// The books of these crops, and the year the year filter places them by.
+export const booksOfQuery = () => `SELECT b.id,b.key,b.title,k.year FROM json_each(?) j CROSS JOIN crops k ON k.id=j.value JOIN books b ON b.id=k.book`;
+/** One source's first crops in each of some books, by shuffle and id from `after` on: the rows of the
+ *  books' own ranges of the index, at most `limit` a book, and each crop by its key. */
+export function bookCropsQuery(source: Source, kind: 0 | 1, books: number[], filter: { group: StyleGroup | null; withheld: boolean }, after: [number, number] | null, limit: number) {
+  const found = sourceWhere(source, kind), where = [...found.where, ...(source.by === 'char' ? ['kind<2'] : []), 'book=j.value'], values = [...found.values];
+  if (filter.group) {
+    const [low, high] = STYLE_GROUPS[filter.group];
+    where.push('style>=?'); values.push(low);
+    if (high !== null) { where.push('style<=?'); values.push(high) }
+  }
+  if (!filter.withheld) where.push('quiz=1');
+  if (after) { where.push('(shuffle,id)>(?,?)'); values.push(...after) }
+  return { sql: `SELECT k.id,k.book,k.shuffle FROM json_each(?) j CROSS JOIN crops k ON k.id IN (SELECT id FROM crops${bookIndex(source)}`
+    + ` WHERE ${where.join(' AND ')} ORDER BY shuffle,id LIMIT ?)`, values: [JSON.stringify(books), ...values, limit] };
+}
+async function bookRecords(env: Env, ctx: ExecutionContext, origin: string, g: Gallery, code_point: string, scope: Scope): Promise<BookRecord[]> {
+  const key = new Request(`${origin}/layers/books?v=${encodeURIComponent(await axisVersion(env))}&c=${encodeURIComponent(code_point)}&s=${scope}`);
+  return edge(ctx, key, async () => {
+    const reads = g.sources.flat().flatMap(source => ([0, 1] as const).map(kind => ({ kind, ...bookCellsQuery(source, kind) })));
+    if (!reads.length) return [];
+    const results = await env.ATLAS.batch(reads.map(({ sql, values }) => env.ATLAS.prepare(sql).bind(...values))) as D1Result<{ book: number; style: number | null; quiz: number; n: number; sample: number }>[];
+    const by = new Map<number, { sample: number; cells: Map<string, BookCell> }>();
+    results.forEach((result, i) => {
+      for (const row of result.results) {
+        const book = by.get(row.book) ?? by.set(row.book, { sample: row.sample, cells: new Map() }).get(row.book)!;
+        const group = groupOf(row.style), at = `${reads[i].kind} ${group} ${row.quiz}`, cell = book.cells.get(at);
+        if (cell) cell[3] += row.n;
+        else book.cells.set(at, [reads[i].kind, group, row.quiz, row.n]);
+      }
+    });
+    const named = await env.ATLAS.prepare(booksOfQuery()).bind(JSON.stringify([...by.values()].map(book => book.sample)))
+      .all<{ id: number; key: string; title: string | null; year: number | null }>();
+    return named.results.map(row => ({ ...row, cells: [...by.get(row.id)!.cells.values()] }));
+  });
+}
+/** `/layers/books`: a page of the books a gallery's crops come from, as many as hold `limit` crops, each
+ *  with its first `per` and the cursor of its next ones; with `document`, the crops of that book from `after` on. */
+export async function bookGallery(env: Env, ctx: ExecutionContext, url: URL, tools: CharacterTools) {
+  const q = url.searchParams, card = await characterCard(env, q.get('code_point') || '', tools, ctx), { data } = card;
+  const scope: Scope = q.get('scope') === 'grapheme' ? 'grapheme' : 'character', group = styleGroup(q), withheld = q.get('withheld') === 'show';
+  const per = Math.max(1, integer(q, 'per', 24, BOOK_CROPS)), limit = Math.max(1, integer(q, 'limit', BOOK_CROPS, BOOK_CROPS)), dated = yearOptions(q, fail), years = dated?.years ?? null, document = q.get('document'), after = q.get('after');
+  if (dated?.axis === 'composed') throw new Problem(422, 'A gallery by book is narrowed by the dates of the copies.');
+  const g = await galleryOf(env, card, scope);
+  const styles = { local: none(), corpus: none() };
+  let heldBack = 0;
+  const records = (await bookRecords(env, ctx, url.origin, g, data.code_point, scope)).flatMap(record => {
+    if (years && (years === 'undated' ? record.year !== null : record.year === null || record.year < years.from || record.year > years.to)) return [];
+    const count = { local: 0, corpus: 0 };
+    for (const [kind, of, quiz, n] of record.cells) {
+      const list = kind === 1 ? 'corpus' : 'local', shown = !group || of === group;
+      if (kind === 0 && quiz === 0 && !withheld) { if (shown) heldBack += n; continue }
+      styles[list][of] += n;
+      if (shown) count[list] += n;
+    }
+    return count.local + count.corpus ? [{ ...record, count, n: count.local + count.corpus }] : [];
+  }).sort((a, b) => b.n - a.n || a.id - b.id);
+  // A book is named by its record of the most crops, and opens at the one the collection cut crops from.
+  const copies = new Map<string, typeof records>();
+  for (const record of records) copies.set(copyOf(record), [...copies.get(copyOf(record)) ?? [], record]);
+  const found = [...copies].map(([copy, of]) => {
+    const recorded = copy !== UNRECORDED, count = { local: of.reduce((n, r) => n + r.count.local, 0), corpus: of.reduce((n, r) => n + r.count.corpus, 0) };
+    return { id: of[0].id, recorded, key: recorded ? of[0].key : UNRECORDED, title: recorded ? of[0].title : null, records: of, count, n: count.local + count.corpus,
+      page: recorded ? of.find(r => r.count.local)?.key ?? null : null };
+  }).sort((a, b) => Number(b.recorded) - Number(a.recorded) || b.n - a.n || a.id - b.id);
+
+  // A book's own pages go by list, shuffle and id; a page of books by their counts and ids.
+  let books = found, from: [0 | 1, number, number] | null = null;
+  if (document !== null) {
+    books = found.filter(book => book.key === document || book.records.some(record => record.key === document));
+    if (after) {
+      const at = /^([01])\.(\d{1,10})\.([0-9a-z]{1,11})$/.exec(after), crop = at ? cropOf(at[3]) : null;
+      if (!at || crop === null) throw new Problem(422, 'Invalid cursor.');
+      from = [Number(at[1]) as 0 | 1, Number(at[2]), crop];
+    }
+  } else if (after) {
+    const at = /^(\d{1,10})\.(\d{1,10})$/.exec(after);
+    if (!at) throw new Problem(422, 'Invalid cursor.');
+    books = found.filter(book => !book.recorded || book.n < Number(at[1]) || (book.n === Number(at[1]) && book.id > Number(at[2])));
+  }
+  const page: typeof found = [], rest = books.length;
+  for (let crops = 0; page.length < Math.min(rest, GALLERY_BOOKS) && crops < limit; crops += Math.min(per, page[page.length - 1].n)) page.push(books[page.length]);
+
+  type Row = { id: number; book: number; shuffle: number; kind: 0 | 1 };
+  const reads = ([0, 1] as const).flatMap(kind => {
+    const ids = page.flatMap(book => book.records.filter(record => kind ? record.count.corpus : record.count.local).map(record => record.id));
+    if (!ids.length || (from && from[0] > kind)) return [];
+    // Of the crops a claim files here, only those of these books are looked up.
+    const filed = new Set(ids), here = g.here.filter(r => r.kind === kind && filed.has(r.book)).map(r => r.id);
+    return g.sources.flat().map(source => source.by === 'claimed' ? { ...source, ids: here } : source).filter(source => source.by !== 'claimed' || source.ids.length)
+      .map(source => ({ kind, ...bookCropsQuery(source, kind, ids, { group, withheld: kind === 1 || withheld }, from && from[0] === kind ? [from[1], from[2]] : null, per + 1) }));
+  });
+  const rows = new Map<typeof found[number], Row[]>(page.map(book => [book, []])), bookOf = new Map(page.flatMap(book => book.records.map(record => [record.id, book])));
+  if (reads.length) (await env.ATLAS.batch(reads.map(({ sql, values }) => env.ATLAS.prepare(sql).bind(...values))) as D1Result<Row>[])
+    .forEach((result, i) => { for (const row of result.results) rows.get(bookOf.get(row.book)!)!.push({ ...row, kind: reads[i].kind }) });
+  for (const list of rows.values()) list.sort((a, b) => a.kind - b.kind || a.shuffle - b.shuffle || a.id - b.id);
+  const shown = [...rows.values()].flatMap(list => list.slice(0, per));
+  const items = new Map((await listingItems(env, shown.map(row => row.id))).map(item => [item.id, item]));
+  const last = page[page.length - 1];
+  return { code_point: data.code_point, scope, per, total: found.length, styles, style_groups: STYLE_NAMES, withheld: withheld || years ? null : heldBack,
+    groups: page.map(book => {
+      const list = rows.get(book)!, end = list[per - 1];
+      return { document: book.key, records: book.records.map(record => record.key), title: book.title, page: book.page, count: book.count, items: list.slice(0, per).flatMap(row => { const item = items.get(publicId(row.id)); return item ? [{ ...item, origin: row.kind ? 'corpus' : 'collection' }] : [] }),
+        next: list.length > per ? `${end.kind}.${end.shuffle}.${publicId(end.id)}` : null };
+    }),
+    next: document === null && page.length < rest ? `${last.n}.${last.id}` : null };
+}
+
 // A character's or grapheme's crops along its time axis (編年): each decade's crops counted, and a few of
 // them drawn by their shuffle so each decade shows a fair sample; the undated as decade null. A crop is
 // placed by its book's date on `axis`, and the crops may be narrowed to a style group, a kind of
@@ -626,7 +772,7 @@ function chronologyFilter(q: URLSearchParams): ChronologyFilter {
   const production = q.get('production');
   if (production && !/^[a-z_]+(\/[a-z_]+)*$/.test(production)) throw new Problem(422, 'Unknown production.');
   const chars = (q.get('chars') ?? '').split(',').filter(Boolean);
-  if (chars.length > 20 || chars.some(c => [...c].length > 4)) throw new Problem(422, 'Name at most 20 characters.');
+  if (chars.length > FAMILY_MAX || chars.some(c => [...c].length > 4)) throw new Problem(422, `Name at most ${FAMILY_MAX} characters.`);
   return { style: styleGroup(q), production, chars };
 }
 // A production and every node under it: `printed` takes `printed/woodblock`, compared as text. The

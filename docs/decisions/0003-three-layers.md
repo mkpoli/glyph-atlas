@@ -30,7 +30,8 @@ The browsing hierarchy is **grapheme → character → form** (clarified 2026-09
 
 - **Grapheme** groups explicitly related written characters. 仮 and 假 share a family
   represented by 仮. Existing kana families remain: ね, ネ and its historical kana
-  belong together. Small kana and ligatures retain their own families.
+  belong together. Small kana and ligatures retain their own families. Small seal characters
+  belong to their Han character's family ([0015](0015-small-seal-forms.md)).
 - **Character** keeps the written identity and code point. 仮 (`U+4EEE`) and 假
   (`U+5047`) remain distinct rows in `characters.tsv`, with separate counts.
 - **Form** is the exact ink in a source occurrence: its unit identity, crop, placement,

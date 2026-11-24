@@ -46,7 +46,7 @@ def page_seq(image: str, fallback: int) -> int:
 def classification_of(code_point: int) -> Classification:
     """A merged source class does not identify one written form."""
     family = refs.grapheme_info(f"U+{code_point:04X}")
-    return (Classification.UNASSESSED if family and family["character_count"] > 1
+    return (Classification.UNASSESSED if family and len(refs.transcribed(family["members"])) > 1
             else Classification.IDENTIFIED)
 ATTRIBUTION = "『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340"
 IIIF = "https://codh.rois.ac.jp/char-shape/iiif/{bid}/{image}.tif"

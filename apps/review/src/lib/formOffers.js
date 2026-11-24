@@ -1,3 +1,5 @@
+import { isSeal, sealsLast } from './cardTiers.js'
+
 // Which registered figures and regional shapes a crop's form bar offers beside the character itself.
 // Atlas Sans and Atlas Serif draw the ideographs of U+3400–4DB5 and U+4E00–9FEF from Noto Sans and
 // Noto Serif CJK JP (docs/typefaces.md), so for those two forms draw what the character's own chip
@@ -36,3 +38,47 @@ export function sortForms(char, figures, shapes) {
       chars: shapes.filter(drawnAlike).flatMap(shape => shape.chars ?? []) },
   }
 }
+
+/**
+ * A list's forms under the 構形 each stands under (`structureOf`, by the form's text), a structure where
+ * its first form stands, those built as another that stands under it (⿰辵禺 under ⿺辶禺) in a block of
+ * their own; the forms with none stand together after them, uncaptioned. The grapheme's own forms come
+ * first; a related character (`related`, by its text) joins a 構形 of theirs where it shares one, and
+ * otherwise stands after all of them. A small seal character comes last in its block, and after every
+ * other form where it has no 構形 or no other form stands under its own. Under a 構形 with a form of the
+ * grapheme, a layout of related characters alone follows those with one, and a layout of small seal
+ * characters alone comes last. `own` is the id of the 構形 the crop's own form is built as, and
+ * `proposed(char, by)` whether a form stands under its 構形 as a proposal. Each group is
+ * `{ id, label, blocks: [{ id, label, own, forms }] }`.
+ */
+export function groupForms(list, { structureOf = new Map(), related = new Set(), own = null, proposed = () => false } = {}) {
+  const block = ({ id, label }) => ({ id, label, own: id === own, forms: [] })
+  const homes = new Map(), found = []
+  const tiers = [['', form => !related.has(form.char) && !isSeal(form.char)], [' related', form => related.has(form.char) && !isSeal(form.char)],
+    [' seal', form => isSeal(form.char)]]
+  for (const [key, of] of tiers) {
+    const loose = []
+    for (const form of list) if (of(form)) {
+      const structure = structureOf.get(form.char)
+      if (!structure) { loose.push(form); continue }
+      let home = homes.get(structure.id)
+      if (!home) {
+        homes.set(structure.id, home = { id: structure.id, label: structure.label, blocks: [block(structure)] })
+        found.push(home)
+      }
+      const layout = structure.part ?? structure
+      let built = home.blocks.find(one => one.id === layout.id)
+      if (!built) home.blocks.push(built = block(layout))
+      built.forms.push({ ...form, proposed: proposed(form.char, structure.by) })
+    }
+    if (loose.length) found.push({ id: key, label: '', blocks: [{ id: key, label: '', own: false, forms: loose }] })
+  }
+  const tier = form => tiers.findIndex(([, of]) => of(form))
+  const rank = built => built.forms.length ? Math.min(...built.forms.map(tier)) : 0
+  for (const group of homes.values()) if (group.blocks.some(built => built.forms.some(form => tier(form) === 0))) group.blocks.sort((a, b) => rank(a) - rank(b))
+  return found
+}
+
+/** The forms of a grouped bar in the order the number keys 1–0 reach them: as they stand, the small seal
+ *  characters after every other, so none takes the key of another form. */
+export const keyOrder = groups => sealsLast(groups.flatMap(formsOf))

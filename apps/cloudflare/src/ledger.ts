@@ -335,7 +335,10 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > MEMBERS_MAX) tools.fail(422, `A claim names 1–${MEMBERS_MAX} values.`);
   const members: Member[] = raw.map((m: Json) => ({ object: m?.object == null ? null : tools.text(m.object, 128, 'object', true),
     value: m?.value ?? null, confidence: m?.confidence ?? null, confidence_scheme: m?.confidence_scheme == null ? null : tools.text(m.confidence_scheme, 64, 'confidence scheme', true) }));
-  // An object this route can name is a form or a word the site holds, or a grapheme that heads its family.
+  // An object this route can name is a form or a word the site holds, or a grapheme: the head of the family
+  // its key is filed under now, so a claim kept under a key that has joined another family is the head's.
+  const heads = await keyHeads(env, members.flatMap(m => m.object === null ? [] : [m.object]));
+  for (const m of members) if (m.object !== null) m.object = heads.get(m.object)!;
   const named = members.flatMap(m => m.object === null ? [] : [m.object]);
   const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.ATLAS.prepare(`SELECT id,'form' AS kind FROM forms WHERE id IN (SELECT value FROM json_each(?1))
     UNION ALL SELECT id,'word' FROM words WHERE id IN (SELECT value FROM json_each(?1))`).bind(JSON.stringify(named)).all<{ id: string; kind: string }>()).results.map(r => [r.id, r.kind])) : {};
