@@ -47,7 +47,7 @@
   import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
   import { galleryName, galleryTitle } from '../lib/citation.js'
-  import { graphemeLabel } from '$worker/graphemeLabel.ts'
+  import { graphemeLabel, labelParts } from '$worker/graphemeLabel.ts'
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
@@ -693,7 +693,7 @@
   const frequentGraphemes = $derived.by(() => {
     if (runKind !== 'grapheme' || !cropCounts) return null
     const next = graphemes.filter(group => group.count > 0).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).slice(0, KEPT)
-      .map(group => ({ text: graphemeLabel(group.char), char: group.char, n: group.count, key: group.key }))
+      .map(group => ({ text: graphemeLabel(group.char), parts: labelParts(group.char), char: group.char, n: group.count, key: group.key }))
     const same = shownGraphemes?.length === next.length && next.every((group, i) => group.key === shownGraphemes[i].key && group.n === shownGraphemes[i].n)
     return same ? shownGraphemes : (shownGraphemes = next)
   })
@@ -1303,7 +1303,7 @@
       : Number(getComputedStyle(grid.querySelector('.collage-block')).getPropertyValue('--collage-cols'))
     const holders = [...new Set(crops.map(creditOf).filter(Boolean))]
     // The page as the reader has it now: the gallery may show another character before the image is done.
-    const char = picked && galleryName(subject ?? picked), file = picked ? (subject ?? picked).char : 'collection', site = t('app.name'), day = new Date().toLocaleDateString('sv')
+    const char = picked && galleryName(subject ?? picked), file = picked?.char ?? 'collection', site = t('app.name'), day = new Date().toLocaleDateString('sv')
     let address = location.href
     try { address = decodeURI(address) } catch { /* An address that does not decode is written as it stands. */ }
     // The page's own paper, ink and quiet text, read as the colours the theme resolves them to.
@@ -1432,7 +1432,7 @@
      hover details. The square grid positions the label and footer at its top and bottom through display:contents. -->
 {#snippet tileCaption(item)}
   <span class="tile-caption">
-    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
+    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText {...isUnassigned(item) ? labelParts(tileGrapheme(item)) : { text: shownGrapheme(item) }} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
     <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
@@ -1494,7 +1494,7 @@
     <div class="toolbar-query">
       <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
-                       token={grapheme ? graphemeLabel(charOf(grapheme)) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: graphemeLabel(charOf(grapheme)) })} ontokenclear={() => select('')}
+                       token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: graphemeLabel(charOf(grapheme)) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
                        onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
       <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
@@ -1522,7 +1522,7 @@
       </div>
       <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: graphemeLabel(chosenGrapheme.char) })} /></a>{/if}
+        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={{ ...withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char }), ...labelParts(chosenGrapheme.char) }} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
         {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
         <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>

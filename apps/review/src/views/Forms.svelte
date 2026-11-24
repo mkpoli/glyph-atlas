@@ -21,7 +21,7 @@
   import { suggest } from '../lib/layers.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { graphemeAddress } from '../lib/addresses.js'
-  import { graphemeLabel, labelSize } from '$worker/graphemeLabel.ts'
+  import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import { originTitle } from '../lib/origin.js'
 
   // The family the address names; none, the first of the list. `onshow` is told each family shown.
@@ -503,7 +503,7 @@
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
         {#each rows.items as f, k (f.code_point)}
           <li aria-posinset={rows.from + k + 1} aria-setsize={shown.length}><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
-            <span class="family-char" class:pair={labelSize(f.char) === 2} class:trio={labelSize(f.char) === 3}><ScriptText text={graphemeLabel(f.char)} /></span>
+            <span class="family-char" class:pair={labelSize(f.char) === 2} class:trio={labelSize(f.char) === 3}><ScriptText {...labelParts(f.char)} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
@@ -523,7 +523,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2><a class="family-link" href={localize(graphemeAddress(current.code_point, current.char))} aria-label={t('chips.showCharacter', { char: graphemeLabel(current.char) })}><ScriptText text={graphemeLabel(current.char)} /></a></h2>
+          <h2><a class="family-link" href={localize(graphemeAddress(current.code_point, current.char))} aria-label={t('chips.showCharacter', { char: graphemeLabel(current.char) })}><ScriptText {...labelParts(current.char)} /></a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>

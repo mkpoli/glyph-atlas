@@ -110,13 +110,13 @@
   </button>
 {/snippet}
 
-<Seo title={`${named.label} · ${t('nav.chronology')}`} description={t('meta.chronology.description', { character: named.label, codePoint: named.code_point })} />
+<Seo title={`${named.label} · ${t('nav.chronology')}`} description={t('meta.chronology.description', { character: named.label, codePoint: named.code_point })} path={named.path} />
 
 <section class="explore chronology" aria-busy={loading}>
   <div class="page-status"><SiteLinks /></div>
   <header class="heading">
     <a class="quiet-link" href={gallery()}>← {t('chronology.gallery')}</a>
-    <h1><span class="glyph"><ScriptText text={named.label} script={named.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
+    <h1><span class="glyph"><ScriptText {...named.parts} script={named.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
     <p class="summary">{t('chronology.dated', { count: dated })}{#if undated}{' · '}{t('chronology.yearless', { count: undated })}{/if}{#if buckets.length}{' · '}{dateLabel({ start: buckets[0].decade, end: buckets.at(-1).decade + 9, precision: 'years' })}{/if}</p>
   </header>
 

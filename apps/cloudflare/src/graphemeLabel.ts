@@ -6,5 +6,12 @@ import LABELS from './graphemeLabels.json';
 
 /** The label of the grapheme headed by `char`; a character that heads no such grapheme is its own. */
 export const graphemeLabel = (char: string): string => Object.hasOwn(LABELS, char) ? (LABELS as Record<string, string>)[char] : char;
+/** The label as it is set: the 简体字 that ends it apart, for a glyph drawn the Chinese way, from the 旧字体 and
+ *  the head, drawn the Japanese way as every character of the site is. */
+export function labelParts(char: string): { text: string; simplified: string } {
+  if (!Object.hasOwn(LABELS, char)) return { text: char, simplified: '' };
+  const chars = [...graphemeLabel(char)], simplified = chars.at(-1) === char ? '' : chars.pop()!;
+  return { text: chars.join(''), simplified };
+}
 /** How many characters the label is, by which a place of fixed size draws them: 1, 2 or 3. */
 export const labelSize = (char: string): number => [...graphemeLabel(char)].length;

@@ -13,7 +13,7 @@
   // past; the chosen grapheme is drawn from the start, and shown, however far down the list it falls.
   import { onMount, tick } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
-  import { graphemeLabel, labelSize } from '$worker/graphemeLabel.ts'
+  import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import GraphemeCard from './GraphemeCard.svelte'
   import { number } from '../lib/client.js'
   import { SLICE, nearing } from '../lib/slices.js'
@@ -59,6 +59,7 @@
 
 <div class="category-options grapheme-grid" bind:this={grid}>
   {#each visible as group (group.key)}
+    {@const parts = group.alone ? { text: group.char, simplified: '' } : labelParts(group.char)}
     <div class="grapheme-cell" onfocusout={left}
          onkeydown={e => { if (e.key === 'Escape' && shown === group.key) { e.preventDefault(); e.stopPropagation(); close(); quiet = true; e.currentTarget.querySelector('.grapheme-tile')?.focus(); quiet = false } }}>
       <button type="button" class="grapheme-tile" class:pair={glyphs(group) === 2} class:trio={glyphs(group) === 3} class:chosen={value === group.key}
@@ -68,7 +69,7 @@
               onfocus={e => { if (!quiet) show(group, e.currentTarget) }} onclick={e => press(group, e.currentTarget)}
               aria-expanded={listed(group) ? shown === group.key : undefined}
               aria-label={group.members.length > 1 ? `${named(group)} · ${t('explore.grapheme.forms', { count: group.members.length })}` : undefined}>
-        <ReferenceGlyph char={named(group)} size="md" />
+        <ReferenceGlyph char={parts.text} simplified={parts.simplified} size="md" />
         <small>{number(group.count)}</small>
         {#if group.members.length > 1}<i class="form-count" aria-hidden="true">{group.members.length}</i>{/if}
       </button>
