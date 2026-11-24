@@ -43,6 +43,7 @@
   "bulk.apply.runs": "글자 쌍과 세 글자 묶음은 여러 글자로 이루어져 확인만 할 수 있습니다",
   "bulk.chooseFirst": "글자를 고르세요",
   "bulk.selectAll": "보이는 것 모두 선택",
+  "bulk.selectUnreviewed": "검토하지 않은 크롭 선택",
   "bulk.clear": "선택 해제",
   "bulk.done.other": "{count}개를 {char}(으)로 고쳤습니다",
   "bulk.kept.other": "{count}개는 이미 그 글자로 확인되어 있었습니다",

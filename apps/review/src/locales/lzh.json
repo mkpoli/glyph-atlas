@@ -27,6 +27,7 @@
   "bulk.apply.runs": "字對、三字含數字，唯可定之",
   "bulk.chooseFirst": "先擇字",
   "bulk.selectAll": "盡選所見",
+  "bulk.selectUnreviewed": "選未校",
   "bulk.clear": "釋",
   "bulk.done.other": "{count}改作{char}",
   "bulk.kept.other": "{count}已定為此字",

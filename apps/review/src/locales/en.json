@@ -45,6 +45,7 @@
   "bulk.apply.runs": "Pairs and trigrams can only be confirmed: each holds several characters",
   "bulk.chooseFirst": "Choose a character",
   "bulk.selectAll": "Select all shown",
+  "bulk.selectUnreviewed": "Select unreviewed",
   "bulk.clear": "Clear",
   "bulk.done.one": "{count} crop marked as {char}",
   "bulk.done.other": "{count} crops marked as {char}",
