@@ -12,7 +12,7 @@ import { listingItems } from '../atlas3Listing';
 import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { idsCharacter } from '../category';
+import { idsCharacter, isSeal } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
 import { drawnForm, drawnFormsOf } from '../representation';
@@ -77,14 +77,16 @@ export function describedCard(value: string) {
   return { data, detail };
 }
 
-/** A grapheme with its drawn forms (docs/decisions/0014-drawn-forms.md) after its characters: each is a
- *  member the reference object does not hold, since only the site's table names it. */
+/** A grapheme with its drawn forms (docs/decisions/0014-drawn-forms.md) after its characters and before
+ *  its small seal characters: each is a member the reference object does not hold, since only the site's
+ *  table names it. */
 function withDrawn(grapheme: Json): Json {
   if (!grapheme?.members) return grapheme;
   const listed = new Set(grapheme.members.map((m: Json) => m.char));
   const drawn = drawnFormsOf(grapheme.char).filter(char => !listed.has(char));
   if (!drawn.length) return grapheme;
-  const members = [...grapheme.members, ...drawn.map(char => ({ code_point: cp(char), char, script: drawnForm(char)!.script, drawn: true }))];
+  const members = [...grapheme.members.filter((m: Json) => !isSeal(m.char)),
+    ...drawn.map(char => ({ code_point: cp(char), char, script: drawnForm(char)!.script, drawn: true })), ...grapheme.members.filter((m: Json) => isSeal(m.char))];
   return { ...grapheme, members, character_count: members.length };
 }
 const drawnIn = (card: Json) => card?.grapheme ? { ...card, grapheme: withDrawn(card.grapheme) } : card;

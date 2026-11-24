@@ -5,6 +5,8 @@ normalised corpus may write, a clustering's forms, a class the classifier votes 
 gallery opens on."""
 
 import importlib
+import importlib.util
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -170,12 +172,34 @@ def test_a_stored_grouping_of_the_han_members_is_kept(export, monkeypatch):
     assert detail["visual_analysis"] == stored
 
 
-def test_a_round_deals_the_seal_characters_of_its_grapheme_and_is_named_by_its_head():
+def test_a_round_deals_the_seal_characters_of_its_grapheme_whichever_key_names_it():
     assert atlas.grapheme_of(CHUN) == "U+6625" and atlas.grapheme_members("U+6625")[-1] == CHUN
-    # As for ハ, a key that names a member is answered with the grapheme it is filed under.
-    for key, message in (("U+30CF", "ハ is filed under は."), ("U+3D307", f"{CHUN} is filed under 春.")):
-        with pytest.raises(atlas.BadRequest, match=message):
-            atlas.grapheme_members(key)
+    # As for ハ, a key that names a member is its grapheme's: a save kept under it stands.
+    for key, head in (("U+30CF", "U+306F"), ("U+3D307", "U+6625"), ("U+6625", "U+6625"), ("U+30C4 U+309A", "U+30C4 U+309A")):
+        assert atlas.round_grapheme(key) == head
+        assert atlas.grapheme_members(key) == atlas.grapheme_members(head)
+    with pytest.raises(atlas.BadRequest):
+        atlas.grapheme_members("U+110000")
+
+
+def test_the_forms_of_a_card_list_the_seal_characters_last():
+    assert characters._forms("U+4E8B")[-4:] == ["U+F0000", "U+F0001", "U+F0002", "U+3D8B7"]
+    assert characters._forms("U+3D8B7")[0] == "U+3D8B7"
+
+
+def test_a_seal_label_is_sure_in_every_corpus():
+    """No data reaches it: a normalised corpus labelling a glyph with a seal character names it."""
+    seal = identity_fields({"unicode": "U+3E6F7", "text_source": KA}, "codh-full")
+    assert (seal["written_character"], seal["requires_family_scope"]) == (KA, False)
+
+
+def test_the_benchmark_credits_no_han_for_a_seal_or_the_other_way(monkeypatch):
+    spec = importlib.util.spec_from_file_location("bench", Path("models/benchmark/bench.py"))
+    bench = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "bench", bench)
+    spec.loader.exec_module(bench)
+    assert bench.family("U+4EEE") == bench.family("U+5047") == "U+4EEE"
+    assert bench.family("U+3E6F7") == "U+3E6F7" and bench.family("U+3EDB1") == "U+3EDB1"
 
 
 def test_no_seal_character_heads_a_grapheme():

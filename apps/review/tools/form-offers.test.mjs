@@ -116,6 +116,13 @@ describe('a small seal character on the bar', () => {
       ['⿺辶於', [['⿺辶於', false, [['𨔆', false]]]]], ['⿺辶寓', [['⿺辶寓', false, [['𫑈', false]]]]]])
     expect(keyOrder(groups).map(form => form.char)).toEqual(['遇', '𨔆', '𫑈', GU])
   })
+  it('stands so too while the site gives it as a related character', () => {
+    // 萅's bar before the reference load that makes 𽌇 a member.
+    const chun = [['萅', '⿱艸旾'], ['春', '⿱𡗗日'], [SHUN, '⿱艸旾'], ['蠢', '⿱春䖵']]
+    const groups = groupForms(barOf(chun), { structureOf: standingOf(chun), related: new Set([SHUN, '蠢']) })
+    expect(groups.map(charsOf)).toEqual([['萅', SHUN], ['春'], ['蠢']])
+    expect(keyOrder(groups).map(form => form.char)).toEqual(['萅', '春', '蠢', SHUN])
+  })
   it('leaves a bar without one as it stood', () => {
     const bang = [['邦', '⿰丰阝'], ['㘯', ''], ['𨛜', '⿰𭅺阝'], ['邽', '⿰圭阝']]
     const groups = groupForms(barOf(bang), { structureOf: standingOf(bang), related: new Set(['邽']) })

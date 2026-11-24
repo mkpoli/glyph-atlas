@@ -61,7 +61,9 @@ def identity_fields(
         encoded = unicodedata.normalize("NFC", encoded or source_label)
     family = family_of(" ".join(refs.to_code_points(encoded)) if figure else cp)
     normalized = corpus in NORMALIZED_CORPORA
-    ambiguous = normalized and not figure and len(members_for(family, encoded or source_label)) > 1
+    # No corpus writes a small seal character for its Han character, so a label that is one names it.
+    ambiguous = (normalized and not figure and not refs.is_small_seal(encoded or source_label or "")
+                 and len(members_for(family, encoded or source_label)) > 1)
     basis = "normalized_transcription" if normalized else "source_transcription"
     written = None if ambiguous else encoded or source_label
     assignment = None
