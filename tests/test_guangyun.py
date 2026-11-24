@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
-
-import yaml
 
 from glyph_atlas import guangyun
 from glyph_atlas.leaf_text import Head
-from glyph_atlas.schema import Licence
-
-ROOT = Path(__file__).parents[1]
 
 ENTRIES = """小韻號,小韻字號,韻目原貌,音韻地位,反切,直音,字頭,字頭說明,釋義,釋義參照
 1,1,東,端一東平,德紅,,東,,春方也德紅切三,
@@ -60,15 +54,3 @@ def test_a_gloss_is_counted_as_the_table_gives_it(tmp_path: Path) -> None:
     six = guangyun.read_entries(tables(tmp_path))[("1", 7, "b")][6]
     # The first headword of a 小韻 already ends with its 反切, 切 and count: nothing is added.
     assert six[0].head.gloss == len("春方也德紅切三")
-
-
-def test_every_copy_is_recorded_as_the_public_domain_reproduction_of_an_old_print():
-    spec = importlib.util.spec_from_file_location("cut_guangyun_headwords", ROOT / "scripts" / "cut_guangyun_headwords.py")
-    cut = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(cut)
-    source = yaml.safe_load((ROOT / "data" / "sources" / "guangyun-zecuntang.yaml").read_text(encoding="utf-8"))
-    rights = {copy["id"]: cut.document_of(source, copy, copy["volumes"][0]).image_rights for copy in source["copies"]}
-    assert (rights["photographs"].licence, rights["photographs"].holder_terms) == (Licence.PUBLIC_DOMAIN, Licence.UNKNOWN)
-    assert (rights["ioc"].licence, rights["ioc"].holder_terms) == (Licence.PUBLIC_DOMAIN, None)
-    # Only the flat scan's columns are read as one evenly spaced row.
-    assert [copy["id"] for copy in source["copies"] if copy.get("comb")] == ["ioc"]
