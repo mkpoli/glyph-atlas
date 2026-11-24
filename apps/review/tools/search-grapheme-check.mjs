@@ -35,15 +35,15 @@ try {
     requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
     body: Buffer.from(JSON.stringify(suggestions)).toString('base64'),
   }) })
-  const visit = () => browser.goto(`${service.base}/en`, { waitFor: `document.querySelector(${JSON.stringify(BOX)}) !== null` })
+  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.select-toggle') !== null` })
+  // The local review service has no grapheme pages, so the link followed is what is read.
+  await browser.evaluate(`addEventListener('click', e => { const a = e.target.closest('a.candidate-grapheme-head'); if (a) { e.preventDefault(); e.stopPropagation(); window.followed = a.getAttribute('href') } }, true)`)
   const opened = async () => {
-    await visit()
-    await browser.evaluate(`window.followed = null; addEventListener('click', e => { const a = e.target.closest('a.candidate-grapheme-head'); if (a) { e.preventDefault(); e.stopPropagation(); window.followed = a.getAttribute('href') } }, true)`)
+    await browser.evaluate(`window.followed = null`)
     await browser.evaluate(typed(BOX))
-    await browser.waitFor(`document.querySelectorAll('.collection-toolbar .candidate').length === 3`)
+    await browser.waitFor(`document.querySelectorAll('.collection-toolbar .candidate').length === 3 && document.querySelector(${JSON.stringify(BOX)}).getAttribute('aria-busy') === 'false'`)
   }
   const active = () => browser.evaluate(`document.querySelector(${JSON.stringify(BOX)}).getAttribute('aria-activedescendant')`)
-  // The local review service has no grapheme pages, so the link followed is what is read.
   const follows = how => browser.waitFor(`window.followed === '/en/grapheme/U+9F95'`, 4000).catch(() => { throw new Error(`${how} does not follow the link to the grapheme's page`) })
 
   await opened()
@@ -68,8 +68,6 @@ try {
   await key('ArrowDown', 40); await key('Enter', 13)
   await follows('Enter on the heading')
 
-  await visit()
-  await browser.waitFor(`document.querySelector('.select-toggle') !== null`)
   await browser.evaluate(`document.querySelector('.select-toggle').click()`)
   await browser.waitFor(`document.querySelector('.bulk-bar .character-search input') !== null`)
   await browser.evaluate(typed('.bulk-bar .character-search input'))

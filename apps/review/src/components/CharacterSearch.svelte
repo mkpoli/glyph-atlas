@@ -343,7 +343,7 @@
         {#if linked}
           <a class="candidate-grapheme-head" class:active={!carded && active === stop} id={rowId(stop)} href={localize(graphemeAddress(block.key, block.grapheme.char ?? block.entries[0].item.char))}
              role={carded ? undefined : 'option'} aria-selected={carded ? undefined : active === stop}
-             onpointerenter={() => { if (!carded) active = stop }} onclick={() => { open = false }}>{@render heading()}<span class="head-arrow" aria-hidden="true">→</span></a>
+             onpointermove={() => { if (!carded) active = stop }} onclick={() => { open = false }}>{@render heading()}<span class="head-arrow" aria-hidden="true">→</span></a>
         {:else}<p class="candidate-grapheme-head" aria-hidden="true">{@render heading()}</p>{/if}
         {#each block.entries as { item, index } (item.code_point)}{@render row(item, index, true)}{/each}
       </div>
