@@ -735,6 +735,8 @@
   "reading.whole": "一語読み",
   "reading.ruby": "振り仮名の表記",
   "reading.rubyOf": "{char}の振り仮名",
+  "reading.letters": "この仮名の字体",
+  "reading.jibo": "字母{char}",
   "reading.needed": "読みを入力してください。",
   "reading.save": "読みを保存",
   "word.label": "語",

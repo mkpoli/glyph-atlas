@@ -738,6 +738,8 @@
   "reading.whole": "讀哿自",
   "reading.ruby": "𡨸𥱬格讀𥪝原本",
   "reading.rubyOf": "𡨸𥱬格讀𧵑{char}",
+  "reading.letters": "各樣𧵑𡨸呢",
+  "reading.jibo": "𡨸㭲{char}",
   "reading.needed": "唉𥱬格讀。",
   "reading.save": "留格讀",
   "word.label": "詞語",

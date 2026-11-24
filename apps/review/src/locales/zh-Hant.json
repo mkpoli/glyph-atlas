@@ -743,6 +743,8 @@
   "reading.whole": "整詞讀",
   "reading.ruby": "旁註原樣",
   "reading.rubyOf": "「{char}」的旁註",
+  "reading.letters": "此假名的字體",
+  "reading.jibo": "字母「{char}」",
   "reading.needed": "請填寫讀音。",
   "reading.save": "儲存讀音",
   "word.label": "詞",
