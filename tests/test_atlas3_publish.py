@@ -752,6 +752,48 @@ def page_catalogue(path, units, pages):
     return path
 
 
+def test_published_credits_take_the_words_a_reader_should_see(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    noted, whole = "unstated holder, via Wikimedia Commons, https://example.org/x", "国立国会図書館 National Diet Library, JAPAN"
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う")]
+    units = [(*u[:-1], json.dumps({**json.loads(u[-1]), "attribution": a, "cut_at": "2026-10-03"}))
+             for u, a in zip(units, (noted, "unresolved for review: no licence statement"), strict=True)]
+    run(publish, monkeypatch, page_catalogue(tmp_path / "c.sqlite", units, {
+        "hl:p1": {"page_number": 1, "attribution": noted}, "hl:p2": {"page_number": 2, "attribution": whole}}))
+    pages = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, id FROM pages"))
+
+    def bundle(key):
+        rev = remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pages[key]}")[0]["rev"]
+        return rev, json.loads(gzip.decompress((root / "out" / "pages" / f"{pages[key]}-{rev}.json.gz").read_bytes()))
+    before = {key: bundle(key) for key in ("hl:p1", "hl:p2")}
+    crops = remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id")
+    sys.modules.pop("credits", None)
+    credits = importlib.import_module("credits")
+    credits.main([str(tmp_path / "credits.sqlite")])
+    assert dict(sqlite3.connect(tmp_path / "credits.sqlite").execute("SELECT * FROM credits")) == {
+        noted: "Wikimedia Commons, https://example.org/x", "unresolved for review: no licence statement": None}
+
+    run(publish, monkeypatch, tmp_path / "credits.sqlite")
+    (rev, page), (other_rev, other) = bundle("hl:p1"), bundle("hl:p2")
+    assert page["page"] == {**before["hl:p1"][1]["page"], "attribution": "Wikimedia Commons, https://example.org/x"}
+    assert other["page"] == before["hl:p2"][1]["page"], "a credit that needs no change stays"
+    entries = {c["id"]: c for c in (*page["crops"], *other["crops"])}
+    held = {c["id"]: c for key in before for c in before[key][1]["crops"]}
+    assert entries["ex:a1"] == {**held["ex:a1"], "attribution": "Wikimedia Commons, https://example.org/x"}
+    assert entries["ex:b1"] == {k: v for k, v in held["ex:b1"].items() if k != "attribution"}
+    assert entries["ex:a2"] == held["ex:a2"]
+    assert (rev, other_rev) == (before["hl:p1"][0] + 1, before["hl:p2"][0] + 1)
+    assert remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id") == crops, "no crop row changes"
+    capsys.readouterr()
+    run(publish, monkeypatch, tmp_path / "credits.sqlite")
+    assert "nothing changed" in capsys.readouterr().out
+    with sqlite3.connect(tmp_path / "credits.sqlite") as db:
+        db.execute("CREATE TABLE media(key)")
+    with pytest.raises(SystemExit, match="holds credits alone"):
+        run(publish, monkeypatch, tmp_path / "credits.sqlite")
+
+
 def test_a_book_cut_from_its_pages_takes_the_title_of_its_page_records(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     db = sqlite3.connect(catalogue(tmp_path / "c.sqlite", [
