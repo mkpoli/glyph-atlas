@@ -1071,7 +1071,8 @@
     await Promise.all(ids.map(async id => {
       const tile = display.find(item => item.id === id) ?? runTiles.flatMap(run => run.crops ?? []).find(item => item.id === id)
       try {
-        const now = await character(id)
+        // A crop's own record names neither its book's key nor its list, which place the tile.
+        const now = { document: tile?.document, origin: tile?.origin, ...await character(id) }
         current[id] = now
         change[id] = (flagged && !waiting(now.state)) || !fitsGallery(now) ? null : now
       } catch { change[id] = null }

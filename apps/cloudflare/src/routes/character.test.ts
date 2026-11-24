@@ -8,7 +8,7 @@ import { currentPointer } from '../atlas3Answers';
 import { SHARDS, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
-import { bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
+import { bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, copyOf, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
   wordSpellingsQuery, writtenFormsQuery, writtenFormUseQuery, writtenVariants } from './character';
 import worker from '../index';
 
@@ -529,8 +529,19 @@ describe('a gallery grouped by book', () => {
       } while (after && crops.length < 9);
       expect(crops).toEqual(ids(group.items));
     }
+    const read = async (document: string) => (await get('/layers/books?code_point=U%2B51E1&document=' + document)).body.groups.map((g: any) => [g.document, g.items.length]);
+    expect(await read('hl:1793909603875BE815ED30CF80427250')).toEqual([['codh:200022050', 3]]);
+    expect(await read('hk:none')).toEqual([]);
     const dated = (await get('/layers/books?code_point=U%2B51E1&years=undated')).body.groups.map((g: any) => [g.document, g.count]);
     expect(dated).toEqual([['hl:1793909603875BE815ED30CF80427250', { local: 1, corpus: 0 }], ['unrecorded', { local: 0, corpus: 5 }]]);
+  });
+
+  it('names the copy a record is of', () => {
+    const copies = (...keys: string[]) => new Set(keys.map(key => copyOf({ key, title: 'T' }))).size;
+    expect(copies('hl:7970d9964e0cfeafe30321827a62beae', 'hl:6E29B9B929C04E82EA49008079FA75D8')).toBe(1);
+    expect(copies('hl:48ADDF6AFC3EC1002E472AA1137F87AE', 'codh:100241706')).toBe(1);
+    expect(copies('hl:055A6724CF2E402237834AFA675596AC', 'hk:055a6724cf2e402237834afa675596ac')).toBe(1);
+    expect(copies('hng:fhs', 'hng-kiridashi:fhs', 'hng:myz', 'codh:100241706', 'codh:100249476', 'hk:a')).toBe(5);
   });
 
   it('reads the books along the book indexes and each book’s crops in order from its own range', () => {

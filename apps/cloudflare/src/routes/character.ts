@@ -623,16 +623,18 @@ const GALLERY_BOOKS = 60, BOOK_CROPS = 60;
 export const UNRECORDED = 'unrecorded';
 // The くずし字データセット of the 東京大学史料編纂所 is published as one record and names no crop's document.
 const DATASETS = new Set(['hi:kuzushiji-2023']);
-// The collection's records of copies the CODH corpus holds as well, by the copy's 国文学研究資料館 書誌ID.
-const NIJL_COPIES: Record<string, string> = {
-  'hl:48ADDF6AFC3EC1002E472AA1137F87AE': '100241706', 'hl:B7B8D4E48A5270A5A9660A5790907EFA': '100249476', 'hl:0C3E70E736947328B7062BED6947A189': '100249376',
-  'hl:0E1D76C249C4E0E52A3D34F9E68389BB': '100249537', 'hl:1793909603875BE815ED30CF80427250': '200022050', 'hl:32399C08071CC4F9BEACC53997F08325': '100249371',
+// Records of one copy under unrelated keys, by the record they are kept with: the CODH corpus's of the
+// same 国文学研究資料館 書誌ID, and the two みんなで翻刻 entries of NDL 2539136.
+const COPIES: Record<string, string> = {
+  'hl:48ADDF6AFC3EC1002E472AA1137F87AE': 'codh:100241706', 'hl:B7B8D4E48A5270A5A9660A5790907EFA': 'codh:100249476', 'hl:0C3E70E736947328B7062BED6947A189': 'codh:100249376',
+  'hl:0E1D76C249C4E0E52A3D34F9E68389BB': 'codh:100249537', 'hl:1793909603875BE815ED30CF80427250': 'codh:200022050', 'hl:32399C08071CC4F9BEACC53997F08325': 'codh:100249371',
+  'hl:7970d9964e0cfeafe30321827a62beae': 'hl:6E29B9B929C04E82EA49008079FA75D8',
 };
 /** The copy a record is of: みんなで翻刻's entry under either of its prefixes, HNG's text in either of its
- *  sets, the CODH corpus's copy for the collection's record of it, and any other record's own key. */
+ *  sets, the record `COPIES` keeps it with, and any other record's own key. */
 export function copyOf({ key, title }: { key: string; title: string | null }): string {
   if (title === null || DATASETS.has(key)) return UNRECORDED;
-  if (NIJL_COPIES[key]) return `codh:${NIJL_COPIES[key]}`;
+  if (COPIES[key]) return copyOf({ key: COPIES[key], title });
   const honkoku = /^h[lk]:([0-9a-f]{32})$/i.exec(key), hng = /^hng(?:-kiridashi)?:(.+)$/.exec(key);
   return honkoku ? `honkoku:${honkoku[1].toLowerCase()}` : hng ? `hng:${hng[1]}` : key;
 }
@@ -712,7 +714,7 @@ export async function bookGallery(env: Env, ctx: ExecutionContext, url: URL, too
   // A book's own pages go by list, shuffle and id; a page of books by their counts and ids.
   let books = found, from: [0 | 1, number, number] | null = null;
   if (document !== null) {
-    books = found.filter(book => book.key === document);
+    books = found.filter(book => book.key === document || book.records.some(record => record.key === document));
     if (after) {
       const at = /^([01])\.(\d{1,10})\.([0-9a-z]{1,11})$/.exec(after), crop = at ? cropOf(at[3]) : null;
       if (!at || crop === null) throw new Problem(422, 'Invalid cursor.');
