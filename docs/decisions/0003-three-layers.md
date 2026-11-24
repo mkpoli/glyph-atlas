@@ -33,13 +33,22 @@ The browsing hierarchy is **grapheme → character → form** (clarified 2026-09
   belong together. Small kana and ligatures retain their own families. Small seal characters
   belong to their Han character's family ([0015](0015-small-seal-forms.md)).
   **The label of a grapheme** (2026-11-24) is what stands for it where the site names one. Where the
-  grapheme is one of the 271 `shinjitai-kyujitai` families below, the label is the 旧字体 and the 新字体 side
-  by side, the old form first: 假仮, 國国, 龍竜. Elsewhere it is the head. The pairs are those of the
-  常用漢字表 (2010; `joyo-2010` in `graphemes.yaml`), which prints the older form beside the new one
-  where the two differ markedly; a pair that differs less (靑 青) is not labelled, nor is a compatibility
-  ideograph ([0013](0013-finer-forms.md)) or a 簡体字. The label is for showing: the key, the address
-  (`/grapheme/U+4EEE`), the order of a list and search are the head's, and the two glyphs are never one
-  character. A badge beside a written character names its grapheme by the head alone.
+  常用漢字表 (2010) prints an older form beside the 新字体 that heads the grapheme, and that form is a
+  character of the same grapheme, the label is the 旧字体 and the 新字体 side by side, the old form first:
+  假仮, 國国, 龍竜, 步歩. Elsewhere it is the head. The pairs are the `joyo/variant` edges of
+  `kanji-variants.tsv` (CJKVI, `joyo-variants.txt`, 異体字（常用漢字表）), which are the 364 the 文化庁 index of
+  the table prints (`joyo-2010` in `graphemes.yaml`, compared 2026-11-24). 288 of them label a grapheme: the
+  271 families below, and 徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺, whose two forms `characters.tsv` files together
+  for another reason. The rest label none:
+  - 併即戻概涙状虚錬餅温黄 and 弁: the older form (倂卽戾槪淚狀虛鍊餠溫黃, 辨瓣辯) is of another grapheme, whose
+    crops this one does not count.
+  - 62 whose older form is a compatibility ideograph, which is no character of its own
+    ([0013](0013-finer-forms.md)).
+
+  A pair the table does not print (靑 青) and a 簡体字 are not labelled. The label is for showing: the key, the
+  address (`/grapheme/U+4EEE`), the order of a list, search, a citation key and a file name are the head's, and
+  the two glyphs are never one character. A badge beside a written character names its grapheme by the head
+  alone; a crop with no character is named by the label, which then stands for the grapheme.
   `scripts/build_grapheme_labels.py` writes the table (`apps/cloudflare/src/graphemeLabels.json`).
 - **Character** keeps the written identity and code point. 仮 (`U+4EEE`) and 假
   (`U+5047`) remain distinct rows in `characters.tsv`, with separate counts.
