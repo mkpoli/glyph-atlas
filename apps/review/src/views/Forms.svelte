@@ -21,7 +21,7 @@
   import { suggest } from '../lib/layers.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
   import { graphemeAddress } from '../lib/addresses.js'
-  import { graphemeLabel } from '$worker/graphemeLabel.ts'
+  import { graphemeLabel, labelSize } from '$worker/graphemeLabel.ts'
   import { originTitle } from '../lib/origin.js'
 
   // The family the address names; none, the first of the list. `onshow` is told each family shown.
@@ -503,7 +503,7 @@
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
         {#each rows.items as f, k (f.code_point)}
           <li aria-posinset={rows.from + k + 1} aria-setsize={shown.length}><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
-            <span class="family-char" class:pair={graphemeLabel(f.char) !== f.char}><ScriptText text={graphemeLabel(f.char)} /></span>
+            <span class="family-char" class:pair={labelSize(f.char) === 2} class:trio={labelSize(f.char) === 3}><ScriptText text={graphemeLabel(f.char)} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
@@ -690,6 +690,7 @@
   .family-list button.current{background:var(--accent-light)}
   .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:var(--char-font)}
   .family-char.pair{font-size:19px;line-height:1.65;white-space:nowrap}
+  .family-char.trio{font-size:13px;line-height:2.4;white-space:nowrap}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
