@@ -1788,10 +1788,14 @@ def main():
 
         def with_credit(record):
             credit = credits[record["attribution"]]
-            return {**{k: v for k, v in record.items() if k != "attribution"}, **({"attribution": credit} if credit else {})}
+            # A retired entry's new record is laid over its old one, so a credit that goes is named as none.
+            kept = {k: v for k, v in record.items() if k != "attribution"}
+            return {**kept, "attribution": credit} if credit or record.get("retired") else kept
         for p in m.atlas.execute("SELECT id, key FROM pages WHERE rev > 0 ORDER BY id").fetchall():
             bundle = stored(p["id"])
-            if (page := bundle.get("page")) and page.get("attribution") in credits:
+            # A page none of whose crops is live has no page view, and its facts are not published again.
+            live = m.atlas.execute("SELECT 1 FROM crops WHERE id >= ? AND id < ? LIMIT 1", (p["id"] * PAGE, (p["id"] + 1) * PAGE)).fetchone()
+            if live and (page := bundle.get("page")) and page.get("attribution") in credits:
                 credited[p["key"]] = with_credit({k: v for k, v in page.items() if k not in LINKS})
             for e in bundle["crops"]:
                 if e.get("attribution") in credits:
