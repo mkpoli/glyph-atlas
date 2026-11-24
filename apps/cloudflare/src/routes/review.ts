@@ -696,7 +696,8 @@ export async function undo(env: Env, request: Request, user: string, id: string)
   if (JSON.parse(found.request).target === '@flags') throw new Problem(409, 'A flag is not a review, so it cannot be undone.');
   if (JSON.parse(found.request).target === STYLE_TARGET) throw new Problem(409, 'A style is not a review, so it cannot be undone. Choose another style instead.');
   const { request: _, ...submission } = found;
-  return { id, ...await revert(env, submission, await actorFor(env, user), user) };
+  const { queries: _queries, ...undone } = await revert(env, submission, await actorFor(env, user), user);
+  return { id, ...undone };
 }
 type Reviewed = { id: number; crop: number; revision: number; cut: number; label: number | null; shown: number | null; shown_text: string | null;
   was_state: number | null; was_issue: number | null; was_x: number | null; was_y: number | null; was_w: number | null; was_h: number | null;
@@ -714,8 +715,8 @@ const SET = { char: 1, state: 2, quiz: 4, cut: 8, kind: 16, flags: 32, all: 63 }
  *  the review set (its character, its state, the cut its box was drawn on), or where the crop moved on
  *  with no event, as older publications did; those crops are reported and stay undoable by an admin. The
  *  submission counts as undone only once every review in it is, and the reviewer's totals lose only the
- *  reviews undone. */
-export async function revert(env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true }> {
+ *  reviews undone. Answers with the `queries` its forms took beside those of its crops. */
+export async function revert(env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true; queries?: number }> {
   if (submission.undone) return { results: [], duplicate: true };
   const reviewed = (await env.ATLAS.prepare(`SELECT e.id,e.crop,e.revision,e.cut,e.label,e.shown,g.text AS shown_text,e.was_state,e.was_issue,e.was_x,e.was_y,e.was_w,e.was_h,
     e.x,EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id) AS reversed
@@ -771,6 +772,7 @@ export async function revert(env: Env, submission: Submission, actor: number, by
   const shownOrSkipped = complete ? (await env.ATLAS.prepare(`SELECT crop FROM seen WHERE submission=?1
     UNION SELECT crop FROM skips WHERE submission=?1`).bind(submission.id).all<{ crop: number }>()).results
     .map(row => row.crop).filter(crop => !reviewed.some(r => r.crop === crop)) : [];
+  const forms = changes.length ? await planFormUndo(env, { key: submission.key, by, crops: changes.map(c => c.crop), at: new Date(at).toISOString() }) : [];
   // Undone in full, the NOT NULL guard claims it atomically, and a second claimant rolls back its batch; in
   // part, each crop's own revision guard does. The undo is counted beside the claim, which moves the
   // catalogue stamps when it changes no crop.
@@ -780,7 +782,7 @@ export async function revert(env: Env, submission: Submission, actor: number, by
     ...(shownOrSkipped.length ? [markStatement(env, actor, submission.key, at, shownOrSkipped, true)] : []),
     ...applyStatements(env, submission.key, at, [KIND.undo], changes),
     // The form a review claimed goes with it, and the reader's own it replaced comes back.
-    ...(changes.length ? await planFormUndo(env, { key: submission.key, by, crops: changes.map(c => c.crop), at: new Date(at).toISOString() }) : []),
+    ...forms,
     env.ATLAS.prepare('UPDATE actor_stats SET reviews=coalesce(reviews,0)-?,rounds=coalesce(rounds,0)-? WHERE actor=?')
       .bind(changes.length, complete ? 1 : 0, submission.actor),
     ...(rejection ? [env.ATLAS.prepare('INSERT INTO rejections(submission,by,reason,at) VALUES(?,?,?,?)').bind(submission.id, by, rejection.reason, at)] : []),
@@ -796,7 +798,7 @@ export async function revert(env: Env, submission: Submission, actor: number, by
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
   }
-  return { results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
+  return { queries: forms.length, results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
     : { id: ids.get(r.crop) ?? null, target_id: publicId(r.crop), revision: r.revision,
       review: { id: ids.get(r.crop) ?? null, kind: 'undo', reverses: r.reverses, at: new Date(at).toISOString() } }) };
 }
