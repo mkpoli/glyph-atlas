@@ -271,14 +271,11 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
 
 // The characters a grapheme is written as, by the grapheme table: は's family is は, ハ and its
 // hentaigana. A key that names no family (ツ + U+309A, or a character the table lacks) is its own text
-// alone; a key that names a family's member rather than the family is refused. Two index seeks.
-export const roundMembersQuery = () => `SELECT g.id,g.head,h.text AS head_text,
-  (SELECT json_group_array(m.text) FROM graphemes m WHERE m.head=g.id) AS members
-  FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?`;
+// alone, and so is a member of another's family: its round holds that member's crops. Two index seeks.
+export const roundMembersQuery = () => `SELECT (SELECT json_group_array(m.text) FROM graphemes m WHERE m.head=g.id) AS members FROM graphemes g WHERE g.text=?`;
 export async function roundMembers(env: Env, key: string): Promise<string[]> {
   const own = compose(graphemeText(key));
-  const row = await env.ATLAS.prepare(roundMembersQuery()).bind(own).first<{ id: number; head: number | null; head_text: string | null; members: string }>();
-  if (row && row.head != null && row.head !== row.id) throw new Problem(422, `${graphemeText(key)} is filed under ${row.head_text}.`);
+  const row = await env.ATLAS.prepare(roundMembersQuery()).bind(own).first<{ members: string }>();
   const members = row ? JSON.parse(row.members) as string[] : [];
   return members.length ? members : [own];
 }

@@ -1,6 +1,6 @@
 import { cropSlotsQuery } from '../cropPanels';
 import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
-import { bundle, bundleKey, cropId, publicId } from '../atlas3';
+import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, corpusCharacters, cursorOf, cursorText, dateStats, flaggedQuery, gallery, groupStats, page, type Stage,
@@ -261,6 +261,16 @@ describe('the browse page', () => {
     expect(round.categories.filter((x: any) => x.label === '所').map((x: any) => x.grapheme)).toEqual(['U+6240']);
   });
 
+  it('lists a grapheme under its key, and one character alone under a member’s', async () => {
+    const { env } = await setup();
+    const of = async (key: string) => (await get(env, `/atlas?grapheme=${key}&seed=3&limit=40`));
+    const whole = await of('U%2B306F'), member = await of('U%2B30CF');
+    expect(new Set(whole.items.map((i: any) => i.label))).toEqual(new Set(['は', 'ハ', '𛂞']));
+    expect([...new Set(member.items.map((i: any) => i.label))]).toEqual(['ハ']);
+    expect([member.total, member.items.length]).toEqual([whole.items.filter((i: any) => i.label === 'ハ').length, member.total]);
+    expect((await of('U%2B9999')).total).toBe(0);
+  });
+
   it('page through every crop once from the seed’s point, the cursor ending where the index does', async () => {
     const { env } = await setup();
     for (const seed of [0, 1234567, 2147483647]) {
@@ -465,28 +475,41 @@ describe('review rounds', () => {
   it('deal a kanji’s small seal glyphs with the rest, and a script’s round that script’s alone', async () => {
     // 所's small seal character, filed under 所, with a member that came to the table after it.
     const SEAL = '\u{3FA6A}', MEMBER = '𫠦';
-    const { env, c, crop } = await setup((db, page) => {
+    const { env } = await setup((db, page) => {
       db.exec(`UPDATE graphemes SET head=4 WHERE id=4; INSERT INTO graphemes(id,text,head) VALUES(7,'${SEAL}',4),(8,'${MEMBER}',4);`);
       const glyph = db.prepare('INSERT INTO crops(id,kind,book,char,production,category,style,state,quiz,shuffle,cut,revision,flags) VALUES(?,1,3,?,4,NULL,0,0,1,?,0,0,0)');
       glyph.run(cropId(page, 10), 7, 500); glyph.run(cropId(page, 11), 4, 600);
     });
-    const ids = (body: any) => body.grapheme.members;
     const whole = await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0');
     // The number keys follow the members, so the small seal character comes last whatever its id.
-    expect(ids(whole)).toEqual(['所', MEMBER, SEAL]);
-    const both = ['handwritten', 'handwritten&group=all'];
-    for (const production of both)
+    expect(whole.grapheme.members).toEqual(['所', MEMBER, SEAL]);
+    for (const production of ['handwritten', 'handwritten&group=all'])
       expect((await get(env, `/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=${production}`)).total).toBe(1 + 2);
     // One collected 所 and its corpus glyph in the kanji round, the seal glyph in the small seal round.
     expect((await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=handwritten&group=kanji')).total).toBe(1 + 1);
     expect((await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=handwritten&group=seal')).total).toBe(1);
     expect((await get(env, '/atlas?purpose=review&grapheme=U%2B6240&state=pending&seed=11&limit=0&production=handwritten&group=kana')).total).toBe(0);
-    // Asked for by its small seal character, a round names the grapheme, as it does for ハ.
-    await expect(get(env, `/atlas?purpose=review&grapheme=U%2B3FA6A&limit=10`)).rejects.toThrow(`${SEAL} is filed under 所.`);
+    // Asked for by its small seal character, a round is that character's.
+    const asked = await get(env, `/atlas?purpose=review&grapheme=U%2B3FA6A&state=pending&seed=11&limit=0&production=handwritten`);
+    expect([asked.grapheme, asked.total]).toEqual([{ code_point: 'U+3FA6A', char: SEAL, members: [SEAL] }, 1]);
     // Each character counts under the grapheme, so the interface's rounds hold both.
     const counts = await get(env, '/atlas?purpose=review&limit=0&state=pending&production=handwritten');
     expect(counts.categories.find((x: any) => x.label === SEAL)).toMatchObject({ grapheme: 'U+6240', pending: 1 });
-    void c; void crop;
+  });
+
+  it('deal a member’s crops alone under its key, on every page, whatever a claim files them under', async () => {
+    const { env, db } = await setup();
+    const key = 'U%2B1B09E', dealt = async (round: string) => every(env, `/atlas?purpose=review&grapheme=${round}&state=pending&seed=11`, 1);
+    const member = await dealt(key), family = await dealt('U%2B306F');
+    expect(member.body.grapheme).toEqual({ code_point: 'U+1B09E', char: '𛂞', members: ['𛂞'] });
+    expect(member.seen.length).toBeGreaterThan(1);
+    expect(member.seen.every((id: string) => family.seen.includes(id))).toBe(true);
+    expect(family.seen.length).toBeGreaterThan(member.seen.length);
+    // A round goes by what its crops are written as: one claimed for 所 stays, and 所's round does not gain it.
+    const there = (await dealt('U%2B6240')).seen;
+    for (const id of member.seen) db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES(?,'has_grapheme','','',?,0,'asserted','U+6240','[]','[]','[]','r','2026-11-24')`).run(id, cropOf(id));
+    expect([(await dealt(key)).seen, (await dealt('U%2B6240')).seen]).toEqual([member.seen, there]);
   });
 
   it('never deal a crop no one has read, which browsing shows', async () => {
@@ -498,10 +521,11 @@ describe('review rounds', () => {
     expect(round.seen.length).toBe(14);
   });
 
-  it('deal a round’s reference crops of one state, and refuse a member or a deep page', async () => {
+  it('deal a round’s reference crops of one state, a member’s its own, and refuse a deep page', async () => {
     const { env, a, crop } = await setup();
     expect((await get(env, '/atlas?purpose=review&grapheme=U%2B306F&state=checked&limit=10')).items.map((i: any) => i.id)).toEqual([publicId(crop(a, 2))]);
-    await expect(get(env, '/atlas?purpose=review&grapheme=U%2B30CF&limit=10')).rejects.toThrow('ハ is filed under は.');
+    const member = await get(env, '/atlas?purpose=review&grapheme=U%2B30CF&state=checked&limit=10');
+    expect([member.grapheme, member.items]).toEqual([{ code_point: 'U+30CF', char: 'ハ', members: ['ハ'] }, []]);
     for (const bad of ['x', '1.c.5.1', '0.a.5', '99999', '0.a.5.0'])
       await expect(get(env, `/atlas?purpose=review&grapheme=U%2B306F&cursor=${bad}`)).rejects.toThrow('Invalid cursor.');
     // A grapheme the table lacks is its own text.

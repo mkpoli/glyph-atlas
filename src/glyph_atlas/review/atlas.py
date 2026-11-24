@@ -153,15 +153,12 @@ GRAPHEME_KEY = r"^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$"
 
 def grapheme_members(key: str) -> list[str]:
     """The characters a grapheme is written as, by the character table: は's family is は, ハ and its
-    hentaigana. A key that names no family is its own text alone; one that names a family's member
-    rather than the family is refused, as the hosted site refuses it."""
+    hentaigana. A key that names no family is its own text alone, and so is one that names a family's
+    member: its round is that member's, as on the hosted site."""
     points = key.split(" ")
     if not re.fullmatch(GRAPHEME_KEY, key) or any(int(point.removeprefix("U+"), 16) > 0x10FFFF for point in points):
         raise BadRequest("Invalid grapheme.")
-    head = refs.grapheme(key)
-    if head and head != key:
-        raise BadRequest(f"{refs.from_code_points(points)} is filed under {refs.to_char(head)}.")
-    info = refs.grapheme_info(key) if head else None
+    info = refs.grapheme_info(key) if refs.grapheme(key) == key else None
     # The family's head first, as the character table lists its members.
     return [member["char"] for member in info["members"]] if info else [refs.from_code_points(points)]
 
@@ -1048,8 +1045,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         families = {name: grapheme_of(name) for name in categories}
+        # A member's key names that character alone, as on the hosted site.
+        alone = grapheme if grapheme and refs.grapheme(grapheme) not in (None, grapheme) else None
         selected = [(u, rev) for u, rev in searched if (character is None or shown(u) == character)
-                    and (grapheme is None or families.get(shown(u)) == grapheme)
+                    and (grapheme is None or (" ".join(refs.to_code_points(shown(u))) == alone if alone else families.get(shown(u)) == grapheme))
                     and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)
                     and (state == "all" or states[u.id] == state
@@ -1332,6 +1331,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise BadRequest("A round needs at least one answer, one seen crop or one skipped crop.")
         if len(set(ids)) != len(ids):
             raise BadRequest("A character can appear only once in a round.")
+        # A round of one member is the family's, and holds that member's crops.
+        grapheme = refs.grapheme(round.grapheme) or round.grapheme
         prefix = f"quiz:{round.id}:"
         previous = store.submission_results(round.client_id, prefix)
         if previous:
@@ -1340,7 +1341,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 raise BadRequest("This round was already submitted with different characters.")
             for answer in round.answers:
                 old = json.loads(next(r for r in reviews if r["target_id"] == answer.id)["review"]["evidence"])
-                if (old.get("grapheme") != round.grapheme or old["verdict"] != answer.verdict
+                if (old.get("grapheme") != grapheme or old["verdict"] != answer.verdict
                         or old.get("issue") != answer.issue
                         or old.get("suggested_text") != correction_text(answer.correction, answer.issue)
                         or old.get("suggested_character") != identity_correction(answer.character, answer.issue)
@@ -1368,7 +1369,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 raise BadRequest("Choose a different character or mark the character as matching.")
             written = bool(identity)
             base = answer.revision
-            evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id), "grapheme": round.grapheme,
+            evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id), "grapheme": grapheme,
                                    "label": shown(unit), "verdict": answer.verdict, "issue": answer.issue,
                                    **({"kept_issue": "crop"} if answer.bad_crop else {}),
                                    "suggested_text": correction,
@@ -1408,7 +1409,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 target_type="unit", target_id=crop.id, field=SEEN, new=value, base_revision=None,
                 client_id=round.client_id, idempotency_key=prefix + crop.id + (":seen" if value is True else ":skip"),
                 evidence=json.dumps({"kind": "visual-quiz-seen" if value is True else "visual-quiz-skip",
-                                     "round": str(round.id), "grapheme": round.grapheme,
+                                     "round": str(round.id), "grapheme": grapheme,
                                      "label": shown(unit), "image_sha256": crop.image_sha256,
                                      "box": unit.box.model_dump() if unit.box else None},
                                     ensure_ascii=False),

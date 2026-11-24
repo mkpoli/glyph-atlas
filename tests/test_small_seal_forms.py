@@ -172,12 +172,10 @@ def test_a_stored_grouping_of_the_han_members_is_kept(export, monkeypatch):
     assert detail["visual_analysis"] == stored
 
 
-def test_a_round_deals_the_seal_characters_of_its_grapheme_whichever_key_names_it():
+def test_a_round_deals_the_seal_characters_of_its_grapheme_and_a_members_round_that_member():
     assert atlas.grapheme_of(CHUN) == "U+6625" and atlas.grapheme_members("U+6625")[-1] == CHUN
-    # As for ハ, a key that names a member is its grapheme's: a save kept under it stands.
-    for key, head in (("U+30CF", "U+306F"), ("U+3D307", "U+6625"), ("U+6625", "U+6625"), ("U+30C4 U+309A", "U+30C4 U+309A")):
-        assert atlas.round_grapheme(key) == head
-        assert atlas.grapheme_members(key) == atlas.grapheme_members(head)
+    for key, members in (("U+30CF", ["ハ"]), ("U+3D307", [CHUN]), ("U+30C4 U+309A", ["ツ゚"])):
+        assert atlas.grapheme_members(key) == members
     with pytest.raises(atlas.BadRequest):
         atlas.grapheme_members("U+110000")
 
