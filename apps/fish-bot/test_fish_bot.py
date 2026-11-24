@@ -2885,3 +2885,88 @@ def test_persona_asks_for_the_task_now_in_one_language():
     assert "Keep each message in that one language and script" in prompt
     assert "only when the chat, your memory or a lookup in this turn shows it" in prompt
     assert "or as long as a translation or summary someone asked for needs" in fish_bot.LOOKUP_REMINDER
+
+
+@pytest.mark.parametrize(("line", "language"), [
+    ("大肥魚，你還在嗎", "zh-Hant"), ("大肥鱼，你还在吗", "zh-Hans"), ("大肥魚、起きてる？", "ja"), ("大肥魚 자니?", "ko"),
+    ("大肥魚 ơi, ngủ chưa?", "vi"), ("Big Fat Fish, are you there?", "en")])
+def test_tells_the_language_of_a_line(line, language):
+    assert fish_bot.language_of(line) == language
+
+
+def test_out_of_money_she_says_so_once_a_day_in_a_room(tmp_path):
+    bot, matrix, _ = make_bot(tmp_path)
+
+    def broke(*_, **__):
+        raise fish_bot.SpendError("spent")
+
+    bot.gemini.act = broke
+    for number in range(3):
+        call = event("大肥魚 are you there?", event_id=f"$call{number}", sender=f"@reader{number}:example")
+        bot.ingest(ROOM, call, backfilled=False)
+        bot.answer(ROOM, call)
+    assert [content["body"] for _, content, *_ in matrix.sent] == [fish_bot.BROKE["en"]]
+
+
+def test_she_opens_no_rooms_while_spending_is_ahead_of_the_days_pace(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path, act=act("hi", interest=4))
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, tzinfo=fish_bot.JST)
+    middle = sum(fish_bot.THRIFT_VISITS) / 2
+    bot._unread[ROOM] = {"first": "$x", "count": 1, "lively": False, "due": -1e9, "last": -1e9}
+    bot._clock = lambda: noon
+    monkeypatch.setattr(bot.gemini.purse, "share", lambda: middle + 0.01)
+    bot.visit()
+    assert bot.gemini.turns == [] and bot._unread[ROOM]["due"] > 0
+    bot._unread[ROOM]["due"] = -1e9
+    bot._clock = lambda: noon.replace(hour=15)
+    bot.visit()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_past_the_second_mark_she_reads_less_and_leaves_bystanders_alone(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    start = fish_bot.now_ms() - 600_000
+    for number in range(30):
+        store.add_event(f"$l{number}", ROOM, "@reader:example", start + number, f"line {number}", "m.text", backfilled=False)
+    monkeypatch.setattr(bot.gemini.purse, "share", lambda: fish_bot.THRIFT_SHORT)
+    call = event("大肥魚!", event_id="$call")
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+    assert len(bot.gemini.turns[-1][2]) == fish_bot.THRIFT_CONTEXT
+    bot._listen(ROOM, "@partner:example")
+    for sender, turns in (("@bystander:example", 1), ("@partner:example", 2)):
+        talk = bot._talks[ROOM]
+        talk.event_id, talk.sender, talk.body, talk.due = "$call", sender, "hm", -1e9
+        talk.partner = "@partner:example"
+        bot.follow()
+        assert len(bot.gemini.turns) == turns
+
+
+def test_a_newcomer_is_greeted_once_there_is_money_again(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    turn = bot.gemini.act
+
+    def broke(*_, **__):
+        raise fish_bot.SpendError("spent")
+
+    bot.gemini.act = broke
+    arrive(bot, event("hi, I am Nagisa", sender="@new:example", event_id="$hi"))
+    clock["now"] += 200
+    bot.welcome()
+    assert list(bot._newcomers) == ["@new:example"] and not matrix.sent
+    bot.gemini.act = turn
+    clock["now"] += fish_bot.WELCOME_BROKE + 1
+    bot.welcome()
+    assert bot._newcomers == {} and bot.gemini.turns[-1][0] == "welcome"
+
+
+def test_a_call_is_read_even_when_many_lines_followed_it(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    monkeypatch.setattr(bot.gemini.purse, "share", lambda: fish_bot.THRIFT_SHORT)
+    start = fish_bot.now_ms() - 600_000
+    store.add_event("$call", ROOM, "@reader:example", start, "大肥魚, what is 𠀋?", "m.text", backfilled=False)
+    for number in range(20):
+        store.add_event(f"$l{number}", ROOM, "@other:example", start + 1 + number, f"line {number}", "m.text", backfilled=False)
+    bot.turn(ROOM, "$call", task="called")
+    _, trigger, read = bot.gemini.turns[-1]
+    assert read[trigger] == "$call"
