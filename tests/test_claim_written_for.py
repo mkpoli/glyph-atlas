@@ -8,7 +8,6 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from test_review_atlas import LINE, dataset  # noqa: F401
 
-from glyph_atlas.review import crop_forms
 from glyph_atlas.review.server import create_app
 from glyph_atlas.review.store import Store
 
@@ -45,14 +44,11 @@ def link(
     return response.json()
 
 
-def test_a_form_joins_the_graphemes_card_and_is_taken_back(dataset):  # noqa: F811
+def test_a_form_is_written_for_a_grapheme_and_taken_back(dataset):  # noqa: F811
     client = TestClient(create_app(dataset))
     form = form_of(client)
     first = link(client, form)
     assert first["written_for"] == [{"grapheme": GRAPHEME, "char": "あ", "by": ["ann"]}]
-    assert client.get("/layers/characters/" + GRAPHEME).json()["variants"]["forms"] == [
-        {"char": FORM, "code_point": None, "form": form, "scheme": "ids", "count": 0, "corpus_count": 0}
-    ]
     # A second reviewer joins the claim; a repeat of their save changes nothing.
     assert link(client, form, reviewer="bob")["written_for"][0]["by"] == ["ann", "bob"]
     assert link(client, form, reviewer="bob")["written_for"][0]["by"] == ["ann", "bob"]
@@ -60,32 +56,25 @@ def test_a_form_joins_the_graphemes_card_and_is_taken_back(dataset):  # noqa: F8
     assert link(client, form, remove=True, reviewer="bob")["written_for"][0]["by"] == ["ann"]
     link(client, form, remove=True, reviewer="bob", status=409)
     assert link(client, form, remove=True)["written_for"] == []
-    assert client.get("/layers/characters/" + GRAPHEME).json()["variants"]["forms"] == []
     history = client.get("/atlas/claims", params={"subject": form}).json()
     assert [row for row in history["current"] if row["predicate"] == "written_for"] == []
     assert len([row for row in history["history"] if row["predicate"] == "written_for"]) == 2
 
 
-def test_a_registered_figure_joins_the_graphemes_card(dataset):  # noqa: F811
+def test_a_form_a_crop_carries_is_on_its_graphemes_card(dataset):  # noqa: F811
     client = TestClient(create_app(dataset))
-    figure = "突\U000e0103"
-    form = form_of(client, figure)
-    link(client, form)
-    assert client.get("/layers/characters/" + GRAPHEME).json()["variants"]["forms"] == [
-        {"char": figure, "code_point": None, "form": form, "scheme": "ivs", "count": 0, "corpus_count": 0}
-    ]
-
-
-def test_a_form_claimed_under_a_key_since_filed_under_another_stays_on_the_card(dataset):  # noqa: F811
-    client = TestClient(create_app(dataset))
+    listed = lambda: client.get("/layers/characters/" + GRAPHEME).json()["variants"]["forms"]
+    assert listed() == []
     form = form_of(client)
-    # 𽌇 was a grapheme of its own when the claim was made, and is filed under 春.
+    assert listed() == [{"char": FORM, "code_point": None, "form": form, "scheme": "ids", "count": 1, "corpus_count": 0}]
+    # A registered figure joins it as a description does, and a form leaves with the last crop that has it.
+    figure = "突\U000e0103"
+    other = form_of(client, figure)
+    assert listed() == [{"char": figure, "code_point": None, "form": other, "scheme": "ivs", "count": 1, "corpus_count": 0}]
+    # A claim made on another box of the crop does not hold.
     with sqlite3.connect(Store(dataset).path) as conn:
-        conn.row_factory = sqlite3.Row
-        conn.execute("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) "
-                     "VALUES(?,'written_for','','U+3D307','asserted','U+3D307','[]','[]','[]','r','2026-11-24')", (form,))
-    for key in ("U+6625", "U+3D307"):
-        assert [row["char"] for row in crop_forms.written_forms(conn, key)] == [FORM]
+        conn.execute("UPDATE current_claims SET crop_version=crop_version||'9' WHERE predicate='has_form'")
+    assert listed() == []
 
 
 def test_a_claim_names_the_head_its_key_is_filed_under_and_a_form_the_site_holds(dataset):  # noqa: F811

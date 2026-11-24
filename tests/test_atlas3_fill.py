@@ -31,7 +31,9 @@ def fill(publish, remote, monkeypatch, *flags):
 def unfilled(root, remote):
     """The layout as loaded before the cutover: no family column and none of its indexes."""
     for db in (sqlite3.connect(root / "out" / "atlas.sqlite"), remote.dbs["glyph-atlas-v3"]):
-        db.executescript("".join(f"DROP INDEX {name};" for name in CUTOVER) + "ALTER TABLE crops DROP COLUMN family; ALTER TABLE crops DROP COLUMN priority;")
+        # The triggers of migration 0020 read the column, which came before them.
+        triggers = [name for name, in db.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND sql LIKE '%family%'")]
+        db.executescript("".join(f"DROP TRIGGER {name};" for name in triggers) + "".join(f"DROP INDEX {name};" for name in CUTOVER) + "ALTER TABLE crops DROP COLUMN family; ALTER TABLE crops DROP COLUMN priority;")
         db.commit()
 
 
