@@ -154,7 +154,7 @@
         saved?.(result)
       }
       leave()
-    } catch (e) { error = e.message }
+    } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
   }
   async function clear() {
@@ -165,7 +165,7 @@
       if (mine(item.reading) || mine(item.reading?.ruby)) { result = await clearReading(result); saved?.(result) }
       if (mine(item.word)) { result = (await clearWord(result)).crop; saved?.(result) }
       leave()
-    } catch (e) { error = e.message }
+    } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
   }
   // The focus goes back to the button that opened the editor.
