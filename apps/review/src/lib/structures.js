@@ -11,6 +11,13 @@ export const composable = char => HAN.test(char ?? '') || isSeal(char) || isDesc
 /** Whether a form stands under its 構形 as a proposal: a small seal character has that of its modern
  *  CJK equivalent until a reader files it (decision 0012). `by` is who filed it there. */
 export const proposed = (char, by) => isSeal(char) && !by
+/** The label of the 構形 another layout of the same parts stands under (⿰辵禺 and ⿺辵禺 under ⿺辶禺), or
+ *  null; the Worker's `headOf` answers the same. */
+const headLabel = label => /^[⿰⿺]辵/u.test(label) ? '⿺辶' + label.slice(2) : label.startsWith('⿲辵') ? '⿺辶⿰' + label.slice(2) : null
+/** How a save names the 構形 a form stands under, by that form (`target`) and as its layout, or null
+ *  where that is not it: a reader folded the layout, or the 構形 it is a layout of, into this one. */
+export const headTarget = (stands, target) =>
+  stands.part && !stands.part.by?.length && stands.label === headLabel(stands.part.label) ? { ...target, head: true } : null
 /** A 構形 group's names as they stand: those built as its own, then each 構形 that stands under it
  *  (`folded`, ⿰辵禺 under ⿺辶禺) with the names built as that. */
 export const layouts = group => {

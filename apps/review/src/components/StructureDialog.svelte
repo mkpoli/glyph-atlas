@@ -16,7 +16,7 @@
   import FormText from './FormText.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { setStructure, setFold } from '../lib/cropForms.js'
-  import { composable, NAMES, proposed } from '../lib/structures.js'
+  import { composable, headTarget, NAMES, proposed } from '../lib/structures.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -58,8 +58,8 @@
       const [rank, target] = naming(form)
       if (rank > tray.rank) Object.assign(tray, { rank, target })
       // A tray that only layouts of it stand under (⿺辶禺 by 𽓻 alone) is named by one of them.
-      const head = stands.part && !stands.part.by?.length && stands.label.endsWith(stands.part.label.slice(2)) && trayOf(stands.id, stands.label)
-      if (head && !head.rank) Object.assign(head, { rank: 0.5, target: { ...target, head: true } })
+      const named = headTarget(stands, target), head = named && trayOf(stands.id, stands.label)
+      if (head && !head.rank) Object.assign(head, { rank: 0.5, target: named })
     }
     // A tray with no form left on the board keeps the fold it was last seen in, led on to where that ends now.
     for (const [part, link] of folds) {
