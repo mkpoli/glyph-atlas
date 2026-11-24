@@ -135,6 +135,9 @@ VISIT_BURST = 20.0
 VISIT_BURST_WAIT = 180.0
 SAY_INTEREST = 3
 REACT_INTEREST = 2
+# A visit reads fewer lines than an answer, and only the pictures it has not read: a log of 40 lines
+# costs 1,436 tokens more than one of 20, and a picture 1,151 (gemini-4-hydrogen, 2026-11-24).
+VISIT_CONTEXT = 20
 # The command: `!fish` anywhere a word starts, or `/fish` opening the message. A `.fish` file name
 # or a path ending in /fish calls no one.
 COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
@@ -4533,7 +4536,7 @@ class Bot:
         except MatrixError as error:
             log.warning("refreshing %s: %s", room_id, error)
         short = self.gemini.purse.share() >= THRIFT_SHORT
-        lines = THRIFT_CONTEXT if short else CHAT_CONTEXT
+        lines = THRIFT_CONTEXT if short else VISIT_CONTEXT if task == "visit" else CHAT_CONTEXT
         events = self.store.context(room_id, now_ms() + 60_000, lines)
         trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
         if trigger is None and task != "visit" and lines < CHAT_CONTEXT:
@@ -4555,7 +4558,8 @@ class Bot:
                               bot_user_id=self.user_id, stickers=offered,
                               sticker_mood=self._random() < STICKER_MOOD, rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
-                              images=self.pictures(events, 1 if short else IMAGES_VISIT if task == "visit" else IMAGES_CALLED),
+                              images=self.pictures(events, 1 if short else IMAGES_VISIT if task == "visit" else IMAGES_CALLED,
+                                                   lines=min(IMAGE_LINES, len(events) - (trigger or 0)) if task == "visit" else IMAGE_LINES),
                               lookup=self.lookup if task in ("called", "follow", "visit") else None,
                               on_step=(lambda: None) if task == "visit" else (lambda: self.matrix.typing(room_id, self.user_id)))
         if task == "visit":

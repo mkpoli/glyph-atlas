@@ -3061,3 +3061,21 @@ def test_deepseek_is_configured_by_its_key_file(tmp_path):
     assert config.deepseek_key_file == tmp_path / "deepseek-key" and config.daily_usd == 0.5
     path.write_text("")
     assert fish_bot.Config.load(path).deepseek_key_file is None
+
+
+def test_a_visit_reads_fewer_lines_and_only_new_pictures(tmp_path):
+    bot, matrix, store = make_bot(tmp_path, act=act(interest=1))
+    matrix.pictures = {"mxc://example/seen": PNG, "mxc://example/new": PNG}
+    start = fish_bot.now_ms() - 600_000
+    for number in range(30):
+        store.add_event(f"$l{number}", ROOM, "@reader:example", start + number, f"line {number}", "m.text", backfilled=False)
+    store.add_event("$seen", ROOM, "@reader:example", start + 40, "[image] seen.png", "m.image", backfilled=False, media="mxc://example/seen")
+    store.add_event("$first", ROOM, "@reader:example", start + 41, "look", "m.text", backfilled=False)
+    store.add_event("$new", ROOM, "@reader:example", start + 42, "[image] new.png", "m.image", backfilled=False, media="mxc://example/new")
+    bot.turn(ROOM, "$first", task="visit")
+    _, trigger, read = bot.gemini.turns[-1]
+    assert len(read) == fish_bot.VISIT_CONTEXT and read[trigger] == "$first"
+    assert [read[index] for index, _ in bot.gemini.images] == ["$new"]
+    bot.turn(ROOM, "$first", task="called")
+    read = bot.gemini.turns[-1][2]
+    assert [read[index] for index, _ in bot.gemini.images] == ["$seen", "$new"]
