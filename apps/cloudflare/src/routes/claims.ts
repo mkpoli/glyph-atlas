@@ -6,12 +6,12 @@ import { aliasCrop } from '../atlas3Aliases';
 import { characterIds, structureSource } from '../atlas3Reference';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
-import { cropGraphemes, cropStructures } from '../cropPanels';
+import { cropGraphemes, cropStructures, structureLabelsQuery } from '../cropPanels';
 import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
 import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyHeads, keyText, ledgerPage, type LedgerTools, type Member,
-  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, RUN_MAX, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
+  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, retractOwn, RUN_MAX, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
 import { FORM_LONGEST, anchoredForm, representationId, structureKey, typed, written, type FormProblem, type Representation } from '../representation';
@@ -291,8 +291,11 @@ export async function setCropStructure(env: Env, input: Json, named: string, act
     const member: Member = { object: structure.id, value: null, confidence: null, confidence_scheme: null };
     checkClaims('built_as', [member], { [structure.id]: 'structure' }, tools.fail);
     if (source) plan.statements.push(structureRow(env, structure, source, actor, at));
-    add(await planClaim(env, { key, actor, crop, predicate: 'built_as', scope: '', members: [member], at, method: 'form-picker' }, ledger));
-    if (form) add(await planAction(env, { key: key + '/form', actor, target: form.id, action: 'retract', reason: 'replaced', admin: false, at }, ledger));
+    const claim = await planClaim(env, { key, actor, crop, predicate: 'built_as', scope: '', members: [member], at, method: 'form-picker' }, ledger);
+    add(claim);
+    // Every form of the reader's own, as a form claim takes back each earlier one.
+    if (form) add({ statements: [retractOwn(env, { key, actor, subject: crop.text, predicate: 'has_form', scope: '', at, by: claim.assertions[0], owned })],
+      keys: [[crop.text, 'has_form', '', '']] });
   }
   const replaced = { replaced: own?.object ?? null, form: found ? form?.text ?? null : null };
   const result = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, ...replaced }, ledger);
@@ -372,7 +375,7 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
 // claim has already named is also named by its id.
 export const structuresQuery = () => `SELECT c.status,c.members,c.claims FROM current_claims c
   WHERE c.subject=? AND c.predicate='has_structure' AND c.scope=''`;
-export const structureLabelsQuery = () => 'SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))';
+export { structureLabelsQuery };
 /** The structures a form is filed under, each with its label and who says so now. */
 export async function structuresOf(env: Env, form: string): Promise<{ structure: string; label: string; by: string[] }[]> {
   const rows = (await env.ATLAS.prepare(structuresQuery()).bind(form).all<{ status: string; members: string; claims: string }>()).results;

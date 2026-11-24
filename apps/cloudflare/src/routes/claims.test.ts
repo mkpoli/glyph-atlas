@@ -446,6 +446,18 @@ describe('a form filed under a structure', () => {
     await expect(setCropStructure(env, { id: crypto.randomUUID(), crop_version: 'old', char: '峰' }, crop, 'reader', tools)).rejects.toThrow('409');
   });
 
+  it('takes back every form of the reader\'s own with a crop\'s structure, and leaves another\'s', async () => {
+    const { db, env, tools, local, version } = await forms();
+    const crop = publicId(local), form = (value: string, actor: string) => setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: value }, crop, actor, tools);
+    // A second claim under an id the reader held before, as a session joined since leaves it.
+    await form('⿱山夆', 'stranger');
+    db.exec("INSERT INTO actors(id,key,user) VALUES(7,'stranger','reader')");
+    const saved = await setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(local), char: '峰' }, crop, 'reader', tools);
+    expect(saved.form).toBeNull();
+    await form('⿱山夆', 'other');
+    expect((await setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(local), char: '峯' }, crop, 'reader', tools)).form).toMatchObject({ values: [{ text: '⿱山夆' }], by: ['other'] });
+  });
+
   it('names by a layout the structure it stands under, which no claim has named', async () => {
     const { env, tools, form } = await forms();
     const name = (char: string) => setStructure(env, { id: crypto.randomUUID(), char, head: true }, form, 'reader', tools);
@@ -889,7 +901,7 @@ describe('the ledger queries', () => {
     const plans: [string, unknown[]][] = [
       [cropNowQuery(), [1]], [cropSlotsQuery('has_form'), ['[1]']], [cropSlotsQuery('writes_word'), ['[1]']], [formNamesQuery(), ['["fm:1"]']],
       [wordNamesQuery(), ['["w"]']], [wordMethodsQuery(), ['["a"]']], [ownClaimQuery('has_form', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']],
-      [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
+      [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [ownClaimQuery('built_as', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
       [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],

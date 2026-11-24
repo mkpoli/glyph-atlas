@@ -74,14 +74,14 @@ export async function cropWords(env: Env, ids: number[]): Promise<Map<number, Js
   return found;
 }
 
-export const structureNamesQuery = () => 'SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))';
+export const structureLabelsQuery = () => 'SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))';
 /** Each crop's structure (`built_as`): the status of its slot, the structures it names (each standing one
  *  while disputed) with its label and who holds each. A crop with no live slot is absent. */
 export async function cropStructures(env: Env, ids: number[]): Promise<Map<number, Json>> {
   const found = new Map<number, Json>(), parsed = await cropSlots(env, ids, ['built_as']);
   const named = [...new Set(parsed.flatMap(row => slotValuesHeld(row).flatMap((m: Json) => m.object ? [m.object as string] : [])))];
   if (!named.length) return found;
-  const labels = new Map((await env.ATLAS.prepare(structureNamesQuery()).bind(JSON.stringify(named)).all<{ id: string; label: string }>()).results.map(r => [r.id, r.label]));
+  const labels = new Map((await env.ATLAS.prepare(structureLabelsQuery()).bind(JSON.stringify(named)).all<{ id: string; label: string }>()).results.map(r => [r.id, r.label]));
   for (const row of parsed) {
     const held = (row.claims as Json[]).filter(c => row.status === 'disputed' ? c.standing : c.members.some((m: Json) => row.supporting.includes(m.assertion)));
     const keys = [...new Set(slotValuesHeld(row).flatMap((m: Json) => m.object ? [m.object as string] : []))];

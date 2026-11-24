@@ -106,18 +106,18 @@ def set_crop_structure(conn: sqlite3.Connection, *, key: str, actor: str, reques
         return saved
     at = at or ledger.now()
 
-    def own_of(predicate: str) -> sqlite3.Row | None:
+    def own_of(predicate: str) -> list[sqlite3.Row]:
         return conn.execute(
             "SELECT a.id,a.object,r.value AS text FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
             "WHERE a.subject=? AND a.predicate=? AND a.scope='' AND a.slot='' AND a.asserted_by=? "
             "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
-            "ORDER BY a.rowid DESC LIMIT 1", (crop, predicate, actor)).fetchone()
+            "ORDER BY a.rowid DESC", (crop, predicate, actor)).fetchall()
 
     def take_back(target: str, part: str, reason: str) -> None:
         ledger.act(conn, key=f"{key}/{part}", actor=actor, request={"target": target, "action": "retract"}, target=target, action="retract",
                    reason=reason, version_of=lambda unit: crop_version if unit == crop else None, prefix=prefix, at=at, mint=mint)
 
-    own, form = own_of("built_as"), own_of("has_form")
+    own, forms = next(iter(own_of("built_as")), None), own_of("has_form")
     clear = char is None and structure is None
     if clear:
         if own is None:
@@ -130,10 +130,10 @@ def set_crop_structure(conn: sqlite3.Connection, *, key: str, actor: str, reques
         ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=crop, predicate="built_as",
                             claims=[Claim(object=named)], objects={named: "structure"}, crop_version=crop_version, method=METHOD,
                             prefix=prefix, at=at, mint=mint)
-        if form is not None:
-            take_back(form["id"], "form", "replaced")
+        for i, form in enumerate(forms):
+            take_back(form["id"], f"form/{i}", "replaced")
     response = {"submission": key, "subject": crop, "replaced": own["object"] if own else None,
-                "form": form["text"] if form is not None and not clear else None}
+                "form": forms[0]["text"] if forms and not clear else None}
     conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
                  (key, actor, signature, ledger.canonical(response), at))
     return response
