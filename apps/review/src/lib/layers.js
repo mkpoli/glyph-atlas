@@ -53,6 +53,10 @@ export function countsLabel(counts) {
   return parts.join(' · ')
 }
 
+/** The evidence of a character that is no crop of it: the lines and pages it is transcribed on. */
+export const matchesLabel = counts => [counts?.lines && t('layers.lineMatches.count', { count: counts.lines }), counts?.pages && t('layers.pageMatches.count', { count: counts.pages })]
+  .filter(Boolean).join(' · ')
+
 /** What a row's own collection holds, when the corpus knows nothing about the character. */
 export function ownLabel(row) {
   return row?.occurrence_count ? t('layers.inCollection.count', { count: row.occurrence_count }) : t('layers.noOccurrenceYet')

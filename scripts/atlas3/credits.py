@@ -22,7 +22,7 @@ from pathlib import Path
 
 from glyph_atlas.credit_line import credit_line
 
-OUT = Path(os.environ.get("ATLAS3_DIR", Path(__file__).parent)) / "out"
+OUT = Path(os.environ.get("ATLAS3_DIR", Path(__file__).resolve().parents[2] / "work/atlas-v3")) / "out"
 
 
 def published(atlas: sqlite3.Connection) -> Counter:

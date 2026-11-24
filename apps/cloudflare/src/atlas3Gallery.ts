@@ -2,6 +2,7 @@
 // reviews since, and pages of crops read from index ranges in the order they show.
 import { cropOf, publicId } from './atlas3';
 import { answer, currentPointer } from './atlas3Answers';
+import { catalogueVersion } from './atlas3Stamps';
 import { keyHeads } from './ledger';
 
 type Json = any;
@@ -85,7 +86,7 @@ export const FILED_MAX = 2000;
 export const filedClaimsQuery = () => `SELECT k.id,c.object AS grapheme,k.char,k.family,k.kind,k.book,k.production,k.category,k.shuffle,k.style,k.state,k.quiz,k.visual_group,
   coalesce((k.year-CASE WHEN k.year<0 THEN 9 ELSE 0 END)/10*10,-1) AS decade
   FROM current_claims c CROSS JOIN crops k ON k.id=c.crop LEFT JOIN reviews r ON r.crop=k.id
-  WHERE c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
+  WHERE k.kind<2 AND c.predicate='has_grapheme' AND c.object IS NOT NULL AND c.scope='' AND c.slot='' AND c.status IN (${FILING.map(s => `'${s}'`).join(',')})
     AND c.cut=k.cut+(r.x IS NOT NULL) ORDER BY c.object,c.subject LIMIT ${FILED_MAX}`;
 export type Filed = { id: number; grapheme: string; char: number | null; family: number | null; kind: number; book: number; production: number | null; category: number | null; shuffle: number; style: number | null;
   state: number | null; quiz: number | null; visual_group: number | null; decade: number };
@@ -94,12 +95,23 @@ export type FiledAt = Filed & { head: string };
  *  files elsewhere (`away`), and the crops from outside it a claim files here (`here`). A claim files
  *  its crop under the family its grapheme heads now, or is filed under since a publication moved it. */
 export async function familyClaims(env: Env, grapheme: string, members: number[]): Promise<{ away: Filed[]; here: Filed[] }> {
-  return claimsAt(await filedClaims(env), grapheme, members);
+  return claimsAt(await filedClaimsKept(env, await catalogueVersion(env)), grapheme, members);
 }
 export function claimsAt<T extends FiledAt>(rows: T[], grapheme: string, members: number[]): { away: T[]; here: T[] } {
   const own = new Set(members);
   const inFamily = (r: Filed) => r.char !== null ? own.has(r.char) : r.family !== null && own.has(r.family);
   return { away: rows.filter(r => r.head !== grapheme && inFamily(r)), here: rows.filter(r => r.head === grapheme && !inFamily(r)) };
+}
+/** The crops grapheme claims file (`filedClaims`) as of a catalogue version, which every claim, review and
+ *  publication moves: the edge keeps each version's, so the cards, galleries and counts of a version read
+ *  them from D1 once per location. */
+export async function filedClaimsKept(env: Env, version: string): Promise<FiledAt[]> {
+  const edge = new Request(`https://glyphatlas.org/_claims/${encodeURIComponent(version)}`);
+  const kept = await caches.default.match(edge).then(hit => hit ? hit.json() as Promise<FiledAt[]> : null).catch(() => null);
+  if (kept) return kept;
+  const rows = await filedClaims(env);
+  await caches.default.put(edge, Response.json(rows, { headers: { 'cache-control': 'public, max-age=3600' } })).catch(() => {});
+  return rows;
 }
 /** Every crop a grapheme claim files, with the key of the head of the family it files it under now. */
 export async function filedClaims(env: Env): Promise<FiledAt[]> {
@@ -228,11 +240,11 @@ export async function galleryPage(env: Env, q: GalleryQuery): Promise<{ ids: num
   return { ids: page.map(row => row.id), next: rows.length > q.limit ? cursor(last.at[0], last.at[1], last) : null };
 }
 
-/** How many crops each style group holds in a year range, which the counts cannot answer, on either
- *  axis: one count per source, over the index the range is read from. */
+/** How many crops each style group holds in a year range, the withheld apart, which the counts cannot
+ *  answer, on either axis: one count per source, over the index the range is read from. */
 export function rangeCountQuery(q: GalleryQuery, phase: 'R' | 'K', source: Source) {
-  const range = rangeQuery({ ...q, group: null }, phase, source, null, 1);
+  const range = rangeQuery({ ...q, group: null, withheld: true }, phase, source, null, 1);
   if (!range) return null;
   const from = range.sql.slice(range.sql.indexOf(' FROM '), range.sql.lastIndexOf(' ORDER BY '));
-  return { sql: `SELECT style,count(*) AS n${from} GROUP BY style`, values: range.values.slice(0, -1) };
+  return { sql: `SELECT style,quiz,count(*) AS n${from} GROUP BY style,quiz`, values: range.values.slice(0, -1) };
 }

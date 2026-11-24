@@ -303,8 +303,19 @@ A re-cut overwrites the crop's vector.
 - Deleted with the old database: `units`, `corpus_units`, `media`, `pages`, `unit_counts`,
   `unit_count_keys`, `unit_marks`, `crop_versions`, `unit_redirects`, `written_forms`, `unit_ngrams`,
   `ngram_*`, `form_units`, `document_dating` and the publication-keyed caches.
-- A review shows in galleries and counts at once. Run counts and chronology change at the next
-  publication.
+- A review shows in what is read from D1 at once to whoever made it, and to another reader within a
+  minute, as an isolate holds the catalogue's stamps `CATALOGUE_LAG` (60 s). What is kept longer:
+
+  | What | Kept | Behind a review by, at most |
+  | --- | --- | --- |
+  | Galleries, their totals and counts by style; a character's card and its grapheme's total; the claims that file crops; the decades of the copies' dates | by the catalogue version, or not at all | a minute; none for its maker |
+  | The list of every grapheme's crops (`/atlas/graphemes/counts`), a listing and the homepage sample | a minute of a publication; a maker's by the catalogue version | two minutes; none for its maker |
+  | A gallery by book: its books, what they list and what is withheld. Its counts by style are the card's where no years narrow it | an hour of a publication | an hour, its maker too |
+  | The time axis (編年) and the decades of the texts' dates | an hour of a publication | an hour, its maker too |
+  | Run counts | a publication | the next publication |
+
+  A browser asks for the list of every grapheme's crops each time it shows it, and an open gallery reads
+  its counts again once a burst of saves is over.
 - D1 is an index rebuilt from R2 and the publisher's data, so a later schema change is a rebuild
   script.
 - The risk is a slot match that moves a person's review onto a neighbouring glyph, the failure seen in
