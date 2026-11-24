@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -21,7 +22,7 @@ from . import ledger
 from .ledger import Claim, LedgerError
 
 METHOD = "form-picker"
-#: The statuses of a form's `written_for` slot that file it on a grapheme's card.
+#: The statuses of a slot whose claim holds.
 FILED = ("asserted", "accepted", "adjudicated")
 
 
@@ -118,20 +119,25 @@ def written_for(conn: sqlite3.Connection, form: str) -> list[dict]:
     return found
 
 
-def carried_forms(conn: sqlite3.Connection, crops: Iterable[str]) -> list[dict]:
+def carried_forms(conn: sqlite3.Connection, boxes: Mapping[str, str | None]) -> list[dict]:
     """The described forms and registered figures these crops are claimed to have, the most used first.
 
     A form a reviewer writes as an IDS, or a registered figure written as a variation sequence (突󠄃),
     has no character of its own, so no card row holds it; it is one of the 字体 of the grapheme whose
-    crops carry it."""
+    crops carry it. `boxes` gives each crop's box as its evidence version writes it (`evidence.box_text`):
+    a claim made on another box does not hold."""
     rows = conn.execute(
-        "SELECT c.object AS form,r.scheme,r.value,count(*) AS n FROM current_claims c "
+        "SELECT c.subject,c.crop_version,c.object AS form,r.scheme,r.value FROM current_claims c "
         "JOIN forms f ON f.id=c.object JOIN representations r ON r.id=f.anchor "
         "WHERE c.subject IN (SELECT value FROM json_each(?)) AND c.predicate='has_form' AND c.scope='' AND c.slot='' "
-        "AND r.scheme IN ('ids','ivs') AND c.status IN ('asserted','accepted','adjudicated') "
-        "GROUP BY c.object ORDER BY n DESC,r.value", (json.dumps(list(crops)),)).fetchall()
-    return [{"char": row["value"], "code_point": None, "form": row["form"], "scheme": row["scheme"],
-             "count": row["n"], "corpus_count": 0} for row in rows]
+        "AND r.scheme IN ('ids','ivs') AND c.status IN ('asserted','accepted','adjudicated')",
+        (json.dumps(list(boxes)),)).fetchall()
+    held = [row for row in rows if (box := boxes[row["subject"]]) is not None
+            and (row["crop_version"] or "").endswith("@" + box)]
+    counts = Counter(row["form"] for row in held)
+    found = {row["form"]: {"char": row["value"], "code_point": None, "form": row["form"], "scheme": row["scheme"],
+                           "count": counts[row["form"]], "corpus_count": 0} for row in held}
+    return sorted(found.values(), key=lambda form: (-form["count"], form["char"]))
 
 
 def set_written_for(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str, grapheme: str,

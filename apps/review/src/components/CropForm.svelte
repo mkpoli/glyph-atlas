@@ -30,7 +30,7 @@
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
-  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], grapheme: null, alike: [] }), added = $state([])
+  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], alike: [] }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false)
   let arranging = $state(false)
@@ -46,13 +46,13 @@
   $effect(() => {
     const id = crop?.id, char = written, own = untrack(() => current)
     added = []; picking = false; query = ''; failed = false; composing = false; arranging = false
-    listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], grapheme: null, alike: [] }, true])
+    listForms(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], alike: [] }, true])
       .then(async ([found, unread]) => {
         const read = await composed([own, ...namesOf(found)])
         if (id === crop?.id && char === written) { structureOf = read; offered = { char, ...found }; failed = unread }
       })
   })
-  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], grapheme: null, alike: [] })
+  const listed = $derived(offered.char === written ? offered : { members: [{ char: written }], variants: [], related: [], derived: [], alike: [] })
   // The grapheme's forms and related characters: its members, its variants, and its related characters.
   const forms = $derived([...listed.members, ...listed.variants, ...listed.related].filter(form => !others || form.char !== current))
   // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them

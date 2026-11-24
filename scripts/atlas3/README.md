@@ -203,6 +203,10 @@ is never refused. Migrations 0015, 0016 and 0018 are applied to glyph-atlas-v3 b
 deploys (`publish.py --migrate`); `publish.py` applies each part where it is missing, on D1 and on the
 local copy.
 
+Migration 0020 (`carried_forms`, the described form each crop is claimed to have) is applied to glyph-atlas-v3
+before the Worker that reads it deploys: `wrangler d1 execute ATLAS --remote --file migrations-atlas/0020_carried_forms.sql`
+from `apps/cloudflare`. Run again, it changes nothing.
+
 The reviews moved from the old site are served from `v3/review-legacy/<page>.json.gz`, as the old export
 gave them. `review_archive.py --snapshots FILE` builds those archives from the frozen copies of `events`
 and `units` and the old site's publication record (`units.snapshot`) of each collected or retired crop

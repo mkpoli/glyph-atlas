@@ -27,8 +27,10 @@ const HAN = /^\p{Script=Han}$/u
 // The language whose fonts draw a BabelStone region's shape (U+6236 戶 is drawn as 戸 under `ja`).
 const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja', K: 'ko', P: 'ko-KP', V: 'vi' }
 const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
-// A form claimed on a crop joins its grapheme's forms, so a claim drops the cards read here.
 const cards = new Map()
+// A description or a figure claimed on a crop, or taken back, changes its grapheme's forms, so the cards
+// read here are read again. A character of its own is on its cards whatever is claimed.
+const claimed = (...values) => { if (values.some(value => [...value ?? ''].length > 1)) cards.clear() }
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…) but one
  * drawn as `char` itself (𨓜, 逸 encoded again as its J shape), a kanji's small seal characters last
@@ -45,7 +47,7 @@ const cards = new Map()
  * because another stands for them (`sortForms`), and `family` every encoded member of the grapheme.
  */
 export function listForms(char) {
-  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], grapheme: null, alike: [], family: [] })
+  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], alike: [], family: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
@@ -81,7 +83,7 @@ export function listForms(char) {
       const seen = new Set(members.map(m => m.char))
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
       return { members, variants: fresh(variants), related: fresh(related), derived: fresh(derived),
-        grapheme: card?.grapheme ?? null, family: family.map(v => v.char),
+        family: family.map(v => v.char),
         alike: [...alike.figures.map(figureEntry), ...alike.shapes.map(shapeEntry),
           ...[...family, ...found.items ?? [], ...found.related ?? []].filter(twin)
             .filter((v, i, all) => all.findIndex(other => other.char === v.char) === i).map(entry)] }
@@ -132,7 +134,7 @@ async function claimForm(crop, form, review = null) {
     result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form, ...(named ? { review: named } : {}) })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
-  cards.clear()
+  claimed(form, result.replaced)
   return { crop: { ...seen, form: result.form }, replaced: result.replaced ?? null }
 }
 
@@ -158,7 +160,8 @@ async function writeCharacter(crop, character) {
  */
 export async function setForm(crop, form) {
   const written = crop.written_character ?? crop.label
-  const { family } = await listForms(written)
+  // A description or a figure is no member of a grapheme.
+  const family = [...form ?? ''].length === 1 ? (await listForms(written)).family : []
   if (form === written || !family.includes(form)) return { ...await claimForm(crop, form), reviewed: false }
   // The claim names the review, so the two count as one decision.
   const named = await writeCharacter(crop, form)
@@ -187,7 +190,7 @@ async function sendPicks(picks) {
       throw Object.assign(error ?? new Error(), { marked, kept })
     }
     answered()
-    cards.clear()
+    claimed(...part.map(pick => pick.form), ...(result.crops ?? []).map(crop => crop.replaced))
     const byId = new Map(part.map(({ crop }) => [crop.id, crop]))
     for (const { id: target, form, replaced } of result.crops ?? []) if (byId.has(target)) marked.push({ crop: { ...byId.get(target), form }, replaced: replaced ?? null })
   }

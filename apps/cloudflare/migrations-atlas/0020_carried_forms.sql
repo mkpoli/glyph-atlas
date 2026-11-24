@@ -1,7 +1,8 @@
 -- The described form (an ideographic description) or registered figure (a variation sequence) each crop
 -- is claimed to have, under the crop's character or, with none, the family it is filed under, so a
 -- character's card reads the forms its crops carry by key. One row a crop. The triggers keep it with the
--- claims and with the crop's character; a row of an earlier cut stays, and the reader compares `cut`.
+-- claims and with the crop's character, one put back after a withdrawal among them; a row of an earlier
+-- cut or of a withdrawn crop stays, and the reader compares `cut` with the crop's.
 CREATE TABLE IF NOT EXISTS carried_forms(crop INTEGER PRIMARY KEY, grapheme INTEGER, form TEXT NOT NULL, cut INTEGER);
 CREATE INDEX IF NOT EXISTS carried_form_grapheme ON carried_forms(grapheme, form);
 CREATE TRIGGER IF NOT EXISTS carried_form_claimed AFTER INSERT ON current_claims
@@ -16,6 +17,8 @@ CREATE TRIGGER IF NOT EXISTS carried_form_dropped AFTER DELETE ON current_claims
 BEGIN DELETE FROM carried_forms WHERE crop = OLD.crop; END;
 CREATE TRIGGER IF NOT EXISTS carried_form_moved AFTER UPDATE OF char, family ON crops
   WHEN coalesce(OLD.char, OLD.family) IS NOT coalesce(NEW.char, NEW.family)
+BEGIN UPDATE carried_forms SET grapheme = coalesce(NEW.char, NEW.family) WHERE crop = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS carried_form_put_back AFTER INSERT ON crops
 BEGIN UPDATE carried_forms SET grapheme = coalesce(NEW.char, NEW.family) WHERE crop = NEW.id; END;
 INSERT OR REPLACE INTO carried_forms(crop, grapheme, form, cut)
   SELECT k.id, coalesce(k.char, k.family), c.object, c.cut FROM current_claims c

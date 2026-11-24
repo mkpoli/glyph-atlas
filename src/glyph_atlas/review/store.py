@@ -30,7 +30,7 @@ import re
 import sqlite3
 import threading
 from collections import Counter
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dc_field
@@ -1217,10 +1217,10 @@ class Store:
         with self._lock, self._connection() as conn:
             return crop_forms.claimed_structures(conn, names)
 
-    def carried_forms(self, crops: Iterable[str]) -> list[dict[str, Any]]:
+    def carried_forms(self, boxes: Mapping[str, str | None]) -> list[dict[str, Any]]:
         """The described forms these crops are claimed to have (`crop_forms.carried_forms`)."""
         with self._lock, self._connection() as conn:
-            return crop_forms.carried_forms(conn, crops)
+            return crop_forms.carried_forms(conn, boxes)
 
     def resolve_claims(self, version_of, subjects: Iterable[str] | None = None) -> int:
         """Resolve the slots of `subjects` again, or every slot; `version_of` names each crop's current version."""

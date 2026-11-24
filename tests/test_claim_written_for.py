@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sqlite3
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from test_review_atlas import LINE, dataset  # noqa: F401
 
 from glyph_atlas.review.server import create_app
+from glyph_atlas.review.store import Store
 
 UNIT = LINE + ":u0"
 GRAPHEME = "U+3042"
@@ -69,6 +71,10 @@ def test_a_form_a_crop_carries_is_on_its_graphemes_card(dataset):  # noqa: F811
     figure = "突\U000e0103"
     other = form_of(client, figure)
     assert listed() == [{"char": figure, "code_point": None, "form": other, "scheme": "ivs", "count": 1, "corpus_count": 0}]
+    # A claim made on another box of the crop does not hold.
+    with sqlite3.connect(Store(dataset).path) as conn:
+        conn.execute("UPDATE current_claims SET crop_version=crop_version||'9' WHERE predicate='has_form'")
+    assert listed() == []
 
 
 def test_a_claim_names_the_head_its_key_is_filed_under_and_a_form_the_site_holds(dataset):  # noqa: F811

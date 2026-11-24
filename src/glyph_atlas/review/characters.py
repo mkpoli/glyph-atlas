@@ -1078,8 +1078,8 @@ def router(store: Store) -> APIRouter:
             listed = {member["char"] for member in (view.get("grapheme") or {}).get("members", [])}
             for group in ("items", "related"):
                 listed |= {entry["char"] for entry in view["variants"].get(group, []) if entry.get("char")}
-            crops = [unit.id for unit, *_ in layer().rows(row.code_point, expand="grapheme")]
-            forms = [form for form in store.carried_forms(crops) if form["char"] not in listed]
+            boxes = {unit.id: evidence.box_text(unit.box) for unit, *_ in layer().rows(row.code_point, expand="grapheme")}
+            forms = [form for form in store.carried_forms(boxes) if form["char"] not in listed]
             carried = {form["char"] for form in forms}
             view["variants"] = {**view["variants"], "forms": forms,
                                 "derived": [entry for entry in view["variants"]["derived"] if entry["char"] not in carried]}

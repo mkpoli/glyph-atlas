@@ -269,6 +269,14 @@ describe('a character page', () => {
     expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([1, [row('⿰木木', 1)]]);
     db.query('UPDATE crops SET char=? WHERE id=?').run(G.時, moved);
     expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([2, []]);
+    // A crop withdrawn and put back under another character takes it there.
+    const held = db.query('SELECT * FROM crops WHERE id=?').get(moved) as Record<string, number>;
+    db.query('DELETE FROM crops WHERE id=?').run(moved);
+    expect((await listed()).forms[0].count).toBe(1);
+    const put = { ...held, char: G.峕 };
+    db.query(`INSERT INTO crops(${Object.keys(put).join(',')}) VALUES(${Object.keys(put).map(() => '?').join(',')})`).run(...Object.values(put));
+    expect((await listed('U+5CD5')).forms).toEqual([row('⿰木木', 1)]);
+    db.query('UPDATE crops SET char=? WHERE id=?').run(G.時, moved);
     // So does one a reader files under another grapheme.
     db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
       VALUES(?,'has_grapheme','','',?,0,'asserted','U+5CD5','[]','[]','[]','r','now')`).run(publicId(moved), moved);
