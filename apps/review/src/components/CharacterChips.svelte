@@ -4,6 +4,7 @@
   import ZiLink from './ZiLink.svelte'
   import Cite from './Cite.svelte'
   import { characterEntry } from '$worker/citation.ts'
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptLine from './ScriptLine.svelte'
   import ScriptText from './ScriptText.svelte'
@@ -124,7 +125,7 @@
   {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
 {/snippet}
 
-{#snippet head()}<ScriptText text={grapheme.char} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}{/snippet}
+{#snippet head()}<ScriptText text={graphemeLabel(grapheme.char)} lang="zh" titled={false} />{#if crops(grapheme)}<small>{formatNumber(crops(grapheme))}</small>{/if}{/snippet}
 
 {#snippet choice(member)}
   {@const title = isSeal(member.char) ? sealTitle(member) : glyphCount(member)}
@@ -144,7 +145,7 @@
             {:else}<a class="variant" href={localize(graphemeAddress(grapheme.code_point, grapheme.char, narrowed))} title={glyphCount(grapheme)}>{@render head()}</a>{/if}</div>
         {/if}
         {#each writes as v (v.code_point)}
-          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={glyphCount(v) ? `${shareLabel(v)}\n${glyphCount(v)}` : shareLabel(v)}><ScriptText text={v.char} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
+          <a class="variant" href={localize(graphemeAddress(v.code_point, v.char))} title={glyphCount(v) ? `${shareLabel(v)}\n${glyphCount(v)}` : shareLabel(v)}><ScriptText text={graphemeLabel(v.char)} lang="zh" titled={false} />{#if shared}<small class="share">{t('chips.shared')}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
         {/each}
       </div>
     </div>
@@ -236,7 +237,7 @@
     <div class="layer-legend"><ScriptLegend /></div>
     <div class="layer-row forms-row">
       <span class="layer-label">{t('chips.glyphs')}</span>
-      <span>{#if whole}<ScriptLine line={withText('cite.label.grapheme', 'char', { char: card.char, codePoint: card.code_point })} />{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
+      <span>{#if whole}<ScriptLine line={withText('cite.label.grapheme', 'char', { char: graphemeLabel(card.char), codePoint: card.code_point })} />{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: whole ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
       {#if entry}<Cite {entry} class="cite-link" />{/if}

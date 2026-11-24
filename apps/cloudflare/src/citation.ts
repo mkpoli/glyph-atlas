@@ -3,6 +3,8 @@
 // schema.org for the page). The Worker serves them at /atlas/cite/<kind>/<id>, and the pages build the
 // same entry from the record they render. Nothing is stated that the record does not carry;
 // attributions stay verbatim.
+import { graphemeLabel } from './graphemeLabel';
+
 type Json = Record<string, any>;
 
 export const SITE = 'Glyph Atlas';
@@ -91,11 +93,12 @@ export function cropEntry(record: Json, version: string | null = record.crop_ver
   };
 }
 
-/** A grapheme's page, or the page of one form. */
+/** A grapheme's page, named by its label, or the page of one form. */
 export function characterEntry(kind: 'grapheme' | 'form', card: Json): Entry {
   const named = kind === 'grapheme' && card.grapheme?.code_point ? card.grapheme : card;
   const codePoint = String(named.code_point);
-  return { kind, id: slug(codePoint), label: text(named.char) ?? null, codePoint,
+  const char = text(named.char) ?? null;
+  return { kind, id: slug(codePoint), label: char && kind === 'grapheme' ? graphemeLabel(char) : char, codePoint,
     path: `/${kind === 'grapheme' ? 'grapheme' : 'character'}/${slug(codePoint)}` };
 }
 

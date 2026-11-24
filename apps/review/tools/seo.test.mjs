@@ -6,7 +6,7 @@ import { render } from 'svelte/server'
 import * as seo from '../src/lib/seo.js'
 const { indexCollection } = seo
 mock.module('$lib/seo.js', () => seo)
-mock.module('$lib/citation.js', () => ({ galleryTitle: shown => shown.char }))
+mock.module('$lib/citation.js', () => ({ galleryName: shown => shown.char, galleryTitle: shown => shown.char }))
 
 const LOCALES = ['en', 'ja', 'zh-Hant', 'lzh', 'ja-x-classical'].map(tag => ({ tag }))
 const HREFLANG = LOCALES.slice(0, 3)

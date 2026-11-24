@@ -46,7 +46,8 @@
   import { corpusScope, bookPage, bookScope, styleCounts } from '../lib/gallery.js'
   import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
-  import { galleryTitle } from '../lib/citation.js'
+  import { galleryName, galleryTitle } from '../lib/citation.js'
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
@@ -235,7 +236,7 @@
     if (all > form) {
       const percent = form / all * 100
       const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
-      const group = { grapheme: graphemeChar(item) || charOf(key), count: all, forms: tileCounts.shapes.get(key) ?? 0,
+      const group = { grapheme: graphemeLabel(graphemeChar(item) || charOf(key)), count: all, forms: tileCounts.shapes.get(key) ?? 0,
         rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }
       lines.push(t('tile.countGrapheme', group)); ranks.push(t('tile.rankGrapheme', group))
     }
@@ -304,7 +305,7 @@
   // otherwise than the form; katakana counts as its own writing (ハ stands alone, 𛂞 は and 嶋 島 do not).
   const shownGrapheme = item => { const g = tileGrapheme(item); return g && (isUnassigned(item) || kanaFolded(g) !== kanaFolded(item.label ?? '')) ? g : null }
   // A tile's name for a screen reader: its form, then its grapheme where the caption shows one.
-  const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${shownGrapheme(item)})` : shownLabel(item)
+  const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${graphemeLabel(shownGrapheme(item))})` : shownLabel(item)
   const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')
     : group.label === 'Similar forms' ? t('explore.similarForms') : group.label
   /** Whether a crop still waits for a person: flagged, or hard to read after two reviewers skipped it. */
@@ -691,7 +692,7 @@
   const frequentGraphemes = $derived.by(() => {
     if (runKind !== 'grapheme' || !cropCounts) return null
     const next = graphemes.filter(group => group.count > 0).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).slice(0, KEPT)
-      .map(group => ({ text: group.char, n: group.count, key: group.key }))
+      .map(group => ({ text: graphemeLabel(group.char), char: group.char, n: group.count, key: group.key }))
     const same = shownGraphemes?.length === next.length && next.every((group, i) => group.key === shownGraphemes[i].key && group.n === shownGraphemes[i].n)
     return same ? shownGraphemes : (shownGraphemes = next)
   })
@@ -1301,7 +1302,7 @@
       : Number(getComputedStyle(grid.querySelector('.collage-block')).getPropertyValue('--collage-cols'))
     const holders = [...new Set(crops.map(creditOf).filter(Boolean))]
     // The page as the reader has it now: the gallery may show another character before the image is done.
-    const char = picked?.char, site = t('app.name'), day = new Date().toLocaleDateString('sv')
+    const char = picked && galleryName(subject ?? picked), site = t('app.name'), day = new Date().toLocaleDateString('sv')
     let address = location.href
     try { address = decodeURI(address) } catch { /* An address that does not decode is written as it stands. */ }
     // The page's own paper, ink and quiet text, read as the colours the theme resolves them to.
@@ -1430,7 +1431,7 @@
      hover details. The square grid positions the label and footer at its top and bottom through display:contents. -->
 {#snippet tileCaption(item)}
   <span class="tile-caption">
-    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
+    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={graphemeLabel(shownGrapheme(item))} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
     <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}
@@ -1492,7 +1493,7 @@
     <div class="toolbar-query">
       <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
-                       token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
+                       token={grapheme ? graphemeLabel(charOf(grapheme)) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: graphemeLabel(charOf(grapheme)) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
                        onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
       <!-- A work narrows the collection's listing; choosing one leaves a picked character's gallery. -->
@@ -1520,7 +1521,7 @@
       </div>
       <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
+        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: graphemeLabel(chosenGrapheme.char) })} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
         {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
         <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
@@ -1548,7 +1549,7 @@
     </p>
   {/if}
   {#if bare}{#if runKind === 'grapheme'}<RunStrip runs={frequentGraphemes} heading={t('explore.runs.heading')} failed={countsFailed ? t('explore.graphemes.failed') : ''} onretry={() => loadCounts(true)}
-      address={group => graphemeAddress(group.key, group.text)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
+      address={group => graphemeAddress(group.key, group.char)} tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value } }} />
     {:else}<RunStrip runs={homeRuns?.kind === runKind ? homeRuns.items : null} heading={t('explore.runs.heading')} failed={homeRunsFailed ? runFailed(runKind) : ''} onretry={() => loadHomeRuns(runKind)}
       tabs={{ value: runKind, options: Object.entries(runWords), onchange: value => { runKind = value; homeRunsFailed = false } }} />{/if}{/if}
   {#if picked}
@@ -1566,7 +1567,7 @@
     {#if loading && !display.length}<noscript><p class="noscript-note">{t('explore.noscript')}</p></noscript><div class="collage-block" style={skeleton.block}>{#each skeleton.tiles as style}<div class="glyph-skeleton collage-cell" {style}></div>{/each}</div>
     {:else}{#each sections as section (section.key)}{#if section.head?.book}{@render bookHeading(section.head)}{:else if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
   </div>
-  {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
+  {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: galleryName(subject ?? picked) })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
   {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}

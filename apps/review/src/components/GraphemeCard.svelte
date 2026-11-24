@@ -4,6 +4,7 @@
   // choosing a form opens that form's own gallery. The grapheme browser shows it over a pointed tile, and
   // the search box for each grapheme a query names.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/addresses.js'
@@ -14,7 +15,7 @@
 
 <div class="grapheme-card">
   <a class="card-head" href={localize(group.alone ? characterAddress(group.key) : graphemeAddress(group.key, group.char))}>
-    <ReferenceGlyph char={group.char} size="lg" />
+    <ReferenceGlyph char={group.alone ? group.char : graphemeLabel(group.char)} size="lg" />
     <span><b>{t(group.alone ? 'chips.forms' : 'chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
   </a>
   <ul>

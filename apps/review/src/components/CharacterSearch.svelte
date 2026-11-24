@@ -16,6 +16,7 @@
   // A `lead` snippet is a row the page puts above the candidates while the list is open.
   import { onMount } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import ScriptText from './ScriptText.svelte'
   import GraphemeCard from './GraphemeCard.svelte'
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
@@ -367,8 +368,8 @@
       {:else}
         {#each blocks as block (`${block.key}:${block.entries[0].index}`)}
           {#if block.grapheme?.character_count > 1}
-            <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${block.grapheme.label}`}>
-              <p class="candidate-grapheme-head" aria-hidden="true">{t('chips.grapheme')} <ScriptText text={block.grapheme.char ?? block.entries[0].item.char} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}</p>
+            <div class="candidate-grapheme" role="group" aria-label={`${t('chips.grapheme')} ${graphemeLabel(block.grapheme.char ?? block.entries[0].item.char)}`}>
+              <p class="candidate-grapheme-head" aria-hidden="true">{t('chips.grapheme')} <ScriptText text={graphemeLabel(block.grapheme.char ?? block.entries[0].item.char)} /> · {t('explore.grapheme.forms', { count: block.grapheme.character_count })}</p>
               {#each block.entries as { item, index } (item.code_point)}{@render row(item, index, true)}{/each}
             </div>
           {:else}

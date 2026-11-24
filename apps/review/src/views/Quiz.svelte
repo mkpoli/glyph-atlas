@@ -15,6 +15,7 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
   import { catalogue, character, cropPixels, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
@@ -51,7 +52,8 @@
   let categoryOpen = $state(false), search = $state(''), completed = $state(0), last = $state(null)
   let roundId = $state(crypto.randomUUID()), requestId = 0, closed = false
   let roundSeed = randomSeed()
-  const graphemeLabel = $derived(grapheme ? graphemeText(grapheme) : '')
+  // The grapheme's character, and what the round is named by.
+  const graphemeChar = $derived(grapheme ? graphemeText(grapheme) : ''), graphemeName = $derived(graphemeLabel(graphemeChar))
   // Already-confirmed and already-seen crops of the current grapheme, for comparison against the
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
@@ -765,7 +767,7 @@
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
       last = { id: roundId, count: answers.length, grapheme, production }
       remember('atlas.last-round', last); completed += answers.length
-      if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeName)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       if (kept) markKept([...answers, ...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -787,7 +789,7 @@
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
       last = { id: roundId, count: 0, grapheme, production }
       remember('atlas.last-round', last)
-      if (!kept) announceSaved(seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(seen.length + passed.length, graphemeName)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       if (kept) markKept([...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -864,8 +866,8 @@
 <svelte:window onkeydown={keydown} />
 <section class="quiz-workspace">
   <div class="quiz-topline"><a href={localize('/')} class="quiet-link">{t('quiz.backToCollection')}</a><div class="round-count"><span class="live-dot"></span>{t('quiz.issuesSavedSession', { count: completed })}</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? t('quiz.shapeToggle.byShape') : t('quiz.shapeToggle.dealt')}</button><button class="undo-round suspect-toggle" aria-pressed={onlySuspects} disabled={saving || loading || selection.length > 0 || step !== 'select'} onclick={toggleSuspects}>{onlySuspects ? t('quiz.suspectToggle.only') : t('quiz.suspectToggle.all')}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>{t('quiz.undoLastRound')}</button>{/if}</div>
-  <div class="quiz-heading"><div class="target-character" aria-label={t('quiz.targetGrapheme', { grapheme: graphemeLabel })}>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'grapheme')[0]}<b>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}…{/if}</b>{around('quiz.selectHint', 'grapheme')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
-  {#if categoryOpen}<div class="round-categories"><input aria-label={t('quiz.findCategory.aria')} placeholder={t('quiz.findCategory.placeholder')} bind:value={search}/><div class="category-options">{#each categories as c (c.label)}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span><ScriptText text={c.char} /></span>{#if c.members.length > 1}<small class="category-members"><ScriptText text={c.members.map(m => m.label).join('')} /></small>{/if}<small>{c.pending}</small></button>{/each}</div></div>{/if}
+  <div class="quiz-heading"><div class="target-character" class:pair={graphemeName !== graphemeChar} aria-label={t('quiz.targetGrapheme', { grapheme: graphemeName })}>{#if graphemeChar}<ScriptText text={graphemeName} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'grapheme')[0]}<b>{#if graphemeChar}<ScriptText text={graphemeName} />{:else}…{/if}</b>{around('quiz.selectHint', 'grapheme')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
+  {#if categoryOpen}<div class="round-categories"><input aria-label={t('quiz.findCategory.aria')} placeholder={t('quiz.findCategory.placeholder')} bind:value={search}/><div class="category-options">{#each categories as c (c.label)}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span><ScriptText text={graphemeLabel(c.char)} /></span>{#if c.members.length > 1}<small class="category-members"><ScriptText text={c.members.map(m => m.label).join('')} /></small>{/if}<small>{c.pending}</small></button>{/each}</div></div>{/if}
   <label class="review-material">{t('quiz.material.label')}
     <select aria-label={t('quiz.material.aria')} value={production} disabled={saving || loading || loadingMore}
       onchange={event => load({ scope: event.currentTarget.value, target: grapheme })}>
@@ -875,7 +877,7 @@
   {#if history.length > 1}
     <nav class="character-history" aria-label={t('quiz.history.label')}>
       <button class="history-previous" aria-label={t('quiz.history.previousRound')} disabled={saving || loading || historyIndex <= 0} onclick={() => visit(historyIndex - 1)}>{t('quiz.history.previous')}</button>
-      <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { grapheme: graphemeText(round.grapheme) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText text={graphemeText(round.grapheme)} /></button>{/each}</div>
+      <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { grapheme: graphemeLabel(graphemeText(round.grapheme)) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText text={graphemeLabel(graphemeText(round.grapheme))} /></button>{/each}</div>
       <button class="history-next" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
     </nav>
   {/if}
@@ -890,7 +892,7 @@
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
@@ -901,8 +903,8 @@
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
       {#if loadingMore}<span class="load-more-status"><span class="load-more-spinner" aria-hidden="true"></span>{t('quiz.loadMore.loading')}</span>
       {:else if hasMore && items.length >= roundLimit}<span class="load-more-status">{t('quiz.loadMore.saveToLoad')}</span>
-      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { grapheme: graphemeLabel })}</button>
-      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { grapheme: graphemeLabel })}</span>{/if}
+      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { grapheme: graphemeName })}</button>
+      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { grapheme: graphemeName })}</span>{/if}
     </div>{/if}
     {#if references.length}
       <section class="quiz-reference" aria-label={t('quiz.reference.label')}>
@@ -931,7 +933,7 @@
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
-  {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={saving} error={formError} done={formDone}
+  {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone}
     onassign={markSelection} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (offersSuggestions(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}

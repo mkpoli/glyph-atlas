@@ -9,6 +9,7 @@
   import CopyValue from './CopyValue.svelte'
   import CropGrapheme from './CropGrapheme.svelte'
   import ScriptText from './ScriptText.svelte'
+  import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import { claimedGrapheme, scriptInfo } from '../lib/identity.js'
   import { graphemeChoices } from '../lib/cropGraphemes.js'
   import { hasCharacterPage, isSingle, pointOf } from '../lib/issues.js'
@@ -39,7 +40,7 @@
     const value = filed ? claim.values.find(v => v.grapheme === filed) : null
     return value && value.char !== char ? value : null
   })
-  const label = $derived([other ? t('grapheme.readAs', { char, grapheme: other.char }) : char, disputed ? t('grapheme.disputed') : null,
+  const label = $derived([other ? t('grapheme.readAs', { char, grapheme: graphemeLabel(other.char) }) : char, disputed ? t('grapheme.disputed') : null,
     t('grapheme.change')].filter(Boolean).join('\n'))
   let open = $state(false), button = $state(null)
   // Another crop starts with the picker shut.
@@ -54,7 +55,7 @@
 
 <div class="crop-title-group">
   <h2 class="crop-title"><span class="title-glyph copyable">{#if href}<a class="character-link" {href} aria-label={t('chips.showCharacter', { char })}><ReferenceGlyph {char} script={key} {size} /></a>{:else}<ReferenceGlyph {char} script={key} {size} />{/if}{#if reading}<button type="button" class="glyph-button" bind:this={button} aria-haspopup="dialog" aria-expanded={open}
-      aria-label={label} title={label} disabled={reading.disabled} onpointerenter={prefetch} onfocus={prefetch} onclick={() => open = !open}><span class="read-as" class:claimed={other} class:disputed aria-hidden="true">{#if other}<ScriptText text={other.char} titled={false} />{:else}<svg viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3" /></svg>{/if}</span></button>{/if}<CopyValue value={char} /></span><small class="script-name">{name}</small></h2>
+      aria-label={label} title={label} disabled={reading.disabled} onpointerenter={prefetch} onfocus={prefetch} onclick={() => open = !open}><span class="read-as" class:claimed={other} class:disputed aria-hidden="true">{#if other}<ScriptText text={graphemeLabel(other.char)} titled={false} />{:else}<svg viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3" /></svg>{/if}</span></button>{/if}<CopyValue value={char} /></span><small class="script-name">{name}</small></h2>
   {#if reading && open}<CropGrapheme item={reading.item} disabled={reading.disabled} working={reading.working} saved={reading.saved} close={shut} />{/if}
 </div>
 
