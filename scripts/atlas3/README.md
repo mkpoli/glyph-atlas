@@ -81,6 +81,10 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   (`refused-withdrawals.txt`); a fresh `withdraw.py` catalogue takes it at its new revision. A retired crop the new layout never had (the first
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
   entry with its record, so its reviews, claims and links resolve.
+- A few crops go to another character without an export: `relabel.py <relabels.json> <catalogue.sqlite>`
+  writes a catalogue of them from their published records, under the new character and one revision on, with
+  the runs holding them. Nothing is cut or uploaded but the page bundles. The relabel is recorded in the crops'
+  store as well.
 - A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first text
   id on its `unit_redirects` chain that is a live crop after the publish, past retired crops and text
   ids with no crop, so a reader reaches a live crop in one step. A chain that loops, or ends with no
