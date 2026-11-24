@@ -222,6 +222,9 @@ PRICE_INPUT = 1.50
 PRICE_CACHE_READ = 0.075
 PRICE_OUTPUT = 7.50
 PRICE_SEARCH_QUERY = 0.014
+# Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
+# may pass the day's limit by the difference, once.
+CALL_RESERVE = 0.05
 # What the homeserver knows about a room and its people, read again after this long. Bridged people
 # carry their network in their Matrix ID; the QQ bridge makes a QQ member's account the first time
 # they speak, since QQ's bot API cannot list a group, so QQ counts only people who have spoken.
@@ -484,6 +487,7 @@ class Config:
     lookup_enabled: bool = True
     lookup_per_hour: int = 120
     retention_days: int = 180
+    daily_usd: float = 0.75
     dry_run: bool = False
 
     @classmethod
@@ -498,8 +502,9 @@ class Config:
         digest = raw.get("digest") or {}
         memory = raw.get("memory") or {}
         lookup = raw.get("lookup") or {}
-        if not all(isinstance(table, dict) for table in (chat, digest, memory, lookup)):
-            raise TypeError("chat, digest, memory and lookup must be tables")
+        budget = raw.get("budget") or {}
+        if not all(isinstance(table, dict) for table in (chat, digest, memory, lookup, budget)):
+            raise TypeError("chat, digest, memory, lookup and budget must be tables")
         memory_enabled = memory.get("enabled", True)
         lookup_enabled = lookup.get("enabled", True)
         if not isinstance(memory_enabled, bool) or not isinstance(lookup_enabled, bool):
@@ -600,6 +605,7 @@ class Config:
             lookup_enabled=lookup_enabled,
             lookup_per_hour=max(0, min(10_000, int(field(lookup, "per_hour", cls.lookup_per_hour)))),
             retention_days=max(1, min(3650, int(field(limits, "retention_days", cls.retention_days)))),
+            daily_usd=_clamp(_finite(field(budget, "daily_usd", cls.daily_usd), cls.daily_usd), 0.0, 20.0),
             dry_run=dry_run,
         )
 
@@ -809,6 +815,10 @@ class GeminiError(Exception):
     def __init__(self, message: str = "", status: int | None = None):
         super().__init__(message)
         self.status = status
+
+
+class SpendError(GeminiError):
+    """The day's money is spent, or the caller has none: nothing was sent."""
 
 
 class GitHubError(Exception):
@@ -1219,14 +1229,33 @@ class Store:
         return cursor.rowcount == 1
 
     def count_usage(self, kind: str, *, failed: bool = False, tokens_in: int = 0, tokens_out: int = 0,
-                    cost: float = 0.0) -> None:
+                    cost: float = 0.0, day: str | None = None, calls: int = 1) -> None:
         """Add one model or tool call to the day's tally (JST days, as the digest)."""
         self.db.execute(
-            "INSERT INTO usage(day, kind, calls, failures, tokens_in, tokens_out, cost) VALUES(?,?,1,?,?,?,?) "
-            "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+1, failures=failures+excluded.failures, "
+            "INSERT INTO usage(day, kind, calls, failures, tokens_in, tokens_out, cost) VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+excluded.calls, failures=failures+excluded.failures, "
             "tokens_in=tokens_in+excluded.tokens_in, tokens_out=tokens_out+excluded.tokens_out, cost=cost+excluded.cost",
-            (local_day(now_ms()), kind, 1 if failed else 0, tokens_in, tokens_out, cost))
+            (day or local_day(now_ms()), kind, calls, 1 if failed else 0, tokens_in, tokens_out, cost))
         self.db.commit()
+
+    def spent(self, day: str) -> float:
+        return float(self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage WHERE day=?", (day,)).fetchone()[0])
+
+    def reserve(self, kind: str, amount: float, limit: float) -> str | None:
+        """Book an amount on today unless the day's total would pass the limit; returns the day."""
+        self.db.commit()
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            # The day is read under the lock, which may have been waited for past midnight.
+            day = local_day(now_ms())
+            if self.spent(day) + amount > limit:
+                return None
+            self.db.execute(
+                "INSERT INTO usage(day, kind, calls, cost) VALUES(?,?,1,?) "
+                "ON CONFLICT(day, kind) DO UPDATE SET calls=calls+1, cost=cost+excluded.cost", (day, kind, amount))
+            return day
+        finally:
+            self.db.commit()
 
     def usage(self, days: int = 7) -> list[sqlite3.Row]:
         start = local_day(now_ms() - (days - 1) * 86_400_000)
@@ -2280,6 +2309,46 @@ def _interaction_citations(answer: dict[str, Any]) -> list[tuple[str, str]]:
     return sources
 
 
+class Purse:
+    """One day's money for model calls, kept in a database so that every process using it shares the
+    limit. A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at
+    its real cost afterwards; a process that dies in between leaves the reserve spent."""
+
+    def __init__(self, store: Store, daily_usd: float):
+        self.store = store
+        self.daily_usd = daily_usd
+
+    def spent(self) -> float:
+        return self.store.spent(local_day(now_ms()))
+
+    def share(self) -> float:
+        """How much of the day's money is gone, 1 when all of it is or the amount cannot be read."""
+        try:
+            return self.spent() / self.daily_usd if self.daily_usd > 0 else 1.0
+        except sqlite3.Error:
+            log.exception("reading the money spent")
+            return 1.0
+
+    def reserve(self, kind: str) -> str:
+        """Set money aside for one call, or refuse it. Returns the day it is booked on."""
+        try:
+            day = self.store.reserve(kind, CALL_RESERVE, self.daily_usd)
+        except sqlite3.Error as error:
+            raise SpendError(f"the money spent could not be read: {error}") from None
+        if day is None:
+            raise SpendError(f"today's ${self.daily_usd:.2f} for model calls is spent")
+        return day
+
+    def settle(self, kind: str, day: str, *, cost: float, failed: bool = False, tokens_in: int = 0,
+               tokens_out: int = 0) -> None:
+        self.store.count_usage(kind, failed=failed, tokens_in=tokens_in, tokens_out=tokens_out,
+                               cost=cost - CALL_RESERVE, day=day, calls=0)
+
+    def add(self, kind: str, cost: float) -> None:
+        """A charge that comes with a call, such as its web searches."""
+        self.store.count_usage(kind, cost=cost)
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
         return None
@@ -2314,29 +2383,39 @@ class Gemini:
         self.url = url
         self.repo = repo
         self.timeout = timeout
-        self.meter: Any = None
+        self.purse: Purse | None = None
 
     def _post(self, body: dict[str, Any], *, timeout: float | None = None,
               kind: str = "chat") -> dict[str, Any]:
-        """One request, counted by kind with its tokens and cost when a meter is attached. Counting
-        is best effort: a call already paid for is never lost to a failed count."""
+        """One paid request. It needs a purse with money in it, and is settled by kind with its
+        tokens and cost; a call already paid for is never lost to a failed settlement."""
+        if self.purse is None:
+            raise SpendError("no purse: this client makes no paid call")
+        day = self.purse.reserve(kind)
         try:
             answer = self._send(body, timeout=timeout)
-        except GeminiError:
-            self._count(kind, failed=True)
+        except GeminiError as error:
+            # An answer that never came may still be billed, so its reserve stays spent.
+            self._settle(kind, day, failed=True, cost=0.0 if error.status is not None else CALL_RESERVE)
             raise
         usage = answer.get("usage") if isinstance(answer, dict) else None
         tokens_in, tokens_out = usage_tokens(usage)
-        self._count(kind, tokens_in=tokens_in, tokens_out=tokens_out, cost=model_cost(usage))
+        # An answer without its token counts is charged as reserved.
+        self._settle(kind, day, tokens_in=tokens_in, tokens_out=tokens_out,
+                     cost=model_cost(usage) if tokens_in else CALL_RESERVE)
         return answer
 
-    def _count(self, kind: str, **tally: Any) -> None:
-        if self.meter is None:
-            return
+    def _settle(self, kind: str, day: str, **tally: Any) -> None:
         try:
-            self.meter(kind, **tally)
+            self.purse.settle(kind, day, **tally)
         except Exception:
-            log.exception("counting a %s call", kind)
+            log.exception("settling a %s call", kind)
+
+    def _charge(self, kind: str, cost: float) -> None:
+        try:
+            self.purse.add(kind, cost)
+        except Exception:
+            log.exception("charging %s", kind)
 
     def _send(self, body: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -2386,6 +2465,8 @@ class Gemini:
                 if not content.strip():
                     raise TypeError("the answer has no message content")
                 return parse_decision(content, open_issues)
+            except SpendError:
+                raise
             except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 if attempt == 0:
@@ -2478,6 +2559,8 @@ class Gemini:
                 if not text.strip():
                     raise TypeError("the answer has no message content")
                 return parse_act(text, len(events), stickers)
+            except SpendError:
+                raise
             except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("chat answer unusable: %s", error)
@@ -2537,7 +2620,7 @@ class Gemini:
         citations = [(title, _resolve_grounding_url(url)) for title, url in _interaction_citations(answer)[:count]]
         queries = _search_queries(answer)
         if queries:
-            self._count("grounding", cost=queries * PRICE_SEARCH_QUERY)
+            self._charge("grounding", queries * PRICE_SEARCH_QUERY)
         if not citations:
             # A summary without sources is the model's own words, not a search result.
             raise GeminiError("the search found no sources")
@@ -2603,6 +2686,8 @@ class Gemini:
                 if not text.strip():
                     raise TypeError("the answer has no message content")
                 return parse_memory(text, keys, [int(fact["id"]) for fact in known], left_out=left_out)
+            except SpendError:
+                raise
             except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("memory answer unusable: %s", error)
@@ -2635,6 +2720,8 @@ class Gemini:
                 if not isinstance(text, str) or not text.strip():
                     raise TypeError("the digest has no text")
                 return text.strip()[:MAX_REPLY]
+            except SpendError:
+                raise
             except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("digest answer unusable: %s", error)
@@ -2659,6 +2746,8 @@ class Gemini:
                 if not isinstance(text, str) or not text.strip():
                     raise TypeError("the catch-up has no text")
                 return text.strip()[:MAX_RECAP]
+            except SpendError:
+                raise
             except (TypeError, ValueError, GeminiError) as error:
                 last = error
                 log.warning("catch-up answer unusable: %s", error)
@@ -3435,7 +3524,7 @@ class Bot:
         self.store = store
         self.matrix = matrix
         self.gemini = gemini
-        self.gemini.meter = store.count_usage
+        self.gemini.purse = Purse(store, config.daily_usd)
         self.github = github
         self.state = state or State()
         self.user_id = config.user_id
@@ -4041,6 +4130,11 @@ class Bot:
                                           bot_user_id=self.user_id, left_out=self._left_out(),
                                           images=self.pictures(segment[:memory_fit(segment)], IMAGES_MEMORY,
                                                                lines=len(segment), fetches=IMAGES_MEMORY_FETCHES))
+        except SpendError as error:
+            # It waits for the next day's money and is not given up.
+            log.info("remembering waits: %s", error)
+            self._memory_due = now_mono + MEMORY_RETRY_SECONDS
+            return
         except GeminiError as error:
             first = str(segment[0]["event_id"])
             previous = self._memory_failures.get(room_id)
