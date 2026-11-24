@@ -11,7 +11,8 @@ import { STYLE_GROUPS, STYLE_NAMES, characterCounts, claimsAt, composedBooks, cu
 import { listingItems } from '../atlas3Listing';
 import { cardList, characterIds, characterObject, type CharacterObject } from '../atlas3Reference';
 import { currentPointer } from '../atlas3Answers';
-import { catalogueKey, catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
+import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
+import { answerDue } from '../atlas3Media';
 import { Problem } from '../busy';
 import { idsCharacter, isSeal } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
@@ -32,11 +33,11 @@ function integer(q: URLSearchParams, key: string, fallback: number, max = 100000
 const fail = (status: number, message: string): never => { throw new Problem(status, message) };
 // Answers that change only with the catalogue are kept at the edge an hour.
 const KEPT = 3600;
-async function edge<T>(ctx: ExecutionContext, key: Request, build: () => Promise<T>): Promise<T> {
+async function edge<T>(ctx: ExecutionContext, key: Request, build: () => Promise<T>, kept = () => KEPT): Promise<T> {
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as T;
-  const body = await build();
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));
+  const body = await build(), seconds = Math.floor(kept());
+  if (seconds > 0) ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${seconds}` } })));
   return body;
 }
 // A value a publication states about the whole site (`site`, migration 0005).
@@ -319,22 +320,27 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
 
 // A family lists at most this many members' shapes and variants, each a reference object and a shard of the IDS.
 const FORMS_MEMBERS = 64;
+// Raised when graphemeForms answers differently for the same data, so no older answer is served.
+const GRAPHEME_FORMS_SHAPE = 1;
 /** The forms a crop of a grapheme (字種) with no character of its own may be: every member with its regional
  *  shapes, the characters the sources attest as variants of any member, those related otherwise and those
  *  derived, each with the members it is one of (`via`), and the forms the grapheme's crops carry. A regional
- *  shape names the member choosing it assigns (`base`), and none where two members share it. What the
- *  reference data gives is kept by the publication, and what the crops carry by the catalogue version. */
+ *  shape names the member choosing it assigns (`base`), and none where another member is described by it too.
+ *  What the reference data gives is kept as long as the objects it was read from, and what the crops carry
+ *  by the catalogue version. */
 export async function graphemeForms(env: Env, ctx: ExecutionContext, url: URL, value: string, tools: CharacterTools) {
   const named = await characterCard(env, value, tools, ctx), top = named.data.grapheme?.char ?? named.data.char;
   const card = top === named.data.char ? named : await characterCard(env, cp(top), tools, ctx), head = card.data.char;
-  const stamps = await catalogueStamps(env), version = catalogueKey(stamps);
-  const known = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms?c=${encodeURIComponent(head)}&v=${encodeURIComponent(publicationKey(stamps))}`), async () => {
+  const version = await catalogueVersion(env);
+  let due = 0;
+  const known = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms?c=${encodeURIComponent(head)}&v=${GRAPHEME_FORMS_SHAPE}`), async () => {
     const members: Json[] = (card.detail.grapheme?.members ?? [{ char: head, code_point: cp(head) }]).filter((m: Json) => !compatibility(m.char)).slice(0, FORMS_MEMBERS);
     const family = new Set<string>(members.map(m => m.char));
     const read = await Promise.all(members.map(async m => {
       const [object, ids] = await Promise.all([characterObject(env, cp(m.char), ctx), /^\p{Script=Han}$/u.test(m.char) ? characterIds(env, m.char, ctx) : null]);
       return { object, ids, shapes: ids?.shapes ?? [], described: new Set([...ids?.sequences ?? [], ...(ids?.shapes ?? []).map(shape => shape.text)]) };
     }));
+    due = answerDue([card.object, ...read.flatMap(each => [each.object, each.ids])]);
     // A member of one shape has no regional shapes, and its descriptions alone say it is written so.
     const shared = (shape: Json, i: number) => members.some((m, j) => j !== i && (read[j].described.has(shape.text) || shape.chars?.includes(m.char)));
     type Via = { char: string; via: string[] };
@@ -357,7 +363,7 @@ export async function graphemeForms(env: Env, ctx: ExecutionContext, url: URL, v
     return { head, members: members.map((m, i) => ({ char: m.char, code_point: m.code_point ?? cp(m.char), script: m.script ?? '',
         shapes: read[i].shapes.map(shape => ({ ...shape, base: shared(shape, i) ? null : m.char })) })),
       variants: list(variants, []), related: list(related, [variants]), derived: list(derived, [variants, related]) };
-  });
+  }, () => (due - Date.now()) / 1000);
   const forms = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms/carried?c=${encodeURIComponent(head)}&v=${encodeURIComponent(version)}`),
     () => carriedForms(env, card, known.variants, claimsKept(env, version)));
   return { ...known, forms };

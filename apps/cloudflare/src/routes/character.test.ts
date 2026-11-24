@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -915,7 +915,7 @@ describe('the forms of a whole grapheme', () => {
     expect(found.related.map((v: any) => [v.char, v.via])).toEqual([['谋', ['圖']], ['度', ['圖']], ['徒', ['图']]]);
     expect(found.derived).toEqual([{ char: '⿰日寺', code_point: null, encoded: false, via: ['図'], route: [['日', '目']] }]);
   });
-  it('are the same from any member, and kept by the publication, what the crops carry apart', async () => {
+  it('are the same from any member, and kept, what the crops carry apart', async () => {
     await family();
     edge.clear();
     const read: string[] = [], get = env.MEDIA.get.bind(env.MEDIA);
@@ -950,6 +950,26 @@ describe('the forms of a whole grapheme', () => {
     await owned();
     expect(bases(await forms('隆'))).toEqual([[['⿰阝⿱夂生', null], ['⿰阝⿳夂一生', '隆']], []]);
     expect(bases(await forms('逸'))).toEqual([[['⿺辶兔', '逸'], ['⿺辶免', null]], []]);
+  });
+  it('are kept as long as the objects they were read from', async () => {
+    const start = Date.now() + 3_600_000, kept = () => Number(/max-age=(\d+)/.exec([...edge].find(([url]) => url.includes('grapheme-forms?'))![1].headers.get('cache-control')!)![1]);
+    const drop = (part: string) => { for (const url of [...edge.keys()]) if (url.includes(part)) edge.delete(url) };
+    try {
+      setSystemTime(start);
+      await owned();
+      const before = bases(await forms('隆'));
+      expect(kept()).toBe(300);
+      // The reference data changes, and 200 seconds on an answer is made from what is still held.
+      await owned('⿰阝⿱夊生');
+      setSystemTime(start + 200_000);
+      drop('grapheme-forms');
+      db.exec("INSERT INTO imports(stamp,at) VALUES('reference-forms',1)");
+      expect(bases(await forms('隆'))).toEqual(before);
+      expect(kept()).toBe(100);
+      setSystemTime(start + 300_001);
+      drop('grapheme-forms');
+      expect(bases(await forms('隆'))[0]).toContainEqual(['⿰阝⿱夊生', '隆']);
+    } finally { setSystemTime(); db.exec("DELETE FROM imports WHERE stamp='reference-forms'"); edge.clear() }
   });
   it('are a kana’s members, and none for a character with no card', async () => {
     expect((await forms('𛂒')).members.map((m: any) => [m.char, m.shapes])).toEqual([['ね', []], ['𛂒', []]]);
