@@ -6,6 +6,11 @@ const cards = {
   'U+81ED': { grapheme: { members: [{ char: '臭' }] }, variants: { items: [{ char: '𦤀' }, { char: '臰' }], related: [] } },
   'U+5668': { grapheme: { members: [{ char: '器' }] }, variants: { items: [{ char: '噐' }, { char: '𠾖' }], related: [{ char: '氣' }] } },
   'U+9038': { grapheme: { members: [{ char: '逸' }, { char: '𨓜' }] }, variants: { items: [], related: [] } },
+  // 萅 and its seal character 𽌇, of 春's family, the seal character given before a Han form.
+  'U+8405': { grapheme: { members: [{ char: '春' }, { char: '\u{3D307}' }, { char: '萅' }] },
+    variants: { items: [], related: [{ char: '\u{3D307}', written: false, relations: [{ relation: 'small-seal', source: 'unicode-ucd' }] }] } },
+  'U+3D307': { grapheme: { members: [{ char: '春' }, { char: '萅' }, { char: '\u{3D307}' }] },
+    variants: { items: [], related: [{ char: '萅', written: false, relations: [{ relation: 'small-seal', source: 'unicode-ucd' }] }] } },
   'U+284DC': { grapheme: { members: [{ char: '逸' }, { char: '𨓜' }] }, variants: { items: [], related: [] } },
 }
 const shapes = {
@@ -53,5 +58,16 @@ describe('a character that encodes the J shape again', () => {
 
   it('is offered on a crop written as itself', async () => {
     expect(chars((await listForms('𨓜')).members)).toEqual(['逸', '𨓜'])
+  })
+})
+
+describe('a small seal character of the grapheme', () => {
+  it('is a member, after the Han forms, and is not offered again as related', async () => {
+    const found = await listForms('萅')
+    expect([chars(found.members), chars(found.variants), chars(found.related)]).toEqual([['春', '萅', '\u{3D307}'], [], []])
+  })
+  it("offers its Han characters as its grapheme's forms", async () => {
+    const found = await listForms('\u{3D307}')
+    expect([chars(found.members), chars(found.related)]).toEqual([['春', '萅', '\u{3D307}'], []])
   })
 })

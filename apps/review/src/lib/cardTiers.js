@@ -6,6 +6,8 @@ const form = v => !compatibility(v?.char ?? '') || (v.count ?? 0) + (v.corpus_co
 
 /** Whether a character is a small seal character (Unicode's Seal block). */
 export const isSeal = char => /^[\u{3D000}-\u{3FC3F}]$/u.test(char ?? '')
+/** Forms with the small seal characters after every other, each part in its own order. */
+export const sealsLast = forms => [...forms.filter(v => !isSeal(v?.char)), ...forms.filter(v => isSeal(v?.char))]
 
 // Sources whose edges no source states: each joins two stated edges.
 const INFERRED = new Set(['seal-chain'])
@@ -13,13 +15,13 @@ const INFERRED = new Set(['seal-chain'])
 export const inferred = v => (v?.relations?.length ?? 0) > 0 && v.relations.every(r => INFERRED.has(r.source))
 
 /** A character card's 異体字 graph in three levels: the 字種 (the grapheme, and any other grapheme this
- *  form also writes, 后: 後), its 字体 (the grapheme's own forms, then the 異体字 outside it, the ones a
- *  gallery widens to first, then the described forms reviewers said are written for it), and the
+ *  form also writes, 后: 後), its 字体 (the grapheme's own forms, its small seal characters last, then
+ *  the 異体字 outside it, the ones a gallery widens to first, then the described forms reviewers said are written for it), and the
  *  characters related otherwise (a loan, a homograph, a fallback reduction). A form that writes this
  *  grapheme and a character of its own (後: 后) is a 字体 tagged as shared. A card cached before rows
  *  carried `written` lists every unwidening pair as related; one cached before the writers has neither. */
 export function cardTiers(card) {
-  const members = (card?.grapheme?.members ?? [{ code_point: card?.code_point, char: card?.char }])
+  const members = sealsLast(card?.grapheme?.members ?? [{ code_point: card?.code_point, char: card?.char }])
     .filter(member => form(member) || member.code_point === card?.code_point)
   // The variants a gallery widens to, characters related otherwise, and the derived tier — forms up to two
   // component substitutions may write this character as, folded after the attested variants, each with a

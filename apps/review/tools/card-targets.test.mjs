@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { cardTargets, cardTiers, inferred, isSeal } from '../src/lib/cardTiers.js'
+import { cardTargets, cardTiers, inferred, isSeal, sealsLast } from '../src/lib/cardTiers.js'
 
 // The card the site serves for 說 (U+8AAA), cut to what the target list reads.
 const card = {
@@ -53,7 +53,29 @@ describe("a character card's 字体", () => {
   })
 })
 
-describe('a small seal pair', () => {
+describe('a small seal character of the grapheme', () => {
+  // 萅's card: 𽌇 is a member of 春's family, and the pair's own row is still in the variants.
+  const SEAL = '\u{3D307}', pair = char => ({ char, code_point: 'U+' + char.codePointAt(0).toString(16).toUpperCase(), written: false,
+    relations: [{ relation: 'small-seal', source: 'unicode-ucd', detail: `${SEAL}→萅 kSEAL_MCJK` }] })
+  const grapheme = { char: '春', code_point: 'U+6625', members: [{ char: '春', code_point: 'U+6625' }, { char: SEAL, code_point: 'U+3D307' },
+    { char: '萅', code_point: 'U+8405' }] }
+  const chun = { char: '萅', code_point: 'U+8405', grapheme, variants: { items: [], related: [pair(SEAL)] } }
+  it('is one of its 字体, after the Han forms, and is listed once', () => {
+    const { members, written, related } = cardTiers(chun)
+    expect(members.map(v => v.char)).toEqual(['春', '萅', SEAL])
+    expect([written, related]).toEqual([[], []])
+    expect(cardTargets(chun).map(target => target.char)).toEqual(['春', '萅', SEAL])
+  })
+  it("has its Han characters as its own card's 字体", () => {
+    const { members, related, grapheme: head } = cardTiers({ char: SEAL, code_point: 'U+3D307', grapheme, variants: { items: [], related: [pair('萅')] } })
+    expect([head.char, members.map(v => v.char), related]).toEqual(['春', ['春', '萅', SEAL], []])
+  })
+  it('follows every other form, each part in its own order', () => {
+    expect(sealsLast([{ char: SEAL }, { char: '春' }, { char: '\u{3D000}' }, { char: '旾' }]).map(v => v.char)).toEqual(['春', '旾', SEAL, '\u{3D000}'])
+  })
+})
+
+describe('an inferred small seal pair', () => {
   // 吏's card: 叓 by sources, and the seal character through 叓, which no source states.
   const li = { char: '吏', code_point: 'U+540F', variants: { items: [], related: [
     { char: '叓', code_point: 'U+53D3', written: true, relations: [{ relation: 'shuowen', source: 'opencc', detail: 'SealVariants' }] },

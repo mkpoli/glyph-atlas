@@ -1,6 +1,7 @@
 import { request, character as readCrop, cropPixels } from './client.js'
 import { character as readCard, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
+import { sealsLast } from './cardTiers.js'
 import { sortForms } from './formOffers.js'
 import { compatibility } from '../../../cloudflare/src/representation.ts'
 
@@ -29,7 +30,8 @@ const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(B
 const cards = new Map()
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…) but one
- * drawn as `char` itself (𨓜, 逸 encoded again as its J shape), then its
+ * drawn as `char` itself (𨓜, 逸 encoded again as its J shape), a kanji's small seal characters last
+ * among them, then its
  * other forms, as the character's card lists them: the figures the IVD registers for `char` when it
  * registers more than one (所󠄂 and 所󠄃), each named by its MJ figure; the shapes BabelStone gives
  * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the
@@ -59,7 +61,7 @@ export function listForms(char) {
       // A character drawn as the bare character (𦤀, 臭 encoded again as its J shape) is set apart.
       const twins = new Set(alike.chars)
       const twin = v => twins.has(v.char)
-      const family = (card?.grapheme?.members ?? [{ char }]).filter(offered)
+      const family = sealsLast(card?.grapheme?.members ?? [{ char }]).filter(offered)
       const members = family.filter(v => !twin(v)).map(entry)
       const figureEntry = figure => ({ ...entry(figure), mj: figure.mj })
       const shapeEntry = ({ text, regions }) => ({ char: text, code_point: null, script: '', encoded: false, regions, lang: langOf(regions) })

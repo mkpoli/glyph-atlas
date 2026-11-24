@@ -22,7 +22,7 @@
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
-  import { cardTiers, inferred, isSeal } from '../lib/cardTiers.js'
+  import { cardTiers, inferred, isSeal, sealsLast } from '../lib/cardTiers.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const { members, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
@@ -66,19 +66,24 @@
   // as made with its count of contexts and the pairs behind it with their sources.
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
     `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
+  // A small seal character of the grapheme names the Han character that makes it one and the source.
+  const sealTitle = v => [`${v.char} ${v.code_point}`, ...(grapheme.evidence ?? []).flatMap(source => (source.edges ?? [])
+    .filter(edge => edge.role === 'seal' && edge.b === v.char).map(edge => `${t('chips.relation.smallSeal')}: ${edge.a} · ${source.id}`)),
+    ...(glyphCount(v) ? [glyphCount(v)] : [])].join('\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // What a chip's number counts: the crops filed under it here and the corpus glyphs recorded for it.
   const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
   const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
   // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
-  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), and the small seal characters whose modern
-  // equivalent Unicode gives as one of them (𾲟 with 臭), marked as proposed. A name with no structure, and a site that knows none yet, shows no row.
+  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), its small seal characters last in theirs and
+  // marked as proposed (𾲟 with 臭). A name with no structure, and a site that knows none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
   const composable = list => [...new Set(list.map(v => v.char)
     .filter(char => HAN.test(char ?? '') || isSeal(char) || isDescription(char) || isFigure(char ?? '')))]
-  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))]).slice(0, 48).join(''))
+  const forms = $derived(sealsLast([...members, ...written, ...described]))
+  const composedOf = $derived(composable(forms).slice(0, 48).join(''))
   // The forms shown when arranging 構形: the grapheme's 字体 and its related characters.
-  const arrangeOf = $derived(composable([...members, ...written, ...described, ...related]))
+  const arrangeOf = $derived(composable([...forms, ...related]))
   const composedNames = $derived(composed.reduce((n, group) => n + group.chars.length, 0))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   // A signed-in reader opens the 構形 to arrange them, and the row is read again once they have.
@@ -144,8 +149,8 @@
           <div class="member-choice"><button class="member" class:active={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
-              : t('chips.showCharacter', { char: member.char })} title={glyphCount(member)} onclick={() => onselect(member.code_point)}>
-            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={twins.includes(member.char)} />
+              : t('chips.showCharacter', { char: member.char })} title={isSeal(member.char) ? sealTitle(member) : glyphCount(member)} onclick={() => onselect(member.code_point)}>
+            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={isSeal(member.char) || twins.includes(member.char)} />
             {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
