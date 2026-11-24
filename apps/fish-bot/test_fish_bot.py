@@ -195,6 +195,19 @@ def decision(*, open=True, confidence=0.9, title="Add a test", reply="Test reply
                              duplicate_of=duplicate_of)
 
 
+in_service = fish_bot.in_service
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """The tests play the service, and none of them reaches the network."""
+    def refuse(*_, **__):
+        pytest.fail("a test reached for the network")
+
+    monkeypatch.setattr(fish_bot, "in_service", lambda: True)
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", refuse)
+
+
 class OpenPurse:
     """Money without a limit, for tests of what a paid call does."""
 
@@ -554,8 +567,7 @@ def test_file_rechecks_duplicates_before_filing(tmp_path):
 
 def test_reply_keeps_the_issue_link_when_the_text_is_long():
     long = "x" * 10_000
-    reply = fish_bot.reply_for(decision(reply=long), fish_bot.IssueRef(7, "T", (), "https://example/7"),
-                               dry_run=False)
+    reply = fish_bot.reply_for(decision(reply=long), fish_bot.IssueRef(7, "T", (), "https://example/7"))
     assert "https://example/7" in reply
     assert len(reply) <= fish_bot.MAX_REPLY
 
@@ -566,19 +578,6 @@ def test_ingest_skips_an_edit(tmp_path):
                           "m.relates_to": {"rel_type": "m.replace", "event_id": "$old"}})
     bot.ingest(ROOM, edit, backfilled=False)
     assert store.event_count(ROOM) == 0
-
-
-def test_dry_run_never_calls_github_and_needs_no_token(tmp_path):
-    config = fish_bot.Config(user_id=USER, display_name="Big Fat Fish", room_cooldown_seconds=0,
-                             context_messages=20, dry_run=True)
-    bot, matrix, store = make_bot(tmp_path, decision_value=decision(), config=config)
-    store.set_pending(ROOM, decision(), "$old")
-    trigger = event("!fish issue this should be fixed", event_id="$call")
-    bot.ingest(ROOM, trigger, backfilled=False)
-    bot.answer(ROOM, trigger)
-    assert matrix.sent[0][1]["body"].startswith("[dry run]")
-    assert store.outcome("$call")[0] == "dry-run"
-    assert store.pending(ROOM) is None
 
 
 def test_daily_limit_stops_a_file(tmp_path):
@@ -3079,3 +3078,43 @@ def test_a_visit_reads_fewer_lines_and_only_new_pictures(tmp_path):
     bot.turn(ROOM, "$first", task="called")
     read = bot.gemini.turns[-1][2]
     assert [read[index] for index, _ in bot.gemini.images] == ["$seen", "$new"]
+
+
+@pytest.mark.parametrize(("cgroup", "allowed"), [
+    ("0::/system.slice/fish-bot.service\n", True), ("0::/user.slice/user-0.slice/session-1.scope\n", False),
+    ("0::/system.slice/fish-bot.service.d/x\n", False), ("0::/user.slice/system.slice/fish-bot.service\n", False), (None, False)])
+def test_only_the_running_service_calls_a_model(tmp_path, monkeypatch, cgroup, allowed):
+    path = tmp_path / "cgroup"
+    if cgroup is not None:
+        path.write_text(cgroup)
+    monkeypatch.setattr(fish_bot, "CGROUP", path)
+    assert in_service() is allowed
+
+
+@pytest.mark.parametrize("model", [fish_bot.Gemini, fish_bot.DeepSeek])
+def test_outside_the_service_nothing_is_sent_or_charged(tmp_path, monkeypatch, model):
+    monkeypatch.setattr(fish_bot, "in_service", lambda: False)
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", lambda *_, **__: pytest.fail("a request was sent"))
+    client = model("key")
+    client.purse = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 1.0)
+    with pytest.raises(fish_bot.SpendError):
+        client._ask("system", "text", [], kind="memory", timeout=1.0)
+    assert client.purse.store.usage(1) == []
+
+
+def test_started_by_hand_it_stops_before_reading_a_room(tmp_path, monkeypatch):
+    monkeypatch.setattr(fish_bot, "in_service", lambda: False)
+    monkeypatch.setattr(fish_bot.Bot, "run", lambda self: pytest.fail("the bot ran"))
+    for name in ("matrix-token", "gemini-key"):
+        (tmp_path / name).write_text("secret")
+    config = tmp_path / "config.toml"
+    config.write_text('[matrix]\ntoken_file = "matrix-token"\n[gemini]\napi_key_file = "gemini-key"\n')
+    with pytest.raises(SystemExit, match="fish-bot.service"):
+        fish_bot.main(["--config", str(config), "--db", str(tmp_path / "chat.sqlite3")])
+    assert not (tmp_path / "chat.sqlite3").exists()
+
+
+def test_a_called_answer_outside_the_service_is_refused(monkeypatch):
+    monkeypatch.setattr(fish_bot, "in_service", lambda: False)
+    with pytest.raises(fish_bot.SpendError):
+        paid_gemini("key").act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
