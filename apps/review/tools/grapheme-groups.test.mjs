@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { categoryOf } from '../../cloudflare/src/category.ts'
-import { gatherGraphemes } from '../src/lib/graphemeGroups.js'
+import { gatherGraphemes, tileOpens } from '../src/lib/graphemeGroups.js'
 
 // 大 with its small seal character 𾶱, 民 with two of its own, and は with ハ, as the catalogue and the
 // corpus count them.
@@ -25,5 +25,12 @@ describe('the graphemes a collection lists', () => {
   })
   it('count the crops waiting for a person in the Flagged view', () => {
     expect(gatherGraphemes({ categories, flagged: true }).map(g => [g.char, g.count, g.local, g.corpus])).toEqual([['は', 2, 2, 0], ['大', 1, 1, 0]])
+  })
+  it('open their own gallery or narrow the listing by their own key, so the tile chosen is the one marked', () => {
+    const [dai, ...min] = gathered('seal')
+    expect(min.map(g => tileOpens(g, true))).toEqual(MIN.map((_, i) => ({ gallery: ['U+3F54D', 'U+3F54E'][i], scope: 'exact' })))
+    expect(tileOpens(gathered('kanji')[0], true)).toEqual({ gallery: 'U+5927', scope: 'family' })
+    expect([tileOpens(dai, false), tileOpens({ ...dai, corpus: 0 }, true)]).toEqual([{ narrow: 'U+3EDB1' }, { narrow: 'U+3EDB1' }])
+    expect(tileOpens(gathered('kana')[0], true)).toEqual({ narrow: 'U+306F' })
   })
 })

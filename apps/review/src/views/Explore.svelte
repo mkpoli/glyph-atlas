@@ -20,7 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import { charOf, gatherGraphemes } from '../lib/graphemeGroups.js'
+  import { charOf, gatherGraphemes, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -274,7 +274,9 @@
   })
   // Read only with a grapheme chosen: gathering the graphemes sorts thousands of them, and every page of
   // the collection brings their counts again.
-  const chosenGrapheme = $derived(grapheme ? graphemes.find(group => group.key === grapheme) ?? graphemes.find(group => group.grapheme === grapheme) : undefined)
+  const chosenGrapheme = $derived(grapheme ? graphemes.find(group => group.key === grapheme) : undefined)
+  // A key the counts file under another grapheme names one character of it, alone.
+  const memberKey = $derived(Boolean(grapheme) && ![undefined, grapheme].includes(tileCounts?.keys.get(charOf(grapheme))))
   // The browse panel counts single graphemes, pairs or trigrams; the choice is remembered. Runs are
   // counted for the work chosen, or the whole collection, and read when the panel first shows them.
   // A save can relabel part of a run, so it drops the counts and the panel reads them again.
@@ -580,7 +582,7 @@
       if (error) throw error
       if (closed || id !== requestId) return
       // A corpus glyph belongs to no work of this collection, so choosing a work leaves them out.
-      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || rowGrapheme(row) === grapheme))
+      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || (memberKey ? codesOf(row.label ?? '') : rowGrapheme(row)) === grapheme))
       sampleFault = null
       return
     }
@@ -763,7 +765,8 @@
     } finally { if (!closed && id === requestId) { loading = false; growing = false } }
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
-  // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
+  // `scope` is an address's: `exact`, `family` or `variants`, or gives one for the card; without one the
+  // card's default applies.
   async function pick(item, scope = null) {
     let expansionWillLoad = false
     // Any choice but one of the run's tabs leaves the run.
@@ -787,7 +790,7 @@
         const card = await layerCharacter(item.code_point, 'none')
         if (closed || current !== pickId) return   // a newer choice owns the gallery now
         picked = { ...bare, ...item, ...card }; query = card.char
-        const nextExpand = expandFor(scope, card)
+        const nextExpand = expandFor(typeof scope === 'function' ? scope(card) : scope, card)
         expansionWillLoad = expand !== nextExpand
         expand = nextExpand
         analysis = card.visual_analysis ?? null
@@ -1147,24 +1150,19 @@
     if (entry) inspect(id, queue, updateItem)
   }
   function select(value) { split = null; grapheme = value; load() }
-  // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
-  // grapheme's gallery, which lists both; any other narrows the listing, keeping its filters. A tile of
-  // one character apart from its grapheme, as a script group lists another script's grapheme, opens that
-  // character's own gallery.
   function openGrapheme(key) {
-    const group = graphemeByKey.get(key)
-    if (key && countsCorpus && group?.corpus > 0) pick({ code_point: key, char: charOf(key) }, group.alone ? 'exact' : 'family')
-    else select(group?.grapheme ?? key)
+    const group = graphemeByKey.get(key), { gallery, scope } = group ? tileOpens(group, countsCorpus) : {}
+    if (gallery) pick({ code_point: gallery, char: charOf(gallery) }, scope)
+    else select(key)
   }
   // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
-  // glyphs) opens the grapheme's gallery instead of an empty listing; under a script group, only when
+  // glyphs) opens the grapheme's gallery, or the member's own, instead of an empty listing; under a script group, only when
   // the corpus holds the grapheme in that script.
   function openEmptyGrapheme(result) {
     if (!grapheme || work || flagged || query || result.total > 0) return false
-    const group = filter === 'all' ? null : graphemeByKey.get(grapheme) ?? graphemes.find(found => found.grapheme === grapheme && found.corpus > 0)
-    if (filter !== 'all' && !(group?.corpus > 0)) return false
-    const key = group?.key ?? grapheme
-    pick({ code_point: key, char: charOf(key) }, group?.alone ? 'exact' : 'family')
+    if (filter !== 'all' && !graphemes.some(group => [group.key, group.grapheme].includes(grapheme) && group.corpus > 0)) return false
+    const key = grapheme
+    pick({ code_point: key, char: charOf(key) }, card => card.grapheme && card.grapheme.code_point !== key ? 'exact' : 'family')
     return true
   }
   // A run with no crop opens its first character, and the others stay a tab away.
@@ -1425,7 +1423,7 @@
       </div>
       <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
-        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.grapheme))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
+        {#if chosenGrapheme && !flagged}<a class="quiet-link" href={localize(roundAddress(chosenGrapheme.key))}><ScriptLine line={withText('explore.reviewGrapheme', 'grapheme', { grapheme: chosenGrapheme.char })} /></a>{/if}
         {#if flagged && data?.reported_count}<button class="quiet-link" onclick={toggleReported}>{showReported ? t('explore.flagged.hideReported') : t('explore.flagged.showReported', { count: data.reported_count })}</button>{/if}
         {#if reviewer}<button class="select-toggle" aria-pressed={selecting} aria-keyshortcuts="S" title={t('bulk.mode.about')} onclick={() => selecting ? stopSelecting() : startSelecting()}><span class="select-mark" aria-hidden="true">✓</span>{t('bulk.select')}</button>{/if}
         <button class="shuffle sheet-save" onclick={saveSheet} disabled={!sheetable} aria-disabled={Boolean(sheeting)} aria-busy={Boolean(sheeting)} title={t('explore.sheet.save')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>{#if sheeting}<span class="sheet-count">{sheeting.done} / {sheeting.total}</span>{:else if sheetFailed}<span role="alert">{t('explore.sheet.failed')}</span>{:else}{t('explore.sheet.save')}{/if}</button>
