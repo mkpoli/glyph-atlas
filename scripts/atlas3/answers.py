@@ -45,7 +45,9 @@ none of those crops' changes.
   priority, state and withheld flag, -1 for an unknown value, with each character's text and grapheme key: the browse
   page's counts by character and book, and the review rounds' counts.
 - `corpus.json.gz`: the corpus glyphs (kind 1) per character, production, state and withheld flag, with
-  each character's text and grapheme key: the corpus counts by character and material.
+  each character's text and grapheme key: the corpus counts by character and material. `filed` holds the
+  crops with no character (both kinds) per family their source names, whose texts and keys stand beside
+  the characters': what a grapheme's total counts beside its characters' crops.
 - `books.json.gz`: each book's collected crops and corpus glyphs, which the statistics of the
   collection's dates count by period.
 - `site` in glyph-atlas-v3: the collection's status (`collection`, read from the collection's working
@@ -181,11 +183,17 @@ def facets(atlas):
     return rows, characters(atlas, {r[0] for r in rows if r[0] != -1})
 
 
+def filed(atlas):
+    return [list(r) for r in atlas.execute(
+        "SELECT family, kind, count(*) FROM crops WHERE kind < 2 AND char IS NULL AND family IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2")]
+
+
 def corpus(atlas):
     rows = [list(r) for r in atlas.execute(
         "SELECT char, coalesce(production, -1), state, quiz, count(*) FROM crops WHERE kind = 1 AND char IS NOT NULL "
         "GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4")]
-    return rows, characters(atlas, {r[0] for r in rows})
+    unnamed = filed(atlas)
+    return rows, unnamed, characters(atlas, {r[0] for r in rows} | {r[0] for r in unnamed})
 
 
 def books(atlas):
@@ -482,8 +490,8 @@ def written(atlas, folder, pub, read):
                                               "categories": {str(-1 if k is None else k): v for k, v in unread.items()}})]
     browse, named = facets(atlas)
     top.append(write(folder / "facets.json.gz", {"pub": pub, "cell": FACET_CELL, "cells": browse, "chars": named}))
-    glyphs, glyph_chars = corpus(atlas)
-    top.append(write(folder / "corpus.json.gz", {"pub": pub, "cell": CORPUS_CELL, "cells": glyphs, "chars": glyph_chars}))
+    glyphs, unnamed, glyph_chars = corpus(atlas)
+    top.append(write(folder / "corpus.json.gz", {"pub": pub, "cell": CORPUS_CELL, "cells": glyphs, "filed": unnamed, "chars": glyph_chars}))
     top.append(write(folder / "books.json.gz", {"pub": pub, "cell": ["collected", "corpus"], "books": books(atlas)}))
     # The site's values the status pages show: the collection's progress and the corpus summary.
     # Each only where its source is: a run away from the collection's working folders (a Codespace) keeps
