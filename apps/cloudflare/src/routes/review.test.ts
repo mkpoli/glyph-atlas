@@ -14,6 +14,8 @@ import { STALE_CODE } from '../atlas3Crops';
 import { catalogueKey, catalogueStamps } from '../atlas3Stamps';
 import { reviewsPage } from './reviews';
 import { reject } from './admin';
+import { actOnClaim, type LedgerTools } from '../ledger';
+import { rankingQuery } from './ranking';
 import { followCorpus } from './forms';
 import { readReviewEvidence } from '../reviewEvidence';
 import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembers, roundMembersQuery, type Submission } from './review';
@@ -1260,7 +1262,7 @@ describe('a form claimed with its character', () => {
     const after = rows();
     await send(env, `/atlas/corrections/${uuid(1)}/undo`, {});
     expect(rows()).toEqual(after);
-    expect(db.query("SELECT count(*) AS n FROM assertion_evidence e JOIN assertions a ON a.id=e.assertion WHERE a.submission=?").get(`u1:${uuid(1)}:undo`)).toEqual({ n: 1 });
+    expect(db.query("SELECT count(*) AS n FROM assertion_evidence e JOIN assertions a ON a.id=e.assertion WHERE a.submission=? AND a.asserted_by='u1'").get(`u1:${uuid(10)}`)).toEqual({ n: 2 });
   });
 
   it('leaves a form its reader chose since, and one on a crop it never named', async () => {
@@ -1291,6 +1293,106 @@ describe('a form claimed with its character', () => {
     await revert(env, other, own.actor, 'admin', { reason: 'r' });
     expect(live(1)).toEqual([]);
     expect(db.query("SELECT actor,reason FROM assertion_actions WHERE submission=?").all(`u1:${uuid(3)}:undo`)).toEqual([{ actor: 'admin', reason: 'undone' }]);
+  });
+
+  // Undone, a claim stands as it stood: whose it is, what was said of it and what it counts for.
+  function judged() {
+    const made = formed(), { db, env, ids } = made;
+    const ledger = { fail: tools.fail, text, canonical, owned: ownedActors, alias: async () => null } as unknown as LedgerTools;
+    const claim = (slot: number, by: string) => (db.query(`SELECT a.id FROM assertions a WHERE a.crop=${ids[slot]} AND a.predicate='has_form' AND a.asserted_by='${by}'
+      AND NOT EXISTS(SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`).get() as { id: string }).id;
+    const act = (n: number, slot: number, by: string, action: string, actor: string) => actOnClaim(env, { id: uuid(n), action }, claim(slot, by), actor, actor === 'admin', ledger);
+    const undo = (n: number) => send(env, `/atlas/corrections/${uuid(n)}/undo`, {});
+    const slot = async (n: number) => { const form = await formOfCrop(env, ids[n]); return [form?.status, (form?.values ?? []).map((v: any) => v.text)] };
+    const ranks = () => (db.query(rankingQuery()).all() as { actor: string; total: number }[]).map(r => [r.actor, r.total]).sort();
+    // Names 図 where 圖 stands, with a form of it.
+    const again = async (n: number, slot: number) => expect((await made.save(n, slot, { revision: crop(db, ids[slot]).revision, character: '図', form: '図' + IVS })).status).toBe(200);
+    const rejectAll = (input: object = { actor: 'u1' }) => reject(env, 'admin', input, { text } as any);
+    return { ...made, act, undo, slot, ranks, again, rejectAll };
+  }
+
+  it('goes with every review of its reader an admin rejects, newest first, oldest first or after an undo', async () => {
+    const twice = async () => {
+      const made = judged();
+      expect((await made.save(1, 0)).status).toBe(200);
+      await made.again(2, 0);
+      return made;
+    };
+    const newest = await twice();
+    expect(await newest.rejectAll()).toMatchObject({ rejected: 2, conflicts: [] });
+    expect([newest.live(0), crop(newest.db, newest.ids[0]).char]).toEqual([[], 10]);
+
+    const oldest = await twice();
+    expect(await oldest.rejectAll({ submissions: ['u1:' + uuid(1)] })).toMatchObject({ rejected: 0, conflicts: ['u1:' + uuid(1)] });
+    expect(oldest.live(0)).toEqual([{ form: '図' + IVS, by: 'u1', cut: 0 }]);
+    expect(await oldest.rejectAll()).toMatchObject({ rejected: 2 });
+    expect(oldest.live(0)).toEqual([]);
+
+    const undone = await twice();
+    expect((await undone.undo(2)).status).toBe(200);
+    expect(undone.live(0)).toEqual([{ form: '⿴囗啚', by: 'u1', cut: 0 }]);
+    expect(await undone.rejectAll()).toMatchObject({ rejected: 1 });
+    expect(undone.live(0)).toEqual([]);
+
+    // What the first review replaced comes back through both.
+    const picked = judged();
+    await picked.pick(9, 0, '⿴囗斗');
+    await picked.save(1, 0, { form: '圖' });
+    await picked.again(2, 0);
+    expect(await picked.rejectAll()).toMatchObject({ rejected: 2 });
+    expect(picked.live(0)).toEqual([{ form: '⿴囗斗', by: 'u1', cut: 0 }]);
+  });
+
+  it('brings back a rejected form rejected, a disputed one decided and an accepted one accepted', async () => {
+    const rejected = judged();
+    await rejected.pick(10, 0, '図' + IVS);
+    await rejected.act(11, 0, 'u1', 'reject', 'u2');
+    const adjudicated = judged();
+    await adjudicated.pick(10, 0, '図' + IVS);
+    await adjudicated.pick(11, 0, '⿴囗斗', 'u2');
+    await adjudicated.act(12, 0, 'u1', 'adjudicate', 'admin');
+    const accepted = judged();
+    await accepted.pick(10, 0, '図' + IVS);
+    await accepted.act(11, 0, 'u1', 'reject', 'u2');
+    await accepted.act(12, 0, 'u1', 'accept', 'u2');
+    for (const [made, stands] of [[rejected, ['rejected', []]], [adjudicated, ['adjudicated', ['図' + IVS]]], [accepted, ['accepted', ['図' + IVS]]]] as const) {
+      const before = [await made.slot(0), made.ranks()];
+      expect(before[0]).toEqual(stands as any);
+      // Twice over: a restored claim is restored again with what was said of it.
+      for (const n of [1, 2]) {
+        expect((await made.save(n, 0, { revision: crop(made.db, made.ids[0]).revision })).status).toBe(200);
+        expect((await made.undo(n)).status).toBe(200);
+        expect([await made.slot(0), made.ranks()]).toEqual(before);
+      }
+    }
+    // What is said of the claim since counts with what was said of it before.
+    const ranked = rejected.ranks();
+    await rejected.act(20, 0, 'u1', 'accept', 'u2');
+    expect([(await rejected.slot(0))[0], rejected.ranks()]).toEqual(['accepted', ranked]);
+  });
+
+  it('counts as it did once undone, whatever it replaced', async () => {
+    const review = judged();
+    await review.save(1, 0);
+    // A form saved in a request of its own beside its review, as they once were.
+    const apart = judged();
+    await apart.save(1, 0, { form: undefined, crop_version: undefined });
+    await setForm(apart.env, { id: uuid(9), crop_version: apart.version(0), form: '⿴囗斗', review: uuid(1) }, publicId(apart.ids[0]), 'u1', tools);
+    const moved = judged();
+    await moved.save(1, 0, { form: undefined, crop_version: undefined });
+    await moved.pick(9, 0, '図' + IVS);
+    moved.db.exec(`INSERT INTO written_forms(id,submission,crop,actor,revision,pixels,label,form,request,at) VALUES('w1','u1:w',${moved.ids[0]},'u1',1,'p','図','図','{}',1);
+      UPDATE assertions SET legacy='written_forms:w1' WHERE predicate='has_form'`);
+    const alone = judged();
+    await alone.save(1, 0, { form: undefined, crop_version: undefined });
+    await alone.pick(9, 0, '図' + IVS);
+    for (const made of [review, apart, moved, alone]) {
+      const before = [made.ranks(), made.live(0)];
+      await made.again(2, 0);
+      expect((await made.undo(2)).status).toBe(200);
+      expect([made.ranks(), made.live(0)]).toEqual(before);
+    }
+    expect([review, apart, moved, alone].map(made => made.ranks())).toEqual([[['u1', 1]], [['u1', 1]], [['u1', 2]], [['u1', 2]]]);
   });
 
   it('leaves the form of a crop whose review claims none', async () => {

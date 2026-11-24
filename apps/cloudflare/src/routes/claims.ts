@@ -11,7 +11,7 @@ import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
 import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyHeads, keyText, ledgerPage, type LedgerTools, type Member,
-  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, resolveSlots, retractOwn, RUN_MAX, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
+  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, resolveSlots, retractOwn, RUN_MAX, sameVersion, savedSubmission, SQL_UUID, submissionId, withCrop, writeClaim } from '../ledger';
 import { canonical, literal } from '../input';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
@@ -208,9 +208,11 @@ export const reviewFormsQuery = () => `SELECT a.id,a.subject,(SELECT json_group_
   FROM ledger_submissions l CROSS JOIN json_each(?2) j CROSS JOIN assertions a ON a.crop=j.value AND a.predicate='has_form'
   WHERE l.id=?1 AND a.submission=?1`;
 /** The rows that take back the form a review's submission claimed and put back the reader's own claim it
- *  replaced, for the batch that undoes the review (`by`, the reader or an admin). A claim its reader has
- *  since replaced or taken back stays as they left it; nobody else's claim is touched, and the form's own
- *  rows stay, which other crops may name. */
+ *  replaced, for the batch that undoes the review (`by`, the reader or an admin). Rows of the ledger are
+ *  never changed, so a claim comes back as a new row of the submission that made it, naming the row it
+ *  restores among its premises and carrying the verdicts on it. A claim its reader has since replaced or
+ *  taken back stays as they left it; nobody else's claim is touched, and the form's own rows stay, which
+ *  other crops may name. */
 export async function planFormUndo(env: Env, undone: { key: string; by: string; crops: number[]; at: string }): Promise<D1PreparedStatement[]> {
   const { key, by, crops, at } = undone;
   const claims = (await env.ATLAS.prepare(reviewFormsQuery()).bind(key, JSON.stringify(crops)).all<{ id: string; subject: string; replaced: string }>()).results;
@@ -219,12 +221,14 @@ export async function planFormUndo(env: Env, undone: { key: string; by: string; 
   const statements = claims.flatMap(claim => {
     const sets = new Map<string, string>(), again = (set: string | null) => set && (sets.get(set) ?? sets.set(set, 'cf:' + crypto.randomUUID()).get(set)!);
     return [...(JSON.parse(claim.replaced) as { id: string; set: string | null }[]).flatMap(own => {
-      const id = 'cf:' + crypto.randomUUID();
-      return [env.ATLAS.prepare(`INSERT INTO assertions(id,submission,subject,crop,cut,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method)
-          SELECT ?1,?2,subject,crop,cut,predicate,scope,slot,object,value,?3,tier,asserted_by,?4,confidence,confidence_scheme,method FROM assertions WHERE id=?5 AND ${standing('?6')}`)
-          .bind(id, undo, again(own.set), at, own.id, claim.id),
-        env.ATLAS.prepare(`INSERT INTO assertion_evidence(assertion,kind,ref,crop,cut,locator) SELECT ?1,e.kind,e.ref,e.crop,e.cut,e.locator FROM assertion_evidence e
-          WHERE e.assertion=?2 AND EXISTS(SELECT 1 FROM assertions WHERE id=?1)`).bind(id, own.id)];
+      const id = 'cf:' + crypto.randomUUID(), written = 'EXISTS(SELECT 1 FROM assertions WHERE id=?1)';
+      return [env.ATLAS.prepare(`INSERT INTO assertions(id,submission,subject,crop,cut,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method,run,legacy)
+          SELECT ?1,submission,subject,crop,cut,predicate,scope,slot,object,value,?2,tier,asserted_by,?3,confidence,confidence_scheme,method,run,legacy FROM assertions WHERE id=?4 AND ${standing('?5')}`)
+          .bind(id, again(own.set), at, own.id, claim.id),
+        env.ATLAS.prepare(`INSERT INTO assertion_evidence(assertion,kind,ref,crop,cut,locator) SELECT ?1,kind,ref,crop,cut,locator FROM assertion_evidence WHERE assertion=?2 AND ${written}`).bind(id, own.id),
+        env.ATLAS.prepare(`INSERT INTO assertion_premises(assertion,premise,role) SELECT ?1,coalesce((SELECT premise FROM assertion_premises WHERE assertion=?2 AND role='restores'),?2),'restores' WHERE ${written}`).bind(id, own.id),
+        env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason)
+          SELECT 'cf:'||${SQL_UUID},submission,?1,action,actor,at,reason FROM assertion_actions WHERE assertion=?2 AND action<>'retract' AND ${written} ORDER BY rowid`).bind(id, own.id)];
     }), env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) SELECT ?1,?2,?3,'retract',?4,?5,'undone' WHERE ${standing('?3')}`)
       .bind('cf:' + crypto.randomUUID(), undo, claim.id, by, at)];
   });

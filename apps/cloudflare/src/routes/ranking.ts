@@ -1,7 +1,8 @@
 // Who has decided the most. Each decision that still stands counts once: every crop a round, a
 // correction or a single review judged (an undone or rejected submission drops out), every archived
 // written form, every form decision, every claim a person made in the ledger that they have not taken
-// back, and each claim they accepted, rejected or adjudicated, once however often. A claim counts once
+// back, and each claim they accepted, rejected or adjudicated, once however often and whether or not an
+// undo has since restored it (`planFormUndo`). A claim counts once
 // however many members or rows its submission wrote. A person's claims are the ones a submission
 // wrote; a source's or a model's (written by a publication, with none), one moved from the written
 // forms (counted as their archived row), and the claim naming a form that a first choice writes
@@ -30,7 +31,8 @@ export const rankingQuery = () => `WITH work(actor,n) AS (
       AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
       AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.key IN (a.submission,l.actor||':'||json_extract(l.request,'$.input.review')) AND s.undone=0)
       GROUP BY a.asserted_by
-    UNION ALL SELECT actor,count(DISTINCT assertion) FROM assertion_actions WHERE action IN ('accept','reject','adjudicate') GROUP BY actor),
+    UNION ALL SELECT x.actor,count(DISTINCT coalesce((SELECT p.premise FROM assertion_premises p WHERE p.assertion=x.assertion AND p.role='restores'),x.assertion))
+      FROM assertion_actions x WHERE x.action IN ('accept','reject','adjudicate') GROUP BY x.actor),
   who(key,user,actor,n) AS (SELECT coalesce(a.user,'actor:'||w.actor),a.user,w.actor,w.n FROM work w LEFT JOIN actors a ON a.key=w.actor)
   SELECT key,user,min(actor) AS actor,sum(n) AS total FROM who GROUP BY key ORDER BY total DESC,key LIMIT ${LIMIT}`;
 
