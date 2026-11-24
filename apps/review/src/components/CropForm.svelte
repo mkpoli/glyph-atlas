@@ -111,7 +111,7 @@
     linking = true; linkError = ''
     try {
       const result = await setWrittenFor(saved.form, grapheme)
-      linkedByMe = Boolean(me && (result?.written_for ?? []).find(value => value.grapheme === grapheme)?.by?.includes(me))
+      linkedByMe = Boolean(me && (result?.written_for ?? []).find(value => value.grapheme === (result.grapheme ?? grapheme))?.by?.includes(me))
       await reload()
     } catch (error) { linkError = error.message }
     finally { linking = false }

@@ -201,7 +201,7 @@ const writtenFor = new Map()
 /**
  * Say that `form` is written for `grapheme` (a key, `U+4E07`), or with `remove` take back the reader's
  * own claim. A form can be written for several graphemes, so removing one leaves the others. Answers
- * `{ written_for }`: each grapheme the form writes now, with who says so.
+ * `{ grapheme, written_for }`: the grapheme claimed, and each one the form writes now, with who says so.
  *
  * The claim is about the form, not the crop, so it survives every recut. The cards read here are
  * dropped, since the grapheme's forms now carry one more.

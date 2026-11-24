@@ -73,10 +73,16 @@ def test_a_registered_figure_joins_the_graphemes_card(dataset):  # noqa: F811
     ]
 
 
-def test_a_claim_names_a_family_head_and_a_form_the_site_holds(dataset):  # noqa: F811
+def test_a_claim_names_the_head_its_key_is_filed_under_and_a_form_the_site_holds(dataset):  # noqa: F811
     client = TestClient(create_app(dataset))
     form = form_of(client)
-    # ア is filed under あ's family, and names no family of its own.
-    link(client, form, grapheme="U+30A2", status=422)
+    # ア is filed under あ: a claim under its key is あ's, is taken back by either, and is the same claim sent again.
+    sent = {"id": str(uuid4()), "client_id": "ann", "grapheme": "U+30A2", "remove": False}
+    first = client.post("/atlas/forms/" + form + "/written_for", json=sent).json()
+    assert first == {"id": form, "grapheme": GRAPHEME, "written_for": [{"grapheme": GRAPHEME, "char": "あ", "by": ["ann"]}]}
+    assert client.post("/atlas/forms/" + form + "/written_for", json=sent).json()["written_for"] == first["written_for"]
+    assert client.post("/atlas/forms/" + form + "/written_for", json={**sent, "grapheme": GRAPHEME}).status_code == 409
+    assert link(client, form, grapheme="U+30A2", remove=True)["written_for"] == []
+    link(client, form, grapheme="U+1F600", remove=True, status=409)
     link(client, form, grapheme="U+1F600", status=422)
     link(client, "fm:" + "0" * 32, status=404)
