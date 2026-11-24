@@ -124,7 +124,8 @@ def test_named_documents_take_their_dates_and_leave_every_other_fact(layout, mon
     books(remote, monkeypatch, "--send")
     before = facts(remote.dbs["glyph-atlas-v3"])
     # The input states another date for both books, and lacks the characters and titles a whole run would load.
-    sources(root, dating=[dated("book:a", start=1801), dated("codh:b", "composed", 1600)], titles=[], characters=[], metadata=[])
+    sources(root, dating=[dated("book:a", start=1801), dated("codh:b", "composed", 1600)], titles=[], characters=[], metadata=[],
+            claims=[claim("dt:1", "codh:b", 1600)])
     translation = (root / "out" / "books.sqlite").read_bytes()
     books(remote, monkeypatch, "--documents", "codh:b", "--send")
     got = facts(remote.dbs["glyph-atlas-v3"])
@@ -351,6 +352,20 @@ def test_named_documents_take_their_claims_and_no_other_claim_is_retracted(layou
     stamps = db.execute("SELECT count(*) FROM imports").fetchone()[0]
     books(remote, monkeypatch, "--documents", "codh:b", "--send")
     assert db.execute("SELECT count(*) FROM imports").fetchone()[0] == stamps, "a rerun finds nothing to send"
+
+
+def test_named_documents_the_input_claims_no_date_of_stop_the_run(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, dating=[dated("book:a")], claims=[claim("dt:1")])
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    before, held = facts(db), ledger(db)
+    # An input made for another book: with no row of book:a, and with its dating but no claim.
+    for dating in ([], [dated("book:a")]):
+        sources(root, dating=dating, claims=[claim("dt:2", "codh:b", 1600)], stamp="2026-10-21T00:00:00Z")
+        with pytest.raises(SystemExit, match="claims no date of book:a"):
+            books(remote, monkeypatch, "--documents", "book:a", "codh:b", "--send")
+        assert (facts(db), ledger(db)) == (before, held)
 
 
 def test_a_slot_is_resolved_from_the_verdicts_glyph_atlas_v3_holds(layout, monkeypatch):  # noqa: F811
