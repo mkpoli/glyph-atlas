@@ -76,7 +76,8 @@ for (const file of walk(SRC)) {
   for (const call of tCalls(text)) {
     // Literal keys: every quoted, non-templated token that looks like a key. This also picks up
     // both sides of a ternary passed as the first argument.
-    for (const m of call.matchAll(literalRe)) usedLiteral.add(m[1])
+    // A template's keys are its pattern's, below: what its `${...}` hole compares or chooses between is no key.
+    for (const m of call.replace(/`[^`]*\$\{[^`]*`/g, '').matchAll(literalRe)) usedLiteral.add(m[1])
     for (const m of call.matchAll(templateRe)) {
       const pattern = '^' + m[1].replace(/\$\{[^}]*\}/g, '[a-zA-Z0-9_]+').replace(/\./g, '\\.') + '$'
       usedPatterns.push(new RegExp(pattern))
