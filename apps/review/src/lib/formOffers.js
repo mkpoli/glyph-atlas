@@ -1,4 +1,4 @@
-import { isSeal, sealsLast } from './cardTiers.js'
+import { isSeal } from './cardTiers.js'
 
 // Which registered figures and regional shapes a crop's form bar offers beside the character itself.
 // Atlas Sans and Atlas Serif draw the ideographs of U+3400–4DB5 and U+4E00–9FEF from Noto Sans and
@@ -79,6 +79,5 @@ export function groupForms(list, { structureOf = new Map(), related = new Set(),
   return found
 }
 
-/** The forms of a grouped bar in the order the number keys 1–0 reach them: as they stand, the small seal
- *  characters after every other, so none takes the key of another form. */
-export const keyOrder = groups => sealsLast(groups.flatMap(formsOf))
+/** The forms of a grouped bar as they stand, which is the order the number keys 1–0 reach them in. */
+export const chipsOf = groups => groups.flatMap(formsOf)

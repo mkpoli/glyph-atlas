@@ -9,9 +9,8 @@
   // of the family.
   // The forms stand under their 構形, on the bar: 説 and 說 under one, 峰 and 峯 under two, a figure
   // of the IVD with its character. A form with no structure, and a grapheme of another script, stand
-  // last without a caption. A small seal character stands last in its 構形 and takes a number key only
-  // after every other form has one. A form's 構形 is read before the form is shown, so the chips, and the
-  // number keys with them, keep their places.
+  // last without a caption. A small seal character stands last in its 構形. A form's 構形 is read before
+  // the form is shown, so the chips, and the number keys with them, keep their places.
   // Where no form names the crop's shape, its 構形 alone can be given and the form left for later: the ？ at
   // the end of its character's own 構形, and any 構形 of the bar from the picker.
   // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
@@ -26,7 +25,7 @@
   import StructureDialog from './StructureDialog.svelte'
   import { builtAs, listForms, formOf } from '../lib/cropForms.js'
   import { proposed, standing, structureTarget } from '../lib/structures.js'
-  import { groupForms, keyOrder } from '../lib/formOffers.js'
+  import { chipsOf, groupForms } from '../lib/formOffers.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -73,7 +72,7 @@
   const barGroups = $derived(groupForms(bar, { structureOf, related: relatedChars, own: (ownStructure?.part ?? ownStructure)?.id ?? builtAs(crop)[0]?.structure, proposed }))
   const captioned = $derived(barGroups.some(group => group.label))
   // The bar's forms in the order the number keys reach them.
-  const ordered = $derived(keyOrder(barGroups))
+  const ordered = $derived(chipsOf(barGroups))
   const q = $derived(query.trim().toUpperCase())
   const matches = item => (!q || item.char.toUpperCase().includes(q) || (item.code_point ?? '').includes(q)) && !bar.some(chip => chip.char === item.char)
   const sections = $derived([
@@ -140,7 +139,7 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable" class:captioned>
-    <FormChips groups={barGroups} order={ordered} open={shapes} onopen={leaveOpen} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
+    <FormChips groups={barGroups} open={shapes} onopen={leaveOpen} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={open ? open.label ?? written : chosen ?? (current || written)} />{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
