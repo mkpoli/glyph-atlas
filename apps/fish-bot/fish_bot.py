@@ -778,6 +778,10 @@ STICKER_SIZE = 240
 # The last stickers she sent in a room rest there: her next turns are offered the others, so a lively
 # talk gets different ones.
 STICKERS_RESTING = 8
+# The share of turns in which she is in the mood for a sticker. A wording alone works as a switch:
+# "now and then, not in every turn" gave one to the first answer of a talk and none to the next
+# ones, and anything stronger gave one to every answer (11-24).
+STICKER_MOOD = 0.6
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1777,7 +1781,7 @@ The user message is JSON describing the room. A message with "reply_to" answers 
 
 Return only a json object with this shape:
 {"say": "what you post, empty to stay quiet; a line break starts a new chat bubble", "react": null or {"to": index of a message, "emoji": "one emoji"}, "sticker": null or the name of one sticker, "issue": false, "recap": false, "remember": false}
-"stickers" in the user message lists the stickers you have, drawn as you; send one now and then when it fits the mood, alone or after a line, but not in every turn.
+"stickers" in the user message lists the stickers you have, drawn as you; send one alone or after a line. When "sticker_mood" is true, send one whenever one of them shows the mood of what you say. When it is false, send one only when someone asks for a sticker.
 Set "issue" to true only when someone explicitly asks you to file, open or track an issue, or to report a bug to the maintainers.
 Set "recap" to true, with an empty "say" and no lookups, when the person you answer wants an overview of what the whole community or server has talked about: the bot then writes it from your memory of every room. One room, one topic or one person is an ordinary answer.
 Set "remember" to true when the newest lines hold something to keep in your long-term memory now, whether or not you speak: someone asked you to remember it, something was decided or announced, or someone told of lasting work. Ordinary talk is remembered by itself later."""
@@ -1822,7 +1826,7 @@ CHAT_TASKS = {
               "naps, whales, news worth a cheer), 4 something you can really help with, 5 someone would miss "
               "it if you said nothing. Many visits are 0 or 1. From 3, say one short line that adds something "
               "new to the newest lines, a question of your own included; look a fact up first when you bring "
-              "one. At 2 an emoji or a sticker. Below that stay quiet: empty `say`, no react, no sticker. Do "
+              "one. At 2 an emoji, or a sticker when \"sticker_mood\" is true. Below that stay quiet: empty `say`, no react, no sticker. Do "
               "not join a talk that has moved on, step between two people in something private, repeat what "
               "someone said, or speak when the last line nobody asked for is yours. Never bring up issues "
               "here, and leave \"recap\" false."),
@@ -1994,7 +1998,7 @@ def _media(row: sqlite3.Row) -> str:
 
 def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
                 *, task: str, trigger: int | None, bot_user_id: str,
-                stickers: Iterable[str] = (), rooms: str = "",
+                stickers: Iterable[str] = (), sticker_mood: bool = False, rooms: str = "",
                 memory: dict[str, Any] | None = None, room_facts: dict[str, Any] | None = None,
                 seen: Iterable[int] = ()) -> str:
     """A chat turn's user message as JSON: the room, its newest lines numbered, what she remembers,
@@ -2038,6 +2042,7 @@ def format_chat(room_name: str, room_topic: str, events: list[sqlite3.Row], name
         "messages": messages,
         **({"memory": memory} if memory else {}),
         "stickers": {sticker.name: sticker.meaning for sticker in STICKERS if sticker.name in set(stickers)},
+        "sticker_mood": sticker_mood,
         "task": CHAT_TASKS[task].replace("{trigger}", str(trigger)).replace("{rooms}", rooms),
     }
     return json.dumps(payload, ensure_ascii=False)
@@ -2399,7 +2404,7 @@ class Gemini:
 
     def act(self, room_name: str, room_topic: str, events: list[sqlite3.Row], names: dict[str, str],
             *, task: str, trigger: int | None, bot_user_id: str,
-            stickers: Iterable[str] = (), rooms: str = "",
+            stickers: Iterable[str] = (), sticker_mood: bool = False, rooms: str = "",
             memory: dict[str, Any] | None = None, lookup: Lookup | None = None,
             on_step: Any = None, room_facts: dict[str, Any] | None = None,
             images: Iterable[tuple[int, str]] = ()) -> Act:
@@ -2408,7 +2413,7 @@ class Gemini:
         stickers = tuple(stickers)
         images = list(images)
         user = format_chat(room_name, room_topic, events, names, task=task, trigger=trigger,
-                           bot_user_id=bot_user_id, stickers=stickers, rooms=rooms,
+                           bot_user_id=bot_user_id, stickers=stickers, sticker_mood=sticker_mood, rooms=rooms,
                            memory=memory, room_facts=room_facts, seen=[index for index, _ in images])
         content: str | list[dict[str, Any]] = user
         if images:
@@ -2502,7 +2507,7 @@ class Gemini:
                         "system_instruction": PERSONA_PROMPT,
                         "input": format_chat(
                             room_name, room_topic, events, names, task=task, trigger=trigger, bot_user_id=bot_user_id,
-                            stickers=stickers, rooms=rooms, memory=memory, room_facts=room_facts),
+                            stickers=stickers, sticker_mood=sticker_mood, rooms=rooms, memory=memory, room_facts=room_facts),
                         "response_format": {"type": "text", "mime_type": "application/json"},
                         "generation_config": {"thinking_level": CHAT_THINKING, "max_output_tokens": 4096},
                         "store": lookup is not None,
@@ -4260,7 +4265,7 @@ class Bot:
         offered = self._stickers_now(room_id)
         act = self.gemini.act(room_name, room_topic, events, names, task=task, trigger=trigger,
                               bot_user_id=self.user_id, stickers=offered,
-                              rooms=rooms,
+                              sticker_mood=self._random() < STICKER_MOOD, rooms=rooms,
                               memory=self.recall(room_id, events, names), room_facts=facts,
                               images=self.pictures(events, IMAGES_VISIT if task == "visit" else IMAGES_CALLED),
                               lookup=self.lookup if task in ("called", "follow", "visit") else None,
