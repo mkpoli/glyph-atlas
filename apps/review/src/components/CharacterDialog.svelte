@@ -9,7 +9,7 @@
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
   import FormChips from './FormChips.svelte'
-  import { formClaimed, setForm } from '../lib/cropForms.js'
+  import { formSaved, setForm } from '../lib/cropForms.js'
   import { characterNamed, namingReview } from '../lib/formChoice.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
@@ -300,7 +300,7 @@
     try {
       leaving = advancing ? target : null
       const result = await request(route, { id: submission.id, ...payload })
-      if (claimed != null) formClaimed(claimed)
+      if (claimed != null) formSaved(was, claimed)
       inspector.remember(target, { choices: decided })
       // A save that lands after the dialog closed or moved on still decided its crop.
       if (!closed && current === generation) saved(target, result, was)

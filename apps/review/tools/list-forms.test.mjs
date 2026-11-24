@@ -26,7 +26,7 @@ mock.module('../src/lib/mjFigures.js', () => ({ drawFigure: async () => {},
 const sent = []
 mock.module('../src/lib/client.js', () => ({ request: async (path, body) => { sent.push({ path, body }); return { form: null } },
   character: async id => ({ id, crop_version: 'v2' }), cropPixels: () => ({}) }))
-const { baseOf, listForms, setForm } = await import('../src/lib/cropForms.js')
+const { baseOf, formSaved, listForms, setForm } = await import('../src/lib/cropForms.js')
 const chars = list => list.map(form => form.char)
 
 describe('a character that encodes the J shape again', () => {
@@ -86,5 +86,19 @@ describe('a form claimed alone', () => {
     const crop = { id: 'x', crop_version: 'v1', revision: 1, written_character: '器' }
     for (const form of ['噐', null, '噐']) await setForm(crop, form)
     expect(new Set(sent.map(({ body }) => body.id)).size).toBe(3)
+  })
+})
+
+describe('the forms read of a grapheme', () => {
+  const had = text => ({ id: 'x', crop_version: 'v1', form: { status: 'asserted', values: [{ form: 'f', text }] } })
+  it('are read again once a save takes a described form from a crop, whatever it claims instead', async () => {
+    const first = listForms('器')
+    formSaved(had('噐'), '器')
+    expect(listForms('器')).toBe(first)
+    formSaved(had('⿴囗啚'), '器')
+    const second = listForms('器')
+    expect(second).not.toBe(first)
+    await setForm(had('⿴囗啚'), '噐')
+    expect(listForms('器')).not.toBe(second)
   })
 })

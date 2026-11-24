@@ -30,7 +30,9 @@ const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(B
 const cards = new Map()
 // A description or a figure claimed on a crop, or taken back, changes its grapheme's forms, so the cards
 // read here are read again. A character of its own is on its cards whatever is claimed.
-export const formClaimed = (...values) => { if (values.some(value => [...value ?? ''].length > 1)) cards.clear() }
+const formClaimed = (...values) => { if (values.some(value => [...value ?? ''].length > 1)) cards.clear() }
+/** A save claimed `values` on `crop`, or took them back: the form it had then may be no one's now. */
+export const formSaved = (crop, ...values) => formClaimed(...values, ...formNames(crop.form))
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…) but one
  * drawn as `char` itself (𨓜, 逸 encoded again as its J shape), a kanji's small seal characters last
@@ -138,7 +140,7 @@ async function claimForm(crop, form) {
     result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: crop.crop_version, form })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
-  formClaimed(form, result.replaced)
+  formSaved(crop, form, result.replaced)
   return { crop: { ...crop, form: result.form }, replaced: result.replaced ?? null }
 }
 
