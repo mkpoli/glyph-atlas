@@ -3,6 +3,7 @@
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py          # translate and write the parts
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --send   # and load them
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --documents KEY... --send   # the dates of these books alone
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --titles --send   # the titles books lack, and nothing else
 
 The book facts input (`glyph_atlas.book_facts_input`: the dates export's claims and dating, and the
 characters another site lists per book) and the copies `source-corpus_documents` and `source-metadata`
@@ -268,6 +269,17 @@ def statements(books, atlas, only=None):
     return groups, changes
 
 
+def missing_titles(atlas):
+    """The statements that give each book the site holds with no title the one its first page bundle
+    states, and what they change. A title already there is kept, and a crop's source, which may be a file
+    name, names no book here."""
+    found = {book: title for book, (origin, title) in titles(atlas, {}).items() if origin == "pages"}
+    rows = [[f"UPDATE books SET title = {lit(found[b])} WHERE id = {b} AND title IS NULL;"]
+            for b, in atlas.execute("SELECT id FROM books WHERE title IS NULL ORDER BY id") if b in found]
+    return ([[s for r in rows[i:i + GROUP] for s in r] for i in range(0, len(rows), GROUP)],
+            {"books": {"removed": 0, "added": 0, "changed": len(rows), "written": len(rows)}})
+
+
 def ignored(table, row):
     """A ledger row ({column: value}), which is never changed once written: a part sent again leaves it
     as it is. A column it does not name takes its default."""
@@ -441,12 +453,32 @@ def migrate(atlas):
     print("migration 0005 applied", flush=True)
 
 
+def finish(groups, atlas, sending):
+    """Write `groups` as a run's parts and, when `sending`, load them."""
+    if not groups:
+        print("the local copy already holds these facts; nothing to send", flush=True)
+        return
+    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
+    run = OUT / "books-load" / f"books-{digest}"
+    n = built(run, "rows", groups)
+    print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
+    if not sending:
+        print("dry run: nothing sent", flush=True)
+        return
+    deliver(run, atlas)
+    print("book facts loaded", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="load the parts into glyph-atlas-v3")
     parser.add_argument("--documents", nargs="+", metavar="KEY", help="load the dates and date claims of these books alone, "
                         "leaving every other book's facts and claims as they stand")
+    parser.add_argument("--titles", action="store_true", help="give the books the site holds with no title the one their page "
+                        "bundles state, and load nothing else; reads no input")
     args = parser.parse_args()
+    if args.titles and args.documents:
+        parser.error("--titles loads nothing of --documents; run them apart")
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -459,6 +491,14 @@ def main():
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
         migrate(atlas)
         catch_up(atlas)
+    if args.titles:
+        groups, changes = missing_titles(atlas)
+        print("".join(f"{table}: {held}\n" for table, held in changes.items()), end="", flush=True)
+        finish(groups, atlas, args.send)
+        # The same titles filled before are the same parts, whose stamps the site holds, so they are not sent again.
+        if args.send and (left := len([s for g in missing_titles(atlas)[0] for s in g])):
+            sys.exit(f"{left} titles are still missing: these parts were loaded before and are not sent twice")
+        return
     named = set(args.documents) if args.documents else None
     if named:
         (books, only), left = dates_of(atlas, named), {}
@@ -476,18 +516,7 @@ def main():
     report = figures(books, changes, left)
     (OUT / "books-report.txt").write_text(report)
     print(report, end="", flush=True)
-    if not groups:
-        print("the local copy already holds these facts; nothing to send", flush=True)
-        return
-    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
-    run = OUT / "books-load" / f"books-{digest}"
-    n = built(run, "rows", groups)
-    print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
-    if not args.send:
-        print("dry run: nothing sent", flush=True)
-        return
-    deliver(run, atlas)
-    print("book facts loaded", flush=True)
+    finish(groups, atlas, args.send)
 
 
 if __name__ == "__main__":
