@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
+import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { currentPointer } from '../atlas3Answers';
 import { SHARDS, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
@@ -197,6 +198,20 @@ describe('a character page', () => {
     expect(body.variants.writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 1, 0]]);
     expect(body.words.items[0].spellings.map((s: any) => [s.spelling, s.current])).toEqual([['時', true], ['刻', false]]);
     expect(body.words.sources).toEqual({ dict: 'A dictionary' });
+  });
+
+  it('lists the forms its parts take as registered figures among the derived ones, cited', async () => {
+    const shards = new Map<string, object>();
+    for (const [char, sequence] of [['峕', '⿱山巨'], ['巨', '⿷匚口']])
+      shards.set(await referenceShard(char, IDS_DIGITS), { ...shards.get(await referenceShard(char, IDS_DIGITS)), [char]: [[sequence], null] });
+    for (const [shard, held] of shards) objects.set(`v3/reference/ids/${shard}.json.gz`, json(held));
+    const { status, body } = await get('/layers/characters/U+5CD5');
+    expect(status).toBe(200);
+    expect(body.variants.derived.map((v: any) => v.char)).toEqual(['⿱山巨\u{E0101}']);
+    expect(body.variants.derived[0]).toEqual({ char: '⿱山巨\u{E0101}', code_point: null, encoded: false, count: 0, corpus_count: 0,
+      sources: ['part-figures'], routes: [[{ was: '巨', became: '巨\u{E0101}', pairs: [] }]] });
+    expect(body.variants.sources['part-figures']).toContain('Ideographic Variation Database');
+    expect(body.variants.sources['derived-ids']).toBeUndefined();
   });
 
   it('answers 404 for a character no card has, and a card for a description sequence', async () => {

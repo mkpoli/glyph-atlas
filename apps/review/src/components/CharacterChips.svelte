@@ -23,6 +23,7 @@
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
   import { cardTiers, inferred, isSeal } from '../lib/cardTiers.js'
+  import { partName } from '../lib/partFigures.js'
   let { card = null, expand = $bindable('none'), onselect = () => {}, onreview = null } = $props()
   const { members, variants, grapheme, writers, sharedWriters, writes, selfGrapheme, shared, written, related, described } = $derived(cardTiers(card))
   // What the gallery shows, cited: the grapheme family when it is widened to it, else the one form. A
@@ -63,9 +64,10 @@
   const rank = relation => (RELATION_RANK.indexOf(relation) + RELATION_RANK.length + 1) % (RELATION_RANK.length + 1)
   const mainRelation = v => relationsOf(v).sort((a, b) => rank(a.relation) - rank(b.relation))[0]?.name ?? ''
   // A derived chip's evidence, after the word that marks it: each route it came by, each substitution
-  // as made with its count of contexts and the pairs behind it with their sources.
+  // as made with its count of contexts and the pairs behind it with their sources; a part written as
+  // a registered figure has neither.
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
-    `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
+    [`${s.was} → ${partName(s.became)}${s.count ? ` · ${s.count}` : ''}`, ...s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`)].join('\n')).join('\n+ ')).join('\n\n')
   const crops = v => (v.count ?? 0) + (v.corpus_count ?? 0)
   // What a chip's number counts: the crops filed under it here and the corpus glyphs recorded for it.
   const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined

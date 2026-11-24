@@ -9,12 +9,13 @@ import { cropOf, publicId } from '../atlas3';
 import { STYLE_GROUPS, STYLE_NAMES, characterCounts, composedBooks, cursorOf, familyClaims, filedCell, filedCounts, galleryPage, groupOf, phasesOf,
   rangeCountQuery, sourceWhere, type Cell, type Filed, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
 import { listingItems } from '../atlas3Listing';
-import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
+import { cardList, characterIds, characterObject, type CharacterObject } from '../atlas3Reference';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
 import { Problem } from '../busy';
 import { idsCharacter } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
+import { figureForms, partsOf } from '../partFigures';
 import { drawnForm, drawnFormsOf } from '../representation';
 import { WRITERS, WRITER_SOURCES } from '../writtenWithData';
 
@@ -158,6 +159,11 @@ async function familyOf(env: Env, card: Card): Promise<{ head: number | null; me
 const VARIANTS_SHOWN = 32;
 // The tier of predictions, as its own source id: the citation comes from the export's metadata.
 const DERIVED_IDS = 'derived-ids';
+// The forms made by writing a part as a registered figure, as a source id of their own.
+const PART_FIGURES = 'part-figures';
+const PART_FIGURES_CITATION = 'Registered figures of a part (derived, not attested): variation sequences of the Unicode Ideographic Variation Database that Noto Sans CJK JP draws, put in a character\'s BabelStone IDS; Unicode License v3, BabelStone IDS PD';
+// The rule the answers of `variantsOf` are kept under: raised when they change for the same catalogue.
+const VARIANTS_SHAPE = 2;
 // A pair any source calls simplified is kept apart even where another lists it as a plain variant
 // (refs.KEPT_APART): cjkvi pairs 干 with 乾 and 幹, which four sources give as simplifications.
 const KEPT_APART = new Set(['simplified']);
@@ -180,7 +186,8 @@ export function writtenVariants(object: CharacterObject | null, char: string): s
     .sort((a, b) => b.sources - a.sources || byCodePoint(a.other, b.other)).slice(0, VARIANTS_SHOWN);
   return [char, ...widening.map(v => v.other)];
 }
-type Substitution = { was: string; became: string; count: number; pairs: { a: string; b: string; sources: string[] }[] };
+// A substitution of a component, with its count of contexts; a part written as a registered figure has none.
+type Substitution = { was: string; became: string; count?: number; pairs: { a: string; b: string; sources: string[] }[] };
 // A substitution's own spelling, as refs._substitution writes it: the side of fewer code points
 // first, then the smaller by code point.
 export function substitutionKey(left: string, right: string): [string, string] {
@@ -205,6 +212,16 @@ function derivedOf(object: CharacterObject) {
     const sources = new Set(kept.flatMap(route => route.flatMap(sub => sub.pairs.flatMap(pair => pair.sources))));
     return [{ char: other, code_point: encoded ? cp(other) : null, encoded, routes: kept, sources: [...sources].sort() }];
   });
+}
+// The derived forms that write a part of the character as a registered figure, the largest parts first.
+// A character described in several ways takes the forms of each.
+async function figuresOf(env: Env, ctx: ExecutionContext, char: string) {
+  const sequences = [...char].length === 1 ? (await characterIds(env, char, ctx))?.sequences ?? [] : [];
+  const parts = [...new Set(sequences.flatMap(partsOf))];
+  const described = new Map(await Promise.all(parts.map(async part => [part, (await characterIds(env, part, ctx))?.sequences[0]] as const)));
+  const seen = new Set<string>();
+  return sequences.flatMap(sequence => figureForms(sequence, part => described.get(part))).filter(form => !seen.has(form.char) && seen.add(form.char))
+    .map(form => ({ char: form.char, code_point: null, encoded: false, routes: [form.route.map(made => ({ ...made, pairs: [] }))], sources: [PART_FIGURES] }));
 }
 const sum = (cells: Cell[] | undefined, kind: number) => (cells ?? []).filter(c => c.kind === kind).reduce((n, c) => n + c.n, 0);
 /** The forms a family carries through a reviewer's `written_for` claim: shapes Unicode lacks, written as
@@ -245,7 +262,7 @@ async function writtenForms(env: Env, card: Card, rows: Json[]) {
  *  own. Each row counts the character's crops here and in the corpus. */
 async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string) {
   const char = card.detail.char, object = card.object;
-  return edge(ctx, new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`), async () => {
+  return edge(ctx, new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(`${VARIANTS_SHAPE}:${version}`)}`), async () => {
     const byChar = new Map<string, { char: string; code_point: string; widens: boolean; written: boolean; relations: Json[]; edges: Edge[] }>();
     for (const e of edgesOf(object)) {
       if (e.other === char) continue;
@@ -259,7 +276,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
       widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)), written: pair.some(e => e.written) }))
       .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
     const shown = [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)];
-    const derived = object ? derivedOf(object) : [];
+    const derived = object ? [...await figuresOf(env, ctx, char), ...derivedOf(object)] : [];
     const chars = [...shown.map(entry => entry.char), ...derived.filter(entry => entry.encoded).map(entry => entry.char)];
     const ids = new Map(chars.flatMap(c => { const id = card.object && Object.hasOwn(card.object.ids, c) ? card.object.ids[c] : null; return id === null ? [] : [[c, id] as const] }));
     // Characters of another script the site's table gives as writing this grapheme (事: ヿ), and for
@@ -297,7 +314,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     // The grapheme a character of another script also writes is cited on its own card too.
     for (const w of lends) for (const relation of w.relations) used.add(relation.source);
     for (const entry of predicted) for (const source of entry.sources) used.add(source);
-    if (predicted.length) used.add(DERIVED_IDS);
+    if (predicted.some(entry => !entry.sources.includes(PART_FIGURES))) used.add(DERIVED_IDS);
     const writes = written.map(c => { const id = idOf(c);
       return { char: c, code_point: cp(c), count: id === null ? 0 : familyCount(id, 0), corpus_count: id === null ? 0 : familyCount(id, 1) } });
     // A character of another script has its own grapheme too, so it is a shared form.
@@ -306,7 +323,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const own = !(object?.writes ?? []).some(([, mine]) => mine === 0);
     return { items: rows.filter(row => row.widens), related: rows.filter(row => !row.widens), derived: predicted, forms,
       total: byChar.size + lent.length, writes, writers, own,
-      sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? WRITER_SOURCES[source] ?? source])) };
+      sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? (source === PART_FIGURES ? PART_FIGURES_CITATION : WRITER_SOURCES[source]) ?? source])) };
   });
 }
 

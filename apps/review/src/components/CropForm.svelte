@@ -25,6 +25,7 @@
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
   import { proposed, standing } from '../lib/structures.js'
   import { formsOf } from '../lib/formOffers.js'
+  import { partName } from '../lib/partFigures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -168,7 +169,7 @@
   // A derived option names how it was made: each substitution of its first route, as made; a
   // registered figure names its sequence and its MJ figure; a regional shape names its regions.
   const optionTitle = item => item.routes?.length
-    ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${sub.became}`).join('\n')
+    ? `${item.char}\n` + item.routes[0].map(sub => `${sub.was} → ${partName(sub.became)}`).join('\n')
     : item.mj ? `${item.code_point}\n${item.mj}`
     : item.regions ? `${item.char}\n${item.regions}` : item.code_point ?? item.char
   // A registered figure on the bar names its MJ figure, and a regional shape its regions, since either
