@@ -91,12 +91,12 @@ export function cropEntry(record: Json, version: string | null = record.crop_ver
   };
 }
 
-/** A character's page: its whole grapheme family, or the one form alone. */
+/** A grapheme's page, or the page of one form. */
 export function characterEntry(kind: 'grapheme' | 'form', card: Json): Entry {
   const named = kind === 'grapheme' && card.grapheme?.code_point ? card.grapheme : card;
   const codePoint = String(named.code_point);
   return { kind, id: slug(codePoint), label: text(named.char) ?? null, codePoint,
-    path: `/character/${slug(codePoint)}?scope=${kind === 'grapheme' ? 'family' : 'exact'}` };
+    path: `/${kind === 'grapheme' ? 'grapheme' : 'character'}/${slug(codePoint)}` };
 }
 
 export const FORMATS = ['csl', 'bibtex', 'hayagriva'] as const;

@@ -45,8 +45,6 @@ export const layerSummary = () => get('/layers/summary')
 /** `2 crops · 212 line matches` — the two evidence kinds, never added into one number. */
 export function countsLabel(counts) {
   if (!counts) return ''
-  if (counts.requires_family_scope) return counts.family_glyphs != null
-    ? t('layers.familySamples.count', { count: counts.family_glyphs }) : t('layers.familySamples')
   const parts = []
   if (counts.glyphs != null) parts.push(t('layers.crops.count', { count: counts.glyphs }))
   if (counts.lines) parts.push(t('layers.lineMatches.count', { count: counts.lines }))

@@ -11,7 +11,7 @@
   import SiteLinks from '../components/SiteLinks.svelte'
   import { t, localize, formatNumber, formatYear } from '../lib/i18n.svelte.js'
   import { chronology, chronologyAddress, PRODUCTIONS } from '../lib/chronology.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { galleryAddress } from '../lib/addresses.js'
   import { STYLE_GROUPS } from '../lib/style.js'
   import { dateLabel, eventLabel, sourceName, HUTIME_FORM } from '../lib/dating.js'
 
@@ -78,9 +78,9 @@
   // by their copy's date and narrows by style alone, so with the text's date, a production or a script
   // chosen it would show other crops than the count, and the count links nowhere.
   const linkable = $derived(chosen.axis !== 'composed' && !chosen.production && !chosen.script)
-  const decadeGallery = decade => localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact',
-    style: chosen.style, order: 'year', years: `${decade}-${decade + 9}` }))
-  const undatedGallery = $derived(localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact', style: chosen.style, years: 'undated' })))
+  const gallery = shown => localize(galleryAddress(card, chosen.scope || 'none', shown))
+  const decadeGallery = decade => gallery({ style: chosen.style, order: 'year', years: `${decade}-${decade + 9}` })
+  const undatedGallery = $derived(gallery({ style: chosen.style, years: 'undated' }))
   const title = item => {
     const date = item.dating?.[chosen.axis === 'composed' ? 'composed' : 'witness']
     const work = typeof item.source === 'string' ? item.source : item.source?.title
@@ -108,7 +108,7 @@
 <section class="explore chronology" aria-busy={loading}>
   <div class="page-status"><SiteLinks /></div>
   <header class="heading">
-    <a class="quiet-link" href={localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact' }))}>← {t('chronology.gallery')}</a>
+    <a class="quiet-link" href={gallery()}>← {t('chronology.gallery')}</a>
     <h1><span class="glyph"><ScriptText text={card.char} script={card.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
     <p class="summary">{t('chronology.dated', { count: dated })}{#if undated}{' · '}{t('chronology.yearless', { count: undated })}{/if}{#if buckets.length}{' · '}{dateLabel({ start: buckets[0].decade, end: buckets.at(-1).decade + 9, precision: 'years' })}{/if}</p>
   </header>

@@ -64,10 +64,14 @@ try {
   assert(await browser.evaluate(`(() => { const link = document.querySelector('.candidate-row .zi-link[href*="%F0%AA%9C%88"]'); return link.target === '_blank' && link.rel.includes('noopener') && link.rel.includes('noreferrer') && !link.closest('button') })()`), 'supplementary zi.tools link is broken or nested')
 
   await type('仮')
-  await browser.waitFor(`document.querySelector('.family')?.getAttribute('aria-pressed') === 'true'`, 30000)
+  await browser.waitFor(`document.querySelector('.member[aria-current] .script-char')?.textContent === '仮'`, 30000)
   await settled()
   await browser.key('Escape')
-  assert(queries.some(row => row.code_point === 'U+4EEE' && row.scope === 'grapheme'), 'family search did not use union scope')
+  // The 字種 chip opens the grapheme's page, which gathers every form.
+  await click('.character-layers a.variant[href$="/grapheme/U+4EEE"]')
+  await browser.waitFor(`location.pathname === '/en/grapheme/U+4EEE' && document.querySelector('.variant[aria-current=page]')`, 30000)
+  await settled()
+  assert(queries.some(row => row.code_point === 'U+4EEE' && row.scope === 'grapheme'), 'the grapheme page did not use union scope')
   assert(await browser.evaluate(`document.querySelectorAll('.member').length === 2`), 'family lost distinct written characters')
   const hasUnassigned = await browser.evaluate(`!![...document.querySelectorAll('.glyph-tile.corpus .tile-label')].find(el => el.textContent === 'Unassigned')`)
   assert(hasUnassigned, 'normalized source rows are mislabeled as written characters')
@@ -84,7 +88,8 @@ try {
     await settled()
   }
   failCandidates = true
-  await click('[aria-label="Show character 假"]')
+  await type('假')
+  await browser.waitFor(`document.querySelector('.member[aria-current] .script-char')?.textContent === '假'`, 30000)
   await browser.waitFor(`document.querySelector('.glyph-grid')?.getAttribute('aria-busy') === 'false' && document.querySelector('.corpus-fault')`, 30000)
   assert(await browser.evaluate(`document.querySelectorAll('.glyph-tile.corpus').length === 0`), 'failed exact query retained family crops')
   failCandidates = false

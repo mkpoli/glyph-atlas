@@ -6,8 +6,8 @@
 // family its source names (`crops.family`, migration 0012), which every crop keeps. A family's gallery reads one range
 // per member character and one per member's filed crops, merged in the order they show.
 import { cropOf, publicId } from '../atlas3';
-import { STYLE_GROUPS, STYLE_NAMES, characterCounts, composedBooks, cursorOf, familyClaims, filedCell, filedCounts, galleryPage, groupOf, phasesOf,
-  rangeCountQuery, sourceWhere, type Cell, type Filed, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
+import { STYLE_GROUPS, STYLE_NAMES, characterCounts, claimsAt, composedBooks, cursorOf, familyClaims, filedCell, filedClaims, filedCounts, galleryPage, groupOf, phasesOf,
+  rangeCountQuery, sourceWhere, type Cell, type Filed, type FiledAt, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
 import { listingItems } from '../atlas3Listing';
 import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
@@ -15,6 +15,7 @@ import { Problem } from '../busy';
 import { idsCharacter, isSeal } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
+import { addCrops, fileClaims, soleForms, type Rows } from '../graphemeTotals';
 import { drawnForm, drawnFormsOf } from '../representation';
 import { WRITERS, WRITER_SOURCES } from '../writtenWithData';
 
@@ -146,11 +147,12 @@ const gid = (card: Card, char: string): number | null => card.object && Object.h
 // A family's characters by its head, by `grapheme_head`, the head among them; at most FAMILY_MAX.
 const FAMILY_MAX = 128;
 export const membersQuery = () => `SELECT id,text FROM graphemes WHERE head=? LIMIT ${FAMILY_MAX}`;
-async function familyOf(env: Env, card: Card): Promise<{ head: number | null; members: number[] }> {
-  const own = gid(card, card.data.char), head = gid(card, card.data.grapheme?.char ?? card.data.char) ?? own;
-  if (head === null) return { head: null, members: [] };
-  const rows = (await env.ATLAS.prepare(membersQuery()).bind(head).all<{ id: number }>()).results;
-  return { head, members: [...new Set([head, ...(own === null ? [] : [own]), ...rows.map(r => r.id)])] };
+async function familyOf(env: Env, card: Card): Promise<{ head: number | null; members: number[]; texts: Map<number, string> }> {
+  const char = card.data.char, top = card.data.grapheme?.char ?? char, own = gid(card, char), head = gid(card, top) ?? own;
+  if (head === null) return { head: null, members: [], texts: new Map() };
+  const rows = (await env.ATLAS.prepare(membersQuery()).bind(head).all<{ id: number; text: string }>()).results;
+  const texts = new Map([...(own === null ? [] : [[own, char] as const]), [head, gid(card, top) === null ? char : top] as const, ...rows.map(r => [r.id, r.text] as const)]);
+  return { head, members: [...new Set([head, ...texts.keys()])], texts };
 }
 
 // 異体字.
@@ -245,9 +247,9 @@ async function writtenForms(env: Env, card: Card, rows: Json[]) {
  *  characters writes (后: 後), `writers` the forms of that kind that write its family head's grapheme,
  *  each `shared` when it writes something else too; `own` is false for a form with no character of its
  *  own. Each row counts the character's crops here and in the corpus. */
-async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string) {
+async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string, claimed: Claimed) {
   const char = card.detail.char, object = card.object;
-  return edge(ctx, new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(version)}`), async () => {
+  return edge(ctx, new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(`${TOTALS_SHAPE}:${version}`)}`), async () => {
     const byChar = new Map<string, { char: string; code_point: string; widens: boolean; written: boolean; relations: Json[]; edges: Edge[] }>();
     for (const e of edgesOf(object)) {
       if (e.other === char) continue;
@@ -276,16 +278,15 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     const idOf = (c: string) => gid(card, c) ?? named.get(c) ?? null;
     // The 字種 row's numbers: a grapheme a form writes is a family of its own, counted as one.
     const written = [...(object?.writes ?? []).map(([c]) => c), ...lends.map(w => w.grapheme)];
-    const writeIds = written.flatMap(c => { const id = idOf(c); return id === null ? [] : [id] });
+    const writeIds = new Map(written.flatMap(c => { const id = idOf(c); return id === null ? [] : [[id, c] as const] }));
     // A head may name itself as its family (`familyOf` takes the same care): count each row once.
-    const writeFamilies = new Map<number, number[]>(writeIds.map(id => [id, [id]]));
-    if (writeIds.length) for (const row of (await env.ATLAS.prepare(writeFamiliesQuery()).bind(JSON.stringify(writeIds)).all<{ id: number; head: number }>()).results) {
-      const family = writeFamilies.get(row.head);
-      if (family && !family.includes(row.id)) family.push(row.id);
-    }
-    const counts = await characterCounts(env, [...ids.values(), ...[...writeFamilies.values()].flat()]);
+    const writeFamilies = new Map<number, Map<number, string>>([...writeIds].map(([id, c]) => [id, new Map([[id, c]])]));
+    if (writeIds.size) for (const row of (await env.ATLAS.prepare(writeFamiliesQuery()).bind(JSON.stringify([...writeIds.keys()])).all<{ id: number; text: string; head: number }>()).results)
+      writeFamilies.get(row.head)?.set(row.id, row.text);
+    const members = [...writeFamilies.values()].flatMap(family => [...family.keys()]);
+    const [counts, filed, claims] = await Promise.all([characterCounts(env, [...ids.values(), ...members]), filedCounts(env, members),
+      members.length ? claimed() : []]);
     const count = (c: string, kind: number) => ids.has(c) ? sum(counts.get(ids.get(c)!), kind) : 0;
-    const familyCount = (id: number, kind: number) => (writeFamilies.get(id) ?? [id]).reduce((n, member) => n + sum(counts.get(member), kind), 0);
     const cited: Record<string, string> = (await siteValue(env, 'variant_sources')) || {};
     const rows = [...shown, ...lent.map(w => ({ char: w.char, code_point: cp(w.char), widens: false, written: true, relations: w.relations }))]
       .map(entry => ({ ...entry, sources: [...new Set(entry.relations.map(r => r.source))].sort(),
@@ -301,7 +302,7 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
     for (const entry of predicted) for (const source of entry.sources) used.add(source);
     if (predicted.length) used.add(DERIVED_IDS);
     const writes = written.map(c => { const id = idOf(c);
-      return { char: c, code_point: cp(c), count: id === null ? 0 : familyCount(id, 0), corpus_count: id === null ? 0 : familyCount(id, 1) } });
+      return { char: c, code_point: cp(c), ...(id === null ? { count: 0, corpus_count: 0 } : familyTotal(familyRows(cp(c), writeFamilies.get(id)!, counts, filed, claims), cp(c))) } });
     // A character of another script has its own grapheme too, so it is a shared form.
     const writers = [...(object?.writers ?? []).map(([c, shared]) => ({ char: c, code_point: cp(c), shared: !!shared })),
       ...lent.map(w => ({ char: w.char, code_point: cp(w.char), shared: true }))];
@@ -314,24 +315,55 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
 
 /** A family's own forms (the card's `grapheme.members`), by character, each with the crops filed under
  *  it here and the corpus glyphs recorded for it, and the family's totals: the 字体 row states each
- *  form's images, the 字種 row the grapheme's. A member the card's object names has an id already; the
- *  rest are looked up in `graphemes`. */
-async function familyUsage(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string) {
-  const members: { char: string }[] = card.detail.grapheme?.members ?? [];
+ *  form's images, the 字種 row the grapheme's (`graphemeTotals.ts`), of the members its gallery reads.
+ *  `sole` is the form whose page shows the gallery the grapheme's does, if one holds every crop of it.
+ *  A member the card's object names has an id already; the rest are looked up in `graphemes`. */
+async function familyUsage(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string, claimed: Claimed) {
+  const members: { char: string; code_point: string }[] = card.detail.grapheme?.members ?? [];
   if (!members.length) return null;
-  return edge(ctx, new Request(`${origin}/layers/family?c=${encodeURIComponent(card.detail.char)}&v=${encodeURIComponent(version)}`), async () => {
+  return edge(ctx, new Request(`${origin}/layers/family?c=${encodeURIComponent(card.detail.char)}&v=${encodeURIComponent(`${TOTALS_SHAPE}:${version}`)}`), async () => {
     const known = card.object?.ids ?? {};
     const ids = new Map<string, number>(members.flatMap(({ char }) => Object.hasOwn(known, char) ? [[char, known[char]] as const] : []));
     const missing = members.map(({ char }) => char).filter(char => !ids.has(char));
-    if (missing.length) for (const row of (await env.ATLAS.prepare(graphemeIdsQuery()).bind(JSON.stringify(missing)).all<{ id: number; text: string }>()).results)
-      ids.set(row.text, row.id);
-    const counts = await characterCounts(env, [...ids.values()]);
+    const [rest, family, claims] = await Promise.all([
+      missing.length ? env.ATLAS.prepare(graphemeIdsQuery()).bind(JSON.stringify(missing)).all<{ id: number; text: string }>().then(r => r.results) : [],
+      familyOf(env, card), claimed()]);
+    for (const row of rest) ids.set(row.text, row.id);
+    const [counts, filed] = await Promise.all([characterCounts(env, [...ids.values(), ...family.members]), filedCounts(env, family.members)]);
     const count = (char: string, kind: number) => ids.has(char) ? sum(counts.get(ids.get(char)!), kind) : 0;
     const forms = Object.fromEntries(members.map(({ char }) => [char, { count: count(char, 0), corpus_count: count(char, 1) }]));
-    const total = { count: 0, corpus_count: 0 };
-    for (const form of Object.values(forms)) { total.count += form.count; total.corpus_count += form.corpus_count }
-    return { forms, total };
+    const key = cp(card.data.grapheme?.char ?? card.data.char);
+    // A card with no object (a description sequence, an old Hangul syllable) reads no family: it is its own.
+    const texts = family.texts.size ? family.texts : new Map([...ids].map(([char, id]) => [id, char]));
+    const rows = familyRows(key, texts, counts, filed, claims), total = familyTotal(rows, key);
+    const held = soleForms(rows.values()).get(key), sole = held ? cp(held) : !total.count && !total.corpus_count && members.length === 1 ? members[0].code_point : null;
+    return { forms, total, sole };
   });
+}
+// The shape of the totals an edge copy holds; a change of what they count raises it.
+const TOTALS_SHAPE = 2;
+// The crops grapheme claims file, read once per catalogue version and location, and once a request.
+type Claimed = () => Promise<FiledAt[]>;
+function claimsKept(env: Env, ctx: ExecutionContext, origin: string, version: string): Claimed {
+  let read: Promise<FiledAt[]> | null = null;
+  return () => read ??= edge(ctx, new Request(`${origin}/layers/filed-claims?v=${encodeURIComponent(version)}`), () => filedClaims(env));
+}
+/** The rows of a grapheme's family: its characters' crops, those filed under it with no character, and
+ *  the claims that file crops into it and away, as its gallery lists them. */
+function familyRows(key: string, texts: Map<number, string>, counts: Map<number, Cell[]>, filed: Map<number, Cell[]>, claims: FiledAt[]): Rows {
+  const rows: Rows = new Map(), { away, here } = claimsAt(claims, key, [...texts.keys()]);
+  for (const [id, label] of texts) for (const kind of [0, 1]) {
+    addCrops(rows, { label, grapheme: key }, kind, sum(counts.get(id), kind));
+    addCrops(rows, { label: '', grapheme: key }, kind, sum(filed.get(id), kind));
+  }
+  fileClaims(rows, away, r => ({ label: r.char === null ? '' : texts.get(r.char)!, grapheme: key }));
+  fileClaims(rows, here, () => null);
+  return rows;
+}
+function familyTotal(rows: Rows, key: string) {
+  const total = { count: 0, corpus_count: 0 };
+  for (const row of rows.values()) if (row.grapheme === key) { total.count += row.collected; total.corpus_count += row.corpus }
+  return total;
 }
 
 // Words.
@@ -498,7 +530,10 @@ export async function occurrences(env: Env, card: Card, q: URLSearchParams) {
     return { ...head, total: n, capped: all > WIDENED_CAP, available: items.length, items,
       counts: { total: n, exact: n, exact_total: n }, style_groups: STYLE_NAMES, scope: 'variants', withheld: null, status: 'ok', next: page.next };
   }
-  const styles = dated ? await datedCounts(env, g, query, cells) : withheld ? plus(c.styles, c.withheld) : c.styles, n = total(styles, group);
+  // The counts by style group are of every crop the gallery can list, withheld ones among them, where no
+  // years narrow it; its total is of those it lists.
+  const listed = dated ? await datedCounts(env, g, query, cells) : withheld ? plus(c.styles, c.withheld) : c.styles, n = total(listed, group);
+  const styles = withheld || dated?.years ? listed : plus(c.styles, c.withheld);
   return { ...head, total: n, available: items.length, items, counts: { total: n, exact: n, exact_total: n }, styles,
     style_groups: STYLE_NAMES, scope: q.get('scope') || 'character', status: 'ok',
     withheld: withheld || dated ? null : total(c.withheld, group), ...datedFields(dated), next: page.next };
@@ -578,38 +613,37 @@ const decadeOf = (year: number) => year - (((year % 10) + 10) % 10);
 const byDecade = (a: number | null, b: number | null) => a === b ? 0 : a === null ? -1 : b === null ? 1 : a - b;
 // One source's crops in the dated books of the composed axis, counted per book along `crop_char_book`
 // or `crop_family_book`.
-export function composedCountQuery(source: Source, kind: 0 | 1, books: number[], withheld: boolean) {
+export function composedCountQuery(source: Source, kind: 0 | 1, books: number[]) {
   const { where, values } = sourceWhere(source, kind);
   const index = source.by === 'claimed' ? '' : ` INDEXED BY ${source.by === 'char' ? 'crop_char_book' : 'crop_family_book'}`;
   return { sql: `SELECT book,count(*) AS n FROM crops${index} WHERE ${[...where, ...(source.by === 'char' ? ['kind<2'] : [])].join(' AND ')}`
-    + ` AND book IN (${books.join(',')})${withheld ? '' : ' AND quiz=1'} GROUP BY book`, values };
+    + ` AND book IN (${books.join(',')}) GROUP BY book`, values };
 }
 /** A character's crops (or its family's) counted per decade of its book's date, the collection's and the
- *  corpus's apart, with the undated as decade null, sorted as SQLite sorts them (null first). Withheld
- *  crops are left out unless `withheld` asks for them, as in the gallery the decades sit beside. On the
+ *  corpus's apart, withheld ones among them, with the undated as decade null, sorted as SQLite sorts them (null first). On the
  *  witness axis the decades are the publication's counts and the reviews since; on the composed axis
  *  the crops in the dated books are counted per book and the rest are undated. */
 export async function decades(env: Env, ctx: ExecutionContext, url: URL, tools: CharacterTools) {
   const q = url.searchParams, card = await characterCard(env, q.get('code_point') || '', tools, ctx), { data } = card;
-  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme', withheld = q.get('withheld') === 'show';
+  const axis = q.get('axis') === 'composed' ? 'composed' : 'witness', grapheme = q.get('scope') === 'grapheme';
   const version = await axisVersion(env);
-  const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}&w=${withheld}`);
+  const key = new Request(`${url.origin}/layers/decades?v=${encodeURIComponent(version)}&c=${encodeURIComponent(data.code_point)}&s=${grapheme}&a=${axis}`);
   return edge(ctx, key, async () => {
     const g = await galleryOf(env, card, grapheme ? 'grapheme' : 'character');
     const years = axis === 'composed' ? await composedYears(env) : new Map<number, number>(), books = [...years.keys()].sort((a, b) => a - b);
     const lists = await Promise.all(([0, 1] as const).map(async kind => {
-      const cells = await cellsOf(env, g, kind), shown = (cell: Cell) => kind === 1 || withheld || cell.quiz !== 0;
+      const cells = await cellsOf(env, g, kind);
       const by = new Map<number | null, number>(), add = (decade: number | null, n: number) => { if (n) by.set(decade, (by.get(decade) ?? 0) + n) };
-      if (axis === 'witness') { for (const cell of cells) if (shown(cell)) add(cell.decade, cell.n) }
+      if (axis === 'witness') { for (const cell of cells) add(cell.decade, cell.n) }
       else {
         const statements = books.length ? g.sources.flat().map(source => {
-          const { sql, values } = composedCountQuery(source, kind, books, kind === 1 || withheld);
+          const { sql, values } = composedCountQuery(source, kind, books);
           return env.ATLAS.prepare(sql).bind(...values);
         }) : [];
         let dated = 0;
         for (const result of statements.length ? await env.ATLAS.batch(statements) as D1Result<{ book: number; n: number }>[] : [])
           for (const row of result.results) { add(decadeOf(years.get(row.book)!), row.n); dated += row.n }
-        add(null, cells.filter(shown).reduce((n, c) => n + c.n, 0) - dated);
+        add(null, cells.reduce((n, c) => n + c.n, 0) - dated);
       }
       return [...by].sort((a, b) => byDecade(a[0], b[0])).map(([decade, n]) => [decade, n]);
     }));
@@ -730,6 +764,7 @@ export async function bookGallery(env: Env, ctx: ExecutionContext, url: URL, too
     if (!at) throw new Problem(422, 'Invalid cursor.');
     books = found.filter(book => !book.recorded || book.n < Number(at[1]) || (book.n === Number(at[1]) && book.id > Number(at[2])));
   }
+  const listed = { local: found.reduce((n, book) => n + book.count.local, 0), corpus: found.reduce((n, book) => n + book.count.corpus, 0) };
   const page: typeof found = [], rest = books.length;
   for (let crops = 0; page.length < Math.min(rest, GALLERY_BOOKS) && crops < limit; crops += Math.min(per, page[page.length - 1].n)) page.push(books[page.length]);
 
@@ -749,7 +784,7 @@ export async function bookGallery(env: Env, ctx: ExecutionContext, url: URL, too
   const shown = [...rows.values()].flatMap(list => list.slice(0, per));
   const items = new Map((await listingItems(env, shown.map(row => row.id))).map(item => [item.id, item]));
   const last = page[page.length - 1];
-  return { code_point: data.code_point, scope, per, total: found.length, styles, style_groups: STYLE_NAMES, withheld: withheld || years ? null : heldBack,
+  return { code_point: data.code_point, scope, per, total: found.length, styles, listed, style_groups: STYLE_NAMES, withheld: withheld || years ? null : heldBack,
     groups: page.map(book => {
       const list = rows.get(book)!, end = list[per - 1];
       return { document: book.key, records: book.records.map(record => record.key), title: book.title, page: book.page, count: book.count, items: list.slice(0, per).flatMap(row => { const item = items.get(publicId(row.id)); return item ? [{ ...item, origin: row.kind ? 'corpus' : 'collection' }] : [] }),
@@ -781,7 +816,7 @@ export const productionsQuery = () => `SELECT id FROM productions WHERE key=? OR
 // Characters by text, through `graphemes`' unique key.
 export const graphemeIdsQuery = () => `SELECT id,text FROM graphemes WHERE text IN (SELECT value FROM json_each(?))`;
 // A grapheme's family by its head, through `grapheme_head`: the characters a grapheme a form writes holds.
-export const writeFamiliesQuery = () => `SELECT id,head FROM graphemes WHERE head IN (SELECT value FROM json_each(?))`;
+export const writeFamiliesQuery = () => `SELECT id,text,head FROM graphemes WHERE head IN (SELECT value FROM json_each(?))`;
 type Ranked = { id: number; decade: number | null; shuffle: number; bucket: number };
 const DECADE = (year: string) => `CASE WHEN ${year} IS NULL THEN NULL ELSE (${year} - (((${year} % 10) + 10) % 10)) END`;
 /** The statements that read one source's crops for the time axis, the dated and the undated, on either
@@ -899,13 +934,13 @@ export async function cards(env: Env, list: 'graphemes' | 'ligatures', q: URLSea
  *  are `/layers/occurrences`, which pages them. */
 export async function characterPage(env: Env, ctx: ExecutionContext, url: URL, value: string, tools: CharacterTools) {
   const card = await characterCard(env, value, tools, ctx), { detail } = card;
-  const version = await catalogueVersion(env);
-  const [variants, words, usage] = await Promise.all([variantsOf(env, ctx, url.origin, card, version),
-    wordsOf(env, ctx, url.origin, detail.char, version), familyUsage(env, ctx, url.origin, card, version)]);
+  const version = await catalogueVersion(env), claimed = claimsKept(env, ctx, url.origin, version);
+  const [variants, words, usage] = await Promise.all([variantsOf(env, ctx, url.origin, card, version, claimed),
+    wordsOf(env, ctx, url.origin, detail.char, version), familyUsage(env, ctx, url.origin, card, version, claimed)]);
   // A card with no `members` keeps none: an empty list would read as a family with no forms.
   const listed = detail.grapheme?.members;
   const members = listed && usage ? listed.map((member: Json) => ({ ...member, ...(usage.forms[member.char] ?? {}) })) : listed;
-  return { ...detail, ...(listed && usage ? { grapheme: { ...detail.grapheme, members, ...usage.total } } : {}), variants, words, query: detail.code_point };
+  return { ...detail, ...(listed && usage ? { grapheme: { ...detail.grapheme, members, ...usage.total, sole: usage.sole } } : {}), variants, words, query: detail.code_point };
 }
 
 const CITABLE_CHARACTER = /^U\+[0-9A-Fa-f]{4,6}(-U\+[0-9A-Fa-f]{4,6})*$/;

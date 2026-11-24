@@ -141,6 +141,8 @@ async function reader() {
 // caller that wants round items says so.
 export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) =>
   request('/atlas?' + new URLSearchParams(Object.entries({ purpose, ...params }).filter(([, v]) => v !== '' && v != null)), undefined, options)
+/** Every crop the site holds, by character and grapheme: `[label, grapheme, collected, corpus]`, the label '' for crops with no character. */
+export const graphemeCounts = async options => (await request('/atlas/graphemes/counts', undefined, options)).items
 export const character = (id, options) => request('/atlas/characters/' + encodeURIComponent(id), undefined, options)
 /** A crop's neighbours on its line, four either side in reading order or as many as `reach`: `{ items: [{ id, offset, label, image, revision, image_sha256, crop_version, state }] }`, empty when it has none. */
 export const line = (id, { reach = null, ...options } = {}) => request('/atlas/characters/' + encodeURIComponent(id) + '/line' + (reach ? '?reach=' + reach : ''), undefined, options)
