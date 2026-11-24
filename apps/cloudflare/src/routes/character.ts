@@ -612,6 +612,116 @@ export async function decades(env: Env, ctx: ExecutionContext, url: URL, tools: 
   });
 }
 
+// A gallery grouped by source: the books a character's crops (or its family's) come from, the most crops
+// first, each with its first crops, the collection's and then the corpus's. The books and their counts
+// are kept at the edge as the decades are; the crops are read from the database.
+type BookCell = [kind: number, group: StyleGroup, quiz: number, n: number];
+type SourceBook = { id: number; key: string; title: string | null; year: number | null; cells: BookCell[] };
+const SOURCE_BOOKS = 60, SOURCE_CROPS = 60;
+const bookIndex = (source: Source) => source.by === 'claimed' ? '' : ` INDEXED BY ${source.by === 'char' ? 'crop_char_book' : 'crop_family_book'}`;
+/** One source's crops counted by book, style and withheld flag, with one crop of each to name the book by. */
+export function bookCellsQuery(source: Source, kind: 0 | 1) {
+  const { where, values } = sourceWhere(source, kind);
+  return { sql: `SELECT book,style,quiz,count(*) AS n,min(id) AS sample FROM crops${bookIndex(source)} WHERE ${[...where, ...(source.by === 'char' ? ['kind<2'] : [])].join(' AND ')}`
+    + ' GROUP BY book,style,quiz', values };
+}
+// The books of these crops, and the year the year filter places them by.
+export const booksOfQuery = () => `SELECT b.id,b.key,b.title,k.year FROM json_each(?) j CROSS JOIN crops k ON k.id=j.value JOIN books b ON b.id=k.book`;
+/** One source's first crops in each of some books, by shuffle and id from `after` on: the rows of the
+ *  books' own ranges of the index, at most `limit` a book, and each crop by its key. */
+export function bookCropsQuery(source: Source, kind: 0 | 1, books: number[], filter: { group: StyleGroup | null; withheld: boolean }, after: [number, number] | null, limit: number) {
+  const found = sourceWhere(source, kind), where = [...found.where, ...(source.by === 'char' ? ['kind<2'] : []), 'book=j.value'], values = [...found.values];
+  if (filter.group) {
+    const [low, high] = STYLE_GROUPS[filter.group];
+    where.push('style>=?'); values.push(low);
+    if (high !== null) { where.push('style<=?'); values.push(high) }
+  }
+  if (!filter.withheld) where.push('quiz=1');
+  if (after) { where.push('(shuffle,id)>(?,?)'); values.push(...after) }
+  return { sql: `SELECT k.id,k.book,k.shuffle FROM json_each(?) j CROSS JOIN crops k ON k.id IN (SELECT id FROM crops${bookIndex(source)}`
+    + ` WHERE ${where.join(' AND ')} ORDER BY shuffle,id LIMIT ?)`, values: [JSON.stringify(books), ...values, limit] };
+}
+async function sourceBooks(env: Env, ctx: ExecutionContext, origin: string, g: Gallery, code_point: string, scope: Scope): Promise<SourceBook[]> {
+  const key = new Request(`${origin}/layers/sources?v=${encodeURIComponent(await axisVersion(env))}&c=${encodeURIComponent(code_point)}&s=${scope}`);
+  return edge(ctx, key, async () => {
+    const reads = g.sources.flat().flatMap(source => ([0, 1] as const).map(kind => ({ kind, ...bookCellsQuery(source, kind) })));
+    if (!reads.length) return [];
+    const results = await env.ATLAS.batch(reads.map(({ sql, values }) => env.ATLAS.prepare(sql).bind(...values))) as D1Result<{ book: number; style: number | null; quiz: number; n: number; sample: number }>[];
+    const by = new Map<number, { sample: number; cells: Map<string, BookCell> }>();
+    results.forEach((result, i) => {
+      for (const row of result.results) {
+        const book = by.get(row.book) ?? by.set(row.book, { sample: row.sample, cells: new Map() }).get(row.book)!;
+        const group = groupOf(row.style), at = `${reads[i].kind} ${group} ${row.quiz}`, cell = book.cells.get(at);
+        if (cell) cell[3] += row.n;
+        else book.cells.set(at, [reads[i].kind, group, row.quiz, row.n]);
+      }
+    });
+    const named = await env.ATLAS.prepare(booksOfQuery()).bind(JSON.stringify([...by.values()].map(book => book.sample)))
+      .all<{ id: number; key: string; title: string | null; year: number | null }>();
+    return named.results.map(row => ({ ...row, cells: [...by.get(row.id)!.cells.values()] }));
+  });
+}
+/** `/layers/sources`: a page of the books a gallery's crops come from, as many as hold `limit` crops, each
+ *  with its first `per` and the cursor of its next ones; with `document`, the crops of that book from `after` on. */
+export async function sources(env: Env, ctx: ExecutionContext, url: URL, tools: CharacterTools) {
+  const q = url.searchParams, card = await characterCard(env, q.get('code_point') || '', tools, ctx), { data } = card;
+  const scope: Scope = q.get('scope') === 'grapheme' ? 'grapheme' : 'character', group = styleGroup(q), withheld = q.get('withheld') === 'show';
+  const per = Math.max(1, integer(q, 'per', 24, SOURCE_CROPS)), limit = Math.max(1, integer(q, 'limit', SOURCE_CROPS, SOURCE_CROPS)), dated = yearOptions(q, fail), years = dated?.years ?? null, document = q.get('document'), after = q.get('after');
+  if (dated?.axis === 'composed') throw new Problem(422, 'A gallery by source is narrowed by the dates of the copies.');
+  const g = await galleryOf(env, card, scope);
+  const styles = { local: none(), corpus: none() };
+  let heldBack = 0;
+  const found = (await sourceBooks(env, ctx, url.origin, g, data.code_point, scope)).flatMap(book => {
+    if (years && (years === 'undated' ? book.year !== null : book.year === null || book.year < years.from || book.year > years.to)) return [];
+    const count = { local: 0, corpus: 0 };
+    for (const [kind, of, quiz, n] of book.cells) {
+      const list = kind === 1 ? 'corpus' : 'local', shown = !group || of === group;
+      if (kind === 0 && quiz === 0 && !withheld) { if (shown) heldBack += n; continue }
+      styles[list][of] += n;
+      if (shown) count[list] += n;
+    }
+    return count.local + count.corpus ? [{ ...book, count, n: count.local + count.corpus }] : [];
+  }).sort((a, b) => b.n - a.n || a.id - b.id);
+
+  // A book's own pages go by list, shuffle and id; a page of books by their counts and ids.
+  let books = found, from: [0 | 1, number, number] | null = null;
+  if (document !== null) {
+    books = found.filter(book => book.key === document);
+    if (after) {
+      const at = /^([01])\.(\d{1,10})\.([0-9a-z]{1,11})$/.exec(after), crop = at ? cropOf(at[3]) : null;
+      if (!at || crop === null) throw new Problem(422, 'Invalid cursor.');
+      from = [Number(at[1]) as 0 | 1, Number(at[2]), crop];
+    }
+  } else if (after) {
+    const at = /^(\d{1,10})\.(\d{1,10})$/.exec(after);
+    if (!at) throw new Problem(422, 'Invalid cursor.');
+    books = found.filter(book => book.n < Number(at[1]) || (book.n === Number(at[1]) && book.id > Number(at[2])));
+  }
+  const page: typeof found = [], rest = books.length;
+  for (let crops = 0; page.length < Math.min(rest, SOURCE_BOOKS) && crops < limit; crops += Math.min(per, page[page.length - 1].n)) page.push(books[page.length]);
+
+  type Row = { id: number; book: number; shuffle: number; kind: 0 | 1 };
+  const reads = ([0, 1] as const).flatMap(kind => {
+    const ids = page.filter(book => kind ? book.count.corpus : book.count.local).map(book => book.id);
+    if (!ids.length || (from && from[0] > kind)) return [];
+    return g.sources.flat().map(source => ({ kind, ...bookCropsQuery(source, kind, ids, { group, withheld: kind === 1 || withheld }, from && from[0] === kind ? [from[1], from[2]] : null, per + 1) }));
+  });
+  const rows = new Map<number, Row[]>(page.map(book => [book.id, []]));
+  if (reads.length) (await env.ATLAS.batch(reads.map(({ sql, values }) => env.ATLAS.prepare(sql).bind(...values))) as D1Result<Row>[])
+    .forEach((result, i) => { for (const row of result.results) rows.get(row.book)!.push({ ...row, kind: reads[i].kind }) });
+  for (const list of rows.values()) list.sort((a, b) => a.kind - b.kind || a.shuffle - b.shuffle || a.id - b.id);
+  const shown = [...rows.values()].flatMap(list => list.slice(0, per));
+  const items = new Map((await listingItems(env, shown.map(row => row.id))).map(item => [item.id, item]));
+  const last = page[page.length - 1];
+  return { code_point: data.code_point, scope, per, total: found.length, styles, style_groups: STYLE_NAMES, withheld: withheld || years ? null : heldBack,
+    groups: page.map(book => {
+      const list = rows.get(book.id)!, end = list[per - 1];
+      return { document: book.key, title: book.title, count: book.count, items: list.slice(0, per).flatMap(row => { const item = items.get(publicId(row.id)); return item ? [{ ...item, origin: row.kind ? 'corpus' : 'collection' }] : [] }),
+        next: list.length > per ? `${end.kind}.${end.shuffle}.${publicId(end.id)}` : null };
+    }),
+    next: document === null && page.length < rest ? `${last.n}.${last.id}` : null };
+}
+
 // A character's or grapheme's crops along its time axis (編年): each decade's crops counted, and a few of
 // them drawn by their shuffle so each decade shows a fair sample; the undated as decade null. A crop is
 // placed by its book's date on `axis`, and the crops may be narrowed to a style group, a kind of

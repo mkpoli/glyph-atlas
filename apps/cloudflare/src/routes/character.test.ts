@@ -8,7 +8,7 @@ import { currentPointer } from '../atlas3Answers';
 import { SHARDS, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
-import { composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
+import { bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
   wordSpellingsQuery, writtenFormsQuery, writtenFormUseQuery, writtenVariants } from './character';
 import worker from '../index';
 
@@ -390,6 +390,80 @@ describe('a gallery of the corpus', () => {
     expect(group.id).toBe('U+306D:abc');
     expect(group.representatives).toEqual([{ id: crop(PAGE_C, 2), image: `/layers/visual-groups/samples/${crop(PAGE_C, 2)}/image`, source_label: 'ね' }]);
     expect(group.anchors).toEqual([{ id: crop(PAGE_C, 3), distance: 0.1 }]);
+  });
+});
+
+describe('a gallery grouped by source', () => {
+  const shape = (body: any) => body.groups.map((g: any) => [g.document, g.title, g.count.local, g.count.corpus, g.items.map((i: any) => [i.id, i.origin])]);
+  it('lists the books with the most crops first, each with its first crops, the collection’s first', async () => {
+    const { body } = await get('/layers/sources?code_point=U%2B6642&per=2');
+    expect(shape(body)).toEqual([
+      ['hk:a', 'A', 2, 1, [[crop(PAGE_A, 1), 'collection'], [crop(PAGE_A, 0), 'collection']]],
+      ['hk:b', 'B', 2, 0, [[crop(PAGE_B, 0), 'collection'], [crop(PAGE_B, 1), 'collection']]],
+      ['codh:c', 'C', 0, 1, [[crop(PAGE_C, 0), 'corpus']]]]);
+    expect([body.total, body.next, body.withheld]).toEqual([3, null, 1]);
+    expect(body.styles).toEqual({ local: { cursive: 2, unassessed: 1, formal: 1 }, corpus: { cursive: 0, unassessed: 2, formal: 0 } });
+    expect(body.groups.map((g: any) => g.next)).toEqual([`0.50.${crop(PAGE_A, 0)}`, null, null]);
+  });
+
+  it('goes on through one book’s crops, its collected ones and then its corpus glyphs', async () => {
+    for (const per of [1, 2]) {
+      const seen: string[] = [];
+      let after = '';
+      do {
+        const { body } = await get(`/layers/sources?code_point=U%2B6642&document=hk:a&withheld=show&per=${per}${after && '&after=' + after}`);
+        expect(body.groups.map((g: any) => g.document)).toEqual(['hk:a']);
+        seen.push(...ids(body.groups[0].items)); after = body.groups[0].next ?? '';
+      } while (after);
+      expect(seen).toEqual([crop(PAGE_A, 1), crop(PAGE_A, 2), crop(PAGE_A, 0), crop(PAGE_A, 3)]);
+    }
+  });
+
+  it('pages the books, and refuses a cursor it did not write', async () => {
+    const seen: string[] = [];
+    let after = '';
+    do {
+      const { body } = await get('/layers/sources?code_point=U%2B6642&limit=1' + (after && '&after=' + after));
+      expect(body.groups).toHaveLength(1);
+      seen.push(body.groups[0].document); after = body.next ?? '';
+    } while (after);
+    expect(seen).toEqual(['hk:a', 'hk:b', 'codh:c']);
+    expect((await get('/layers/sources?code_point=U%2B6642&after=0S1.2.3')).status).toBe(422);
+    expect((await get('/layers/sources?code_point=U%2B6642&document=hk:a&after=3.1')).status).toBe(422);
+  });
+
+  it('narrows to a style group and to years, the withheld shown when asked for', async () => {
+    const cursive = await get('/layers/sources?code_point=U%2B6642&style=cursive');
+    expect(shape(cursive.body)).toEqual([['hk:a', 'A', 2, 0, [[crop(PAGE_A, 1), 'collection'], [crop(PAGE_A, 0), 'collection']]]]);
+    expect([cursive.body.styles.local.formal, cursive.body.withheld]).toEqual([1, 0]);
+    const books = async (more: string) => (await get('/layers/sources?code_point=U%2B6642' + more)).body.groups.map((g: any) => [g.document, g.count.local, g.count.corpus]);
+    expect(await books('&years=1801-1900')).toEqual([['hk:b', 2, 0]]);
+    expect(await books('&years=undated')).toEqual([['codh:c', 0, 1]]);
+    expect(await books('&withheld=show')).toEqual([['hk:a', 3, 1], ['hk:b', 2, 0], ['codh:c', 0, 1]]);
+    expect((await get('/layers/sources?code_point=U%2B6642&axis=composed')).status).toBe(422);
+  });
+
+  it('merges a family’s characters and the glyphs filed under it with no character', async () => {
+    const { body } = await get('/layers/sources?code_point=U%2B6642&scope=grapheme');
+    expect(shape(body)[0]).toEqual(['hk:b', 'B', 4, 0, [2, 0, 3, 1].map(slot => [crop(PAGE_B, slot), 'collection'])]);
+    const ne = await get('/layers/sources?code_point=U%2B306D&scope=grapheme&per=2');
+    expect(shape(ne.body)).toEqual([['codh:c', 'C', 0, 4, [[crop(PAGE_C, 3), 'corpus'], [crop(PAGE_C, 1), 'corpus']]]]);
+  });
+
+  it('reads the books along the book indexes and each book’s crops in order from its own range', () => {
+    const plan = (sql: string, values: unknown[]) => (db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...(values as any[])) as { detail: string }[]).map(r => r.detail).join(' | ');
+    for (const source of [{ by: 'char', key: G.時 }, { by: 'family', key: G.ね }, { by: 'char', key: G.時, except: [1, 2] }] as Source[]) for (const kind of [0, 1] as const) {
+      const index = source.by === 'char' ? 'crop_char_book' : 'crop_family_book';
+      const cells = bookCellsQuery(source, kind);
+      expect(plan(cells.sql, cells.values)).toContain(`COVERING INDEX ${index} `);
+      for (const group of [null, 'cursive', 'formal'] as const) for (const after of [null, [1, 2] as [number, number]]) {
+        const crops = bookCropsQuery(source, kind, [1, 2], { group, withheld: false }, after, 3), found = plan(crops.sql, crops.values);
+        expect(found).toContain('SEARCH k USING INTEGER PRIMARY KEY');
+        expect(found).toMatch(new RegExp(`SEARCH crops USING COVERING INDEX ${index} \\([a-z]+=\\? AND kind=\\? AND book=\\?`));
+        expect(found).not.toMatch(/TEMP B-TREE FOR ORDER BY|SCAN (crops|k)(?! USING)/);
+      }
+    }
+    expect(plan(booksOfQuery(), ['[1]'])).not.toMatch(/SCAN (crops|books|k|b)(?! USING)/);
   });
 });
 
