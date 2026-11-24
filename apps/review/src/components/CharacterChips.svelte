@@ -7,10 +7,12 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
+  import IdsLabel from './IdsLabel.svelte'
   import OriginText from './OriginText.svelte'
   import StructureDialog from './StructureDialog.svelte'
   import { countsLabel } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
+  import { idsCard } from '../lib/idsCard.js'
   import { isFigure } from '../lib/mjFigures.js'
   import { cardStructures, layouts, proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
@@ -124,7 +126,7 @@
         <div class="variant-chips">
           {#each composed as s (s.id)}
             {@const { own, folded } = layouts(s)}
-            <span class="variant structure"><span lang="zh">{s.label}</span>{@render sharing(own, s)}{#each folded as part (part.id)}<span class="layout"><span lang="zh">{part.label}</span>{@render sharing(part.chars, s)}</span>{/each}</span>
+            <span class="variant structure"><IdsLabel text={s.label} />{@render sharing(own, s)}{#each folded as part (part.id)}<span class="layout"><IdsLabel text={part.label} />{@render sharing(part.chars, s)}</span>{/each}</span>
           {/each}
           {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>
@@ -165,7 +167,7 @@
                 {#if v.code_point}
                   <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
                 {:else}
-                  <span class="variant unencoded" title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup></span>
+                  <span class="variant unencoded" title={derivedTitle(v)}><span class="derived-form" title="" {@attach idsCard(v.char, { lang: 'zh' })}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /></span><sup class="derived-mark" aria-hidden="true">*</sup></span>
                 {/if}
               {/each}
             </div>
@@ -261,6 +263,7 @@
   .variant:hover{border-color:var(--accent)}
   /* A derived chip is a prediction: a small mark after the character says so; a form no character
      has is set smaller, as its sequence is longer than a character. */
+  .derived-form{cursor:help;border-radius:3px}.derived-form:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
   .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
   .sharing .derived-mark{margin-left:1px}
   .variant.unencoded :global(.script-text){font-size:15px}
