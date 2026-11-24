@@ -102,12 +102,14 @@ def test_a_characters_regional_shapes_are_its_descriptions_that_name_different_r
 def test_a_shape_spelt_for_one_region_as_the_others_already_draw_it_is_no_shape_of_its_own():
     # K's own 勺 is ⿹勹一, so K's 酌 spells out the ⿹勹丶 every other region's 勺 is.
     assert refs.regional_shapes("酌") == []
-    assert refs.regional_shapes("約") == [{"text": "⿰糹勺", "regions": "GHTV"}, {"text": "⿰糸勺", "regions": "JKP"}]
+    assert refs.regional_shapes("約") == [{"text": "⿰糹勺", "regions": "GHTV"}, {"text": "⿰糸⿹勹丶", "regions": "JKP"}], "K's 勺 is ⿹勹一, so ⿰糸勺 does not hold in K"
     assert refs.regional_shapes("挽") == [], "J's own 免 is another shape; its 挽 has the others' 免"
+    assert {"text": "⿰糸者", "regions": "KP"} in refs.regional_shapes("緖"), "⿰糸者 is 緒 in J, and no spelling holds in J and K"
 
 
 def test_a_shape_whose_part_differs_between_its_own_regions_is_kept():
     # K draws 勺 as ⿹勹一 and G as ⿹勹丶, so ⿰火勺 is compared with neither.
     assert [shape["text"] for shape in refs.regional_shapes("灼")] == ["⿰火勺", "⿰火⿹勹一"]
+    assert len(refs.regional_shapes("𩍁")) == 2, "艹 differs between G and T, and has no shape in P"
     assert [shape["text"] for shape in refs.regional_shapes("臭")] == ["⿱自犬", "⿱自大"]
     assert [shape["text"] for shape in refs.regional_shapes("逸")] == ["⿺辶兔", "⿺辶免", "⿺辶⿷免丶"]

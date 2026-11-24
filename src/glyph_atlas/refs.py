@@ -452,8 +452,8 @@ def _by_region(char: str) -> tuple[tuple[str, frozenset[str]], ...]:
 @cache
 def _in_region(char: str, region: str, depth: int = 0) -> str:
     """`char` as `region` draws it: itself, or its description there where its sources draw it in
-    several ways (勺 is ⿹勹一 in K and ⿹勹丶 in J), with every part spelt out alike. A character with
-    no description there, or several, stands as itself."""
+    several ways (勺 is ⿹勹一 in K and ⿹勹丶 in J), with such parts of it spelt out alike. A character
+    with one description, with none there or with several there stands as itself."""
     described = _by_region(char)
     drawn = [text for text, named in described if region in named]
     if len(described) < 2 or len(drawn) != 1 or drawn[0] == char or depth > 8:
@@ -473,20 +473,29 @@ def regional_shapes(char: str) -> list[dict[str, str]]:
 
     A part is written as the region itself draws it, so one shape can be spelt twice: 酌 is ⿰酉勺 in
     GHTJPV and ⿰酉⿹勹丶 in K, whose own 勺 is ⿹勹一. Shapes that come to one description in every
-    region they name are one, under the shorter spelling. A shape whose regions draw a part of it in
-    different ways (灼's ⿰火勺, in J's neighbours and in K) is compared with none."""
+    region they name are one, under the spelling that holds in all of them. A shape whose regions draw
+    a part of it in different ways (灼's ⿰火勺, in G and in K) is compared with none. A part the source
+    describes once is one part, whatever its own parts are."""
     usable = ids_sequences(char)
     named = [(text, regions) for text, regions in _by_region(char) if text in usable]
     if len(named) < 2:
         return []
-    shapes: dict[str, tuple[str, frozenset[str]]] = {}
+    shapes: list[tuple[str, frozenset[str]]] = []
+    drawn: dict[str, list[tuple[str, frozenset[str]]]] = {}
     for text, regions in named:
         spelt = {_spelt(text, region) for region in regions}
-        key = spelt.pop() if len(spelt) == 1 else text
-        kept = shapes.get(key)
-        shapes[key] = (min((kept[0], text), key=lambda t: len(han_components.TOKEN.findall(t))), kept[1] | regions) if kept else (text, regions)
+        if len(spelt) == 1:
+            drawn.setdefault(spelt.pop(), []).append((text, regions))
+        else:
+            shapes.append((text, regions))
+    for spelling, alike in drawn.items():
+        everywhere = frozenset().union(*(regions for _, regions in alike))
+        # The spelling that holds in every region the shapes name; without one they stay apart.
+        holds = [text for text, _ in alike if all(_spelt(text, region) == spelling for region in everywhere)]
+        shapes += [(min(holds, key=lambda text: len(han_components.TOKEN.findall(text))), everywhere)] if holds else alike
+    order = [text for text, _ in named]
     return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in regions)}
-            for text, regions in shapes.values()] if len(shapes) > 1 else []
+            for text, regions in sorted(shapes, key=lambda shape: order.index(shape[0]))] if len(shapes) > 1 else []
 
 
 def substitutes(component: str) -> list[dict[str, Any]]:
