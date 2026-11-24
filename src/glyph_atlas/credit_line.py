@@ -20,6 +20,8 @@ _WORDS = (
     (re.compile(r", via (?=Wikimedia Commons\b)"), ", "),
     (re.compile(r" \(free licence with attribution\)$"), ""),
     (re.compile(r"; scans supplied by "), "; "),
+    (re.compile(r"; transcriptions from "), "; "),
+    (re.compile(r"; images per holder$"), ""),
 )
 
 
