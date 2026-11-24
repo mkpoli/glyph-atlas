@@ -684,8 +684,10 @@ class Mirror:
         elif title:
             held = self.atlas.execute("SELECT title FROM books WHERE id=?", (bid,)).fetchone()[0]
             if held is None or (self.retitle and held != title):
-                self.head.append(f"UPDATE books SET title={lit(title)} WHERE id={bid} AND title IS {lit(held)};")
-                self.atlas.execute("UPDATE books SET title=? WHERE id=? AND title IS ?", (title, bid, held))
+                # A retitle holds whatever title D1 has, so D1 and the local copy end with the same one.
+                untitled = "" if self.retitle else " AND title IS NULL"
+                self.head.append(f"UPDATE books SET title={lit(title)} WHERE id={bid}{untitled};")
+                self.atlas.execute(f"UPDATE books SET title=? WHERE id=?{untitled}", (title, bid))
                 if held is not None:
                     self.retitled[bid] = (held, title)
         return bid

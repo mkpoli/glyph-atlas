@@ -931,7 +931,9 @@ def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, 
         held.commit()
     run(publish, monkeypatch, path)
     assert titles()["gy:1"] == "given by hand"
-    # Asked to, it takes the catalogue's, and a second run has nothing to change.
+    # Asked to, it takes the catalogue's whatever D1 holds, and a second run has nothing to change.
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE books SET title='of another hand' WHERE key='gy:1'")
+    remote.dbs["glyph-atlas-v3"].commit()
     run(publish, monkeypatch, path, "--retitle")
     assert titles()["gy:1"] == "廣韻 卷一"
     assert dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT key, title FROM books")) == titles()
