@@ -2,7 +2,7 @@
 
 A title of the dataset other than 説文解字 gives no order to match against Unicode's small seal
 characters, so its crops are placed by their 親字 alone. `SealSources.txt` of Unicode 18.0 gives
-every small seal character the Han character that transcribes its structure (`kSEAL_MCJK`). The
+every small seal character a Han character as its modern equivalent (`kSEAL_MCJK`). The
 `placed` column says what a crop was put on:
 
 - `equivalent`: exactly one seal character has the 親字 as its `kSEAL_MCJK` and the crop is the only
@@ -197,7 +197,8 @@ def main(argv: list[str] | None = None) -> int:
     volumes = [(path.stem, *read(path, record)) for path in args.books]
     place([crop for _, _, crops, _ in volumes for crop in crops], equivalents(args.seal_sources))
     for name, entry, crops, pages in volumes:
-        write(crops, args.out / name / "characters.tsv", name, f"{entry['title']} ({entry['edition']})", args.release)
+        write(crops, args.out / name / "characters.tsv", name, f"{entry['title']} ({entry['edition']})" if "edition" in entry else entry["title"],
+              args.release)
         write_pages(crops, pages, args.out / name / "pages.tsv", name, entry["manifest"])
         counts = Counter(crop["placed"] for crop in crops)
         print(f"crops            {len(crops):>6}", file=sys.stderr)

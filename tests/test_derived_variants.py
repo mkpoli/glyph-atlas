@@ -82,14 +82,11 @@ def test_a_part_names_no_description_of_its_own():
     assert refs.ids_sequences("辶") == []
 
 
-def test_a_regional_shape_carries_its_structure_where_it_is_not_its_characters():
-    """臭 is ⿱自犬; its J shape ⿱自大 is the structure of 𦤀. 永's shapes are approximate and name none."""
+def test_a_regional_shape_is_a_spelling_of_its_characters_structure():
+    """臭's J shape ⿱自大 stands under 臭's ⿱自犬, and names 𦤀, which encodes it again."""
     found = refs.ids_of("臭")
-    plain, other = found["shapes"]
-    assert plain == {"text": "⿱自犬", "regions": "GHTKPV"}
-    assert other["text"] == "⿱自大" and other["structure"]["label"] == "⿱自大" != found["structure"]["label"]
-    assert all("structure" not in shape for shape in refs.ids_of("突")["shapes"])
-    assert [shape["structure"] for shape in refs.ids_of("永")["shapes"]] == [None, None]
+    assert found["shapes"] == [{"text": "⿱自犬", "regions": "GHTKPV"}, {"text": "⿱自大", "regions": "J", "chars": ["𦤀"]}]
+    assert found["structure"]["label"] == "⿱自犬"
 
 
 def test_a_characters_regional_shapes_are_its_descriptions_that_name_different_regions():

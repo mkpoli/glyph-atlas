@@ -44,6 +44,7 @@ class FakeMatrix:
         self.events = []
         self.uploads = []
         self.typed = []
+        self.stopped = []
         self.transactions = []
 
     def whoami(self):
@@ -73,7 +74,10 @@ class FakeMatrix:
         return "$sent"
 
     def typing(self, room_id, user_id, *, timeout_ms=15_000):
-        self.typed.append(room_id)
+        if timeout_ms:
+            self.typed.append(room_id)
+        else:
+            self.stopped.append(room_id)
 
     def canonical_alias(self, room_id):
         return {"!welcome:example": "#welcome:example"}.get(room_id, "")
@@ -199,6 +203,7 @@ def make_bot(tmp_path, *, decision_value=None, github=None, config=None, matrix=
     fake_matrix = matrix or FakeMatrix()
     bot = fish_bot.Bot(config, store, fake_matrix, FakeGemini(decision_value, act=act), github,
                        fish_bot.State(tmp_path / "state.json"))
+    bot._pace = 0.0
     return bot, fake_matrix, store
 
 
@@ -644,8 +649,8 @@ def test_config_without_a_bot_table_uses_the_defaults(tmp_path):
     assert fish_bot.Config.load(path).room_ids == ()
 
 
-def act(*lines, react_to=None, react="", issue=False, sticker=""):
-    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker)
+def act(*lines, react_to=None, react="", issue=False, sticker="", interest=0):
+    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker, interest=interest)
 
 
 def test_reads_a_call_by_a_han_alias_inside_a_sentence():
@@ -849,18 +854,37 @@ def test_a_cut_download_leaves_the_sticker_out_instead_of_stopping(tmp_path, mon
     with pytest.raises(OSError):
         fish_bot._download("https://example/x.png")
     bot, matrix, store = make_bot(tmp_path)
-    bot.ensure_stickers()
+    bot.ensure_stickers(stickers_dir=tmp_path)
     assert matrix.uploads == [] and store.stickers() == {}
 
 
-def ambient_bot(tmp_path, monkeypatch, *, chance=1.0, act_value=None, **overrides):
-    clock = {"now": 1000.0}
+def test_bundled_stickers_match_their_hashes_and_upload(tmp_path):
+    bundled = [sticker for sticker in fish_bot.STICKERS if not sticker.media]
+    assert len(bundled) == 16
+    assert len({sticker.name for sticker in fish_bot.STICKERS}) == 32
+    for sticker in bundled:
+        path = sticker.path()
+        assert path is not None and path.is_file()
+        data = path.read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+        width = int.from_bytes(data[16:20], "big")
+        height = int.from_bytes(data[20:24], "big")
+        assert (width, height) == (fish_bot.STICKER_SIZE, fish_bot.STICKER_SIZE)
+        assert fish_bot.hashlib.sha256(data).hexdigest() == sticker.sha256
+    bot, matrix, store = make_bot(tmp_path)
+    bot.ensure_stickers(fetch=lambda url: (_ for _ in ()).throw(OSError("offline")))
+    assert set(store.stickers()) == {sticker.name for sticker in bundled}
+    assert len(matrix.uploads) == len(bundled)
+
+
+def reading_bot(tmp_path, monkeypatch, *, act_value=None, **overrides):
+    """A bot with a clock, whose random draws all sit at one half: a 25 minute mean opens a room
+    about 17 minutes after its first unread line."""
+    clock = {"now": 10_000.0}
     monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
-    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20,
-                             ambient_chance=0.5, ambient_quiet_seconds=20, ambient_min_messages=2,
-                             ambient_room_cooldown_seconds=900, ambient_per_hour=10, **overrides)
-    bot, matrix, store = make_bot(tmp_path, config=config, act=act_value or act("哈哈哈好可愛"))
-    bot._random = lambda: chance - 0.01 if chance > 0 else 1.0
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, **overrides)
+    bot, matrix, store = make_bot(tmp_path, config=config, act=act_value or act("哈哈哈好可愛", interest=4))
+    bot._random = lambda: 0.5
     return bot, matrix, store, clock
 
 
@@ -870,69 +894,475 @@ def say_in_room(bot, body, event_id):
     bot.notice(ROOM, message)
 
 
-def test_joins_in_only_after_the_room_goes_quiet(tmp_path, monkeypatch):
-    bot, matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
-    say_in_room(bot, "this glyph is wild", "$a")
+def test_opens_a_room_at_a_random_time_after_its_first_unread_line(tmp_path, monkeypatch):
+    bot, matrix, _, clock = reading_bot(tmp_path, monkeypatch)
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 600
     say_in_room(bot, "right", "$b")
     bot.tick()
-    assert matrix.sent == []
-    clock["now"] += 21
-    bot.tick()
-    assert [turn[0] for turn in bot.gemini.turns] == ["ambient"]
-    assert matrix.sent[0][1]["body"] == "哈哈哈好可愛"
-    assert matrix.typed == []
-    assert "m.relates_to" not in matrix.sent[0][1]
-
-
-def test_one_plain_message_or_an_unlucky_draw_stays_quiet(tmp_path, monkeypatch):
-    bot, _matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
-    say_in_room(bot, "ok", "$a")
-    clock["now"] += 21
-    bot.tick()
     assert bot.gemini.turns == []
-    bot._random = lambda: 0.99
-    say_in_room(bot, "ok", "$b")
-    say_in_room(bot, "sure", "$c")
-    clock["now"] += 21
+    clock["now"] += 450
     bot.tick()
-    assert bot.gemini.turns == []
-
-
-def test_a_lively_message_counts_alone(tmp_path, monkeypatch):
-    bot, _, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
-    say_in_room(bot, "哈哈哈哈", "$a")
-    clock["now"] += 21
-    bot._random = lambda: 0.9  # under the doubled chance of 1.0
+    assert bot.gemini.turns == [("visit", 0, ["$a", "$b"])]
+    assert matrix.sent[0][1]["body"] == "哈哈哈好可愛" and "m.relates_to" not in matrix.sent[0][1]
+    assert matrix.typed == [] and bot._unread == {}
+    clock["now"] += 10_000
     bot.tick()
-    assert [turn[0] for turn in bot.gemini.turns] == ["ambient"]
-
-
-def test_waits_out_the_room_cooldown_after_speaking(tmp_path, monkeypatch):
-    bot, _matrix, _, clock = ambient_bot(tmp_path, monkeypatch, chance=0.5)
-    for round_number in range(2):
-        say_in_room(bot, "one", f"$a{round_number}")
-        say_in_room(bot, "two", f"$b{round_number}")
-        clock["now"] += 21
-        bot.tick()
     assert len(bot.gemini.turns) == 1
 
 
-def test_never_files_from_an_ambient_turn(tmp_path, monkeypatch):
+def test_a_lively_line_brings_the_visit_forward_once(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch)
+    say_in_room(bot, "this glyph is odd", "$a")
+    say_in_room(bot, "哈哈哈哈", "$b")
+    clock["now"] += 530
+    bot.tick()
+    assert [turn[0] for turn in bot.gemini.turns] == ["visit"]
+
+
+def test_lets_a_burst_finish_before_reading_it_without_spinning(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch)
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 1050
+    say_in_room(bot, "wait", "$b")
+    bot.tick()
+    assert bot.gemini.turns == [] and bot._sync_wait_ms() >= 19_000
+    for number in range(30):
+        clock["now"] += 10
+        say_in_room(bot, "still going", f"$c{number}")
+        bot.tick()
+        if bot.gemini.turns:
+            break
+    assert 10 * (number + 1) <= fish_bot.VISIT_BURST_WAIT + 20
+
+
+def test_a_visit_sends_only_what_her_interest_is_worth(tmp_path, monkeypatch):
+    for interest, spoke, reacted in ((1, 0, 0), (2, 0, 1), (3, 1, 1)):
+        value = act("哇", react_to=0, react="🐳", interest=interest)
+        bot, matrix, _, clock = reading_bot(tmp_path / str(interest), monkeypatch, act_value=value)
+        say_in_room(bot, "this glyph is odd", "$a")
+        clock["now"] += 2000
+        bot.tick()
+        assert (len(matrix.sent), len(matrix.events)) == (spoke, reacted)
+
+
+def test_waits_longer_where_she_lately_spoke_and_stops_at_the_hourly_cap(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch, visits_per_hour=1)
+    plain = bot._gap(ROOM)
+    bot._spoke_at[ROOM] = clock["now"]
+    assert bot._gap(ROOM) == 2 * plain
+    for number in range(2):
+        say_in_room(bot, "this glyph is odd", f"$a{number}")
+        bot._talks.clear()
+        clock["now"] += 1200
+        bot.tick()
+        bot._spoke_at.clear()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_a_call_reads_everything_so_no_visit_follows(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch)
+    say_in_room(bot, "this glyph is odd", "$a")
+    call = event("大肥魚, is it?", event_id="$call")
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+    clock["now"] += 5000
+    bot.tick()
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+
+
+def test_the_interest_must_be_a_number():
+    assert [fish_bot.parse_act(json.dumps({"say": "", "interest": value}), 1).interest
+            for value in (4, 4.9, 9, -1, True, "5", None)] == [4, 4, 5, 0, 0, 0, 0]
+
+
+def talking(tmp_path, monkeypatch, **overrides):
+    """A bot that has just answered @reader, with a clock and no random pauses."""
+    bot, matrix, store, clock = reading_bot(tmp_path, monkeypatch, **overrides)
+    bot._random = lambda: 0.0
+    call = event("大肥魚, what did we talk about?", event_id="$call")
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+    bot.notice(ROOM, call)
+    return bot, matrix, store, clock
+
+
+def hear(bot, clock, body, event_id, *, sender="@reader:example", after=3.0, **content):
+    message = event(body, event_id=event_id, sender=sender, **content)
+    bot.ingest(ROOM, message, backfilled=False)
+    bot.answer(ROOM, message)
+    bot.notice(ROOM, message)
+    clock["now"] += after
+    bot.tick()
+
+
+def test_asking_for_the_whole_server_gets_the_catch_up(tmp_path, monkeypatch):
+    bot, matrix, store, clock = talking(tmp_path, monkeypatch)
+    bot.active_rooms = {ROOM}
+    monkeypatch.setattr(store, "recap_material", lambda rooms: (
+        [{"room_id": ROOM, "end_ts": 1, "summary": "They built a glyph atlas."}], []))
+    bot.gemini.act_value = fish_bot.Act(say=(), react_to=None, react="", issue=False, recap=True)
+    hear(bot, clock, "I mean the whole server!", "$more")
+    assert matrix.sent[-1][1]["body"] == "Welcome! Here is what we talked about."
+    assert bot.gemini.recaps[0][3] == "大肥魚, what did we talk about?\nI mean the whole server!"
+    hear(bot, clock, "shorter?", "$short")
+    assert len(bot.gemini.recaps) == 2
+    monkeypatch.setattr(store, "recap_material", lambda rooms: ([], []))
+    hear(bot, clock, "and now?", "$now")
+    assert "don't remember enough yet" in matrix.sent[-1][1]["body"]
+
+
+def test_a_catch_up_counts_as_a_turn_of_the_conversation(tmp_path, monkeypatch):
+    bot, _matrix, store, clock = talking(tmp_path, monkeypatch, max_chats_per_user_per_hour=3)
+    bot.active_rooms = {ROOM}
+    monkeypatch.setattr(store, "recap_material", lambda rooms: (
+        [{"room_id": ROOM, "end_ts": 1, "summary": "They built a glyph atlas."}], []))
+    bot.gemini.act_value = fish_bot.Act(say=(), react_to=None, react="", issue=False, recap=True)
+    for number in range(5):
+        hear(bot, clock, "the whole server!", f"$w{number}")
+    assert len(bot.gemini.recaps) == 2 and bot._talks[ROOM].turns == 2
+
+
+QUIET = fish_bot.Act(say=(), react_to=None, react="", issue=False)
+
+
+def test_carries_on_a_conversation_without_being_named_again(tmp_path, monkeypatch):
+    bot, matrix, _, clock = talking(tmp_path, monkeypatch)
+    hear(bot, clock, "I mean the whole server!", "$more")
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow"]
+    assert bot.gemini.lookup is bot.lookup
+    assert len(matrix.sent) == 2 and "m.relates_to" not in matrix.sent[1][1]
+    hear(bot, clock, "thanks, and the last week?", "$again")
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow", "follow"]
+
+
+def test_waits_for_someone_to_finish_before_following(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    for number in range(3):
+        hear(bot, clock, f"part {number}", f"$p{number}", after=1.0)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    clock["now"] += 2
+    bot.tick()
+    assert [turn[:2] for turn in bot.gemini.turns][1:] == [("follow", 3)]
+
+
+def test_a_conversation_closes_with_time_or_silence(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot.gemini.act_value = QUIET
+    for number in range(5):
+        hear(bot, clock, "hm", f"$h{number}")
+    assert len(bot.gemini.turns) == 1 + fish_bot.TALK_QUIET_PARTNER
+    bot, _, _, clock = talking(tmp_path / "late", monkeypatch)
+    clock["now"] += fish_bot.TALK_SECONDS
+    hear(bot, clock, "anyway", "$late")
+    assert len(bot.gemini.turns) == 1 and bot._talks == {}
+
+
+def test_bystanders_get_fewer_looks_and_leave_the_partner_theirs(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot.gemini.act_value = QUIET
+    for number in range(4):
+        hear(bot, clock, "lunch?", f"$l{number}", sender="@other:example")
+    assert len(bot.gemini.turns) == 1 + fish_bot.TALK_QUIET_OTHERS
+    hear(bot, clock, "I mean the other one", "$more")
+    assert len(bot.gemini.turns) == 2 + fish_bot.TALK_QUIET_OTHERS
+
+
+def test_a_bystander_does_not_take_the_partners_turn(tmp_path, monkeypatch):
+    bot, matrix, _, clock = talking(tmp_path, monkeypatch)
+    hear(bot, clock, "I mean the whole server", "$more", after=1.0)
+    hear(bot, clock, "lunch?", "$lunch", sender="@other:example", after=2.0)
+    assert bot.gemini.turns[1][:2] == ("follow", 1)
+    assert matrix.sent[1][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$more"}}
+
+
+def test_a_reply_to_someone_else_is_not_followed(tmp_path, monkeypatch):
+    bot, _, _store, clock = talking(tmp_path, monkeypatch)
+    hear(bot, clock, "hi", "$hi", sender="@other:example", after=0.0)
+    bot._talks[ROOM].event_id = ""
+    hear(bot, clock, "yes, see you there", "$to-other", **{"m.relates_to": {"m.in_reply_to": {"event_id": "$hi"}}})
+    assert len(bot.gemini.turns) == 1
+
+
+def test_follow_looks_are_capped_by_the_hour(tmp_path, monkeypatch):
+    monkeypatch.setattr(fish_bot, "FOLLOW_PER_HOUR", 2)
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    for number in range(4):
+        hear(bot, clock, "and then?", f"$t{number}")
+    assert [turn[0] for turn in bot.gemini.turns].count("follow") == 2
+
+
+def test_follow_ups_keep_to_the_chat_caps_and_end_after_enough_turns(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch, max_chats_per_user_per_hour=2)
+    for number in range(4):
+        hear(bot, clock, "and then?", f"$t{number}")
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow"]
+    monkeypatch.setattr(fish_bot, "TALK_TURNS", 2)
+    bot, _, _, clock = talking(tmp_path / "bots", monkeypatch)
+    for number in range(5):
+        hear(bot, clock, "beep", f"$b{number}", sender="@discord_bot:example")
+    assert [turn[0] for turn in bot.gemini.turns].count("follow") == 2
+
+
+def test_only_the_partner_can_have_an_issue_filed_by_a_follow_up(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot.gemini.act_value = act("ok", issue=True)
+    desk = []
+    bot._to_desk = lambda *args: desk.append(args)
+    hear(bot, clock, "file it", "$x", sender="@other:example")
+    assert desk == []
+    bot._listen(ROOM, "@reader:example")
+    hear(bot, clock, "please file that", "$y")
+    assert desk == [(ROOM, "$y", "please file that", "@reader:example")]
+
+
+def joins(user_id, *, name="Nagisa", room=ROOM, before=None, ts=None):
+    return {"type": "m.room.member", "state_key": user_id, "sender": user_id, "event_id": f"$m{user_id}", "room_id": room,
+            "origin_server_ts": ts if ts is not None else fish_bot.now_ms(),
+            "content": {"membership": "join", "displayname": name},
+            **({"unsigned": {"prev_content": {"membership": before}}} if before else {})}
+
+
+def door(tmp_path, monkeypatch, **overrides):
+    """A bot that has met its rooms, where @reader is already a member."""
+    matrix = FakeMatrix()
+    matrix.room_state = [joins("@reader:example", name="Alice")]
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, intro_rooms=("#welcome:example",), **overrides)
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
+    bot, _, store = make_bot(tmp_path, config=config, matrix=matrix)
+    bot._random = lambda: 0.0
+    bot.active_rooms = {ROOM, "!welcome:example"}
+    bot.meet_rooms()
+    return bot, matrix, store, clock
+
+
+def arrive(bot, *events, room=ROOM):
+    bot.process({"rooms": {"join": {room: {"timeline": {"events": list(events)}}}}})
+
+
+def welcomes(bot):
+    return [turn for turn in bot.gemini.turns if turn[0] == "welcome"]
+
+
+def test_welcomes_a_newcomer_once_after_a_wait(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@new:example"))
+    bot.tick()
+    assert welcomes(bot) == []
+    clock["now"] += 41
+    bot.tick()
+    assert len(welcomes(bot)) == 1 and len(matrix.sent) == 1 and "m.relates_to" not in matrix.sent[0][1]
+    arrive(bot, joins("@new:example"), room="!welcome:example")
+    arrive(bot, event("hello", sender="@new:example", event_id="$hello"))
+    clock["now"] += 100
+    bot.tick()
+    assert len(welcomes(bot)) == 1
+
+
+def test_a_join_and_a_first_line_make_one_welcome_that_answers_the_line(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@new:example"), room="!welcome:example")
+    arrive(bot, joins("@new:example"), event("hi, I collect Tangut", sender="@new:example", event_id="$hi"))
+    clock["now"] += 41
+    bot.tick()
+    assert len(welcomes(bot)) == 1
+    assert matrix.sent[0][0] == ROOM and matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$hi"}}
+
+
+def test_a_silent_join_of_many_rooms_is_welcomed_in_the_welcome_room(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@new:example"))
+    arrive(bot, joins("@new:example"), room="!welcome:example")
+    clock["now"] += 41
+    bot.tick()
+    assert [room for room, *_ in matrix.sent] == ["!welcome:example"]
+
+
+def test_discord_is_met_by_its_join_notice_and_qq_by_its_first_line(tmp_path, monkeypatch):
+    bot, _, _, _clock = door(tmp_path, monkeypatch)
+    arrive(bot, joins("@discord_5:example"), joins("@qq_5:example"))
+    assert bot._newcomers == {}
+    arrive(bot, event("joined the server", sender="@discord_5:example", event_id="$d", msgtype="m.emote"))
+    arrive(bot, event("大家好", sender="@qq_5:example", event_id="$q"))
+    assert [(w["how"], w["line"]) for w in bot._newcomers.values()] == [("joined", ""), ("first line", "大家好")]
+
+
+def test_people_already_there_renamed_bridged_twice_or_forgotten_are_not_new(tmp_path, monkeypatch):
+    bot, _, store, _clock = door(tmp_path, monkeypatch)
+    store.forget_person("@gone:example")
+    arrive(bot, joins("@reader:example"), joins("@new:example", before="join"), joins("@gone:example", name="Gone"),
+           joins("@telegram_7:example", name="alice"), joins("@late:example", name="Late", ts=fish_bot.now_ms() - 7 * HOUR))
+    assert bot._newcomers == {}
+    arrive(bot, joins("@idsbot:glyphatlas.org", name="IDS bot"))
+    assert bot._newcomers == {}
+
+
+def test_a_member_sync_is_no_crowd_of_newcomers(tmp_path, monkeypatch):
+    bot, _, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, *[joins(f"@telegram_{number}:example", name=f"Person {number}") for number in range(40)])
+    clock["now"] += 41
+    bot.tick()
+    assert welcomes(bot) == [] and bot._newcomers == {}
+
+
+def test_a_restart_still_meets_those_who_came_meanwhile(tmp_path, monkeypatch):
+    bot, matrix, _, _ = door(tmp_path, monkeypatch)
+    matrix.room_state = [*matrix.room_state, joins("@new:example")]
+    bot._rooms_met = set()
+    bot.meet_rooms()
+    arrive(bot, joins("@new:example"))
+    assert list(bot._newcomers) == ["@new:example"]
+
+
+def test_welcoming_can_be_turned_off(tmp_path, monkeypatch):
+    bot, _, _, _ = door(tmp_path, monkeypatch, welcome=False)
+    arrive(bot, joins("@new:example"))
+    assert bot._newcomers == {}
+
+
+def typist(tmp_path, monkeypatch, *lines, **kwargs):
+    bot, matrix, store, clock = reading_bot(tmp_path, monkeypatch, act_value=act(*lines, interest=4, **kwargs))
+    bot._pace = 1.0
+    return bot, matrix, store, clock
+
+
+def test_types_each_bubble_before_it_goes_out(tmp_path, monkeypatch):
+    first, second = "我" * 10, "o" * 22
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, first, second)
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    assert matrix.sent == [] and matrix.typed == [ROOM] and bot._sync_wait_ms() == 2000
+    clock["now"] += 2
+    bot.tick()
+    assert [content["body"] for _, content, _ in matrix.sent] == [first] and matrix.typed == [ROOM, ROOM]
+    clock["now"] += 2
+    bot.tick()
+    assert [content["body"] for _, content, _ in matrix.sent] == [first, second] and matrix.stopped == [ROOM]
+    assert bot._outbox == {}
+
+
+def test_the_models_time_counts_as_typing_the_answer_to_a_call(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "我" * 10, "我" * 10)
+    thinking = bot.gemini.act
+
+    def slow(*args, **kwargs):
+        clock["now"] += 5
+        return thinking(*args, **kwargs)
+
+    bot.gemini.act = slow
+    call = event("大肥魚?", event_id="$call")
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+    assert len(matrix.sent) == 1 and bot._sync_wait_ms() == 2000
+    again = event("大肥魚!", event_id="$again")
+    bot.ingest(ROOM, again, backfilled=False)
+    bot.answer(ROOM, again)
+    assert len(matrix.sent) == 3, "what she was still typing goes out before the next answer"
+
+
+def test_a_failed_bubble_drops_the_rest(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "one", "two")
+
+    def broken(*args, **kwargs):
+        raise fish_bot.MatrixError(500, "down")
+
+    matrix.send = broken
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    clock["now"] += 10
+    bot.tick()
+    assert bot._outbox == {}
+
+
+def test_a_stop_sends_what_she_is_still_typing(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "我" * 10, "我" * 10)
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    assert matrix.sent == []
+    bot.deliver_all(everything=True)
+    assert len(matrix.sent) == 2
+
+
+def test_a_cut_answer_from_the_homeserver_is_a_matrix_error(monkeypatch):
+    def cut(request, timeout):
+        raise fish_bot.http.client.IncompleteRead(b"half")
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", cut)
+    matrix = fish_bot.Matrix("http://127.0.0.1:1", "token")
+    matrix.typing(ROOM, USER)
+    with pytest.raises(fish_bot.MatrixError):
+        matrix.whoami()
+
+
+def test_a_stop_in_the_middle_of_a_bubble_sends_it_again(tmp_path, monkeypatch):
+    bot, matrix, _, clock = typist(tmp_path, monkeypatch, "one", "two")
+    say_in_room(bot, "this glyph is odd", "$a")
+    clock["now"] += 2000
+    bot.tick()
+    send = matrix.send
+
+    def stopped(*args, **kwargs):
+        raise SystemExit(0)
+
+    matrix.send = stopped
+    clock["now"] += 10
+    with pytest.raises(SystemExit):
+        bot.tick()
+    matrix.send = send
+    bot.deliver_all(everything=True)
+    assert [content["body"] for _, content, _ in matrix.sent] == ["one", "two"]
+
+
+def test_forgetting_cancels_a_welcome_being_typed(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    bot._pace = 1.0
+    arrive(bot, event("hi, I am Nagisa", sender="@new:example", event_id="$hi"))
+    clock["now"] += 41
+    bot.tick()
+    assert [item["task"] for item in bot._outbox[ROOM]] == ["welcome"]
+    arrive(bot, event("!fish forget me", sender="@new:example", event_id="$forget"))
+    bot.deliver_all(everything=True)
+    assert [content["m.relates_to"]["m.in_reply_to"]["event_id"] for _, content, _ in matrix.sent] == ["$forget"]
+
+
+def test_a_line_takes_as_long_as_its_script():
+    assert fish_bot.typing_seconds("我" * 10) == 2.0
+    assert fish_bot.typing_seconds("o" * 22) == 2.0
+    assert fish_bot.typing_seconds("我" * 500) == fish_bot.TYPING_LONGEST
+
+
+def test_forgetting_cancels_a_welcome_and_a_call_keeps_its_own_words(tmp_path, monkeypatch):
+    bot, matrix, _, clock = door(tmp_path, monkeypatch)
+    arrive(bot, event("hi, I am Nagisa", sender="@new:example", event_id="$hi"))
+    arrive(bot, event("!fish forget me", sender="@new:example", event_id="$forget"))
+    clock["now"] += 41
+    bot.tick()
+    assert welcomes(bot) == []
+    arrive(bot, event("大肥魚你好", sender="@other:example", event_id="$call"))
+    clock["now"] += 41
+    bot.tick()
+    assert len(welcomes(bot)) == 1 and len(set(matrix.transactions)) == len(matrix.transactions)
+
+
+def test_never_files_from_a_visit(tmp_path, monkeypatch):
     github = FakeGitHub()
-    bot, _, _, clock = ambient_bot(tmp_path, monkeypatch, act_value=act("x", issue=True))
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch, act_value=act("x", issue=True, interest=5))
     bot.github = github
     say_in_room(bot, "one", "$a")
-    say_in_room(bot, "two", "$b")
-    clock["now"] += 21
+    clock["now"] += 2000
     bot.tick()
-    assert github.created == []
+    assert len(bot.gemini.turns) == 1 and github.created == []
 
 
 def test_config_reads_the_chat_table(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text("[chat]\nambient_chance = 0.05\nambient_per_hour = 3\n", encoding="utf-8")
+    path.write_text("[chat]\nvisit_minutes = 40\nvisits_per_hour = 3\n", encoding="utf-8")
     config = fish_bot.Config.load(path)
-    assert (config.ambient_chance, config.ambient_per_hour) == (0.05, 3)
+    assert (config.visit_minutes, config.visits_per_hour) == (40, 3)
 
 
 def digest_bot(tmp_path, *, hour=21, merged=()):
@@ -1060,6 +1490,18 @@ def test_remembers_a_finished_stretch_and_moves_on(tmp_path):
     bot._memory_due = 0
     bot.consolidate()
     assert len(bot.gemini.memories) == 1, "the open stretch waits until the room goes quiet"
+
+
+def test_remembers_a_stretch_sooner_when_she_chose_to(tmp_path):
+    bot, _, _store = memory_bot(tmp_path)
+    say(bot, "we settled on the name 珍字集覽", event_id="$a", ts=fish_bot.now_ms() - 90_000)
+    bot.consolidate()
+    assert bot.gemini.memories == []
+    bot.gemini.act_value = fish_bot.parse_act('{"say": "", "interest": 0, "remember": true}', 1)
+    bot.turn(ROOM, "$a", task="visit")
+    bot._memory_due = 0
+    bot.consolidate()
+    assert bot.gemini.memories[0][0] == ["$a"] and bot._remember_now == set()
 
 
 def test_a_stretch_with_nothing_to_keep_leaves_no_episode(tmp_path):
@@ -1339,6 +1781,18 @@ def scripted(monkeypatch, answers):
     return model, bodies
 
 
+def test_an_answer_in_prose_is_asked_for_again_in_its_shape(tmp_path, monkeypatch):
+    prose = answer("The whole server talked about Tangut.")
+    prose["id"] = "prose-1"
+    model, bodies = scripted(monkeypatch, [prose, answer('{"say": "The whole server talked about Tangut."}')])
+    lookup = fish_bot.Lookup(FakeWeb(), None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
+    turn = model.act("Room", "", [message_row("the whole server!")], {}, task="called", trigger=0, bot_user_id=USER,
+                     lookup=lookup, images=[(0, "data:image/png;base64,AA")])
+    assert turn.say == ("The whole server talked about Tangut.",)
+    assert bodies[1]["previous_interaction_id"] == "prose-1" and "tools" not in bodies[1]
+    assert bodies[1]["input"] == fish_bot.REPAIR
+
+
 def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatch):
     web = FakeWeb()
     lookup = fish_bot.Lookup(web, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli")
@@ -1411,7 +1865,9 @@ def test_only_an_answer_to_a_call_may_look_things_up(tmp_path, monkeypatch):
     bot.answer(ROOM, trigger)
     assert bot.gemini.lookup is bot.lookup is not None
     monkeypatch.setattr(bot, "_random", lambda: 0.0)
-    bot.turn(ROOM, "$call", task="ambient")
+    bot.turn(ROOM, "$call", task="visit")
+    assert bot.gemini.lookup is bot.lookup
+    bot.turn(ROOM, "$call", task="intro")
     assert bot.gemini.lookup is None
 
 
@@ -1716,7 +2172,7 @@ def test_the_model_gets_pictures_after_the_json(monkeypatch):
 def test_a_posted_picture_counts_as_something_to_look_at(tmp_path, monkeypatch):
     bot, _, _ = make_bot(tmp_path)
     bot.notice(ROOM, picture("$p"))
-    assert bot._ambient[ROOM]["lively"] and bot._ambient[ROOM]["count"] == 1
+    assert bot._unread[ROOM]["lively"] and bot._unread[ROOM]["count"] == 1
 
 
 def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
@@ -1750,7 +2206,7 @@ def test_her_own_sticker_is_not_a_picture_she_cannot_see(tmp_path):
     bot, _, store = make_bot(tmp_path)
     bot.ingest(ROOM, picture("$mine", sender=USER, url="mxc://example/mine", sticker=True), backfilled=False)
     rows = store.context(ROOM, fish_bot.now_ms() + 1000, 10)
-    payload = json.loads(fish_bot.format_chat("Room", "", rows, {}, task="ambient", trigger=None, bot_user_id=USER))
+    payload = json.loads(fish_bot.format_chat("Room", "", rows, {}, task="visit", trigger=None, bot_user_id=USER))
     assert "image" not in payload["messages"][0]
 
 

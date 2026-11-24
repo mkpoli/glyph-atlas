@@ -1,65 +1,60 @@
-# Written forms: crops that look written as a variant of their label
+# Written forms: crops that are written as a variant of their label
 
-`atlas review written-forms` (`src/glyph_atlas/review/written_forms.py`) ranks the crops filed under
-one character by how far they lie towards the crops of a variant of it, in the similar-crop index.
-This page records what the ranking showed on 2026-11-23. Nothing was relabelled or loaded to the
+`atlas review written-forms` (`src/glyph_atlas/review/written_forms.py`) finds the crops filed under
+one character that are written as a variant of it, and `atlas review written-form-sheets` draws them
+book by book. This page records what it found on 2026-11-24. Nothing was relabelled or loaded to the
 site.
 
 ## Inputs
 
 - The similar-crop index `work/similar/0a82edb62d862c2b` (classifier-penultimate-v1, built
-  2026-09-27, 503,013 crops), with each crop's character and book from the local copy of the site's
-  database (`work/atlas-v3/out/atlas.sqlite`, read 2026-11-23).
+  2026-09-27, 503,013 crops), 498,667 of them held by the site under a character.
+- Each crop's character, book and suspect mark from the local copy of the site's database
+  (`work/atlas-v3/out/atlas.sqlite`, read 2026-11-24), and its box from the page bundles
+  (`work/atlas-v3/out/pages`).
 - The variant tables behind `refs.variants`: 111 pairs stated by two tables or more have 15 crops
-  under each character. 34,421 of the 55,760 crops under those characters were scored, 36,060
-  scores in all, since a character may stand in two pairs; the rest have too few crops in other
-  books. 498,667 of the index's 503,013 crops are held by the site under a character and take part.
+  under each character.
 
 ## The rule
 
-For a pair, the mean vector of each character's crops, taken from every book but the crop's own,
-gives a direction from the crop's label to the variant. The score is the crop's place along it,
-zero at the midpoint of the two means. HI Lab is one book to the site, so its crops are scored
-with the means of the other sources alone.
+Crops that are one picture filed under both characters are left out (HI Lab files some so). The
+rest of a pair's crops are divided in two by shape, starting from the two labels. A pair counts when
+at most one crop filed under the variant, or 3% of them, falls on the label's side, and at most half
+of the label's crops fall on the variant's. A crop of the label on the variant's side is written as
+the variant when it is near the variant's crops there (mean similarity to the 10 nearest of 0.8 or
+more, and 0.1 more than to the label's) and its box holds one whole character. Glyphs cut by their
+source (HI Lab, 徒然草) have no box on a page and are not judged by one: 219 of the crops found.
 
-## By eye
+## Result
 
-No set of crops with a recorded written form was at hand to score the ranking against, so it was
-read on contact sheets of HI Lab crops (くずし字データセット, 東京大学史料編纂所, CC BY 4.0): the 18
-highest and 18 lowest scores under a label.
+78 of the 111 pairs are told apart. Of 5,337 crops of a label on the variant's side, 389 pass the
+rule. Of the collected crops among them every one with a picture was read by eye but for eight of
+the 104 of 時, which the sheets cut off.
 
-| label → variant | HI Lab crops scored | highest scores | lowest scores |
-| --- | ---: | --- | --- |
-| 国 → 國 | 768 | all written 國 (或 inside the frame) | cursive 国 |
-| 島 → 嶋 | 110 | all written 嶋 (山 beside 鳥) | 嶋 again, then five written 島 |
-| 余 → 餘 | 98 | all written 餘 (食 on the left) | 余 |
-| 与 → 與 | 282 | the first 6 written 與, then cursive 与 | 与 |
-| 数 → 數 | 248 | several written 數 among cursive | cursive 数 |
-| 時 → 时 | 341 | abbreviated and cursive 時 mixed with full 時; no clear 时 | full 時 |
-| 両 → 兩 | 332 | one cursive shape throughout; 両 and 兩 are not told apart | 両 in a squarer hand |
-| 万 → 萬 | 182 | 万, none written 萬; every score is below zero | 万 |
+| label → variant | found | of them collected | by eye |
+| --- | ---: | ---: | --- |
+| 時 → 时 | 183 | 104 | 时 |
+| 候 → 𠋫 | 117 | 2 | of one kind; whether it is 𠋫 was not settled |
+| 也 → 𬻿 | 60 | 55 | two kinds: one book's are 𬻿, two books' another cursive 也 |
+| 万 → 萬 | 9 | 1 | the collected one 萬 |
+| 座 → 坐 | 6 | 5 | 坐 |
+| 切 → 功 | 4 | 0 | 切; the pair is a look-alike |
+| 歌 → 哥, 条 → 條 | 3, 2 | 0 | no picture on disk |
+| 煙 → 烟 | 2 | 2 | 烟 |
+| 十 → 拾 | 1 | 0 | 拾 |
+| 陣 → 陳, 師 → 帥 | 1, 1 | 1, 0 | not settled |
 
-Where a label holds crops plainly built as the variant, they come first. Where the two forms are
-one cursive shape (両, 時), the ranking follows how fully the character is written out. Under 島
-nearly every HI Lab crop is written 嶋, so the lowest scores are the few written 島.
+Read by eye alone: no set of crops with a recorded written form was at hand. The variant's crops are
+no such set either. Of HI Lab's, 616 of 653 时, all 223 𠋫 and 578 of 579 𬻿 stood under 時, 候 and 也
+when the index was built and were filed under the variant since.
 
-## Books
+Not told apart, 33 pairs: 国/國, 島/嶋, 当/當, 数/數 and 声/聲 among them, where the split follows
+the hand or the source, and 悪/惡, 経/經 and 雁/鴈, where most crops of the variant are a
+picture filed under both.
 
-A book's mean score for a label is kept. In the 古活字 print (`codh-omt:`) the crops of 万 average
-0.44 towards 萬, against −0.20 and −0.56 in two manuscript sources: CODH files a 旧字 under its
-新字, and the print sets 萬.
+## What was tried before
 
-## What the ranking is not
-
-- **A verdict.** The two means come from the labels the pass doubts. Under 国, where many crops are
-  written 國, the means sit close and the scores are small (highest 0.16); zero separates nothing,
-  and for the character with few crops the sign of a score means little.
-- **A measure.** Against the labels a logistic fit on the same vectors scores an AUC of 0.52 for
-  国 and 國 on held-out books, with the crops it ranks first plainly written 國: the labels are what
-  is wrong, so they cannot grade it.
-- **Written forms only.** The tables also pair look-alikes (玉 and 王, 陣 and 陳, 土 and 士); a high
-  score there is a crop of the other character. The report lists each pair's tables.
-- **HNG as a test.** HNG files each 字体 of a character on its own row (統合ID `01639`, `01639b`).
-  Scored the same way across its sources, 158 characters with two rows give a median AUC of 0.51,
-  several near 0. On sight the second row is not one shape across sources (of the five 國 crops on
-  row `01639b`, one is 囯 and four are 國), so the rows as imported do not serve as a test of form.
+A ranking along the direction between the two labels' means put 嶋 at the head of 嶋 → 島, since
+most crops filed under 島 are written 嶋, and strokes, kana and joined cuts among the highest of
+every pair. A crop nearer the variant's crops than its own label's failed the same way for 時: its
+label's nearest crops are 时 too.

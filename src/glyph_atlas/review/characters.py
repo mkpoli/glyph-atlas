@@ -1043,11 +1043,12 @@ def router(store: Store) -> APIRouter:
 
     @api.get("/layers/structures")
     def structures(c: str = "", of: str = "") -> dict[str, Any]:
-        """The 構形 groups of the characters named, as the Worker answers it. A regional shape named
-        with `of` is derived here like any description."""
+        """The 構形 groups of the characters named, as the Worker answers it. A regional shape of `of`
+        has that character's 構形."""
         if not written(c):
             raise HTTPException(422, "Name a character.")
-        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]), store.folds_of)
+        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]), store.folds_of,
+                                     of=of)
 
     @api.get("/layers/ids")
     def ids(c: str = "") -> dict[str, Any]:

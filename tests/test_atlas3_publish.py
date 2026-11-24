@@ -752,6 +752,30 @@ def page_catalogue(path, units, pages):
     return path
 
 
+def test_a_book_cut_from_its_pages_takes_the_title_of_its_page_records(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    db = sqlite3.connect(catalogue(tmp_path / "c.sqlite", [
+        unit("te:g1", "te:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, document="te:1")]))
+    db.execute("CREATE TABLE pages(id, document, data)")
+    db.execute("INSERT INTO pages VALUES('te:p1', 'te:1', ?)", (json.dumps({"title": "聯珠篆文", "page_number": 1}),))
+    db.commit()
+    path = tmp_path / "c.sqlite"
+    run(publish, monkeypatch, path)
+    titles = lambda: dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, title FROM books"))
+    assert titles()["te:1"] == "聯珠篆文"
+    # A book published with no title takes it when its catalogue is published again, once.
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title=NULL WHERE key='te:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["te:1"] == "聯珠篆文"
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title='given by hand' WHERE key='te:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["te:1"] == "given by hand"
+
+
 def published_pages(root):
     """Each page of the local copy by key: its revision and the facts of its bundle."""
     found = {}

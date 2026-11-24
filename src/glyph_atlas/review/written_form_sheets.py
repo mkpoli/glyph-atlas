@@ -1,22 +1,16 @@
-"""Contact sheets of the written-forms ranking, a row of crops for each book.
+"""Contact sheets of the crops `written_forms` found, a row for each book.
 
-`written_forms` scores crops one by one, and a print or a scribe mostly keeps to one form: read
-book by book, a character whose crops all lean to its variant is one decision. `run` reads
-`<similar>/written-forms.parquet` and writes one HTML page. Each section is a character and the
-variant it was scored against, and holds a row for every book with `MIN_BOOK` scored crops or
-more, the book leaning furthest to the variant first. A row shows the book's `PER_BOOK`
-highest-scored crops, and a character in many books shows the `LEANING` furthest-leaning and the
-`OPPOSITE` at the other end.
-
-Sections are ordered by their furthest-leaning book, the likeliest written variant first, and the
-page keeps `SECTIONS` of them. A character scored in one book only says nothing book by book and is
-left out.
+A print or a scribe mostly keeps to one form, so a character's crops are read book by book. `run`
+reads `<similar>/written-forms.parquet` and writes one HTML page: a section for each label and the
+variant its crops are written as, the one with most crops first, and in it a row for every book,
+the book with most of them first, with the number found and up to `PER_BOOK` of them, the likest
+to the variant first.
 
 A crop's picture is the display crop the site serves. Its key comes from the page bundles of the
 local copy of the site (`work/atlas-v3/out/pages`); the file is read from the similar-crop index's
-media cache and fetched from the site when the cache lacks it (`similar.fetch`), a few at a time.
-A crop the bundles name no display crop for is left out before the books are judged; corpus
-glyphs, whose pictures sit in their records, are among them.
+media cache and fetched from the site when the cache lacks it (`similar.fetch`), a few at a time. A
+crop the bundles name no display crop for is left out, with its count; corpus glyphs, whose pictures
+sit in their records, are among them.
 """
 from __future__ import annotations
 
@@ -28,15 +22,10 @@ import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
-from .written_forms import FILE, MIN_BOOK
+from .written_forms import FILE, PAGE_BITS
 
-#: Sections the page keeps, and crops shown for a book.
-SECTIONS = 40
-PER_BOOK = 14
-#: Books a section shows: the furthest-leaning `LEANING` and the `OPPOSITE` at the other end.
-LEANING, OPPOSITE = 8, 4
-#: A crop number is its page shifted by this many bits, then its slot on the page.
-PAGE_BITS = 24
+#: Crops shown for a book.
+PER_BOOK = 40
 
 PAGE = """<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -52,8 +41,8 @@ section{{background:var(--surface);border:1px solid var(--line);border-radius:10
 .book{{display:grid;gap:4px;min-width:0}}
 .name{{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:.9rem}}
 .name span{{color:var(--muted);font-variant-numeric:tabular-nums}}
-.crops{{display:flex;gap:4px;overflow-x:auto}}
-.crops img{{height:64px;width:auto;border-radius:3px;background:#fff;flex:none}}
+.crops{{display:flex;flex-wrap:wrap;gap:4px}}
+.crops img{{height:64px;width:auto;max-width:100%;border-radius:3px;background:#fff}}
 </style>
 <main><h1>Written forms by book</h1>
 {sections}
@@ -80,37 +69,24 @@ def keys(crops: dict[str, int], pages: Path) -> dict[str, str]:
     return found
 
 
-def choose(rows: list[tuple[str, str, int, str, float]], *, sections: int = SECTIONS,
-           per_book: int = PER_BOOK) -> list[dict]:
-    """The sections of the page from scored crops `(label, other, book, id, score)`.
-
-    A section is one label against one variant with two books or more of `MIN_BOOK` crops; its books
-    come furthest-leaning first, each with its mean, its count and its highest-scored crops. Pass
-    only crops that have a picture: a book is judged by what the page can show of it.
-    """
+def choose(rows: list[tuple[str, str, int, str, float]], *, per_book: int = PER_BOOK) -> list[dict]:
+    """The sections of the page from the crops found `(label, other, book, id, near)`, all with a
+    picture: labels with most crops first, their books with most first, the likest crops first."""
     grouped: dict[tuple[str, str], dict[int, list[tuple[float, str]]]] = defaultdict(lambda: defaultdict(list))
-    for label, other, book, identity, score in rows:
-        grouped[label, other][book].append((score, identity))
+    for label, other, book, identity, near in rows:
+        grouped[label, other][book].append((near, identity))
     found = []
     for (label, other), books in grouped.items():
-        held = []
-        for book, crops in books.items():
-            if len(crops) >= MIN_BOOK:
-                crops.sort(reverse=True)
-                held.append({"book": book, "mean": sum(score for score, _ in crops) / len(crops), "crops": len(crops),
-                             "ids": [identity for _, identity in crops[:per_book]]})
-        if len(held) >= 2:
-            held.sort(key=lambda entry: (-entry["mean"], entry["book"]))
-            if len(held) > LEANING + OPPOSITE:
-                held = held[:LEANING] + held[-OPPOSITE:]
-            found.append({"label": label, "other": other, "books": held})
-    found.sort(key=lambda section: (-section["books"][0]["mean"], section["label"], section["other"]))
-    return found[:sections]
+        held = [{"book": book, "crops": len(crops), "ids": [identity for _, identity in sorted(crops, reverse=True)[:per_book]]}
+                for book, crops in books.items()]
+        held.sort(key=lambda entry: (-entry["crops"], entry["book"]))
+        found.append({"label": label, "other": other, "crops": sum(entry["crops"] for entry in held), "books": held})
+    found.sort(key=lambda section: (-section["crops"], section["label"], section["other"]))
+    return found
 
 
-def render(sections: list[dict], titles: dict[int, str], pictures: dict[str, Path]) -> tuple[str, int]:
-    """The page, a section for each label and variant with a row of crops for each book, and the
-    number of sections it holds: one left with fewer than two books of pictures is not drawn."""
+def render(sections: list[dict], titles: dict[int, str], pictures: dict[str, Path]) -> str:
+    """The page: a section for each label and variant, a row of crops for each book."""
     parts = []
     for section in sections:
         books = []
@@ -121,37 +97,34 @@ def render(sections: list[dict], titles: dict[int, str], pictures: dict[str, Pat
             if images:
                 title = html.escape(titles.get(book["book"]) or str(book["book"]))
                 books.append(f'<div class="book"><div class="name"><b lang="ja">{title}</b>'
-                             f'<span>{book["mean"]:+.2f}</span><span>{book["crops"]}</span></div>'
-                             f'<div class="crops">{images}</div></div>')
-        if len(books) >= 2:
+                             f'<span>{book["crops"]}</span></div><div class="crops">{images}</div></div>')
+        if books:
             parts.append(f'<section><h2 lang="ja">{html.escape(section["label"])} → {html.escape(section["other"])}</h2>'
                          + "".join(books) + "</section>")
-    return PAGE.format(sections="\n".join(parts)), len(parts)
+    return PAGE.format(sections="\n".join(parts))
 
 
 def run(similar: Path, out: Path, *, mirror: Path, atlas: Path, pages: Path, media: Path,
         base: str = "https://glyphatlas.org") -> dict:
-    """Write the sheets of `<similar>/written-forms.parquet` to `out`."""
+    """Write the sheets of the crops found in `<similar>/written-forms.parquet` to `out`."""
     import pyarrow.parquet as pq
 
     from ..similar import fetch
 
-    table = pq.read_table(similar / FILE).to_pydict()
-    scored = set(table["id"])
+    crops = [row for row in pq.read_table(similar / FILE).to_pylist() if row["written"]]
+    wanted = {row["id"] for row in crops}
     with sqlite3.connect(f"file:{mirror}?mode=ro", uri=True) as db:
-        numbers = {identity: number for identity, number in db.execute("SELECT text, id FROM ids") if identity in scored}
+        numbers = {identity: number for identity, number in db.execute("SELECT text, id FROM ids") if identity in wanted}
     with sqlite3.connect(f"file:{atlas}?mode=ro", uri=True) as db:
         titles = {book: title or key for book, key, title in db.execute("SELECT id, key, title FROM books")}
     named = keys(numbers, pages)
-    sections = choose([row for row in zip(table["label"], table["other"], table["book"], table["id"], table["score"],
-                                          strict=True) if row[3] in named])
+    sections = choose([(row["label"], row["other"], row["book"], row["id"], row["near"])
+                       for row in crops if row["id"] in named])
     shown = sorted({identity for section in sections for book in section["books"] for identity in book["ids"]})
     files = {identity: {"key": named[identity], "path": str(media / named[identity][:2] / f"{named[identity]}.webp")}
              for identity in shown}
     fetched = fetch(files, base, workers=2)
     pictures = {identity: Path(entry["path"]) for identity, entry in files.items() if Path(entry["path"]).is_file()}
     out.parent.mkdir(parents=True, exist_ok=True)
-    page, drawn = render(sections, titles, pictures)
-    out.write_text(page, encoding="utf-8")
-    return {"sections": drawn, "scored": len(scored), "with_picture": len(named), "shown": len(shown),
-            "pictures": len(pictures), **fetched}
+    out.write_text(render(sections, titles, pictures), encoding="utf-8")
+    return {"found": len(wanted), "with_picture": len(wanted & named.keys()), "shown": len(pictures), **fetched}

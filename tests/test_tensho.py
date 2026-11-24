@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import json
 import sys
 import unicodedata
 from pathlib import Path
@@ -9,7 +10,7 @@ import yaml
 from PIL import Image
 from typer.testing import CliRunner
 
-from glyph_atlas import ngrams, registry, tables
+from glyph_atlas import date_claims, ngrams, registry, tables
 from glyph_atlas.cli import app
 from glyph_atlas.importers import tensho
 from glyph_atlas.schema import Document, Licence, Line, Page, ReviewState, Script, Unit
@@ -245,8 +246,8 @@ def test_a_volume_states_the_library_and_its_public_domain_mark(fixture, tmp_pat
     document = next(iter(tables.read(tmp_path / "out" / "documents.parquet", Document)))
     assert (document.id, document.title) == ("codh-tensho:TE00024", "新撰篆書字典 巻3")
     assert (document.production, document.origin) == ("printed", "japan")
-    assert (document.dating[0].start, document.dating[0].literal) == (1924, "春湖書屋 大正13")
-    assert document.dating[0].evidence == "https://dl.ndl.go.jp/api/iiif/1181893/manifest.json"
+    # The year is the library's statement, read from its manifest, so the import cites nothing for it.
+    assert (document.dating[0].start, document.dating[0].literal, document.dating[0].evidence) == (1924, "大正13", None)
     assert (document.image_rights.licence, document.image_rights.holder_terms) == (Licence.PDM, None)
     # The line of CODH's list of providers, with the URLs of all three volumes.
     assert document.image_rights.attribution.endswith(
@@ -380,3 +381,44 @@ def test_a_page_named_as_replaced_is_a_frame_of_its_volume():
     assert pages[41]["canvas"].endswith("/canvas/41")
     first = tensho.read_tsv(tensho.DEFAULT_DATA / "TE00003" / "pages.tsv")[0]
     assert (first["page"], first["canvas"].rsplit("/", 1)[-1]) == ("6", "5")
+
+
+def test_a_book_whose_printing_no_source_dates_states_no_date():
+    config = yaml.safe_load(tensho.DEFAULT_SOURCE.read_text(encoding="utf-8"))
+    books = {book["id"]: tensho._document(config, book) for book in config["books"]}
+
+    assert {book: [(found.kind, found.start) for found in held.dating] for book, held in books.items()} == {
+        "TE00039": [("publication", 1873)], "TE00026": [("publication", 1924)], "TE00025": [("publication", 1924)],
+        "TE00024": [("publication", 1924)], "TE00003": []}
+    # Undated, the reproduction of a pre-modern print keeps its public-domain mark beside the holder's terms.
+    assert (books["TE00003"].image_rights.licence, books["TE00003"].image_rights.holder_terms) == (
+        Licence.PUBLIC_DOMAIN, Licence.RS_NOC_CR)
+
+
+def test_each_book_is_dated_by_the_source_that_states_the_date(tmp_path):
+    config = yaml.safe_load(tensho.DEFAULT_SOURCE.read_text(encoding="utf-8"))
+    held = {book["id"]: tensho._document(config, book).model_dump(mode="json") for book in config["books"]}
+    # What the holders state: NDL's manifest of one volume and the 国書 record of 聯珠篆文.
+    manifest = config["books"][1]["manifest"]
+    path = date_claims._manifest_path(tmp_path, manifest)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"metadata": [{"label": "Publisher", "value": "春湖書屋"},
+                                             {"label": "Publication Date", "value": "大正13"}]}), encoding="utf-8")
+    (tmp_path / "kokusho").mkdir()
+    (tmp_path / "kokusho" / "100250413.json").write_text(json.dumps(
+        {"bid": "100250413", "kansha": "刊", "work": [{"year": "享和二序（1802）"}]}), encoding="utf-8")
+
+    stated = {book: [(found.source, found.text, found.scope) for found in date_claims.statements(row, "codh-tensho", tmp_path)]
+              for book, row in held.items()}
+
+    assert stated == {
+        "TE00039": [("codh-tensho", "同治十二年番禺陳昌治校刊本", "witness")],
+        "TE00026": [("iiif-manifests", "大正13", "witness")], "TE00025": [], "TE00024": [],
+        "TE00003": [("kokusho", "享和二序（1802）", "work")]}
+
+
+def test_an_import_never_drops_a_book_the_dataset_holds(fixture, tmp_path):
+    collect(fixture, tmp_path)
+    with pytest.raises(tensho.TenshoSourceError, match="holds codh-tensho:TE00039"):
+        collect_volume(fixture, tmp_path)
+    assert [held.id for held in tables.read(tmp_path / "out" / "documents.parquet", Document)] == ["codh-tensho:TE00039"]

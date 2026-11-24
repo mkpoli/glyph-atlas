@@ -107,13 +107,25 @@ def test_book_facts_load_once_by_book_and_crop(layout, monkeypatch):  # noqa: F8
     assert "variant_sources" in facts(db)["site"]
 
 
+def test_a_missing_input_leaves_the_last_translation(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch)
+    translation = (root / "out" / "books.sqlite").read_bytes()
+    (root / "source-metadata.sqlite").unlink()
+    with pytest.raises(SystemExit, match="source-metadata.sqlite is missing"):
+        books(remote, monkeypatch)
+    assert (root / "out" / "books.sqlite").read_bytes() == translation
+
+
 def test_named_documents_take_their_dates_and_leave_every_other_fact(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sources(root)
     books(remote, monkeypatch, "--send")
     before = facts(remote.dbs["glyph-atlas-v3"])
     # The input states another date for both books, and lacks the characters and titles a whole run would load.
-    sources(root, dating=[dated("book:a", start=1801), dated("codh:b", "composed", 1600)], titles=[], characters=[], metadata=[])
+    sources(root, dating=[dated("book:a", start=1801), dated("codh:b", "composed", 1600)], titles=[], characters=[], metadata=[],
+            claims=[claim("dt:1", "codh:b", 1600)])
     translation = (root / "out" / "books.sqlite").read_bytes()
     books(remote, monkeypatch, "--documents", "codh:b", "--send")
     got = facts(remote.dbs["glyph-atlas-v3"])
@@ -122,6 +134,40 @@ def test_named_documents_take_their_dates_and_leave_every_other_fact(layout, mon
     assert (root / "out" / "books.sqlite").read_bytes() == translation
     with pytest.raises(SystemExit, match="not books of the site: nowhere"):
         books(remote, monkeypatch, "--documents", "nowhere")
+
+
+def test_a_book_with_no_title_takes_the_one_its_pages_state_and_nothing_else_moves(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root)
+    books(remote, monkeypatch, "--send")
+    live, local = remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")
+    pid, rev = local.execute("SELECT p.id, p.rev FROM books b JOIN pages p ON p.book=b.id WHERE b.key='book:a' ORDER BY p.id").fetchone()
+    for held in (live, local):
+        held.execute("UPDATE books SET title=NULL WHERE key='book:a'")
+        held.execute("UPDATE books SET title='given by hand' WHERE key='codh:b'")
+        held.commit()
+    path = root / "out" / "pages" / f"{pid}-{rev}.json.gz"
+    path.write_bytes(gzip.compress(json.dumps({**json.loads(gzip.decompress(path.read_bytes())), "page": {"title": "聯珠篆文"}}).encode()))
+    before = facts(live)
+    # No input is read: the titles are the pages'.
+    (root / "book-facts-input.sqlite").unlink()
+    books(remote, monkeypatch, "--titles", "--send")
+    got = facts(live)
+    assert dict(live.execute("SELECT key, title FROM books"))["book:a"] == "聯珠篆文"
+    assert dict(live.execute("SELECT key, title FROM books"))["codh:b"] == "given by hand"
+    assert {k: got[k] for k in ("dates", "characters", "site")} == {k: before[k] for k in ("dates", "characters", "site")}
+    # A rerun has nothing to send.
+    stamps = live.execute("SELECT count(*) FROM imports").fetchone()
+    books(remote, monkeypatch, "--titles", "--send")
+    assert live.execute("SELECT count(*) FROM imports").fetchone() == stamps
+    # A title cleared after it was loaded is the same part, which D1 takes once; the run says it is still missing.
+    for held in (live, local):
+        held.execute("UPDATE books SET title=NULL WHERE key='book:a'")
+        held.commit()
+    with pytest.raises(SystemExit, match="1 titles are still missing"):
+        books(remote, monkeypatch, "--titles", "--send")
+    with pytest.raises(SystemExit):
+        books(remote, monkeypatch, "--titles", "--documents", "book:a")
 
 
 def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F811
@@ -133,15 +179,15 @@ def test_a_fresh_copy_sends_only_the_difference(layout, monkeypatch):  # noqa: F
             characters=[("book:a", 0, "ex:a1", json.dumps({"label": "あ", "page": 1}))], listed=["book:a", "codh:b"])
     books(remote, monkeypatch, "--send")
     got = facts(remote.dbs["glyph-atlas-v3"])
-    assert got["titles"]["codh:b"] is None
+    assert got["titles"]["codh:b"] == "鼎左秘録", "a title the copies no longer state stays"
     assert sorted(got["dates"]) == [("book:a", "witness", 1701, "gregorian"), ("codh:b", "composed", 1600, "gregorian")]
     assert len(got["characters"]) == 1
     report = (root / "out" / "books-report.txt").read_text()
     # removed, added, changed, written: a changed row writes its DELETE and its INSERT.
-    assert "books.title\t0\t0\t0\t0\t1\t1\n" in report
+    assert "books.title\t0\t0\t0\t0\t0\t0\n" in report
     assert "book_dates\t2\t203\t0\t1\t1\t3\n" in report
     assert "book_characters\t1\t40\t1\t0\t0\t1\n" in report
-    assert "rows written: 5 " in report
+    assert "rows written: 4 " in report
 
 
 def test_an_input_of_some_documents_leaves_the_other_books_characters(layout, monkeypatch):  # noqa: F811
@@ -306,6 +352,20 @@ def test_named_documents_take_their_claims_and_no_other_claim_is_retracted(layou
     stamps = db.execute("SELECT count(*) FROM imports").fetchone()[0]
     books(remote, monkeypatch, "--documents", "codh:b", "--send")
     assert db.execute("SELECT count(*) FROM imports").fetchone()[0] == stamps, "a rerun finds nothing to send"
+
+
+def test_named_documents_the_input_claims_no_date_of_stop_the_run(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sources(root, dating=[dated("book:a")], claims=[claim("dt:1")])
+    books(remote, monkeypatch, "--send")
+    db = remote.dbs["glyph-atlas-v3"]
+    before, held = facts(db), ledger(db)
+    # An input made for another book: with no row of book:a, and with its dating but no claim.
+    for dating in ([], [dated("book:a")]):
+        sources(root, dating=dating, claims=[claim("dt:2", "codh:b", 1600)], stamp="2026-10-21T00:00:00Z")
+        with pytest.raises(SystemExit, match="claims no date of book:a"):
+            books(remote, monkeypatch, "--documents", "book:a", "codh:b", "--send")
+        assert (facts(db), ledger(db)) == (before, held)
 
 
 def test_a_slot_is_resolved_from_the_verdicts_glyph_atlas_v3_holds(layout, monkeypatch):  # noqa: F811

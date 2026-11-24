@@ -207,9 +207,11 @@ def claimed_structures(conn: sqlite3.Connection, names: Iterable[str]) -> dict[s
 
 
 def _named_structure(conn: sqlite3.Connection, named: Mapping[str, Any], *, known: bool) -> tuple[str, Structure | None]:
-    """The structure a write names, by `char` (a character or description, derived here) or by
-    `structure`, the id of one a claim has named before, which `known` requires to have its row.
-    Answers its id, and the structure itself when it was derived."""
+    """The structure a write names, by `char` (a character or description, derived here; with `of`, a
+    regional shape of that character, which has its structure; with `head`, the structure that one
+    stands under as a layout of it) or by `structure`, the id of one a
+    claim has named before, which `known` requires to have its row. Answers its id, and the structure
+    itself when it was derived."""
     from .. import structures
 
     if named.get("structure") is not None:
@@ -219,14 +221,22 @@ def _named_structure(conn: sqlite3.Connection, named: Mapping[str, Any], *, know
     char = named.get("char")
     if not char or representation.written(char) != [char]:
         raise LedgerError(422, "Name one character or description.")
-    derived = structures.for_name(char)
+    try:
+        derived = structures.for_shape(char, named["of"]) if named.get("of") else structures.for_name(char)
+    except ValueError as error:
+        raise LedgerError(422, str(error)) from error
     if derived is None:
         raise LedgerError(422, f"No structure is known for {char}.")
+    if named.get("head"):
+        derived = structures.whole(derived)
+        if derived is None:
+            raise LedgerError(422, f"{char} is no layout of another structure.")
     return derived.id, derived
 
 
 def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str,
-                  char: str | None = None, structure: str | None = None, remove: bool = False, replace: bool = False,
+                  char: str | None = None, of: str | None = None, head: bool = False, structure: str | None = None, remove: bool = False,
+                  replace: bool = False,
                   at: str | None = None, prefix: str = "lc", mint: Callable[[], str] | None = None) -> dict:
     """File a form under the structure of a character or a description, or take back the reader's own claim.
 
@@ -251,7 +261,7 @@ def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Ma
     exists = conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is not None
     if not exists and named is None:
         raise LedgerError(404, "No such form.")
-    structure, derived = _named_structure(conn, {"char": char, "structure": structure}, known=not remove)
+    structure, derived = _named_structure(conn, {"char": char, "of": of, "head": head, "structure": structure}, known=not remove)
     mine = conn.execute(
         "SELECT a.id,a.slot FROM assertions a WHERE a.subject=? AND a.predicate='has_structure' AND a.scope='' AND a.asserted_by=? "
         "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "

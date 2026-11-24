@@ -3,6 +3,7 @@
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py          # translate and write the parts
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --send   # and load them
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --documents KEY... --send   # the dates of these books alone
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --titles --send   # the titles books lack, and nothing else
 
 The book facts input (`glyph_atlas.book_facts_input`: the dates export's claims and dating, and the
 characters another site lists per book) and the copies `source-corpus_documents` and `source-metadata`
@@ -132,6 +133,11 @@ def titles(atlas, corpus):
 
 def translate(atlas, mirror):
     """out/books.sqlite from the copies, and how many rows were left out, by reason."""
+    # A missing input stops the run before the last translation is replaced.
+    for table in ("document_dating", "document_characters"):
+        given(table)
+    for table in SOURCES:
+        source(table)
     path = OUT / "books.sqlite"
     path.unlink(missing_ok=True)
     out = sqlite3.connect(path)
@@ -201,6 +207,10 @@ def dates_of(atlas, documents):
     known = dict(atlas.execute("SELECT key, id FROM books"))
     if missing := sorted(set(documents) - set(known)):
         sys.exit(f"not books of the site: {', '.join(missing)}")
+    # An input made for other books would otherwise clear a book's dates and leave its claims standing.
+    stated = {r[0] for r in given("date_claims").execute("SELECT DISTINCT subject FROM date_claims")}
+    if silent := sorted(set(documents) - stated):
+        sys.exit(f"the book facts input claims no date of {', '.join(silent)}; nothing sent")
     out = sqlite3.connect(":memory:")
     out.executescript("CREATE TABLE books(id INTEGER PRIMARY KEY, title TEXT NOT NULL, origin TEXT NOT NULL);\n"
                       + "\n".join(f"CREATE TABLE {t}({','.join(cols)}, PRIMARY KEY({','.join(key)})) WITHOUT ROWID;"
@@ -226,8 +236,8 @@ def dates_of_books(books, atlas, only, add):
 
 def statements(books, atlas, only=None):
     """Groups of statements that turn the local copy's book facts into the translation's; a row's
-    statements stay in one group. With `only`, book ids, the dates of those books and nothing else. Also, per table, the rows removed, added and changed, and the rows
-    written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
+    statements stay in one group. With `only`, book ids, the dates of those books and nothing else.
+    Also, per table, the rows removed, added and changed, and the rows written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
     groups, changes = [], {}
 
     def add(table, rows, removed=0, added=0):
@@ -243,8 +253,9 @@ def statements(books, atlas, only=None):
     now = dict(atlas.execute("SELECT id, title FROM books")) if "title" in columns else \
         {r[0]: None for r in atlas.execute("SELECT id FROM books")}
     wanted = dict(books.execute("SELECT id, title FROM books"))
-    add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
-                  for b in sorted(now) if now[b] != wanted.get(b)])
+    # A book the translation gives no title keeps the one it has: its publication may have written it.
+    add("books", [[f"UPDATE books SET title = {lit(wanted[b])} WHERE id = {b};"]
+                  for b in sorted(now) if b in wanted and now[b] != wanted[b]])
     # A book whose document the input does not list keeps its characters: the input may hold only some.
     listed = {r[0] for r in books.execute("SELECT book FROM character_books")}
     for table, (cols, key, owned) in TABLES.items():
@@ -261,6 +272,17 @@ def statements(books, atlas, only=None):
                  for kk, r in sorted(new.items()) if held.get(kk) != r]
         add(table, rows, removed, sum(kk not in held for kk, r in new.items()))
     return groups, changes
+
+
+def missing_titles(atlas):
+    """The statements that give each book the site holds with no title the one its first page bundle
+    states, and what they change. A title already there is kept, and a crop's source, which may be a file
+    name, names no book here."""
+    found = {book: title for book, (origin, title) in titles(atlas, {}).items() if origin == "pages"}
+    rows = [[f"UPDATE books SET title = {lit(found[b])} WHERE id = {b} AND title IS NULL;"]
+            for b, in atlas.execute("SELECT id FROM books WHERE title IS NULL ORDER BY id") if b in found]
+    return ([[s for r in rows[i:i + GROUP] for s in r] for i in range(0, len(rows), GROUP)],
+            {"books": {"removed": 0, "added": 0, "changed": len(rows), "written": len(rows)}})
 
 
 def ignored(table, row):
@@ -436,12 +458,32 @@ def migrate(atlas):
     print("migration 0005 applied", flush=True)
 
 
+def finish(groups, atlas, sending):
+    """Write `groups` as a run's parts and, when `sending`, load them."""
+    if not groups:
+        print("the local copy already holds these facts; nothing to send", flush=True)
+        return
+    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
+    run = OUT / "books-load" / f"books-{digest}"
+    n = built(run, "rows", groups)
+    print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
+    if not sending:
+        print("dry run: nothing sent", flush=True)
+        return
+    deliver(run, atlas)
+    print("book facts loaded", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="load the parts into glyph-atlas-v3")
     parser.add_argument("--documents", nargs="+", metavar="KEY", help="load the dates and date claims of these books alone, "
                         "leaving every other book's facts and claims as they stand")
+    parser.add_argument("--titles", action="store_true", help="give the books the site holds with no title the one their page "
+                        "bundles state, and load nothing else; reads no input")
     args = parser.parse_args()
+    if args.titles and args.documents:
+        parser.error("--titles loads nothing of --documents; run them apart")
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -454,6 +496,14 @@ def main():
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
         migrate(atlas)
         catch_up(atlas)
+    if args.titles:
+        groups, changes = missing_titles(atlas)
+        print("".join(f"{table}: {held}\n" for table, held in changes.items()), end="", flush=True)
+        finish(groups, atlas, args.send)
+        # The same titles filled before are the same parts, whose stamps the site holds, so they are not sent again.
+        if args.send and (left := len([s for g in missing_titles(atlas)[0] for s in g])):
+            sys.exit(f"{left} titles are still missing: these parts were loaded before and are not sent twice")
+        return
     named = set(args.documents) if args.documents else None
     if named:
         (books, only), left = dates_of(atlas, named), {}
@@ -471,18 +521,7 @@ def main():
     report = figures(books, changes, left)
     (OUT / "books-report.txt").write_text(report)
     print(report, end="", flush=True)
-    if not groups:
-        print("the local copy already holds these facts; nothing to send", flush=True)
-        return
-    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
-    run = OUT / "books-load" / f"books-{digest}"
-    n = built(run, "rows", groups)
-    print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
-    if not args.send:
-        print("dry run: nothing sent", flush=True)
-        return
-    deliver(run, atlas)
-    print("book facts loaded", flush=True)
+    finish(groups, atlas, args.send)
 
 
 if __name__ == "__main__":

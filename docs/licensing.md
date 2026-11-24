@@ -59,9 +59,10 @@ through みんなで翻刻.
   in the repositories' READMEs and in each TSV's header. The page images they are placed on are NDL
   facsimiles, all marked PDM.
 - nk2028 tshet-uinh-data (廣韻 of the 澤存堂本: entries, and each entry's leaf, column and place): CC0 1.0,
-  stated in the repository's LICENSE. nk2028's photographs of the printing name no holder and carry no
-  terms, so crops cut from them are not published; 東京大學東洋文化研究所's scan of the same printing is
-  marked public domain on Wikimedia Commons.
+  stated in the repository's LICENSE. nk2028's photographs of the printing name 韻典網 as their source
+  and neither a holder nor terms; they reproduce flat printed pages, so the rule above records them as
+  public domain with `unknown` kept as the holder's terms. 東京大學東洋文化研究所's scan of the same
+  printing is marked public domain on Wikimedia Commons.
 - Unicode data files and the IVD: Unicode License v3, notice reproduced in `ATTRIBUTION.md`.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is

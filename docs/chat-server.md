@@ -277,16 +277,52 @@ and by its sender and opening text when it is older. She introduces herself
 only when asked (`!fish 自我介紹`, or 「大肥魚，自我介紹一下」), and only in the rooms listed in
 `bot.intro_rooms` (歡迎 · Welcome and 談話 · Chatting); elsewhere she points to them.
 
-She also reads along. When a room goes quiet after a few messages, she takes a look now and then
-(the `[chat]` table sets how often) and may add a line, an emoji or a sticker, or stay silent. She
-never files from these turns.
+She types. Each bubble goes out after the time a quick typist needs for it (five Han characters or
+eleven Latin ones a second, six seconds at most, a little random), with the room showing her typing;
+while she works on an answer to a call that already counts. The bubbles wait in a queue, so other
+rooms are read meanwhile. Typing shows on Matrix. continuwuity 26.9 does not pass typing on to the
+bridges; 26.11 does (commit 7ce47be4, 2026-10-06, in its alphas when read on 2026-11-24), and
+mautrix-discord then shows it for accounts logged in to it, as hers is. mautrix-telegram v26.10
+passes on no typing for relayed accounts, and QQ's bot API has none for groups
+(@tencent-connect/qqbot-nodejs 1.0.6, `sendTyping`).
+
+She stays in a conversation. For four minutes after she speaks, she reads each new line in that room
+after a pause of a few seconds and decides whether it is for her: a follow-up, a correction such as
+"I mean the whole server!", or a thank-you gets an answer or an emoji without anyone naming her
+again. Replies to other people are theirs. Three silent looks at the person she was answering, or two
+at anyone else, close the conversation, and 40 looks an hour is the cap across rooms. A line she
+answers after others have spoken gets a reply mark. The window and caps sit outside the model because
+models asked without training when to speak judge it badly (Bhagtani et al.,
+[arXiv 2603.11409](https://arxiv.org/abs/2603.11409), 2026; on pauses in voice talk); MaiBot likewise
+lets its view frequency fall with each look
+(https://github.com/MaiM-with-u/MaiBot, `src/maisaka/turn_trigger`, read at b7f3682, 2026-11-19).
+
+She welcomes newcomers, once each (`[chat] welcome`). A Matrix account or a Telegram member is new when
+it joins a public room, a Discord member with the bridge's "joined the server" notice, and anyone else
+with a first line. QQ's bot API reports no joins and IRC people speak through one bridge account, so a
+QQ member is met on speaking and an IRC one is not. She waits 40 to 120 seconds, so that a join and a
+first line make one greeting, and posts it where they spoke, else in a welcome room they joined.
+Whoever was in a room when she first read it is not new, nor is a known person's name on a second
+account; more than five at once is taken for a bridge syncing its members. `known_people` keeps the
+account IDs. People who asked to be forgotten are not greeted.
+
+She also reads along. She opens a room with unread lines at random times, on average 25 minutes after
+the first of them (`[chat] visit_minutes`; sooner after a question or a laugh, later when she lately
+spoke there, at most `visits_per_hour` in all), and waits for a burst to end. The model then rates
+its interest from 0 to 5: it speaks from 3, adds an emoji or a sticker from 2, and otherwise only
+reads. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
+[arXiv 2501.00383](https://arxiv.org/abs/2501.00383), 2024; its thresholds were set by trial and
+error, as are these) and GroupGPT splits the decision to chime in from the reply
+([arXiv 2603.01059](https://arxiv.org/abs/2603.01059), 2026). Each visit's interest and outcome are
+in the journal.
 
 Every evening from 21:00 JST she posts a digest in each language room listed in `[digest.rooms]`,
 wholly in the language set there, whatever the room's recent messages are written in: what the
 repositories in `[digest] repos` merged and released in the last day, and a line for each other
 room's discussion, with no one named. A quiet day gets no digest.
 
-She remembers. Once a stretch of a room has ended (a pause of six hours, or half an hour of quiet),
+She remembers. Once a stretch of a room has ended (a pause of six hours, or half an hour of quiet,
+or a minute of quiet after a turn in which she chose to remember it),
 the model summarizes it into an episode and edits a set of short notes about the people in it, the
 community and herself: it adds, updates or deletes a note against the ones it already holds. A turn
 brings in the notes about the people talking and the notes and earlier episodes, from any room, that
@@ -317,8 +353,7 @@ URL context tool (run on Google's side, so the homeserver's loopback address is 
 https://ai.google.dev/gemini-api/docs/google-search and
 https://ai.google.dev/gemini-api/docs/url-context), code, issues, pull requests and commits in the
 community's repositories through GitHub, and her own memory of the rooms she reads. She gets up to four
-rounds of lookups per answer and `[lookup] per_hour` (120) across the bot; unasked turns never look
-anything up. MemGPT lets a model page through its memory with tools and reports that it often stops
+rounds of lookups per answer and `[lookup] per_hour` (120) across the bot. MemGPT lets a model page through its memory with tools and reports that it often stops
 early (Packer et al., [arXiv 2310.08560](https://arxiv.org/abs/2310.08560), 2023), so the recalled
 memory still comes with every turn.
 
@@ -328,7 +363,8 @@ list the public rooms, read a room's creator and first joins, and list its membe
 homeserver. QQ members appear only once they have spoken, because QQ's bot API cannot list a group,
 so the QQ group has more people than she sees.
 
-She catches newcomers up. `!fish recap` (or 「大肥魚，前情提要」, 「我錯過了什麼？」, 「これまでの話」, 「지금까지 요약해 줘」)
+She catches newcomers up. `!fish recap`, asking her for the whole server in plain words, or a set phrase
+(「大肥魚，前情提要」, 「我錯過了什麼？」, 「これまでの話」, 「지금까지 요약해 줘」)
 answers with a brief of everything she remembers from every room she reads: what the community is
 building, the subjects that keep coming back, decisions and recent news, in the language of the
 request. The same brief can be posted once from the server, for example to the welcome room:
@@ -339,17 +375,19 @@ runuser -u fish-bot -- python3 /opt/fish-bot/fish_bot.py --config /etc/fish-bot/
 ```
 
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
-the newest few among its last lines (four when called, two when reading along) to the model as the
+the newest few among its last lines (four when called, two on a visit) to the model as the
 homeserver's thumbnails, 640 pixels wide, or 320 when a long screenshot passes 3 MB at 640.
 `gemini-4-hydrogen` reads PNG, JPEG and WebP inline and no GIF, so a GIF goes as a PNG of its first
 frame (https://ai.google.dev/gemini-api/docs/image-understanding). A posted picture also counts as a
 lively moment for reading along, and memory sees up to four pictures of each stretch it summarizes.
 
 She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](https://x.com/wr3162/status/2122581552219734149),
-2026-11-17, offered with "欢迎大家取用！"). On start the bot fetches the 16 images from that post,
-checks each against the hash in `STICKERS` and uploads it to the homeserver once; a sticker whose
-image no longer matches is left out. Discord, Telegram and QQ show them; the QQ bridge sends a
-sticker as an image. After she sends one in a room, she is offered none there for 15 minutes.
+2026-11-17, offered with "欢迎大家取用！") and the 16 bundled images in `apps/fish-bot/stickers/`. On
+start the bot fetches the 16 images from that post and reads the bundled ones from
+`/opt/fish-bot/stickers/`, checks each against the hash in `STICKERS` and uploads it to the
+homeserver once; a sticker whose image no longer matches is left out. Discord, Telegram and QQ show
+them; the QQ bridge sends a sticker as an image. After she sends one in a room, she is offered none
+there for 15 minutes.
 
 When a person asks her to file something, she hands the discussion to the issue desk: it reads the
 latest messages, checks the open issues for duplicates, and files in `mkpoli/glyph-atlas` only when
@@ -364,17 +402,21 @@ and directories:
 ```sh
 useradd --system --user-group --home /var/lib/fish-bot --shell /usr/sbin/nologin fish-bot
 install -d -o fish-bot -g fish-bot /var/lib/fish-bot
-install -d -o root -g fish-bot /opt/fish-bot
+install -d -o root -g fish-bot /opt/fish-bot /opt/fish-bot/stickers
 install -d -m 750 -o root -g fish-bot /etc/fish-bot
 ```
 
-Copy the program, the example configuration and the unit in, then give them to the service's group:
+Copy the program, the stickers, the example configuration and the unit in, then give them to the
+service's group:
 
 ```sh
 scp apps/fish-bot/fish_bot.py apps/fish-bot/config.example.toml apps/fish-bot/fish-bot.service \
   root@glyphatlas-matrix:/tmp/
-ssh root@glyphatlas-matrix '
+scp apps/fish-bot/stickers/*.png root@glyphatlas-matrix:/opt/fish-bot/stickers/
+ssh root@glyphatlas-matrix 'set -e
   install -o root -g fish-bot -m 640 /tmp/fish_bot.py /opt/fish-bot/fish_bot.py
+  chown root:fish-bot /opt/fish-bot/stickers/*.png
+  chmod 640 /opt/fish-bot/stickers/*.png
   install -o root -g fish-bot -m 640 /tmp/config.example.toml /etc/fish-bot/config.toml
   install -o root -g root -m 644 /tmp/fish-bot.service /etc/systemd/system/fish-bot.service
   rm /tmp/fish_bot.py /tmp/config.example.toml /tmp/fish-bot.service'

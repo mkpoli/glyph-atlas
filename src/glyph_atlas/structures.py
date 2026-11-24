@@ -19,8 +19,9 @@ A structure is read from BabelStone's descriptions (`data/vocab/han-ids.tsv`):
 A character has one structure, that of its first description: Unicode unified its regional glyphs,
 so the other descriptions (納 is ⿰糹内 in one region and ⿰糹內 in another) are spellings of the
 same structure, and a written description that matches one names it (`for_ids`). A regional
-difference Unicode unified cannot be told apart here. A character whose descriptions name no
-composition (七 is 〾⿻一乚, 𠇇 is ⿰亻？) is one component, itself; a written ⿰亻？ is 亻 beside a
+difference Unicode unified cannot be told apart here. A character encoded twice joins the one whose
+regional shape it is, where the 異体字 graph gives them as one character (𦤀 ⿱自大 has 臭's
+⿱自犬). A character whose descriptions name no composition (七 is 〾⿻一乚, 𠇇 is ⿰亻？) is one component, itself; a written ⿰亻？ is 亻 beside a
 part no character names, and stays apart from 𠇇.
 
 The identity is the canonical text, the scheme and the policy, never the description as written. A
@@ -36,6 +37,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from functools import cache
+from typing import Any
 
 from . import han_component_variants, han_components, refs
 from .representation import Representation, described, is_sequence
@@ -55,6 +57,20 @@ POSITIONS = frozenset({"left", "right", "top", "bottom", "middle", "partial"})
 #: The operators whose parts have a position, and each part's position.
 SLOTS = {"⿰": ("left", "right"), "⿱": ("top", "bottom"),
          "⿲": ("left", "middle", "right"), "⿳": ("top", "middle", "bottom")}
+#: The relation of the 異体字 graph that makes two characters one: the same character encoded twice
+#: (Unihan's kZVariant, CJKVI's duplicates). A stated equivalence is not enough: yitizi's joins
+#: 新字体 to 旧字体 (㠀 and 島). CJKVI's non-cognate gives two characters that only look alike, and
+#: keeps them apart whatever else is stated (杮 and 柿).
+SAME = frozenset({"z"})
+#: Unicode's Seal block, and the source of the 異体字 graph that states each seal character's
+#: equivalent.
+SEAL = range(0x3D000, 0x3FC40)
+SEAL_SOURCE = "unicode-ucd"
+#: The Han values whose seal form is known to be built otherwise: 書 is 聿 over 者 in seal (說文繫傳 卷六 聿部,
+#: 從聿者聲), and the figures of Sealie 1.3.1 draw 邃 with 穴 over the whole and
+#: 𨘈 with 虍 over the rest.
+SEAL_UNLIKE = frozenset("書邃𨘈")
+APART = "non-cognate"
 #: The level of the IRG's unifiable list this layer reads. A level-2 entry lists characters its
 #: variation tells apart (壬 and 王: 任 and 仼).
 LEVEL = "1"
@@ -274,11 +290,11 @@ def _whole(char: str) -> str:
     return head if isinstance(head, str) and frozenset({char, head}) not in _variations()[1] else char
 
 
-def for_character(char: str) -> Structure | None:
-    """The structure of a character: its first description's, or that of the character the IRG
-    unifies it with. A compatibility ideograph has its unified ideograph's (說 U+F96F has 說's). A
-    character whose descriptions name no composition is one component, itself (七, 永, 乌); one the
-    source does not describe has none."""
+def _own(char: str) -> Structure | None:
+    """The structure a character's own descriptions give: its first description's, or that of the
+    character the IRG unifies it with. A compatibility ideograph has its unified ideograph's (說
+    U+F96F has 說's). A character whose descriptions name no composition is one component, itself
+    (七, 永, 乌); one the source does not describe has none."""
     char = unicodedata.normalize("NFC", char)
     candidates = tuple(dict.fromkeys((_whole(char), char)))
     for candidate in candidates:
@@ -288,25 +304,158 @@ def for_character(char: str) -> Structure | None:
 
 
 @cache
-def _spellings() -> dict[str, str]:
-    """The character each canonical description spells that is no character's own structure: a
-    first description before another, then the lowest code point."""
+def seal_equivalents() -> dict[str, str]:
+    """The Han character each small seal character takes its structure from: its kSEAL_MCJK in
+    Unicode's SealSources.txt (the `small-seal` rows of the 異体字 graph from unicode-ucd), where no
+    other seal character has the same one.
+
+    The file calls the value the modern CJK equivalent and says nothing of structure. It can follow
+    the seal form's composition (𽀅 has 叓, where 吏 is written today) and need not, so the structure
+    is a proposal: the site marks it, and a reader's filing overrides it. SEAL_UNLIKE are the values
+    known to differ. Where several seal characters share a value (折, 殺, 民), it cannot say which is
+    built as it, so none takes it."""
+    seals: dict[str, set[str]] = {}
+    for row in refs.variant_edges():
+        if row["relation"] == "small-seal" and row["source"] == SEAL_SOURCE:
+            seal, han = (row["a"], row["b"]) if ord(row["a"][0]) in SEAL else (row["b"], row["a"])
+            seals.setdefault(han, set()).add(seal)
+    return {seal: han for han, found in seals.items() if len(found) == 1 and han not in SEAL_UNLIKE for seal in found}
+
+
+def head(label: str) -> tuple[str, str] | None:
+    """The id and label of the structure another layout of the same parts stands under: 辵 beside X
+    (⿰辵禺, the seal 𽓻) or whole under it (⿺辵土, 𨑡) under ⿺辶X, 辶 being the form 辵 takes as 之繞.
+    None for any other label. The Worker's `headOf` answers the same."""
+    if label[:2] in {"⿰辵", "⿺辵"}:
+        whole = "⿺辶" + label[2:]
+    elif label[:2] == "⿲辵":
+        whole = "⿺辶⿰" + label[2:]
+    else:
+        return None
+    return _identity(whole), whole
+
+
+def whole(structure: Structure) -> Structure | None:
+    """The structure this one is another layout of (`head`), or None."""
+    found = head(structure.label)
+    return Structure(id=found[0], label=found[1], tree=han_component_variants.parse(found[1])) if found else None
+
+
+def _seal(structure: Structure | None) -> Structure | None:
+    """The structure a seal character is proposed from that of its Han equivalent: seal script has no
+    之繞, and writes 辵 whole at the left of ⿺辶X."""
+    if structure and structure.tree[0] == "⿺" and structure.tree[1][0] in {"辶", "辵"}:
+        return from_tree(("⿰", ("辵", structure.tree[1][1])))
+    return structure
+
+
+def for_character(char: str) -> Structure | None:
+    """The structure of a character: its own (`_own`), or that of the character it joins as one
+    character encoded twice (`_joined`: 𦤀 has 臭's ⿱自犬). A small seal character is proposed that of
+    its Han equivalent (`seal_equivalents`), with 辵 beside its phonetic where that has 之繞."""
+    char = unicodedata.normalize("NFC", char)
+    if han := seal_equivalents().get(char):
+        return _seal(for_character(han))
+    head = _joined().get(char) or _joined().get(_whole(char))
+    return _own(head) if head else _own(char)
+
+
+@cache
+def _labels() -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+    """The characters whose own structure each canonical description is, lowest code point first,
+    and the character each other canonical description spells: a first description before another,
+    then the lowest code point. A character whose reading does not settle names nothing here."""
+    owners: dict[str, list[str]] = {}
     first: dict[str, str] = {}
     other: dict[str, str] = {}
-    labels: set[str] = set()
     for char in sorted(han_components._sequences(), key=ord):
-        texts = [text(canonical(tree)) for tree in _descriptions(char)]
+        try:
+            texts = [text(canonical(tree)) for tree in _descriptions(char)]
+        except ValueError:
+            continue
         if texts and _whole(char) == char:
-            labels.add(texts[0])
+            owners.setdefault(texts[0], []).append(char)
         for index, spelled in enumerate(texts):
             (other if index else first).setdefault(spelled, char)
-    return {spelled: char for spelled, char in (other | first).items() if spelled not in labels}
+    return ({label: tuple(chars) for label, chars in owners.items()},
+            {spelled: char for spelled, char in (other | first).items() if spelled not in owners})
+
+
+def _same(a: str, b: str) -> bool:
+    """Whether the 異体字 graph gives `a` and `b` as one character (SAME) and never as two that only
+    look alike (APART)."""
+    relations = {row["relation"] for row in refs.variant_edges_of(a) if {row["a"], row["b"]} == {a, b}}
+    return bool(relations & SAME) and APART not in relations
+
+
+@cache
+def _joined() -> dict[str, str]:
+    """Characters encoded apart for one character, each by the character it joins. B joins A when B's
+    own structure is a regional shape of A and `_same` holds: 𦤀 (⿱自大) is the J shape of 臭 and
+    joins it, as 𠾖 (⿳吅大吅) joins 器. 柿 (⿰木市) is the K shape of 杮 and stays apart: the graph
+    gives them as two characters that look alike. A group has the structure of its lowest code
+    point among the characters whose shape another joins. A reading that does not settle joins
+    nothing."""
+    owners = _labels()[0]
+    parent: dict[str, str] = {}
+    shaped: set[str] = set()
+
+    def find(char: str) -> str:
+        while parent.setdefault(char, char) != char:
+            char = parent[char] = parent[parent[char]]
+        return char
+
+    for char, sequences in han_components._sequences().items():
+        try:
+            own = _own(char) if len(sequences) > 1 else None
+        except ValueError:
+            continue
+        for shape in refs.regional_shapes(char) if own else ():
+            if set(shape["text"]) & han_component_variants.SKIPPED:
+                continue
+            try:
+                label = text(canonical(han_component_variants.parse(SELECTORS.sub("", shape["text"]))))
+            except ValueError:
+                continue
+            if label == own.label:
+                continue
+            for other in owners.get(label, ()):
+                if other != char and _same(char, other):
+                    shaped.add(char)
+                    parent[find(other)] = find(char)
+    groups: dict[str, list[str]] = {}
+    for char in parent:
+        groups.setdefault(find(char), []).append(char)
+    return {char: min([c for c in group if c in shaped] or group, key=ord)
+            for group in groups.values() if len(group) > 1 for char in group}
+
+
+def encoded_shapes(char: str, shapes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`shapes`, `char`'s regional shapes (`refs.regional_shapes`), each with `chars`, the characters
+    that encode it again, where some do: those that join `char` (`_joined`) and whose own structure the
+    shape writes. 臭's J shape ⿱自大 is 𦤀."""
+    char = unicodedata.normalize("NFC", char)
+    head = _joined().get(char)
+    twins = [other for other, joined in _joined().items() if head and joined == head and other != char]
+    if not twins:
+        return shapes
+    labels = {twin: own.label for twin in twins if (own := _own(twin))}
+    found = []
+    for shape in shapes:
+        try:
+            label = text(canonical(han_component_variants.parse(SELECTORS.sub("", shape["text"]))))
+        except ValueError:
+            label = None
+        chars = [twin for twin, own in labels.items() if own == label]
+        found.append({**shape, "chars": chars} if chars else shape)
+    return found
 
 
 def for_ids(sequence: str) -> Structure:
     """The structure a written description names, or ValueError when it names none.
 
-    A description that is a character's own structure names it; another description BabelStone
+    A description that is a character's own structure names it, or the structure that character
+    joins (⿱自大 is 𦤀's, which has 臭's ⿱自犬); another description BabelStone
     gives for a character names that character's structure (the lowest code point's, where several
     characters hold it). A written description may keep `？` for a part no character names; an
     approximate or subtracting one names no composition.
@@ -316,7 +465,10 @@ def for_ids(sequence: str) -> Structure:
     if set(sequence) & (han_component_variants.SKIPPED - {"？"}):
         raise ValueError("An approximate or subtracting description names no structure.")
     written = from_tree(han_component_variants.parse(SELECTORS.sub("", sequence)))
-    spelled = _spellings().get(written.label)
+    owners, spellings = _labels()
+    if (owner := next(iter(owners.get(written.label, ())), None)) and owner in _joined():
+        return for_character(owner) or written
+    spelled = spellings.get(written.label)
     return for_character(spelled) or written if spelled else written
 
 
@@ -329,6 +481,15 @@ def for_name(name: str) -> Structure | None:
         except ValueError:
             return None
     return for_character(name[:1]) if name else None
+
+
+def for_shape(name: str, of: str) -> Structure | None:
+    """The structure of `name` as a regional shape of `of`: `of`'s own, since Unicode unified its
+    regional glyphs (臭's J shape ⿱自大 is 臭's ⿱自犬, though written alone it is 𦤀's). ValueError
+    when `name` is no regional shape of `of`."""
+    if name not in {shape["text"] for shape in refs.regional_shapes(of)}:
+        raise ValueError(f"{name} is no shape of {of}.")
+    return for_name(of)
 
 
 def for_representation(named: Representation) -> Structure | None:

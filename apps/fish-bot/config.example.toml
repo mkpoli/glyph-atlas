@@ -35,14 +35,13 @@ ignored_senders = [
 ]
 
 [chat]
-# Joining in unasked. After a room has been quiet for ambient_quiet_seconds, a batch of at least
-# ambient_min_messages (or one lively message) gets a look with this chance, doubled when lively.
-ambient_chance = 0.2
-ambient_quiet_seconds = 25
-ambient_min_messages = 2
-# No unasked turn in a room this soon after the bot last spoke there, and at most this many an hour.
-ambient_room_cooldown_seconds = 900
-ambient_per_hour = 12
+# Reading along. She opens a room with unread lines at random times, on average this many minutes
+# after the first of them (longer after she lately spoke there), and decides whether to join in. At
+# most visits_per_hour of these across the rooms.
+visit_minutes = 25
+visits_per_hour = 8
+# Greet a person once, when they first join or first speak in any public room.
+welcome = true
 
 [digest]
 # From this hour (JST) each day, one digest per room below, written wholly in the language named

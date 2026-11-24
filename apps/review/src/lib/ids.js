@@ -17,6 +17,10 @@ export const OP_NAMES = {
   '⿺': 'fromLowerLeft', '⿻': 'overlaid', '⿼': 'fromRight', '⿽': 'fromLowerRight', '⿾': 'mirrored',
   '⿿': 'rotated', '㇯': 'subtracted', '〾': 'variant',
 }
+const LAYOUT = { '⿰': 'row', '⿲': 'row', '⿱': 'column', '⿳': 'column', '⿻': 'stack', '㇯': 'stack', '⿾': 'stack', '⿿': 'stack', '〾': 'stack' }
+/** How a tree of boxes lays an operator's parts out: in a row, in a column, the second inside the
+ *  first, or one over the other. */
+export const layout = op => LAYOUT[op] ?? 'enclosure'
 /** The key that puts each operator in the editor, as the number row and the row under it run: 1–9, 0,
  *  - and = for ⿰ to ⿻, then q w e r t y for ⿼ ⿽ ⿾ ⿿ ㇯ 〾. */
 export const KEYS = Object.fromEntries([...'1234567890-=qwerty'].map((key, i) => [key, OPERATORS[i][0]]))

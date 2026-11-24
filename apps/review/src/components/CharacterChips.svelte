@@ -7,12 +7,14 @@
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import ScriptText from './ScriptText.svelte'
   import FormText from './FormText.svelte'
+  import IdsLabel from './IdsLabel.svelte'
   import OriginText from './OriginText.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { countsLabel, structures as readStructures } from '../lib/layers.js'
+  import { countsLabel } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
+  import { idsCard } from '../lib/idsCard.js'
   import { isFigure } from '../lib/mjFigures.js'
-  import { standing } from '../lib/structures.js'
+  import { cardStructures, layouts, proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
@@ -69,23 +71,25 @@
   const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
   const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
   // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
-  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫). A name with no structure, and a site that knows
-  // none yet, shows no row.
+  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), and the small seal characters whose modern
+  // equivalent Unicode gives as one of them (𾲟 with 臭), marked as proposed. A name with no structure, and a site that knows none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
   const composable = list => [...new Set(list.map(v => v.char)
-    .filter(char => HAN.test(char ?? '') || isDescription(char) || isFigure(char ?? '')))]
-  const composedOf = $derived(composable([...members, ...written, ...described]).slice(0, 48))
+    .filter(char => HAN.test(char ?? '') || isSeal(char) || isDescription(char) || isFigure(char ?? '')))]
+  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))]).slice(0, 48).join(''))
   // The forms shown when arranging 構形: the grapheme's 字体 and its related characters.
   const arrangeOf = $derived(composable([...members, ...written, ...described, ...related]))
+  const composedNames = $derived(composed.reduce((n, group) => n + group.chars.length, 0))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   // A signed-in reader opens the 構形 to arrange them, and the row is read again once they have.
-  let composed = $state([]), arranging = $state(false), arrangedTimes = $state(0)
+  let composed = $state([]), twins = $state([]), arranging = $state(false), arrangedTimes = $state(0)
+  const cardChar = $derived(card?.char)
   $effect(() => {
-    const chars = composedOf.join('')
+    const chars = composedOf, char = cardChar
     void arrangedTimes
-    if (!chars) { composed = []; return }
+    if (!chars) { composed = []; twins = []; return }
     let live = true
-    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
+    cardStructures(char, chars).then(found => { if (live) { composed = found.items; twins = found.twins } }, () => { if (live) { composed = []; twins = [] } })
     return () => { live = false }
   })
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
@@ -100,6 +104,10 @@
   // look like another (a compatibility ideograph, a Kangxi radical), so it shows its code point too.
   const named = v => { const p = v.char.codePointAt(0); return !(p >= 0x4e00 && p <= 0x9fff) }
 </script>
+
+{#snippet sharing(names, group)}
+  {#if names.length}<span class="sharing">{#each names as name (name)}{#if composedNames > 1}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/if}{#if proposed(name, group.claimed?.[name])}<sup class="derived-mark" title="{name} · {t('chips.derived')}">*</sup>{/if}{/each}</span>{/if}
+{/snippet}
 
 {#if card}
   <div class="character-layers" aria-label={t('chips.layers.label')}>
@@ -117,7 +125,8 @@
         <span class="layer-label">{t('chips.structure')}</span>
         <div class="variant-chips">
           {#each composed as s (s.id)}
-            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedOf.length > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
+            {@const { own, folded } = layouts(s)}
+            <span class="variant structure"><IdsLabel text={s.label} />{@render sharing(own, s)}{#each folded as part (part.id)}<span class="layout"><IdsLabel text={part.label} />{@render sharing(part.chars, s)}</span>{/each}</span>
           {/each}
           {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>
@@ -136,7 +145,7 @@
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
               : t('chips.showCharacter', { char: member.char })} title={glyphCount(member)} onclick={() => onselect(member.code_point)}>
-            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
+            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={twins.includes(member.char)} />
             {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}
@@ -158,7 +167,7 @@
                 {#if v.code_point}
                   <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
                 {:else}
-                  <span class="variant unencoded" title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup></span>
+                  <span class="variant unencoded" title={derivedTitle(v)}><span class="derived-form" title="" {@attach idsCard(v.char, { lang: 'zh' })}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /></span><sup class="derived-mark" aria-hidden="true">*</sup></span>
                 {/if}
               {/each}
             </div>
@@ -254,7 +263,9 @@
   .variant:hover{border-color:var(--accent)}
   /* A derived chip is a prediction: a small mark after the character says so; a form no character
      has is set smaller, as its sequence is longer than a character. */
+  .derived-form{cursor:help;border-radius:3px}.derived-form:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
   .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
+  .sharing .derived-mark{margin-left:1px}
   .variant.unencoded :global(.script-text){font-size:15px}
   .variant.unencoded:hover{border-color:var(--accent)}
   .derived{flex-basis:100%}
@@ -263,6 +274,7 @@
   .derived[open] summary{margin-bottom:6px}
   .variant small{font-size:11px;color:var(--muted)}
   .variant.structure{font-size:15px}
+  .layout{display:inline-flex;align-items:baseline;gap:6px;padding-left:8px;border-left:1px solid var(--line)}
   .variant.structure:hover{border-color:var(--line)}
   .arrange{align-self:center;border:0;background:transparent;color:var(--accent);padding:0 4px;font-size:12px;text-decoration:underline;text-underline-offset:3px}
   .arrange:hover{color:var(--ink)}

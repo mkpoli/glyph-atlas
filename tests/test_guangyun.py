@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
+
+import pytest
 
 from glyph_atlas import guangyun
 from glyph_atlas.leaf_text import Head
@@ -54,3 +57,30 @@ def test_a_gloss_is_counted_as_the_table_gives_it(tmp_path: Path) -> None:
     six = guangyun.read_entries(tables(tmp_path))[("1", 7, "b")][6]
     # The first headword of a 小韻 already ends with its 反切, 切 and count: nothing is added.
     assert six[0].head.gloss == len("春方也德紅切三")
+
+
+@pytest.fixture(scope="module")
+def cut():
+    spec = importlib.util.spec_from_file_location("cut_guangyun_headwords",
+                                                  Path(__file__).parents[1] / "scripts" / "cut_guangyun_headwords.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(("reads", "leaf"), [
+    ({10: 5, 9: 40, 11: 0}, 10),  # enough read at the leaf the offset gives: no other leaf is tried
+    ({10: 0, 9: 2, 11: 1}, 10),  # chance readings elsewhere do not move it
+    ({10: 1, 9: 0, 11: 12}, 11),  # nor does one at a wrong leaf hold it there
+    ({10: 2, 9: 3, 11: 3}, 9),  # the nearer of two that read as many
+    ({10: 0, 9: 0, 11: 0}, 10),
+])
+def test_an_opening_is_read_as_the_leaf_the_readers_bear_out(cut, reads, leaf):
+    tried = []
+
+    def attempt(number):
+        tried.append(number)
+        return reads[number], {"of": number}
+
+    assert cut.settled(attempt, [10, 9, 11]) == (leaf, {"of": leaf})
+    assert (tried == [10]) == (reads[10] >= cut.MOVED)

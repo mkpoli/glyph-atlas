@@ -65,11 +65,52 @@ def test_a_filing_refuses_what_names_nothing(dataset):  # noqa: F811
     file(client, "fm:" + "0" * 32, char="峰", status=404)
 
 
+def test_a_regional_shape_has_its_characters_structure(dataset):  # noqa: F811
+    """杮's K shape ⿰木市 stands under 杮's ⿰木巿; written alone it is 柿's."""
+    client = TestClient(create_app(dataset))
+    shingle, alone = structures.for_character("杮"), structures.for_ids("⿰木市")
+    assert shingle.id != alone.id
+    assert client.get("/layers/structures", params={"c": "⿰木市", "of": "杮"}).json()["items"] == [
+        {"id": shingle.id, "label": shingle.label, "chars": ["⿰木市"]}]
+    assert groups(client, "⿰木市")[0]["id"] == alone.id
+    assert file(client, "⿰木市", char="⿰木市", of="杮")["structures"][0]["structure"] == shingle.id
+    file(client, "⿰木市", char="⿱山夆", of="杮", status=422)
+
+
 def fold(client: TestClient, source: dict, into: dict | None, *, reviewer: str = "ann", status: int = 200) -> dict:
     body = {"id": str(uuid4()), "client_id": reviewer, "from": source, **({"into": into} if into else {"remove": True})}
     response = client.post("/atlas/structures/folds", json=body)
     assert response.status_code == status, response.text
     return response.json()
+
+
+def test_a_layout_stands_under_the_structure_it_is_one_of(dataset):  # noqa: F811
+    """𽓻, the seal character of 遇, is ⿰辵禺 and stands under ⿺辶禺."""
+    client = TestClient(create_app(dataset))
+    meet, beside = structures.for_character("遇"), structures.for_character("𽓻")
+    part = {"id": beside.id, "label": "⿰辵禺", "by": [], "chars": ["𽓻"]}
+    assert groups(client, "遇𽓻") == [{"id": meet.id, "label": "⿺辶禺", "chars": ["遇", "𽓻"], "folded": [part]}]
+    assert client.get("/layers/ids", params={"c": "𽓻"}).json()["structure"] == {
+        "id": beside.id, "label": "⿰辵禺"}
+    # A reader's filing of the seal character under the structure holds its place there.
+    file(client, "𽓻", char="𽓻")
+    assert groups(client, "遇𽓻")[0]["folded"] == [part]
+    # The structure it stands under can be named by it, though no claim has named that one.
+    assert file(client, "嵐", char="𽓻", head=True)["structures"][0]["structure"] == meet.id
+    file(client, "嵐", char="遇", head=True, status=422)
+    file(client, "嵐", char="𽓻", head=True, remove=True)
+    # What stands there does not depend on what else is asked for.
+    file(client, "峰", char="𽓻")
+    assert [(group["id"], group["chars"]) for group in groups(client, "峰")] == [(meet.id, ["峰"])]
+    # Folds and layouts are followed to one end: 遇's structure folded into ⿰辵丌, which stands under ⿺辶丌.
+    fold(client, {"char": "遇"}, {"char": "\U0003ddb3"})
+    end = structures.for_character("䢋")
+    assert [(group["id"], group["chars"]) for group in groups(client, "遇𽓻")] == [(end.id, ["遇", "𽓻"])]
+    # A reader's fold of 遇's structure is followed on, and one under the layout wins.
+    fold(client, {"char": "遇"}, {"char": "嵐"})
+    assert [(group["id"], group["chars"]) for group in groups(client, "嵐遇𽓻")] == [(structures.for_character("嵐").id, ["嵐", "遇", "𽓻"])]
+    fold(client, {"char": "遇"}, {"char": "𽓻"})
+    assert [(group["id"], group["chars"]) for group in groups(client, "遇𽓻")] == [(beside.id, ["遇", "𽓻"])]
 
 
 def test_a_structure_folds_into_another_and_its_forms_join_that_group(dataset):  # noqa: F811

@@ -20,11 +20,7 @@
     "name": "first member from the homeserver, not from old chat",
     "note": "With her own earlier guess in the log, she once repeated it instead of looking it up.",
     "room_alias": "#zh:glyphatlas.org",
-    "messages": [
-      ["胡妹", "大肥魚 你記得這個羣第一個成員是誰嗎？"],
-      ["大肥魚", "第一個成員啊……本鯨的記性只到十月底那会儿，最早的紀錄是 mkpoli 在歡迎頻道寫空間結構。"],
-      ["渚", "大肥魚，所以這個羣是誰建的、誰最先加入的？"]
-    ],
+    "messages": [["胡妹", "大肥魚 你記得這個羣第一個成員是誰嗎？"], ["大肥魚", "第一個成員啊……本鯨的記性只到十月底那会儿，最早的紀錄是 mkpoli 在歡迎頻道寫空間結構。"], ["渚", "大肥魚，所以這個羣是誰建的、誰最先加入的？"]],
     "expect": {"tools_any": ["room_info"]}
   },
   {
@@ -68,5 +64,38 @@
     "note": "On 11-20 to 11-23 her Chinese lines carried Japanese, Korean and Cantonese words (「晚安安せあせる」, 「好似無佢嘅厝」).",
     "messages": [["渚", "大肥魚，除了白米飯，還喫什麼呀~"]],
     "expect": {"tools_none": true, "must_not_match": ["[ぁ-ん]{2,}|[ァ-ヶ]{2,}|[가-힣]{2,}", "佢|嘅|冇"]}
+  },
+  {
+    "name": "picks up a correction without being named",
+    "note": "On 11-24 \"I mean the whole server!\" 34 seconds after her answer got no reply.",
+    "task": "follow",
+    "room": "curiosities",
+    "messages": [["まくぽり", "大肥魚: hey fish! can you now give a better overview of everything said before here concisely?"], ["大肥魚", "Sure! On Nov 16 people talked about adding Tangut texts to tangut.mkpo.li, and on Nov 21 porges asked for IDS ideas for a glyph."], ["まくぽり", "I mean the whole server!"]],
+    "expect": {"recap": true}
+  },
+  {
+    "name": "a follow-up question keeps its subject",
+    "task": "follow",
+    "messages": [["渚", "大肥魚，「凰」的碼位是什麼？"], ["大肥魚", "「凰」是 U+51F0～"], ["渚", "那「鳳」呢"]],
+    "expect": {"tools_any": ["characters"], "must_match": ["9CF3"]}
+  },
+  {
+    "name": "stays out when her partner turns to someone else",
+    "task": "follow",
+    "messages": [["渚", "大肥魚，晚安～"], ["大肥魚", "晚安，渚～"], ["橘", "渚先生，明天的論文幾點交？"], ["渚", "@橘 下午三點，我先去洗澡了"]],
+    "expect": {"quiet": true}
+  },
+  {
+    "name": "stays out of other people's talk",
+    "task": "follow",
+    "messages": [["渚", "大肥魚，你喫飯了嗎"], ["大肥魚", "喫了三碗白飯！"], ["介之", "《海篇》的金部第一頁你們看過嗎"], ["宝鈅", "看過，內閣文庫藏本有"]],
+    "expect": {"quiet": true}
+  },
+  {
+    "name": "one room's overview is an ordinary answer",
+    "note": "The catch-up covers every room, so a question about this one must not set it off.",
+    "room": "curiosities",
+    "messages": [["porges", "Any IDS ideas for this glyph, like ⿵冂⿱亠乂?"], ["橘", "maybe 𮌇, a variant of 肉"], ["まくぽり", "大肥魚: can you sum up what was said in this room so far?"]],
+    "expect": {"recap": false, "must_match": ["肉|𮌇"]}
   }
 ]

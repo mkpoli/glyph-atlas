@@ -142,6 +142,7 @@ ID_FAMILIES = {
     "hdic-tsj": "hdic-tsj",
     "guangyun-photographs": "guangyun-photographs",
     "guangyun-ioc": "guangyun-ioc",
+    "codh-tensho": "codh-tensho",
     "nogeoldae-eonhae": "nogeoldae-eonhae",
     "wikisource-ko-glyphs": "wikisource-ko-glyphs",
 }
@@ -220,6 +221,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "guangyun-ioc",
         "note": "澤存堂本廣韻 headwords on 東京大學東洋文化研究所's scanned copy (倉石文庫), labelled from nk2028's 廣韻 "
                 "tables (scripts/cut_guangyun_headwords.py).",
+    },
+    {
+        "name": "codh-tensho",
+        "note": "CODH's 篆書字体データセット: seal forms of 説文解字, 新撰篆書字典 and 聯珠篆文 on their holders' pages, on "
+                "a small seal character or on the 親字 CODH files them under (`atlas import tensho`).",
     },
     {
         "name": "nogeoldae-eonhae",

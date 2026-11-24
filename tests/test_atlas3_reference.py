@@ -151,7 +151,8 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     assert bucket.objects["v3/reference/list/graphemes/0.json.gz"]["total"] == 2
     structure = structures.for_character("好")
     assert structure.label == "⿰女子"
-    assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {
+    held = bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"]
+    assert {char: row for char, row in held.items() if char not in structures.seal_equivalents()} == {
         "好": [["⿰女子"], None, [structure.id, structure.label]]}
     assert bucket.objects["v3/reference/structure.json.gz"] == {
         "scheme": structures.SCHEME, "version": structures.VERSION, "policy": structures.POLICY}
@@ -457,6 +458,8 @@ def test_only_components_sends_the_component_objects_alone_and_touches_no_d1(lay
 
 def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    # Two seal characters of the 11,328, so a shard can still empty and leave R2.
+    monkeypatch.setattr(structures, "seal_equivalents", lambda: {"𾲟": "臭", "𽓻": "遇"})
     sources(root, cards=[card("あ")])
     bucket = load(remote, monkeypatch, "--send")
     others = {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))}
@@ -480,17 +483,19 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     assert "objects to delete: 1" in report and "char " not in report
     load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
     structure, described, one = structures.for_character("峰"), structures.for_character("脫"), structures.for_character("一")
-    smell, big = structures.for_character("臭"), structures.for_ids("⿱自大")
+    smell = structures.for_character("臭")
     shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
-    assert shards != held
     rows = {char: row for name in shards for char, row in bucket.objects[f"v3/reference/{name}"].items()}
+    assert shards != held
+    # A small seal character is proposed its Han equivalent's structure (𾲟 is 臭's seal form).
+    assert rows.pop("𾲟") == [[], None, [smell.id, smell.label]]
+    assert rows.pop("𽓻") == [[], None, [structures.for_character("𽓻").id, "⿰辵禺"]]
     # A description the site names something by is a key of its own; one that names no structure has none.
-    # A character with no description to edit keeps its structure. A regional shape that is another
-    # character's structure (臭 as ⿱自大 in J is 𦤀's) carries it; one that spells its character's does not.
-    assert smell.id != big.id
+    # A character with no description to edit keeps its structure. A regional shape another character
+    # encodes again names it (臭's ⿱自大 is 𦤀).
     assert rows == {"峰": [["⿰山夆"], None, [structure.id, structure.label]], "一": [[], None, [one.id, one.label]],
                     "臭": [["⿱自犬"], [{"text": "⿱自犬", "regions": "GHTKPV"},
-                                      {"text": "⿱自大", "regions": "J", "structure": {"id": big.id, "label": big.label}}],
+                                      {"text": "⿱自大", "regions": "J", "chars": ["𦤀"]}],
                           [smell.id, smell.label]],
                     "⿰月兊": [["⿰月兊"], None, [described.id, described.label]], "〾⿰山夆": [["〾⿰山夆"], None, None]}
     assert bucket.objects["v3/reference/structure.json.gz"]["policy"] == structures.POLICY
