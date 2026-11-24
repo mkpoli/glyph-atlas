@@ -23,13 +23,13 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { builtAs, listForms, formOf } from '../lib/cropForms.js'
+  import { baseOf, builtAs, listForms, formOf } from '../lib/cropForms.js'
   import { proposed, standing, structureTarget } from '../lib/structures.js'
   import { chipsOf, groupForms } from '../lib/formOffers.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
-  // its own form would mark nothing.
+  // its own form would mark nothing. `onchoose` is given the form, and the character choosing it names.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
   let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], alike: [] }), added = $state([])
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
@@ -78,7 +78,8 @@
   const sections = $derived([
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
-  function choose(char) { onchoose(char === chosen ? null : char) }
+  const give = char => onchoose(char, baseOf(char, listed))
+  function choose(char) { if (char === chosen) onchoose(null); else give(char) }
   // The 構形 the crop is said to be built as, and the one chosen here (`{ structure, label, target }`; with
   // no `target` the reader's own word is taken back).
   const built = $derived(builtAs(crop))
@@ -110,7 +111,7 @@
       structureOf = read
       added = [...added, { char: item.char, code_point: item.code_point, script: item.script ?? '', lang: item.lang ?? '' }]
     }
-    onchoose(item.char)
+    give(item.char)
   }
   // A derived option names how it was made: each substitution of its first route, as made; a
   // registered figure names its sequence and its MJ figure; a regional shape names its regions.
