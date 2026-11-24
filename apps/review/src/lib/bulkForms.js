@@ -115,13 +115,16 @@ export function bulkReviewOutcome(answered) {
   const saved = new Map(), unchanged = new Set(), skipped = new Map(), flagged = [], batches = []
   for (const { item: batch, result } of answered) {
     const results = [...(result?.results ?? [])]
+    const byId = results.length && results.every(entry => entry?.target_id || entry?.id)
+      ? new Map(results.map(entry => [entry.target_id ?? entry.id, entry]))
+      : null
     const kept = new Set(result?.unchanged ?? [])
     const refused = new Map((result?.skipped ?? []).map(entry => [entry.id, entry.reason]))
     let wrote = 0
     for (const entry of batch.crops) {
       if (kept.has(entry.id)) { unchanged.add(entry.id); continue }
       if (refused.has(entry.id)) { skipped.set(entry.id, refused.get(entry.id)); continue }
-      const done = results.shift()
+      const done = byId ? byId.get(entry.id) : results.shift()
       if (!done) { skipped.set(entry.id, 'changed'); continue }
       wrote += 1
       saved.set(entry.id, { revision: done.revision, state: done.state })
@@ -130,4 +133,44 @@ export function bulkReviewOutcome(answered) {
     if (wrote > 0) batches.push(batch.id)
   }
   return { saved, unchanged, skipped, flagged, batches }
+}
+
+/**
+ * Combine a retry's bulk-done record with the previous half of the same operation when a form claim
+ * (or second review batch) is retried on overlapping crops for the same target, so Undo still reverts
+ * the earlier review batches alongside the newly saved form claims.
+ */
+export function mergeBulkDone(previous, next, changedIds) {
+  const carry = previous?.kind === 'correct' && previous.char === next.char && changedIds.some(id => id in (previous.before ?? {}))
+    ? previous
+    : null
+  if (!carry) return next
+  const before = { ...next.before, ...carry.before }
+  const reviewBefore = { ...next.reviewBefore, ...carry.reviewBefore }
+  const seenDescribed = new Set((carry.described ?? []).map(entry => entry.crop.id))
+  const described = [...(carry.described ?? []), ...(next.described ?? []).filter(entry => !seenDescribed.has(entry.crop.id))]
+  return {
+    ...next,
+    batches: [...new Set([...(carry.batches ?? []), ...(next.batches ?? [])])],
+    described,
+    before,
+    reviewBefore,
+    count: Object.keys(before).length,
+    kept: (carry.kept ?? 0) + (next.kept ?? 0),
+  }
+}
+
+/**
+ * Combine review-restored tiles with form-undo outcomes, preserving the live tile's current form
+ * for any crop whose form claim was not yet reverted.
+ */
+export function mergeUndoTiles({ restored, unmarked, formTiles, stillClaimed, live }) {
+  const formById = new Map(unmarked.map(({ crop }) => [crop.id, crop.form]))
+  const liveById = new Map(live.map(item => [item.id, item]))
+  const merged = { ...formTiles, ...restored }
+  for (const [id, tile] of Object.entries(merged)) {
+    if (formById.has(id)) merged[id] = { ...tile, form: formById.get(id) }
+    else if (stillClaimed.has(id) && liveById.has(id)) merged[id] = { ...tile, form: liveById.get(id).form }
+  }
+  return merged
 }

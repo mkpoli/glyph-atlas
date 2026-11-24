@@ -39,7 +39,7 @@
   import { isDescription } from '../lib/ids.js'
   import { isFigure } from '../lib/mjFigures.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
-  import { bulkActionPlan, bulkFormChoices, bulkReviewBatches, bulkReviewBody, bulkReviewOutcome } from '../lib/bulkForms.js'
+  import { bulkActionPlan, bulkFormChoices, bulkReviewBatches, bulkReviewBody, bulkReviewOutcome, mergeBulkDone, mergeUndoTiles } from '../lib/bulkForms.js'
   import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades, bookGallery as layerBooks } from '../lib/layers.js'
@@ -1189,7 +1189,11 @@
     if (changedCount) {
       patch(after, now)
       if (confirmed.length) confirmedHere = new Set([...confirmedHere, ...confirmed])
-      bulkDone = { kind: 'correct', batches: outcome.batches, described: marked, count: changedCount, char: target, lang, before, reviewBefore, kept }
+      bulkDone = mergeBulkDone(
+        bulkDone,
+        { kind: 'correct', batches: outcome.batches, described: marked, count: changedCount, char: target, lang, before, reviewBefore, kept },
+        Object.keys(now),
+      )
       if (outcome.batches.length) { runsChanged(); readGroupStats() }
       if (marked.length && (isDescription(target) || isFigure(target))) moved('totals')
     }
@@ -1286,15 +1290,14 @@
     if (answered.length) confirmedHere = new Set([...confirmedHere].filter(id => !(id in (done.reviewBefore ?? done.before ?? {}))))
     bulkReport = []
     bulkDone = leftBatches.length || leftForms.length ? { ...done, batches: leftBatches, described: leftForms } : null
-    const formById = new Map(unmarked.map(({ crop }) => [crop.id, crop.form]))
+    const stillClaimed = new Set([...leftForms.map(({ crop }) => crop.id), ...pausedForms.map(crop => crop.id)])
     if (answered.length) {
-      // Tiles go back at the revision each undo answered, with any undone form claim overlaid.
+      // Tiles go back at the revision each undo answered, with any undone form claim overlaid
+      // and any still-unreverted form claim preserved from the live tile.
       const shown = new Set([...items, ...local, ...corpus, ...sample, ...scattered.flatMap(run => run?.crops ?? [])].map(item => item.id))
       const restored = pausedBatches.length || leftBatches.length ? null : restoredCrops(done.reviewBefore ?? done.before, answered)
       if (restored && Object.keys(restored).every(id => shown.has(id))) {
-        const merged = { ...withForms(unmarked), ...restored }
-        for (const [id, form] of formById) if (merged[id]) merged[id] = { ...merged[id], form }
-        patch(merged)
+        patch(mergeUndoTiles({ restored, unmarked, formTiles: withForms(unmarked), stillClaimed, live: display }))
       } else { moved('totals'); await load() }
       runsChanged()
       readGroupStats()

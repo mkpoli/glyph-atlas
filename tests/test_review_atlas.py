@@ -2172,6 +2172,8 @@ def test_a_batch_of_form_picks_and_line_correction_match_the_worker(dataset):
     body = saved.json()
     assert len(body["results"]) == 1 and body["results"][0]["target_id"] == first["id"] and body["results"][0]["state"] == "checked"
     assert body["skipped"] == [{"id": second["id"], "reason": "changed"}]
+    # Retrying a partially skipped line correction preserves its original unchanged/skipped lists.
+    assert client.post('/atlas/corrections', json=line).json() == body
     # Claiming forms in a batch works on both checked and unchecked crops and undoes by sending `replaced`.
     batch = {
         "id": str(uuid4()), "client_id": "bulk-test",

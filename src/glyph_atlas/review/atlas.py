@@ -1484,7 +1484,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 reviews = [{"target_id": r["target_id"], "revision": r["revision"],
                             "state": "flagged" if r["review"]["new"] == "disputed" else "checked"}
                            for r in previous if r["field"] == "review"]
-                return {"id": str(correction.id), "results": reviews, "unchanged": [], "skipped": []}
+                first = json.loads(next(r["review"]["evidence"] for r in previous if r["field"] == "review"))
+                return {"id": str(correction.id), "results": reviews,
+                        "unchanged": first.get("line_unchanged", []),
+                        "skipped": first.get("line_skipped", [])}
             return {"id": str(correction.id), **repeat(previous)}
         open_issue: dict[str, str | None] = {}
         for event in store.events():
@@ -1524,6 +1527,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             evidence = json.dumps({"kind": "character-review", "batch": str(correction.id), "request_sha256": signature,
                                    "verdict": "match" if same else "wrong", "issue": kept or (None if same else "character"),
                                    "suggested_character": None if same else identity,
+                                   **({"line_unchanged": unchanged, "line_skipped": refused} if correction.line else {}),
                                    "snapshot": snapshot(unit, revision),
                                    "correction": {"unicode": identity,
                                                   "box": unit.box.model_dump() if unit.box else None}},

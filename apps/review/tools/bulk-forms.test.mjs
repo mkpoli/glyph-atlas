@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { bulkActionPlan, bulkFormChoices, bulkReviewBatches, bulkReviewBody, bulkReviewOutcome } from '../src/lib/bulkForms.js'
+import { bulkActionPlan, bulkFormChoices, bulkReviewBatches, bulkReviewBody, bulkReviewOutcome, mergeBulkDone, mergeUndoTiles } from '../src/lib/bulkForms.js'
 import { ROUND_MAX } from '../../cloudflare/src/rounds.ts'
 
 const crop = (id, extra = {}) => ({ id, label: '說', written_character: '說', revision: 2, image_sha256: 'a'.repeat(64), state: 'pending', ...extra })
@@ -153,5 +153,62 @@ describe('batching and reading bulk review outcomes', () => {
     expect(Object.fromEntries(outcome.skipped)).toEqual({ c: 'checked' })
     expect(outcome.flagged).toEqual([{ id: 'd', reason: 'flagged' }])
     expect(outcome.batches).toEqual(['b1'])
+  })
+
+  it('matches results by target_id when present so missing skipped entries cannot shift saved crops', () => {
+    const batch = { id: 'b1', crops: [{ id: 'a' }, { id: 'b' }] }
+    const outcome = bulkReviewOutcome([
+      { item: batch, result: { id: 'b1', unchanged: [], skipped: [], results: [{ target_id: 'b', revision: 5, state: 'checked' }] } },
+    ])
+    expect(Object.fromEntries(outcome.saved)).toEqual({ b: { revision: 5, state: 'checked' } })
+    expect(Object.fromEntries(outcome.skipped)).toEqual({ a: 'changed' })
+  })
+})
+
+describe('failure-recovery helpers for bulk apply and undo', () => {
+  it('preserves earlier review batches when a failed form save is retried on the same crops', () => {
+    const origA = crop('a', { state: 'pending', form: null })
+    const checkedA = crop('a', { state: 'checked', revision: 3, form: null })
+    const first = {
+      kind: 'correct', batches: ['b1'], described: [], count: 1, char: '所\u{E0103}', lang: '',
+      before: { a: origA }, reviewBefore: { a: origA }, kept: 0,
+    }
+    const retry = {
+      kind: 'correct', batches: [], described: [{ crop: { id: 'a', form: { text: '所\u{E0103}' } }, replaced: null }],
+      count: 1, char: '所\u{E0103}', lang: '',
+      before: { a: checkedA }, reviewBefore: {}, kept: 0,
+    }
+    const merged = mergeBulkDone(first, retry, ['a'])
+    expect(merged.batches).toEqual(['b1'])
+    expect(merged.described.map(d => d.crop.id)).toEqual(['a'])
+    expect(merged.before.a).toBe(origA)
+    expect(merged.reviewBefore.a).toBe(origA)
+    expect(merged.count).toBe(1)
+
+    // A fresh selection of unrelated crops does not inherit the earlier undo record.
+    const fresh = mergeBulkDone(first, { ...retry, before: { z: crop('z') } }, ['z'])
+    expect(fresh.batches).toEqual([])
+  })
+
+  it('keeps the live saved form on crops whose form undo failed after review undo succeeded', () => {
+    const savedForm = { text: '所\u{E0103}' }
+    const oldForm = { text: '所' }
+    const restored = {
+      a: crop('a', { state: 'pending', revision: 4, form: oldForm }),
+      b: crop('b', { state: 'pending', revision: 4, form: oldForm }),
+    }
+    const live = [
+      crop('a', { state: 'checked', revision: 3, form: savedForm }),
+      crop('b', { state: 'checked', revision: 3, form: savedForm }),
+    ]
+    const merged = mergeUndoTiles({
+      restored,
+      unmarked: [{ crop: { id: 'a', form: oldForm } }],
+      formTiles: { a: crop('a', { form: oldForm }) },
+      stillClaimed: new Set(['b']),
+      live,
+    })
+    expect(merged.a.form).toEqual(oldForm)
+    expect(merged.b.form).toEqual(savedForm)
   })
 })
