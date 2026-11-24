@@ -164,11 +164,10 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable" class:captioned>
+    {#if !ready && failed}<p class="form-unread" role="alert">{t('layers.readError')}<button type="button" class="quiet-link" onclick={() => attempt++}>{t('common.retry')}</button></p>{/if}
     <FormChips groups={shownGroups} open={shapes} onopen={leaveOpen} {chosen} {current} {disabled} label={unassigned ? t('corpus.assign.label') : t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={open ? open.label ?? written : chosen ?? (current || (unassigned ? '' : written))} />{/if}
-    {#if !ready && failed}<p class="form-unread" role="alert">{t('layers.readError')}<button type="button" class="quiet-link" onclick={() => attempt++}>{t('common.retry')}</button></p>{/if}
-      {#if hidden}{@const more = `${t('explore.grapheme.forms', { count: hidden })} · ${t('chips.structure')} ${folded.hidden.length}`}
-        <button type="button" class="form-more" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? '−' : `+${hidden}`}<small>{more}</small></button>{/if}
+      {#if hidden}<button type="button" class="form-more" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? '−' : '+'}{hidden}<small>· {t('chips.structure')} {folded.hidden.length}</small></button>{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} disabled={disabled || !ready} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
   </div>
@@ -235,8 +234,8 @@
   .form-own sup{font-size:11px;line-height:1;color:var(--muted);margin-left:2px}
   .form-own-label{font-size:11px;color:var(--muted)}
   .crop-form :global(.form-chips){flex:1 1 0}
-  .form-more{display:inline-flex;align-items:baseline;gap:8px;align-self:flex-end;padding:4px 10px;font-size:15px;line-height:1.75;border-style:dashed;color:var(--muted)}
   .form-unread{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;align-self:center;margin:0;font-size:12px;color:var(--muted)}
+  .form-more{display:inline-flex;align-items:baseline;gap:8px;align-self:flex-end;padding:4px 10px;font-size:15px;line-height:1.75;border-style:dashed;color:var(--muted)}
   .form-more small{font-size:11px}
   .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
