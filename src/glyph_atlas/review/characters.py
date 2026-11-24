@@ -41,6 +41,8 @@ lines and the next corpus all arrive the same way.
 from __future__ import annotations
 
 import json
+import unicodedata
+from collections import Counter
 from functools import lru_cache
 from threading import RLock
 from typing import Annotated, Any, Literal
@@ -50,7 +52,16 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import evidence, han_components, images, refs, representation, visual_families, written_with
+from .. import (
+    evidence,
+    han_components,
+    images,
+    refs,
+    representation,
+    structures,
+    visual_families,
+    written_with,
+)
 from ..production import production_info
 from ..representation import written
 from ..schema import Box, Character, Document, Page, Unit
@@ -626,6 +637,51 @@ def _widened_corpus(chars: list[str], limit: int, offset: int, visual_group: str
     return {"items": items[offset:offset + limit], "total": min(total, WIDENED_CAP)}, fault
 
 
+def grapheme_forms(point: str) -> dict[str, Any]:
+    """The forms a crop of a grapheme with no character of its own may be, as the Worker's
+    `/layers/graphemes/{head}/forms` answers: every member with its regional shapes, and the characters
+    attested as variants of any member, related otherwise or derived, with the members they are one of."""
+    info = refs.grapheme_info(point) or {}
+    head = refs.to_char(info.get("code_point") or point)
+    members = [m for m in info.get("members") or [{"code_point": point, "char": head}]
+               if unicodedata.normalize("NFC", m["char"]) == m["char"]]
+    family = {m["char"] for m in members}
+    shapes = {m["char"]: structures.encoded_shapes(m["char"], refs.regional_shapes(m["char"])) for m in members}
+    owners = Counter(shape["text"] for each in shapes.values() for shape in each)
+    lent = [writer.char for writer in written_with.writers(head)]
+    variants: dict[str, dict[str, Any]] = {}
+    related: dict[str, dict[str, Any]] = {}
+    derived: dict[str, dict[str, Any]] = {}
+
+    def join(rows: dict[str, dict[str, Any]], char: str, via: str, **extra: Any) -> None:
+        if char not in family and unicodedata.normalize("NFC", char) == char:
+            found = rows.setdefault(char, {"char": char, "via": [], "code_point": refs.to_code_point(char) if len(char) == 1 else None, **extra})
+            if via not in found["via"]:
+                found["via"].append(via)
+
+    for member in members:
+        char, code_point = member["char"], member["code_point"]
+        widening, other = variant_pairs(char)
+        writers = {*lent, *(w["char"] for w in (refs.grapheme_info(code_point) or {}).get("writers", []))}
+        lends = written_with.writes(char)
+        writes = {*map(refs.to_char, refs.also_writes(code_point)), *([lends.grapheme] if lends else [])}
+        rows = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN], *({"char": c, "widens": False, "written": True} for c in lent)]
+        for row in sorted(rows, key=lambda row: row["char"] not in writers):
+            if (row["widens"] or row["written"] or row["char"] in writers) and row["char"] not in writes:
+                join(variants, row["char"], char)
+        for row in rows:
+            if not (row["widens"] or row["written"] or row["char"] in writers) or row["char"] in writes:
+                join(related, row["char"], char)
+        for row in refs.derived_variants(char):
+            join(derived, row["char"], char, encoded=row["encoded"], route=[[step["was"], step["became"]] for step in row["routes"][0]])
+    related = {char: row for char, row in related.items() if char not in variants}
+    derived = {char: row for char, row in derived.items() if char not in variants and char not in related}
+    return {"head": head, "variants": [*variants.values()], "related": [*related.values()], "derived": [*derived.values()],
+            "members": [{"char": m["char"], "code_point": m["code_point"], "script": m.get("script") or "",
+                         "shapes": [{**shape, "base": m["char"] if owners[shape["text"]] == 1 else None} for shape in shapes[m["char"]]]}
+                        for m in members]}
+
+
 def _write_families(point: str, counts: dict[str, int], extra: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     """The graphemes besides its own that a reduced form writes, each with its family's images;
     `extra` are those the table of `written_with` adds for a character of another script.
@@ -1106,6 +1162,15 @@ def router(store: Store) -> APIRouter:
             view["variants"] = {**view["variants"], "forms": forms,
                                 "derived": [entry for entry in view["variants"]["derived"] if entry["char"] not in carried]}
         return {"query": row.code_point, "expand": expand, **view}
+
+    @api.get("/layers/graphemes/{code_point}/forms")
+    def forms_of_grapheme(code_point: str) -> dict[str, Any]:
+        """The forms a crop of a grapheme may be (`grapheme_forms`), with those its crops carry."""
+        row = known(code_point)
+        found = grapheme_forms(row.code_point)
+        boxes = {unit.id: evidence.box_text(unit.box) for unit, *_ in layer().rows(row.code_point, expand="grapheme")}
+        listed = {item["char"] for item in [*found["members"], *found["variants"]]}
+        return {**found, "forms": [form for form in store.carried_forms(boxes) if form["char"] not in listed]}
 
     @api.get("/layers/occurrences")
     def occurrences(

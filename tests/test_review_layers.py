@@ -745,6 +745,18 @@ def test_a_form_sent_again_after_its_review_alone_was_saved_rests_on_the_redrawn
     assert [value["text"] for value in redrawn["form"]["values"]] == ["子"]
 
 
+def test_the_forms_of_a_whole_grapheme_name_the_member_each_is_of(dataset):
+    api = client(dataset)
+    found = api.get("/layers/graphemes/U+5716/forms").json()
+    assert found["head"] == "図" and {"図", "圖", "图"} <= {member["char"] for member in found["members"]}
+    bases = {shape["text"]: shape["base"] for member in found["members"] for shape in member["shapes"]}
+    assert bases["⿴囗⿱口㐭"] == "圖"
+    assert ["圖"] in [row["via"] for row in found["variants"] if row["char"] == "啚"]
+    assert "徒" in {row["char"] for row in found["related"]}
+    assert not {row["char"] for row in found["variants"]} & {member["char"] for member in found["members"]}
+    assert api.get("/layers/graphemes/U+306D/forms").json()["head"] == "ね"
+
+
 def test_a_correction_refuses_a_second_character_and_a_stale_revision(dataset):
     api = client(dataset)
     unit = api.get("/layers/characters/U+306D").json()["samples"][0]

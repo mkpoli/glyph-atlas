@@ -547,7 +547,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
     order named, as the Worker's `/layers/structures` answers. A name stands under the structure
     readers filed its form under (`claimed`, by name: `{id, label, by}` each, the one that holds first),
     and the group names who says so; with no claim it stands under the one its description gives, and a
-    regional shape of `of` under that character's. A
+    regional shape of one of the characters `of` under that character's. A
     structure a reader folded into another (`folds`, by id: `{head, by}`) stands under that one, and
     the group lists it in `folded` with the names built as it. So does a structure that is another
     layout of one (`structures.head`: ⿰辵禺 under ⿺辶禺), with nobody in `by`, unless a reader folded
@@ -557,7 +557,11 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
 
     built: dict[str, dict[str, Any]] = {}
     filed: dict[str, list[dict[str, Any]]] = {}
-    shapes = {shape["text"] for shape in regional_shapes(of)} if of else set()
+    shapes: dict[str, str | None] = {}
+    for char in dict.fromkeys(written(of)):
+        for shape in regional_shapes(char) if len(char) == 1 else ():
+            # A shape two of them share is neither's.
+            shapes[shape["text"]] = None if shape["text"] in shapes else char
     for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
         claims = list((claimed or {}).get(name, ()))
         if claims:
@@ -566,7 +570,7 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
                 filed[name] = [dict(other) for other in claims[1:]]
             continue
         try:
-            structure = structures.for_name(of) if name in shapes else structures.for_name(name)
+            structure = structures.for_name(shapes.get(name) or name)
         except ValueError:
             continue
         if structure:

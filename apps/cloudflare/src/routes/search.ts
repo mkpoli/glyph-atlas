@@ -5,7 +5,7 @@
 // A card's `data` is in the summary shard of its family head. A list reads the name list and the
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
-import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, structureSource, type NameIndex } from '../atlas3Reference';
+import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, structureSource, type NameIndex, type Structure } from '../atlas3Reference';
 import { compatibility, structureKey, written } from '../representation';
 import { claimedStructures, foldsOf, standingOf } from './claims';
 import { catalogueVersion } from '../atlas3Stamps';
@@ -225,8 +225,8 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
 /** The 構形 of each character or description named, as groups of those that share one (峰 and 峯 are two
  *  groups, 說 and 説 one, and ⿰月兊 joins 脫), in the order named. A name stands under the structure
  *  readers filed its form under, the one most of them name, and `claimed` names who says so; with no
- *  claim it stands under the one its description gives, a regional shape of `of` under the one that
- *  character's descriptions give it. A structure a reader folded into another stands under that one:
+ *  claim it stands under the one its description gives, a regional shape of one of the characters `of`
+ *  under the one that character's descriptions give it. A structure a reader folded into another stands under that one:
  *  `folded` lists each such structure of the group with who folded it and the names built as it. So
  *  does a structure that is another layout of one (⿰辵禺 of ⿺辶禺), with nobody in `by`, unless
  *  a reader folded that one under it. A
@@ -237,7 +237,7 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
 export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string, of = '') {
   const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
   if (!named.length) throw new Problem(422, 'Name a character.');
-  const whole = written(of), shaped = whole.length === 1 && [...whole[0]].length === 1 ? whole[0] : '';
+  const shaped = [...new Set(written(of))].filter(char => [...char].length === 1).slice(0, STRUCTURE_CHARS);
   const unread = <T>(empty: T) => (error: unknown) => { console.log(JSON.stringify({ event: 'structure_claims_unread', message: String(error) })); return empty };
   const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named, shaped),
     claimedStructures(env, named).catch(unread(new Map() as Awaited<ReturnType<typeof claimedStructures>>))]);
@@ -267,16 +267,18 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
 // Raised when derivedStructures answers differently for the same catalogue, so no older answer is served.
 const DERIVED_SHAPE = 2;
 // The structure each name's description gives, by name; a name with none is left out. A name that is
-// a regional shape of `of` has that character's structure.
-async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[], of: string): Promise<Record<string, { id: string; label: string }>> {
-  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of)}&v=${encodeURIComponent(`${DERIVED_SHAPE}:${await catalogueVersion(env)}`)}`);
+// a regional shape of one of the characters `of` has that character's structure.
+async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[], of: string[]): Promise<Record<string, { id: string; label: string }>> {
+  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of.join(''))}&v=${encodeURIComponent(`${DERIVED_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
-  const [whole, ...described] = await Promise.all([of ? characterIds(env, structureKey(of), ctx) : null,
-    ...named.map(name => characterIds(env, structureKey(name), ctx))]);
-  const shapes = new Set((whole?.shapes ?? []).map(shape => shape.text as string));
+  const read = (name: string) => characterIds(env, structureKey(name), ctx);
+  const [wholes, described] = await Promise.all([Promise.all(of.map(read)), Promise.all(named.map(read))]);
+  // A shape two of them share is neither's.
+  const shapes = new Map<string, Structure | null>();
+  for (const whole of wholes) for (const { text } of whole?.shapes ?? []) shapes.set(text, shapes.has(text) ? null : whole!.structure);
   const found = Object.fromEntries(named.flatMap((char, i) => {
-    const structure = shapes.has(char) ? whole!.structure : described[i]?.structure;
+    const structure = shapes.get(char) ?? described[i]?.structure;
     return structure ? [[char, structure]] : [];
   }));
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));

@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
+import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { currentPointer } from '../atlas3Answers';
@@ -885,3 +886,55 @@ describe('a review of a glyph filed under its family', () => {
   });
 });
 
+describe('the forms of a whole grapheme', () => {
+  const point = (char: string) => 'U+' + char.codePointAt(0)!.toString(16).toUpperCase();
+  const T = 951, TU = 952;
+  async function family() {
+    db.exec(`INSERT OR IGNORE INTO graphemes(id,text,head) VALUES(${T},'図',${T}),(${TU},'圖',${T}),(953,'圗',${T}),(954,'图',${T})`);
+    const members = ['図', '圖', '圗', '图', '\uFA44'].map(char => ({ code_point: point(char), char }));
+    const edges: Record<string, unknown[]> = { 図: [['圖', 'shinjitai', 's', '', 1, 1]],
+      圖: [['図', 'shinjitai', 's', '', 1, 1], ['啚', 'variant', 's', '', 0, 1], ['度', 'non-cognate', 's', '', 0, 0], ['谋', 'variant', 's', '', 0, 1]], 图: [['啚', 'variant', 's', '', 0, 1], ['徒', 'borrowed', 's', '', 0, 0]] };
+    for (const [i, { char }] of members.slice(0, 4).entries()) objects.set(`v3/reference/char/${point(char)}.json.gz`, json({ grapheme: T + i, data: card(char, { grapheme: { code_point: 'U+56F3', char: '図' } }),
+      detail: card(char, { grapheme: { code_point: 'U+56F3', char: '図', members } }), variants: edges[char] ?? [], derived: char === '図' ? [['⿰日寺', [[['日', '目']]]]] : [],
+      substitutions: char === '図' ? [['日', '目', 4, [{ a: '昨', b: '眲', sources: ['src3'] }]]] : [], writes: char === '圖' ? [['谋', 1]] : [], writers: char === '图' ? [['团', 1]] : [], ids: { 図: T, 圖: TU } }));
+    const shapes: Record<string, unknown> = { 図: [['⿴囗乂'], [{ text: '⿴囗乂', regions: 'J' }, { text: '⿴囗丷', regions: 'G' }], null], 圖: [['⿴囗啚'], [{ text: '⿴囗啚', regions: 'GJ' }, { text: '⿴囗口㐭', regions: 'H' }], null],
+      圗: [['⿱口回'], [{ text: '⿱口回', regions: 'G' }, { text: '⿴囗丷', regions: 'T' }], null] };
+    const shards = new Map<string, Record<string, unknown>>();
+    for (const [char, value] of Object.entries(shapes)) { const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`; shards.set(name, { ...shards.get(name), [char]: value }); }
+    for (const [name, shard] of shards) objects.set(name, json(shard));
+  }
+  const forms = async (char: string, as: Env = env) => (await (await worker.fetch(new Request(`https://glyphatlas.org/layers/graphemes/${encodeURIComponent(point(char))}/forms`), as, ctx)).json()) as any;
+  it('are every member with its shapes, each shape of one member alone its own, and the variants of any', async () => {
+    await family();
+    const found = await forms('図');
+    expect([found.head, found.members.map((m: any) => m.char)]).toEqual(['図', ['図', '圖', '圗', '图']]);
+    expect(found.members.map((m: any) => m.shapes.map((shape: any) => [shape.text, shape.base]))).toEqual([
+      [['⿴囗乂', '図'], ['⿴囗丷', null]], [['⿴囗啚', '圖'], ['⿴囗口㐭', '圖']], [['⿱口回', '圗'], ['⿴囗丷', null]], []]);
+    expect(found.variants.map((v: any) => [v.char, v.via])).toEqual([['啚', ['圖', '图']]]);
+    // 谋 is another grapheme 圖 writes; 度 and 徒 are no variants, and neither is listed as a member.
+    expect(found.related.map((v: any) => [v.char, v.via])).toEqual([['谋', ['圖']], ['度', ['圖']], ['徒', ['图']]]);
+    expect(found.derived).toEqual([{ char: '⿰日寺', code_point: null, encoded: false, via: ['図'], route: [['日', '目']] }]);
+  });
+  it('are the same from any member, and kept by the publication, what the crops carry apart', async () => {
+    await family();
+    edge.clear();
+    const read: string[] = [], get = env.MEDIA.get.bind(env.MEDIA);
+    const counting = { ...env, MEDIA: { ...env.MEDIA, get: async (name: string, options?: any) => { read.push(name); return get(name, options); } } } as unknown as Env;
+    const first = await forms('圖', counting);
+    expect(first.forms).toEqual([]);
+    const crop = id(CROPS.find(c => c.char === '凡' && c.kind === 0)!);
+    db.exec(`INSERT INTO representations(id,scheme,value) VALUES('rp:t','ids','⿴囗斗'); INSERT INTO forms(id,anchor,created_by,created_at) VALUES('fm:t','rp:t','u','t');
+      INSERT INTO carried_forms(crop,grapheme,form,cut) VALUES(${crop},${TU},'fm:t',0); INSERT INTO ledger_submissions VALUES('carried','u','{}','{}','t')`);
+    try {
+      read.length = 0;
+      const second = await forms('図', counting);
+      expect({ ...second, forms: [] }).toEqual(first);
+      expect(second.forms.map((f: any) => [f.char, f.count])).toEqual([['⿴囗斗', 1]]);
+      expect(read.filter(name => name.includes('/reference/ids/'))).toEqual([]);
+    } finally { db.exec(`DELETE FROM carried_forms; DELETE FROM forms WHERE id='fm:t'; DELETE FROM representations WHERE id='rp:t'; DELETE FROM ledger_submissions WHERE id='carried'`); }
+  });
+  it('are a kana’s members, and none for a character with no card', async () => {
+    expect((await forms('𛂒')).members.map((m: any) => [m.char, m.shapes])).toEqual([['ね', []], ['𛂒', []]]);
+    expect((await worker.fetch(new Request('https://glyphatlas.org/layers/graphemes/U%2B4E00/forms'), env, ctx)).status).toBe(404);
+  });
+});
