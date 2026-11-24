@@ -8,7 +8,7 @@
 <span class="ids-label" lang="zh" {@attach idsCard(text, { side: caption })}>{text}</span>
 
 <style>
-  .ids-label[role=button]{cursor:help;border-radius:3px}
-  .ids-label[role=button]:is(:hover,[aria-expanded=true]){color:var(--accent)}
+  .ids-label:global([role=button]){cursor:help;border-radius:3px}
+  .ids-label:global([role=button]:is(:hover,[aria-expanded=true])){color:var(--accent)}
   .ids-label:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
 </style>

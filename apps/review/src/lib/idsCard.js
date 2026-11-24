@@ -49,7 +49,8 @@ export const idsCard = (text, { lang = '', inline = false, side = false } = {}) 
   const control = node.closest('button, a[href], summary')
   const trigger = control && !inline ? control : node, own = !control
   const stop = new AbortController(), on = (type, run, options = {}) => trigger.addEventListener(type, run, { signal: stop.signal, ...options })
-  const open = (tabbed = false) => show(trigger, { text, lang, side, own, tabbed })
+  // An opening still waiting when this text is replaced or goes away opens nothing.
+  const open = (tabbed = false) => { if (!stop.signal.aborted) show(trigger, { text, lang, side, own, tabbed }) }
   let held = false, from = null
   const touch = event => event.pointerType === 'touch'
 

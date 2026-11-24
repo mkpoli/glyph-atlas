@@ -21,7 +21,7 @@
 
 <style>
   .ids-form{display:inline-flex;align-items:baseline;gap:4px}
-  .ids-form[role=button]{cursor:help;border-radius:3px}
+  .ids-form:global([role=button]){cursor:help;border-radius:3px}
   .ids-form:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
   .ids-form.stacked{flex-direction:column;align-items:center;gap:2px}
   .stacked :global(.ids-drawing){width:1.9rem;height:1.9rem}
