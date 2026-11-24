@@ -30,6 +30,36 @@ export const lookupChar = part => [...(part ?? '')][0] ?? ''
 /** Whether the structure route can be asked about `part`: one encoded component, not ？. */
 export const decomposable = part => typeof part === 'string' && isComponent(lookupChar(part)) && lookupChar(part) !== '？'
 
+/** The single decomposable character `text` names (its variation selector dropped), or `''` when
+ *  `text` is empty, an IDS sequence, several characters, or not decomposable. */
+export function startCharacter(text) {
+  const parts = tokens((text ?? '').trim())
+  return parts.length === 1 && decomposable(parts[0]) ? lookupChar(parts[0]) : ''
+}
+
+// The IRG source letters BabelStone tags a regional shape with (`refs.SOURCE_REGIONS`), each with the
+// region its kIRG_*Source field of UAX #38, Unicode Han Database (Unihan), names
+// (https://www.unicode.org/reports/tr38/): G China, H Hong Kong, M Macao, T Taiwan, J Japan, K the
+// Republic of Korea, P the Democratic People's Republic of Korea, V Vietnam, B the United Kingdom,
+// named in the reader's language by the browser's region names. U (the UTC) and S (the SAT
+// Daizōkyō Text Database) are no regions and keep their own names.
+export const REGIONS = { G: 'CN', H: 'HK', M: 'MO', T: 'TW', J: 'JP', K: 'KR', P: 'KP', V: 'VN', B: 'GB', U: 'UTC', S: 'SAT' }
+const regionDisplayNames = new Map()
+const displayNamesFor = locale => {
+  if (!regionDisplayNames.has(locale)) {
+    try { regionDisplayNames.set(locale, new Intl.DisplayNames([locale], { type: 'region' })) }
+    catch { regionDisplayNames.set(locale, null) }
+  }
+  return regionDisplayNames.get(locale)
+}
+/** BabelStone's IRG source letters formatted with localized region names, e.g. `H Hong Kong · J Japan`. */
+export function regionNames(regions, locale = 'en') {
+  const names = displayNamesFor(locale)
+  return [...(regions ?? '')].filter(r => r in REGIONS)
+    .map(r => `${r} ${REGIONS[r].length === 2 ? names?.of(REGIONS[r]) ?? REGIONS[r] : REGIONS[r]}`)
+    .join(' · ')
+}
+
 /**
  * What the box decomposes for the text typed: a description the editor reads (typed with operators or
  * their ASCII names) as one sequence, else each component character once, in order, at most ROOTS.
