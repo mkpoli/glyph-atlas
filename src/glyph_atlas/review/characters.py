@@ -232,8 +232,9 @@ def _row(character: Character, counts: dict[str, int], *, reason: str | None = N
         "occurrence_count": counts.get(character.code_point, 0),
         "url": f"/layers/characters/{character.code_point}",
         "grapheme": _grapheme_head(character, counts),
-        "default_scope": ("grapheme" if _family(character)["relation"]
-                          == "shinjitai-kyujitai" else "character"),
+        # A small seal character's crops are never the normalised ones the family scope is for.
+        "default_scope": ("grapheme" if _family(character)["relation"] == "shinjitai-kyujitai"
+                          and not refs.is_small_seal(character.char) else "character"),
     }
     if reason:
         row["reason"] = reason
@@ -249,11 +250,12 @@ def form_row(character: Character, counts: dict[str, int]) -> dict[str, Any]:
 
 
 def _forms(code_point: str) -> list[str]:
-    """Every code point that is a form of the same grapheme, the character itself first."""
+    """Every code point that is a form of the same grapheme, the character itself first and the small
+    seal characters last."""
     grapheme = refs.grapheme(code_point)
     if grapheme is None:
         return [code_point]
-    forms = refs.graphemes().get(grapheme, [])
+    forms = sorted(refs.graphemes().get(grapheme, []), key=lambda point: refs.is_small_seal(refs.to_char(point)))
     return [code_point] + [other for other in forms if other != code_point]
 
 

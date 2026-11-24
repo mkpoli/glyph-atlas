@@ -34,6 +34,9 @@ export function roundGraphemes(categories) {
   return [...groups.values()].sort((a, b) => b.pending - a.pending || a.label.localeCompare(b.label))
 }
 
+/** Whether a grapheme's counts hold the round a key names: its own, or that of one of its characters alone. */
+export const dealsFor = (group, key) => group.label === key || group.members.some(m => m.label === graphemeText(key))
+
 /** The next grapheme to review: an unvisited full round, then an unvisited smaller one, largest first. */
 export function nextGrapheme(categories, current, history, seed) {
   const others = categories.filter(c => c.pending > 0 && c.label !== current)

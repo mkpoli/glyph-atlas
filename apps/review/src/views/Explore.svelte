@@ -20,6 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
+  import { charOf, gatherGraphemes, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -166,8 +167,6 @@
   const bottomFlagged = $derived(!picked && activeGroup ? activeGroup.need_fixing : data?.counts?.flagged)
   // Unfiltered, the catalogue's own list: a further page keeps it, and so leaves everything gathered from it alone.
   const categories = $derived(flagged ? (data?.categories ?? []).filter(c => c.flagged || c.hard) : data?.categories ?? [])
-  /** A grapheme key (`U+4EEE`, or a label's own code points) as the text it names. */
-  const charOf = key => keyText(key) ?? key
   // Whether the graphemes are listed from the most crops or from the fewest; the choice is remembered.
   let order = $state(stored('atlas.browseOrder', 'most') === 'fewest' ? 'fewest' : 'most')
   function orderBy(value) { order = value; remember('atlas.browseOrder', value) }
@@ -267,29 +266,17 @@
   // group keeps its own script's characters; while `countsCorpus`, a tile adds the corpus glyphs of its
   // characters (`corpus`), so characters held only as corpus glyphs are listed too.
   const graphemes = $derived.by(() => {
-    const groups = new Map(), inGroup = label => filter === 'all' || categoryOf(label) === filter
-    const groupFor = key => { const group = groups.get(key) ?? { key, char: charOf(key), count: 0, local: 0, corpus: 0, members: [] }; groups.set(key, group); return group }
-    for (const c of categories) {
-      if (!inGroup(c.label)) continue
-      const group = groupFor(c.grapheme ?? c.label)
-      const count = flagged ? c.flagged + c.hard : c.total
-      group.members.push({ label: c.label, count }); group.count += count; group.local += count
-    }
-    if (countsCorpus) for (const [label, key, n] of corpusCounts ?? []) {
-      if (!inGroup(label)) continue
-      const group = groupFor(key)
-      const member = group.members.find(m => m.label === label)
-      if (member) member.count += n; else group.members.push({ label, count: n })
-      group.count += n; group.corpus += n
-    }
-    for (const group of groups.values()) group.members.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    const groups = gatherGraphemes({ categories, corpus: countsCorpus ? corpusCounts ?? [] : [], flagged,
+      ...(filter === 'all' ? {} : { inScript: text => categoryOf(text) === filter }) })
     // Fewest first puts the graphemes the site holds fewest glyphs of at the top.
     const direction = order === 'fewest' ? -1 : 1
-    return [...groups.values()].sort((a, b) => direction * (b.count - a.count) || a.key.localeCompare(b.key))
+    return groups.sort((a, b) => direction * (b.count - a.count) || a.key.localeCompare(b.key))
   })
   // Read only with a grapheme chosen: gathering the graphemes sorts thousands of them, and every page of
   // the collection brings their counts again.
   const chosenGrapheme = $derived(grapheme ? graphemes.find(group => group.key === grapheme) : undefined)
+  // A key the counts file under another grapheme names one character of it, alone.
+  const memberKey = $derived(Boolean(grapheme) && ![undefined, grapheme].includes(tileCounts?.keys.get(charOf(grapheme))))
   // The browse panel counts single graphemes, pairs or trigrams; the choice is remembered. Runs are
   // counted for the work chosen, or the whole collection, and read when the panel first shows them.
   // A save can relabel part of a run, so it drops the counts and the panel reads them again.
@@ -595,7 +582,7 @@
       if (error) throw error
       if (closed || id !== requestId) return
       // A corpus glyph belongs to no work of this collection, so choosing a work leaves them out.
-      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || rowGrapheme(row) === grapheme))
+      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || (memberKey ? codesOf(row.label ?? '') : rowGrapheme(row)) === grapheme))
       sampleFault = null
       return
     }
@@ -778,7 +765,8 @@
     } finally { if (!closed && id === requestId) { loading = false; growing = false } }
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
-  // `scope` is an address's: `exact`, `family` or `variants`; without one the card's default applies.
+  // `scope` is an address's: `exact`, `family` or `variants`, or gives one for the card; without one the
+  // card's default applies.
   async function pick(item, scope = null) {
     let expansionWillLoad = false
     // Any choice but one of the run's tabs leaves the run.
@@ -802,7 +790,7 @@
         const card = await layerCharacter(item.code_point, 'none')
         if (closed || current !== pickId) return   // a newer choice owns the gallery now
         picked = { ...bare, ...item, ...card }; query = card.char
-        const nextExpand = expandFor(scope, card)
+        const nextExpand = expandFor(typeof scope === 'function' ? scope(card) : scope, card)
         expansionWillLoad = expand !== nextExpand
         expand = nextExpand
         analysis = card.visual_analysis ?? null
@@ -1162,19 +1150,19 @@
     if (entry) inspect(id, queue, updateItem)
   }
   function select(value) { split = null; grapheme = value; load() }
-  // A tile that counts corpus glyphs, which the collection's own listing leaves out, opens its
-  // grapheme's gallery, which lists both; any other narrows the listing, keeping its filters.
   function openGrapheme(key) {
-    if (key && countsCorpus && graphemeByKey.get(key)?.corpus > 0) pick({ code_point: key, char: charOf(key) }, 'family')
+    const group = graphemeByKey.get(key), { gallery, scope } = group ? tileOpens(group, countsCorpus) : {}
+    if (gallery) pick({ code_point: gallery, char: charOf(gallery) }, scope)
     else select(key)
   }
   // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
-  // glyphs) opens the grapheme's gallery instead of an empty listing; under a script group, only when
+  // glyphs) opens the grapheme's gallery, or the member's own, instead of an empty listing; under a script group, only when
   // the corpus holds the grapheme in that script.
   function openEmptyGrapheme(result) {
     if (!grapheme || work || flagged || query || result.total > 0) return false
-    if (filter !== 'all' && !(graphemeByKey.get(grapheme)?.corpus > 0)) return false
-    pick({ code_point: grapheme, char: charOf(grapheme) }, 'family')
+    if (filter !== 'all' && !graphemes.some(group => [group.key, group.grapheme].includes(grapheme) && group.corpus > 0)) return false
+    const key = grapheme
+    pick({ code_point: key, char: charOf(key) }, card => card.grapheme && card.grapheme.code_point !== key ? 'exact' : 'family')
     return true
   }
   // A run with no crop opens its first character, and the others stay a tab away.
@@ -1195,7 +1183,7 @@
   // collection holds that very character, as the browser's card lists it.
   const graphemeByKey = $derived(new Map(graphemes.map(group => [group.key, group])))
   function groupOf(item) {
-    const group = graphemeByKey.get(item.grapheme?.code_point ?? codesOf(item.char ?? ''))
+    const group = graphemeByKey.get(item.grapheme?.code_point ?? codesOf(item.char ?? '')) ?? graphemeByKey.get(codesOf(item.char ?? ''))
     return group && group.members.some(member => member.label === item.char) ? group : null
   }
   /** "All forms" in a query's card: the collection narrowed to that grapheme, as in the browser. */

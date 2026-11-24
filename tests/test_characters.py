@@ -110,11 +110,12 @@ def test_the_table_holds_the_hanyang_gugyeol_block():
 
 
 def test_the_table_holds_the_small_seal_characters():
-    """Every character of the Seal block, named after its code point and its own grapheme."""
+    """Every character of the Seal block, named after its code point, under a Han character's grapheme."""
     rows = [row for row in rows_of(TABLE) if row["script"] == "seal"]
     assert {row["block"] for row in rows} == {"Seal"} and len(rows) == 11_328
     assert all(row["name"] == f"SMALL SEAL CHARACTER-{row['code_point'][2:]}" for row in rows)
-    assert all(row["grapheme"] == row["code_point"] and row["readings"] == "" for row in rows)
+    scripts = {row["code_point"]: row["script"] for row in rows_of(TABLE)}
+    assert all(scripts[row["grapheme"]] == "han" and row["readings"] == "" for row in rows)
     assert refs.script_of(chr(0x3D000)) == "seal" and refs.script_of(chr(0x3FC40)) == "unknown"
 
 

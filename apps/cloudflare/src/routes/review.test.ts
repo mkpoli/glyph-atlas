@@ -16,7 +16,7 @@ import { reviewsPage } from './reviews';
 import { reject } from './admin';
 import { followCorpus } from './forms';
 import { readReviewEvidence } from '../reviewEvidence';
-import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembersQuery, type Submission } from './review';
+import { cropChanges, reviewCrops, reviewCropsQuery, reviewRoute, revert, roundMembers, roundMembersQuery, type Submission } from './review';
 
 const H = 'a'.repeat(64), G = 'b'.repeat(64);
 const databases: Database[] = [];
@@ -477,9 +477,16 @@ describe('a round', () => {
     expect(db.query('SELECT count(*) AS n FROM skips').get()).toEqual({ n: 2 });
   });
 
-  it('refuses a round whose grapheme is a member of another, and a crop of another grapheme', async () => {
-    const { env, ids } = setup();
-    expect((await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+30CF', seen: [local(ids[1])] })).body.detail).toBe('ハ is filed under は.');
+  it('saves a member’s round with that member’s crops alone, and refuses a crop of another grapheme', async () => {
+    const { db, env, ids } = setup();
+    const kept = await send(env, '/atlas/rounds', { id: uuid(1), grapheme: 'U+30CF', seen: [local(ids[0]), local(ids[1])] });
+    expect([kept.status, kept.body.results.length]).toEqual([200, 1]);
+    const other = await send(env, '/atlas/rounds', { id: uuid(3), grapheme: 'U+30CF', answers: [local(ids[0], { verdict: 'unsure' })] });
+    expect(other).toEqual({ status: 409, body: { detail: 'This round changed. Reload it.' } });
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(90,'春',90),(91,'萅',90),(92,'\u{3D307}',90)`);
+    expect(await roundMembers(env, 'U+3D307')).toEqual(['\u{3D307}']);
+    expect(await roundMembers(env, 'U+6625')).toEqual(['春', '萅', '\u{3D307}']);
+    expect(await roundMembers(env, 'U+30C4 U+309A')).toEqual(['ツ゚']);
     const wrong = await send(env, '/atlas/rounds', { id: uuid(2), grapheme: 'U+306F', answers: [local(ids[4], { verdict: 'unsure' })] });
     expect(wrong).toEqual({ status: 409, body: { detail: 'This round changed. Reload it.' } });
   });

@@ -126,7 +126,7 @@
         <button class:active={chosen.scope === 'grapheme'} aria-pressed={chosen.scope === 'grapheme'} onclick={() => set({ scope: 'grapheme' })}>{t('chronology.scope.grapheme')}</button>
       </div>
     {/if}
-    {#if chosen.scope === 'grapheme' && scripts.length > 1}{@render chips(t('chronology.filter.script'), scripts, chosen.script, script => t(`script.${script}`), 'script')}{/if}
+    {#if chosen.scope === 'grapheme' && scripts.length > 1}{@render chips(t('chronology.filter.script'), scripts, chosen.script, script => t(`script.${script === 'han' ? 'kanji' : script}`), 'script')}{/if}
     {@render chips(t('chronology.filter.style'), STYLE_GROUPS, chosen.style, group => group === 'unassessed' ? t('style.kind.unassessed') : t(`styleFilter.${group}`), 'style')}
     {@render chips(t('chronology.filter.production'), PRODUCTIONS, chosen.production, kind => t(`production.kind.${kind}`), 'production')}
   </div>

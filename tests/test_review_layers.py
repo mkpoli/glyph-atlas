@@ -446,9 +446,9 @@ def test_historical_family_keeps_written_characters_transcriptions_and_ink_disti
     assert {sample["label"] for sample in old["samples"]} == {"假"}
     assert {sample["written_character"] for sample in old["samples"]} == {"假"}
     family = api.get("/layers/graphemes/假").json()
-    # The family holds 仮's rarer 異寫字 too, with no occurrence here.
+    # The family holds 仮's rarer 異寫字 and its small seal character too, with no occurrence here.
     assert family["code_point"] == "U+4EEE" and family["label"].startswith("仮 = 假 = ")
-    assert family["character_count"] == 6 and family["occurrence_count"] == 3
+    assert family["character_count"] == 7 and family["occurrence_count"] == 3
     assert family["relation"] == "shinjitai-kyujitai"
     assert family["evidence"][0]["url"].startswith("https://www.bunka.go.jp/")
     counts = [(row["char"], row["occurrence_count"]) for row in family["characters"]]

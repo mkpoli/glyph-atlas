@@ -85,9 +85,12 @@ def rewritten(point: str, live: dict[str, dict[str, Any]], counts: dict[str, int
     info = characters._row(row, counts)
     members = [member["code_point"] for member in info["grapheme"]["members"]]
     candidates = dict(data.get("candidates") or {})
-    member_candidates = [(live.get(cp) or {}).get("data", {}).get("candidates") or {} for cp in members]
-    candidates["requires_family_scope"] = len(members) > 1 and any(
-        set(found.get("sources") or []) & NORMALIZED_CORPORA for found in member_candidates)
+    held = {cp: (live.get(cp) or {}).get("data", {}).get("candidates") or {} for cp in members}
+    member_candidates = list(held.values())
+    # A small seal character neither needs the family scope nor brings its Han characters to it.
+    transcribed = [member["code_point"] for member in refs.transcribed(info["grapheme"]["members"])]
+    candidates["requires_family_scope"] = not refs.is_small_seal(row.char) and len(transcribed) > 1 and any(
+        set(held[cp].get("sources") or []) & NORMALIZED_CORPORA for cp in transcribed)
     candidates["family_glyphs"] = sum(found.get("glyphs") or 0 for found in member_candidates)
     scope = "grapheme" if candidates["requires_family_scope"] else info["default_scope"]
     data = {**data, "grapheme": info["grapheme"], "default_scope": scope, "candidates": candidates}
@@ -95,7 +98,7 @@ def rewritten(point: str, live: dict[str, dict[str, Any]], counts: dict[str, int
               "characters": [characters.form_row(form, counts) for cp in characters._forms(point)
                              if (form := refs.character(cp))],
               "expansions": _expansions(row, counts, detail),
-              "visual_analysis": _visual_analysis(point, info["grapheme"]["code_point"], live, members)}
+              "visual_analysis": _visual_analysis(point, info["grapheme"]["code_point"], live, transcribed)}
     return data, detail
 
 
@@ -129,8 +132,9 @@ def _visual_analysis(point: str, head: str, live: dict[str, dict[str, Any]], mem
 
     The grouping runs under the head the family had when it ran, so an analysis made before a
     member arrived covers fewer characters than the row now shows — its groups would be shown for
-    members it never looked at. An analysis is reused only when its `members` are exactly the
-    family's; anything else reports `not_analyzed` until the grouping runs again on this family.
+    members it never looked at. An analysis is reused only when its `members` are exactly `members`,
+    the family's less its small seal characters, which no grouped crop is transcribed as; anything else
+    reports `not_analyzed` until the grouping runs again on this family.
     """
     wanted = set(members)
     stored = ((live.get(head) or {}).get("detail") or {}).get("visual_analysis") or {}

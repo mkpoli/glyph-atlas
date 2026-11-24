@@ -148,7 +148,7 @@ beforeAll(() => {
     detail: card('峕', { grapheme: { code_point: 'U+5CD5', char: '峕' } }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: { 峕: G.峕 } }));
   // 事 and its member 亊, and ヿ, a katakana of its own grapheme: the reference relates none of them to ヿ,
   // and holds no drawn form.
-  const shi = [{ code_point: 'U+4E8B', char: '事' }, { code_point: 'U+4E8A', char: '亊' }];
+  const shi = [{ code_point: 'U+4E8B', char: '事' }, { code_point: 'U+4E8A', char: '亊' }, { code_point: 'U+3D8B7', char: '\u{3D8B7}' }];
   for (const [char, head] of [['事', '事'], ['亊', '事'], ['ヿ', 'ヿ']])
     objects.set(`v3/reference/char/U+${char.codePointAt(0)!.toString(16).toUpperCase()}.json.gz`, json({ grapheme: G[head],
       data: card(char, { grapheme: { code_point: 'U+' + head.codePointAt(0)!.toString(16).toUpperCase(), char: head } }),
@@ -235,8 +235,8 @@ describe('a character page', () => {
     const { status, body } = await get('/layers/characters/U+4E8B');
     expect(status).toBe(200);
     expect(body.grapheme.members.map((m: any) => [m.char, m.drawn ?? false, m.count, m.corpus_count]))
-      .toEqual([['事', false, 0, 0], ['亊', false, 0, 0], [ru, true, 0, 0], [fang, true, 0, 0], [hook, true, 0, 0]]);
-    expect(body.grapheme.character_count).toBe(5);
+      .toEqual([['事', false, 0, 0], ['亊', false, 0, 0], [ru, true, 0, 0], [fang, true, 0, 0], [hook, true, 0, 0], ['\u{3D8B7}', false, 0, 0]]);
+    expect(body.grapheme.character_count).toBe(6);
     expect(body.variants.forms).toEqual([]);
     // No other family carries them.
     expect((await get('/layers/characters/U+5CD5')).body.grapheme.members).toBeUndefined();
@@ -249,7 +249,7 @@ describe('a character page', () => {
       expect(own.status).toBe(200);
       expect([own.body.code_point, own.body.char, own.body.script, own.body.drawn, own.body.grapheme.code_point, own.body.grapheme.is_self])
         .toEqual(['U+F0000', ru, 'han', true, 'U+4E8B', false]);
-      expect(own.body.grapheme.members.map((m: any) => m.char)).toEqual(['事', '亊', ru, fang, hook]);
+      expect(own.body.grapheme.members.map((m: any) => m.char)).toEqual(['事', '亊', ru, fang, hook, '\u{3D8B7}']);
       // Its own edges are none; the characters its grapheme is also written with are listed, as on any member's card.
       expect(own.body.variants).toMatchObject({ items: [], forms: [] });
       expect(own.body.variants.related.map((v: any) => v.char)).toEqual(['ヿ', '\u{1B123}']);
@@ -413,6 +413,11 @@ describe('decades and the time axis', () => {
     expect(printed.body.buckets.map((b: any) => [b.decade, b.local, b.corpus])).toEqual([[1700, 2, 1]]);
     const some = await get('/layers/chronology?code_point=U%2B6642&scope=grapheme&chars=' + encodeURIComponent('时,旹'));
     expect(some.body.buckets.map((b: any) => [b.decade, ids(b.items)])).toEqual([[1810, [crop(PAGE_B, 2), crop(PAGE_B, 3)]]]);
+    // 殺's 35 Han forms, named apart from its small seal characters: more than a score of characters.
+    const han = readFileSync(new URL('../../../../data/vocab/characters.tsv', import.meta.url), 'utf8').split('\n').map(line => line.split('\t'))
+      .filter(row => row[10] === 'U+6BBA' && row[4] === 'han').map(row => row[1]);
+    expect(han.length).toBe(35);
+    expect((await get('/layers/chronology?code_point=U%2B6642&scope=grapheme&chars=' + encodeURIComponent(han.join(',')))).status).toBe(200);
     const composed = await get('/layers/chronology?code_point=U%2B6642&axis=composed');
     expect(composed.body.buckets.map((b: any) => [b.decade, b.local, b.corpus])).toEqual([[1650, 2, 1]]);
     expect([composed.body.undated.local, composed.body.undated.corpus]).toEqual([2, 1]);
