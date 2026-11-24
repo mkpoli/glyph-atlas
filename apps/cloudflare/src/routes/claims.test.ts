@@ -322,8 +322,7 @@ describe('a form written for a grapheme', () => {
     db.exec(`INSERT INTO graphemes(id,text,head) VALUES(5,'春',5),(6,'\u{3D307}',5);`);
     const id = crypto.randomUUID(), spring = { grapheme: 'U+6625', char: '春', by: ['reader'] };
     expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, grapheme: 'U+6625', written_for: [spring], replaced: null });
-    // Sent again, the claim answers as any saved one does.
-    expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, written_for: [spring], replaced: null } as any);
+    expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, grapheme: 'U+6625', written_for: [spring], replaced: null });
     await expect(add('U+6625', false, 'reader', id)).rejects.toThrow('409');
     // The page the claim was made on still names 𽌇.
     expect(await add('U+3D307', true)).toMatchObject({ written_for: [], replaced: 'U+6625' });

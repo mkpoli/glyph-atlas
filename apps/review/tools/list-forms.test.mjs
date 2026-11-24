@@ -62,6 +62,12 @@ describe('a character that encodes the J shape again', () => {
 })
 
 describe('a small seal character of the grapheme', () => {
+  it('names the crop when chosen as a form, as any member does', async () => {
+    sent.length = 0
+    const { reviewed } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: '萅' }, '\u{3D307}')
+    expect(reviewed).toBe(true)
+    expect(sent[0].body).toMatchObject({ verdict: 'wrong', issue: 'character', character: '\u{3D307}' })
+  })
   it('is a member, after the Han forms, and is not offered again as related', async () => {
     const found = await listForms('萅')
     expect([chars(found.members), chars(found.variants), chars(found.related)]).toEqual([['春', '萅', '\u{3D307}'], [], []])

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import sqlite3
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from test_review_atlas import LINE, dataset  # noqa: F401
 
+from glyph_atlas.review import crop_forms
 from glyph_atlas.review.server import create_app
+from glyph_atlas.review.store import Store
 
 UNIT = LINE + ":u0"
 GRAPHEME = "U+3042"
@@ -73,6 +76,18 @@ def test_a_registered_figure_joins_the_graphemes_card(dataset):  # noqa: F811
     ]
 
 
+def test_a_form_claimed_under_a_key_since_filed_under_another_stays_on_the_card(dataset):  # noqa: F811
+    client = TestClient(create_app(dataset))
+    form = form_of(client)
+    # 𽌇 was a grapheme of its own when the claim was made, and is filed under 春.
+    with sqlite3.connect(Store(dataset).path) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("INSERT INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) "
+                     "VALUES(?,'written_for','','U+3D307','asserted','U+3D307','[]','[]','[]','r','2026-11-24')", (form,))
+    for key in ("U+6625", "U+3D307"):
+        assert [row["char"] for row in crop_forms.written_forms(conn, key)] == [FORM]
+
+
 def test_a_claim_names_the_head_its_key_is_filed_under_and_a_form_the_site_holds(dataset):  # noqa: F811
     client = TestClient(create_app(dataset))
     form = form_of(client)
@@ -80,7 +95,7 @@ def test_a_claim_names_the_head_its_key_is_filed_under_and_a_form_the_site_holds
     sent = {"id": str(uuid4()), "client_id": "ann", "grapheme": "U+30A2", "remove": False}
     first = client.post("/atlas/forms/" + form + "/written_for", json=sent).json()
     assert first == {"id": form, "grapheme": GRAPHEME, "written_for": [{"grapheme": GRAPHEME, "char": "あ", "by": ["ann"]}]}
-    assert client.post("/atlas/forms/" + form + "/written_for", json=sent).json()["written_for"] == first["written_for"]
+    assert client.post("/atlas/forms/" + form + "/written_for", json=sent).json() == first
     assert client.post("/atlas/forms/" + form + "/written_for", json={**sent, "grapheme": GRAPHEME}).status_code == 409
     assert link(client, form, grapheme="U+30A2", remove=True)["written_for"] == []
     link(client, form, grapheme="U+1F600", remove=True, status=409)

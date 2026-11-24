@@ -1341,7 +1341,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 raise BadRequest("This round was already submitted with different characters.")
             for answer in round.answers:
                 old = json.loads(next(r for r in reviews if r["target_id"] == answer.id)["review"]["evidence"])
-                if (old.get("grapheme") != grapheme or old["verdict"] != answer.verdict
+                if ((refs.grapheme(old.get("grapheme") or "") or old.get("grapheme")) != grapheme or old["verdict"] != answer.verdict
                         or old.get("issue") != answer.issue
                         or old.get("suggested_text") != correction_text(answer.correction, answer.issue)
                         or old.get("suggested_character") != identity_correction(answer.character, answer.issue)
@@ -1628,7 +1628,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
         previous = ledger_call(store.claim_submission, key=key, request=request)
         if previous is not None:
-            return {"id": form, "written_for": store.written_for(form)}
+            return {"id": form, "grapheme": refs.grapheme(edit.grapheme) or edit.grapheme, "written_for": store.written_for(form)}
         return ledger_call(store.set_written_for, key=key, actor=edit.client_id, request=request, form=form,
                            grapheme=edit.grapheme, remove=edit.remove)
 

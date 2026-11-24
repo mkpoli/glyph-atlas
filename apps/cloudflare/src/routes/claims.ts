@@ -289,7 +289,7 @@ export async function setWrittenFor(env: Env, input: Json, form: string, actor: 
   const ledger = ledgerTools(env, tools, ctx);
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form, input });
   const saved = await savedSubmission(env, key, signature, tools.fail);
-  if (saved) return { id: form, written_for: await writtenForOf(env, form), replaced: saved.replaced ?? null };
+  if (saved) return { id: form, grapheme: (await keyHeads(env, [input.grapheme])).get(input.grapheme), written_for: await writtenForOf(env, form), replaced: saved.replaced ?? null };
   if (!FORM_ID.test(form) || !await env.ATLAS.prepare('SELECT 1 FROM forms WHERE id=?').bind(form).first()) tools.fail(404, 'No such form.');
   const named = input.grapheme == null ? null : tools.text(input.grapheme, 64, 'grapheme', true)!;
   if (!graphemeKey(named)) return tools.fail(422, 'Name a grapheme by its code points.');
