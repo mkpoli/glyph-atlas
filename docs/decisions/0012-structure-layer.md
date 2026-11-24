@@ -87,7 +87,8 @@ Seal script has no 之繞: it writes 辵 whole at the left, so the seal characte
 proposed ⿰辵X (𽓻 `⿰辵禺`, of 遇 `⿺辶禺`). 153 are, each read in Sealie's figures. ⿰辵X and ⿺辵X are
 other layouts of ⿺辶X and stand under it (𽓻 and 𨑡 `⿺辵土`), as a structure a reader folds does, with
 nobody named; a reader's own fold is followed first. The ids are of `⿰辵禺` and `⿺辵土`, so the layouts
-can be told apart, and the rule is not part of the policy.
+can be told apart, and the rule is not part of the policy. The rule reads the label, so a typed
+`⿲辵木木`, which 林 does not shorten, stands under `⿺辶⿰木木` and not 林's `⿺辶林`.
 
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟

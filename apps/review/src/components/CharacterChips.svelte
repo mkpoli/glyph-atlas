@@ -262,6 +262,7 @@
   /* A derived chip is a prediction: a small mark after the character says so; a form no character
      has is set smaller, as its sequence is longer than a character. */
   .derived-mark{font-size:11px;color:var(--muted);margin-left:-4px;align-self:flex-start}
+  .sharing .derived-mark{margin-left:1px}
   .variant.unencoded :global(.script-text){font-size:15px}
   .variant.unencoded:hover{border-color:var(--accent)}
   .derived{flex-basis:100%}

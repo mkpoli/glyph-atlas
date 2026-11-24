@@ -57,6 +57,9 @@
       home.set(form.char, tray.id)
       const [rank, target] = naming(form)
       if (rank > tray.rank) Object.assign(tray, { rank, target })
+      // A tray that only layouts of it stand under (⿺辶禺 by 𽓻 alone) is named by one of them.
+      const head = stands.part && !stands.part.by?.length && stands.label.endsWith(stands.part.label.slice(2)) && trayOf(stands.id, stands.label)
+      if (head && !head.rank) Object.assign(head, { rank: 0.5, target: { ...target, head: true } })
     }
     // A tray with no form left on the board keeps the fold it was last seen in, led on to where that ends now.
     for (const [part, link] of folds) {

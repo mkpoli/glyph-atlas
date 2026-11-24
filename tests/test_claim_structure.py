@@ -95,6 +95,10 @@ def test_a_layout_stands_under_the_structure_it_is_one_of(dataset):  # noqa: F81
     # A reader's filing of the seal character under the structure holds its place there.
     file(client, "𽓻", char="𽓻")
     assert groups(client, "遇𽓻")[0]["folded"] == [part]
+    # The structure it stands under can be named by it, though no claim has named that one.
+    assert file(client, "嵐", char="𽓻", head=True)["structures"][0]["structure"] == meet.id
+    file(client, "嵐", char="遇", head=True, status=422)
+    file(client, "嵐", char="𽓻", head=True, remove=True)
     # What stands there does not depend on what else is asked for.
     file(client, "峰", char="𽓻")
     assert [(group["id"], group["chars"]) for group in groups(client, "峰")] == [(meet.id, ["峰"])]

@@ -335,6 +335,12 @@ def head(label: str) -> tuple[str, str] | None:
     return _identity(whole), whole
 
 
+def whole(structure: Structure) -> Structure | None:
+    """The structure this one is another layout of (`head`), or None."""
+    found = head(structure.label)
+    return Structure(id=found[0], label=found[1], tree=han_component_variants.parse(found[1])) if found else None
+
+
 def _seal(structure: Structure | None) -> Structure | None:
     """The structure a seal character is proposed from that of its Han equivalent: seal script has no
     之繞, and writes 辵 whole at the left of ⿺辶X."""

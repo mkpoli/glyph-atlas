@@ -384,7 +384,8 @@ export async function structureId(label: string, scheme: string, policy: string)
 const STRUCTURE_ID = /^st:[0-9a-f]{32}$/;
 type StructureSource = NonNullable<Awaited<ReturnType<typeof structureSource>>>;
 /** The structure a write names: by `char`, a character that has it or a description the load read
- *  (with `of`, a regional shape of that character), or by `structure`, the id of one a claim has
+ *  (with `of`, a regional shape of that character; with `head`, the structure that one stands under as
+ *  a layout of it), or by `structure`, the id of one a claim has
  *  named before, which `known` requires to have its row. `source` is what a new row is written
  *  under, null for a structure named by id. */
 async function namedStructure(env: Env, input: Json, tools: ClaimTools, ctx: ExecutionContext | undefined, known: boolean):
@@ -408,7 +409,9 @@ async function namedStructure(env: Env, input: Json, tools: ClaimTools, ctx: Exe
   const structure: { id: string; label: string } = described?.structure ?? tools.fail(422, `No structure is known for ${char}.`);
   // A shard and a policy from two loads would name a row its id does not describe.
   if (await structureId(structure.label, source.scheme, source.policy) !== structure.id) tools.fail(503, 'The structures are being loaded.');
-  return { structure, source };
+  if (input.head !== true) return { structure, source };
+  const label: string = headOf(structure.label) ?? tools.fail(422, `${char} is no layout of another structure.`);
+  return { structure: { id: await structureId(label, source.scheme, source.policy), label }, source };
 }
 const structureRow = (env: Env, structure: { id: string; label: string }, source: StructureSource, actor: string, at: string) =>
   env.ATLAS.prepare('INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,?,?,?,?,?)')
