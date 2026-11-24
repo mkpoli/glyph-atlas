@@ -2153,3 +2153,48 @@ def test_group_stats_count_each_script_group_and_review_state(dataset):
     after = {entry['group']: entry for entry in client.get('/atlas/groups/stats').json()['groups']}
     assert after['all']['need_fixing'] == by_group['all']['need_fixing'] + 1
     assert after['all']['reviewed'] == by_group['all']['reviewed'] + 1
+
+
+def test_a_batch_of_form_picks_and_line_correction_match_the_worker(dataset):
+    client = TestClient(create_app(dataset))
+    items = client.get('/layers/occurrences', params={"code_point": "U+3042", "limit": 4}).json()['items']
+    assert len(items) >= 2 and all(item['image_sha256'] and item['crop_version'] for item in items)
+    first, second = items[0], items[1]
+    line = {
+        "id": str(uuid4()), "client_id": "bulk-test", "line": True,
+        "crops": [
+            {"id": first["id"], "revision": first["revision"], "character": "あ", "image_sha256": first["image_sha256"]},
+            {"id": second["id"], "revision": second["revision"] + 9, "character": "あ", "image_sha256": second["image_sha256"]},
+        ],
+    }
+    saved = client.post('/atlas/corrections', json=line)
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert len(body["results"]) == 1 and body["results"][0]["target_id"] == first["id"] and body["results"][0]["state"] == "checked"
+    assert body["skipped"] == [{"id": second["id"], "reason": "changed"}]
+    # Retrying a partially skipped line correction preserves its original unchanged/skipped lists.
+    assert client.post('/atlas/corrections', json=line).json() == body
+    # Claiming forms in a batch works on both checked and unchecked crops and undoes by sending `replaced`.
+    batch = {
+        "id": str(uuid4()), "client_id": "bulk-test",
+        "crops": [
+            {"id": first["id"], "crop_version": first["crop_version"], "form": "あ"},
+            {"id": second["id"], "crop_version": second["crop_version"], "form": "所\U000E0103"},
+        ],
+    }
+    marked = client.post('/atlas/forms', json=batch)
+    assert marked.status_code == 200, marked.text
+    crops = {entry["id"]: entry for entry in marked.json()["crops"]}
+    assert crops[first["id"]]["form"]["values"][0]["text"] == "あ" and crops[first["id"]]["replaced"] is None
+    assert crops[second["id"]]["form"]["values"][0]["text"] == "所\U000E0103" and crops[second["id"]]["replaced"] is None
+    # Idempotent retry returns the same answer; clearing retracts both claims.
+    assert client.post('/atlas/forms', json=batch).json() == marked.json()
+    undone = client.post('/atlas/forms', json={
+        "id": str(uuid4()), "client_id": "bulk-test",
+        "crops": [
+            {"id": first["id"], "crop_version": first["crop_version"], "form": None},
+            {"id": second["id"], "crop_version": second["crop_version"], "form": None},
+        ],
+    })
+    assert undone.status_code == 200, undone.text
+    assert all(entry["form"] is None for entry in undone.json()["crops"])

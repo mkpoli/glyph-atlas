@@ -593,18 +593,20 @@ class CorrectedCrop(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=512)
     revision: int = Field(ge=0)
+    character: str | None = Field(default=None, min_length=1, max_length=32)
     #: A crop names its page image; a corpus glyph, which this service does not hold, its source revision.
     image_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     source_revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class Correction(BaseModel):
-    """Crops a reader selected in the collection view, all given one written character at once."""
+    """Crops a reader selected in the collection view, given one written character or one per crop (`line`)."""
 
     model_config = ConfigDict(extra="forbid")
     id: UUID
     client_id: str = Field(min_length=1, max_length=128)
-    character: str = Field(min_length=1, max_length=32)
+    character: str | None = Field(default=None, min_length=1, max_length=32)
+    line: bool = False
     crops: list[CorrectedCrop] = Field(min_length=1, max_length=144)
 
 
@@ -697,6 +699,22 @@ class FormEdit(BaseModel):
     form: str | None = Field(default=None, max_length=256)
     #: The submission id of the review that renamed the crop as this form, when it did.
     review: UUID | None = None
+
+
+class FormPick(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=512)
+    crop_version: str = Field(min_length=1, max_length=1024)
+    form: str | None = Field(default=None, max_length=256)
+
+
+class FormsEdit(BaseModel):
+    """A batch of form picks for selected crops, matching the Worker's `/atlas/forms` route."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    crops: list[FormPick] = Field(min_length=1, max_length=48)
 
 
 class CropStructureEdit(BaseModel):
@@ -1434,14 +1452,25 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.post("/atlas/corrections", response_model=None)
     def correct(correction: Correction) -> dict | JSONResponse:
-        """Crops a reader selected, given one written character, with the site's rules: every crop that
-        changed or that a person already checked as another character is named and nothing is saved; a
-        crop already written as the character is confirmed, or left alone if a person checked it; a crop
-        reported for its box, a blank or a merge keeps that report."""
+        """Crops a reader selected, given one written character (or one per crop when `line` is true),
+        with the site's rules: every crop that changed or that a person already checked as another
+        character is named (and nothing is saved unless `line` is true, which skips them and saves the
+        rest); a crop already written as the character is confirmed, or left alone if a person checked
+        it; a crop reported for its box, a blank or a merge keeps that report."""
         ids = [crop.id for crop in correction.crops]
         if len(set(ids)) != len(ids):
             raise BadRequest("A crop can appear only once in a correction.")
-        identity = identity_correction(correction.character, "character")
+        if correction.line:
+            if correction.character is not None:
+                raise HTTPException(422, "A line correction names a character for each crop.")
+            identities = {crop.id: identity_correction(crop.character, "character") for crop in correction.crops}
+        else:
+            if correction.character is None:
+                raise HTTPException(422, "Name a character for the selection.")
+            if any(crop.character is not None for crop in correction.crops):
+                raise HTTPException(422, "Only a line correction names a character for each crop.")
+            shared = identity_correction(correction.character, "character")
+            identities = {crop.id: shared for crop in correction.crops}
         prefix = f"correction:{correction.id}:"
         # A retry is the same request, compared whole, as the Worker compares its submissions.
         signature = hashlib.sha256(json.dumps(correction.model_dump(mode="json"), sort_keys=True,
@@ -1451,6 +1480,14 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             old = {json.loads(r["review"]["evidence"]).get("request_sha256") for r in previous if r["field"] == "review"}
             if old != {signature}:
                 raise HTTPException(409, "This correction was already saved with different crops.")
+            if correction.line:
+                reviews = [{"target_id": r["target_id"], "revision": r["revision"],
+                            "state": "flagged" if r["review"]["new"] == "disputed" else "checked"}
+                           for r in previous if r["field"] == "review"]
+                first = json.loads(next(r["review"]["evidence"] for r in previous if r["field"] == "review"))
+                return {"id": str(correction.id), "results": reviews,
+                        "unchanged": first.get("line_unchanged", []),
+                        "skipped": first.get("line_skipped", [])}
             return {"id": str(correction.id), **repeat(previous)}
         open_issue: dict[str, str | None] = {}
         for event in store.events():
@@ -1472,23 +1509,25 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 refused.append({"id": crop.id, "reason": "changed"})
                 continue
             state = review_state(unit.review)
+            identity = identities[crop.id]
             same = identity == stored_identity(unit) or (not unit.unicode and identity_text(identity) == transcription(unit))
             if same and state == "checked":
                 unchanged.append(crop.id)
             elif state == "checked":
                 refused.append({"id": crop.id, "reason": "checked"})
             else:
-                chosen.append((crop, unit, revision, same))
-        if refused:
+                chosen.append((crop, unit, revision, same, identity))
+        if refused and not correction.line:
             return JSONResponse({"detail": "Some of these crops changed or were already checked. Reload them.",
                                  "targets": refused}, status_code=409)
         requests = []
-        for crop, unit, revision, same in chosen:
+        for crop, unit, revision, same, identity in chosen:
             kept = open_issue.get(crop.id)
             kept = kept if kept not in (None, "character") else None
             evidence = json.dumps({"kind": "character-review", "batch": str(correction.id), "request_sha256": signature,
                                    "verdict": "match" if same else "wrong", "issue": kept or (None if same else "character"),
                                    "suggested_character": None if same else identity,
+                                   **({"line_unchanged": unchanged, "line_skipped": refused} if correction.line else {}),
                                    "snapshot": snapshot(unit, revision),
                                    "correction": {"unicode": identity,
                                                   "box": unit.box.model_dump() if unit.box else None}},
@@ -1503,7 +1542,13 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                                           new="disputed" if kept else "reviewed",
                                           base_revision=base, client_id=correction.client_id,
                                           idempotency_key=prefix + crop.id, evidence=evidence))
-        return {"id": str(correction.id), "results": store.record_batch(requests), "unchanged": unchanged}
+        recorded = store.record_batch(requests) if requests else []
+        if correction.line:
+            reviews = [{"target_id": r["target_id"], "revision": r["revision"],
+                        "state": "flagged" if r["review"]["new"] == "disputed" else "checked"}
+                       for r in recorded if r["field"] == "review"]
+            return {"id": str(correction.id), "results": reviews, "unchanged": unchanged, "skipped": refused}
+        return {"id": str(correction.id), "results": recorded, "unchanged": unchanged}
 
     @api.post("/atlas/corrections/{round_id}/undo")
     def undo_correction(round_id: UUID, request: Undo) -> dict:
@@ -1632,6 +1677,26 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise HTTPException(409, "This crop was cut again. Reload it.")
         return ledger_call(store.set_form, key=key, actor=edit.client_id, request=request, crop=unit_id, crop_version=version,
                            form=identity_text(edit.form) if edit.form and edit.form.strip() else None)
+
+    @api.post("/atlas/forms", response_model=None)
+    def set_forms(edit: FormsEdit) -> dict | JSONResponse:
+        """Set or clear the reviewer's form on a batch of crops, matching the Worker's `/atlas/forms` route."""
+        key, request = f"{edit.client_id}:{edit.id}", {"forms": edit.model_dump(mode="json")}
+        if len({pick.id for pick in edit.crops}) != len(edit.crops):
+            raise HTTPException(422, "A batch names each crop once.")
+        recut, picks = [], []
+        for pick in edit.crops:
+            version = crop_now(pick.id)
+            if version is None:
+                raise HTTPException(404, "This crop is not in the collection, or has no image to make a claim about.")
+            if pick.crop_version != version:
+                recut.append({"id": pick.id})
+                continue
+            picks.append({"crop": pick.id, "crop_version": version,
+                          "form": identity_text(pick.form) if pick.form and pick.form.strip() else None})
+        if recut:
+            return JSONResponse({"detail": "Some of these crops were cut again. Reload them.", "targets": recut}, status_code=409)
+        return {"id": str(edit.id), "crops": ledger_call(store.set_forms, key=key, actor=edit.client_id, request=request, picks=picks)}
 
     @api.post("/atlas/characters/{unit_id:path}/structure")
     def set_crop_structure(unit_id: str, edit: CropStructureEdit) -> dict:
