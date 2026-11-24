@@ -52,6 +52,16 @@ export function graphemeChips(found, figures, focal = []) {
     derived: picked(found.derived).map(row => ({ ...outside(row), encoded: row.encoded, routes: [row.route.map(([was, became]) => ({ was, became }))] })) }
 }
 
+/** A bar no form has been read for. */
+export const NO_FORMS = { members: [], variants: [], related: [], derived: [], alike: [] }
+/** What a crop's bar lists of the forms last read (`offered`: of the character `char`, or with `whole` of its whole
+ *  grapheme): those read for a crop as it is, or until then its own character alone. A crop with no character
+ *  (`whole`) lists nothing until then, and is not `ready`: what choosing a form assigns is not known. */
+export function listedOf(offered, char, whole) {
+  const read = offered.char === char && offered.whole === whole
+  return { ready: read || !whole, listed: read ? offered : { ...NO_FORMS, members: whole ? [] : [{ char }] } }
+}
+
 /** The 構形 groups a bar of more than `limit` chips shows, and those it folds away: every group with a form in
  *  `keep`, and of the rest as many from the start as fit, whole. */
 export function foldGroups(groups, { keep = new Set(), limit = 40 } = {}) {

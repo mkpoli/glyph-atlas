@@ -19,6 +19,8 @@ const assert = (test, message) => { if (!test) throw new Error(message) }
 const browser = await Browser.launch({ width: 1440, height: 1100 })
 const writes = [], errors = []
 let fail = null, unknown = false
+// What becomes of the read of a grapheme's forms: `held` keeps each until `release`, `failed` answers 500.
+let forms = null, release = []
 browser.listeners.push(event => {
   if (event.method === 'Runtime.exceptionThrown') errors.push(event.params.exceptionDetails.exception?.description ?? event.params.exceptionDetails.text)
   if (event.method !== 'Fetch.requestPaused') return
@@ -26,6 +28,8 @@ browser.listeners.push(event => {
   // With `unknown`, a crop's record names no grapheme.
   if (unknown && /^\/atlas\/characters\/[^/]+$/.test(path)) return void fetch(request.url).then(r => r.json()).then(({ grapheme, ...record }) => browser.send('Fetch.fulfillRequest', { requestId, responseCode: 200,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify({ ...record, family_members: ['図', '圖'] })).toString('base64') })).catch(error => errors.push(error.message))
+  if (forms && /^\/layers\/graphemes\/.*\/forms$/.test(path)) return void (forms === 'held' ? release.push(() => browser.send('Fetch.continueRequest', { requestId }))
+    : browser.send('Fetch.fulfillRequest', { requestId, responseCode: 500, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from('{}').toString('base64') }))
   if (request.method === 'GET') return void browser.send('Fetch.continueRequest', { requestId }).catch(() => {})
   const answer = (value, code = 200) => browser.send('Fetch.fulfillRequest', { requestId, responseCode: code, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
     body: Buffer.from(JSON.stringify(value)).toString('base64') }).catch(() => {})
@@ -139,6 +143,7 @@ try {
   // A grapheme of many forms: the 構形 of the characters its source names stand first, and the rest fold away.
   await open('/ja/crop/' + LARGE)
   const few = await offered(), more = `${dialog}.querySelector('.form-more')`
+  await wait(4000)
   assert(await evaluate(`Boolean(${more})`) && few.length <= 45, `a bar of ${few.length} is not folded`)
   await shot('after-large')
   await evaluate(`${more}.click()`)
@@ -147,6 +152,23 @@ try {
   assert(all.length > few.length && few.every(title => all.includes(title)), `${few.length} → ${all.length}`)
   await shot('after-large-all')
   console.log(`PASS a bar of ${all.length} shows ${few.length} and folds the rest away`)
+
+  // Until the grapheme's forms are read, and where they cannot be, there is none to choose.
+  for (const kind of ['held', 'failed']) {
+    forms = kind; release = []
+    await browser.goto(base + '/ja/crop/' + ID, { waitFor: `${dialog}?.querySelector('.save-character')`, timeout: 60000 })
+    await browser.waitFor(`${dialog}.querySelector('.crop-viewport')?.dataset.ready === 'true' && ${kind === 'held' ? 'true' : `${dialog}.querySelector('.form-unread button')`}`, 60000)
+    await wait(1500)
+    await browser.key('1')
+    const before = await state()
+    assert(before.disabled && !before.keys && await evaluate(`!${chips}.length && ${dialog}.querySelector('.form-add').disabled`), `${kind}: ${JSON.stringify(before)}`)
+    assert(await evaluate(`[...${dialog}.querySelectorAll('button[aria-pressed]')].some(b => b.innerText.includes('文字違い') && !b.disabled)`), 'the character cannot be named')
+    if (kind === 'failed') { await shot('after-unread'); forms = null; await evaluate(`${dialog}.querySelector('.form-unread button').click()`) }
+    else { forms = null; for (const go of release) await go() }
+    await browser.waitFor(`${chips}.length > 3`, 60000)
+    assert((await state()).disabled && !(await state()).pressed.length && await evaluate(`!${dialog}.querySelector('.form-unread')`), 'something is chosen once the bar is read')
+  }
+  console.log('PASS no form is offered before the grapheme is read, and one that failed is read again')
 
   // From a gallery's tile, and a crop whose grapheme is not known: no bar.
   for (const without of [false, true]) {

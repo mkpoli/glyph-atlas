@@ -12,7 +12,8 @@
   // last without a caption. A small seal character stands last in its 構形. A form's 構形 is read before
   // the form is shown, so the chips, and the number keys with them, keep their places.
   // A crop nobody has assigned a character takes the forms of its whole grapheme (`graphemeChips`), none of
-  // them its own; a bar of many folds the 構形 after the first away behind one chip.
+  // them its own; a bar of many folds the 構形 after the first away behind one chip. What choosing a form
+  // assigns is known once they are read, so until then, and where they cannot be read, it offers none.
   // Where no form names the crop's shape, its 構形 alone can be given and the form left for later: the ？ at
   // the end of its character's own 構形, and any 構形 of the bar from the picker.
   // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
@@ -28,14 +29,14 @@
   import { baseOf, builtAs, listForms, listGrapheme, formOf } from '../lib/cropForms.js'
   import { proposed, standing, structureTarget } from '../lib/structures.js'
   import { chipsOf, groupForms } from '../lib/formOffers.js'
-  import { foldGroups } from '../lib/graphemeBar.js'
+  import { NO_FORMS, foldGroups, listedOf } from '../lib/graphemeBar.js'
   import { graphemeChar, isUnassigned } from '../lib/identity.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing. `onchoose` is given the form, and the character choosing it names.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
-  let offered = $state({ char: null, members: [], variants: [], related: [], derived: [], alike: [] }), added = $state([])
+  let offered = $state({ char: null, whole: false, ...NO_FORMS }), added = $state([]), attempt = $state(0)
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false)
   let arranging = $state(false), expanded = $state(false)
@@ -54,15 +55,18 @@
   const composed = (names, known = new Map(), of) => stands(names, known, of).catch(() => known)
   const formsIn = found => found.chips ?? [...found.members, ...found.variants, ...found.related]
   $effect(() => {
-    const id = crop?.id, char = asked, own = untrack(() => current)
+    const id = crop?.id, char = asked, whole = unassigned, own = untrack(() => current)
+    attempt
     added = []; picking = false; query = ''; failed = false; composing = false; arranging = false; expanded = false
-    list(char).then(found => [found, false], () => [{ members: [{ char }], variants: [], related: [], derived: [], alike: [] }, true])
+    list(char).then(found => [found, false], () => [whole ? null : { ...NO_FORMS, members: [{ char }] }, true])
       .then(async ([found, unread]) => {
-        const read = await composed([own, ...formsIn(found).map(form => form.char)], new Map(), shapedIn(found, char))
-        if (id === crop?.id && char === asked) { structureOf = read; offered = { char, ...found }; failed = unread }
+        const read = found ? await composed([own, ...formsIn(found).map(form => form.char)], new Map(), shapedIn(found, char)) : new Map()
+        if (id !== crop?.id || char !== asked || whole !== unassigned) return
+        if (found) { structureOf = read; offered = { char, whole, ...found } }
+        failed = unread
       })
   })
-  const listed = $derived(offered.char === asked ? offered : { members: [{ char: asked }], variants: [], related: [], derived: [], alike: [] })
+  const { ready, listed } = $derived(listedOf(offered, asked, unassigned))
   // The character the forms stand around: the crop's own, or its grapheme's head.
   const written = $derived(listed.of ?? asked)
   // The grapheme's forms and related characters: its members, its variants, and its related characters, which
@@ -71,6 +75,7 @@
   // The bar: the grapheme's forms and related characters, the crop's own form when it is none of them
   // (a form drawn as the bare character keeps its regions), and what the picker added.
   const bar = $derived.by(() => {
+    if (!ready) return []
     const chips = [...forms]
     const has = char => chips.some(chip => chip.char === char)
     if (current && !others && !has(current)) chips.push(listed.alike.find(form => form.char === current) ?? { char: current, script: '', lang: '' })
@@ -159,10 +164,11 @@
   <div class="form-row copyable" class:captioned>
     <FormChips groups={shownGroups} open={shapes} onopen={leaveOpen} {chosen} {current} {disabled} label={unassigned ? t('corpus.assign.label') : t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
       {#if !others}<CopyValue value={open ? open.label ?? written : chosen ?? (current || (unassigned ? '' : written))} />{/if}
+    {#if !ready && failed}<p class="form-unread" role="alert">{t('layers.readError')}<button type="button" class="quiet-link" onclick={() => attempt++}>{t('common.retry')}</button></p>{/if}
       {#if hidden}{@const more = `${t('explore.grapheme.forms', { count: hidden })} · ${t('chips.structure')} ${folded.hidden.length}`}
         <button type="button" class="form-more" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? '−' : `+${hidden}`}<small>{more}</small></button>{/if}
     </FormChips>
-    <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
+    <button type="button" class="form-add" bind:this={addButton} disabled={disabled || !ready} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
   </div>
   {#if others && ownStructure}
     <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span><IdsLabel text={(ownStructure.part ?? ownStructure).label} />{#if proposed(current, ownStructure.by)}<sup title={t('chips.derived')}>*</sup>{/if}</span></div>
@@ -228,6 +234,7 @@
   .form-own-label{font-size:11px;color:var(--muted)}
   .crop-form :global(.form-chips){flex:1 1 0}
   .form-more{display:inline-flex;align-items:baseline;gap:8px;align-self:flex-end;padding:4px 10px;font-size:15px;line-height:1.75;border-style:dashed;color:var(--muted)}
+  .form-unread{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;align-self:center;margin:0;font-size:12px;color:var(--muted)}
   .form-more small{font-size:11px}
   .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}

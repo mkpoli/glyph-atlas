@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { foldGroups, graphemeChips } from '../src/lib/graphemeBar.js'
+import { NO_FORMS, foldGroups, graphemeChips, listedOf } from '../src/lib/graphemeBar.js'
 import { chipsOf, groupForms } from '../src/lib/formOffers.js'
 
 // 図's family, cut: 圖 has two regional shapes and a figure, 图 a loan, 啚 is a variant of 圖 outside it, and
@@ -48,6 +48,20 @@ describe('the bar of a whole grapheme', () => {
     expect(of(chips)).not.toContain('度')
     expect(derived[0].routes).toEqual([[{ was: '⺀', became: '二' }]])
     expect(bar(['図', '圖']).shaped).toEqual(['図', '圖'])
+  })
+})
+
+describe('what a bar lists before it is read', () => {
+  const chars = ({ ready, listed }) => [ready, (listed.chips ?? listed.members).map(form => form.char)]
+  const own = { ...NO_FORMS, char: '図', whole: false, members: [{ char: '図' }, { char: '圖' }] }, whole = { ...NO_FORMS, char: '図', whole: true, chips: [{ char: '圖' }, { char: '図' }] }
+  it('is the character a crop has, and nothing for one with none', () => {
+    expect(chars(listedOf({ char: null, whole: false, ...NO_FORMS }, '図', false))).toEqual([true, ['図']])
+    expect(chars(listedOf({ char: null, whole: false, ...NO_FORMS }, '図', true))).toEqual([false, []])
+  })
+  it('is never the bar of a crop of the other kind', () => {
+    expect([chars(listedOf(own, '図', false)), chars(listedOf(own, '図', true))]).toEqual([[true, ['図', '圖']], [false, []]])
+    expect([chars(listedOf(whole, '図', true)), chars(listedOf(whole, '図', false))]).toEqual([[true, ['圖', '図']], [true, ['図']]])
+    expect(chars(listedOf(whole, '所', true))).toEqual([false, []])
   })
 })
 
