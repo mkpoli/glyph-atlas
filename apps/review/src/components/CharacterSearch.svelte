@@ -318,7 +318,7 @@
         {#if item.kind === 'ligature'}<span class="tag">{t('search.ligature')}</span>{/if}
         {#if item.variant_of}<span class="tag">{t('chips.relation.variant')}</span>{/if}
       </span>
-      <span class="candidate-counts">{rowCount(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText text={item.grapheme.label} /></span>{/if}</span>
+      <span class="candidate-counts">{rowCount(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText text={graphemeLabel(item.grapheme.char)} /></span>{/if}</span>
     </span>
   </button></div>
 {/snippet}

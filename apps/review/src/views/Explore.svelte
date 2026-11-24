@@ -303,7 +303,8 @@
   const tileGrapheme = item => graphemeChar(item) ?? (tileCounts?.keys.has(item.label) ? charOf(tileCounts.keys.get(item.label)) : null)
   // The grapheme beside the written form: always when the form is unassigned, else only when it is written
   // otherwise than the form; katakana counts as its own writing (ハ stands alone, 𛂞 は and 嶋 島 do not).
-  const shownGrapheme = item => { const g = tileGrapheme(item); return g && (isUnassigned(item) || kanaFolded(g) !== kanaFolded(item.label ?? '')) ? g : null }
+  // Alone it stands for the grapheme, by its label; beside a form it is the head.
+  const shownGrapheme = item => { const g = tileGrapheme(item); return !g ? null : isUnassigned(item) ? graphemeLabel(g) : kanaFolded(g) !== kanaFolded(item.label ?? '') ? g : null }
   // A tile's name for a screen reader: its form, then its grapheme where the caption shows one.
   const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${shownGrapheme(item)})` : shownLabel(item)
   const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')
@@ -1302,7 +1303,7 @@
       : Number(getComputedStyle(grid.querySelector('.collage-block')).getPropertyValue('--collage-cols'))
     const holders = [...new Set(crops.map(creditOf).filter(Boolean))]
     // The page as the reader has it now: the gallery may show another character before the image is done.
-    const char = picked && galleryName(subject ?? picked), site = t('app.name'), day = new Date().toLocaleDateString('sv')
+    const char = picked && galleryName(subject ?? picked), file = picked ? (subject ?? picked).char : 'collection', site = t('app.name'), day = new Date().toLocaleDateString('sv')
     let address = location.href
     try { address = decodeURI(address) } catch { /* An address that does not decode is written as it stands. */ }
     // The page's own paper, ink and quiet text, read as the colours the theme resolves them to.
@@ -1316,7 +1317,7 @@
         filter: ink === 'bw' ? 'grayscale(1) contrast(1.05)' : '', signal: sheetJob.signal,
         credit: drawn => [[site, char, t('explore.meta.glyphs', { count: drawn }), address, day].filter(Boolean), holders],
         onprogress: (done, total) => { sheeting = { done, total } } })
-      saveFile(blob, `glyph-atlas-${char ?? 'collection'}-${total - missing}.jpg`)
+      saveFile(blob, `glyph-atlas-${file}-${total - missing}.jpg`)
     } catch (fault) {
       // The button says so for a while, then offers the image again.
       if (!sheetJob.signal.aborted) { sheetFailed = true; sheetFault = setTimeout(() => { sheetFailed = false }, 6000) }
