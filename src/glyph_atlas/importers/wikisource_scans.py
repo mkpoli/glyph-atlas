@@ -529,8 +529,7 @@ def collect_index(
         production=production,
         dating=dating,
         image_rights=Rights(licence=image_licence, holder=holder,
-                            attribution=f"{holder or 'unstated holder'}, via Wikimedia Commons, "
-                                        f"{commons['description_url']}",
+                            attribution=", ".join(filter(None, (holder, "Wikimedia Commons", commons["description_url"]))),
                             evidence=commons["description_url"], checked=checked),
         text_rights=Rights(licence=text_licence, holder=contributors,
                            attribution=f"{contributors}, {index['url']}, {site.licence_text}",
