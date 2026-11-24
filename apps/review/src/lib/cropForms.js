@@ -28,7 +28,8 @@ const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja
 const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
 const cards = new Map()
 /**
- * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…), then its
+ * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…) but one
+ * drawn as `char` itself (𨓜, 逸 encoded again as its J shape), then its
  * other forms, as the character's card lists them: the figures the IVD registers for `char` when it
  * registers more than one (所󠄂 and 所󠄃), each named by its MJ figure; the shapes BabelStone gives
  * `char` by region when it gives more than one (所 as ⿰戶斤 in GHTKPV and ⿰戸斤 in J); and the
@@ -37,10 +38,11 @@ const cards = new Map()
  * `related`, the derived shapes last, and the described forms a reviewer said are written for the
  * grapheme (`written_for`) with the variants. A character the layer does not know offers itself alone.
  * A compatibility ideograph (說 U+F96F) is offered nowhere but for a crop written as it: its figure
- * is one of the registered sequences of the character it stands for.
+ * is one of the registered sequences of the character it stands for. `alike` are the forms left out
+ * because another stands for them (`sortForms`), and `family` every encoded member of the grapheme.
  */
 export function listForms(char) {
-  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [] })
+  if (!char) return Promise.resolve({ members: [], variants: [], related: [], derived: [], linked: [], grapheme: null, alike: [], family: [] })
   if (!cards.has(char)) {
     // A sequence the table has no card for (ツ + U+309A) offers itself alone.
     const card = readCard(pointOf(char)).catch(error => error?.status === 404 ? null : Promise.reject(error))
@@ -75,7 +77,7 @@ export function listForms(char) {
       const fresh = list => list.filter(item => !seen.has(item.char) && seen.add(item.char))
       const memberChars = new Set(members.map(m => m.char))
       return { members, variants: fresh(variants), related: fresh(related), derived: fresh(derived),
-        linked: linked.filter(item => !memberChars.has(item.char)), grapheme: card?.grapheme ?? null,
+        linked: linked.filter(item => !memberChars.has(item.char)), grapheme: card?.grapheme ?? null, family: family.map(v => v.char),
         alike: [...alike.figures.map(figureEntry), ...alike.shapes.map(shapeEntry),
           ...[...family, ...found.items ?? [], ...found.related ?? []].filter(twin)
             .filter((v, i, all) => all.findIndex(other => other.char === v.char) === i).map(entry)] }
@@ -151,8 +153,8 @@ async function writeCharacter(crop, character) {
  */
 export async function setForm(crop, form) {
   const written = crop.written_character ?? crop.label
-  const { members } = await listForms(written)
-  if (form === written || !members.some(member => member.char === form)) return { ...await claimForm(crop, form), reviewed: false }
+  const { family } = await listForms(written)
+  if (form === written || !family.includes(form)) return { ...await claimForm(crop, form), reviewed: false }
   // The claim names the review, so the two count as one decision.
   const named = await writeCharacter(crop, form)
   return { ...await claimForm(named.crop, form, named.review), reviewed: true }
