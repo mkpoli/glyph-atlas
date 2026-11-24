@@ -27,8 +27,6 @@ const due = new WeakMap<object, number>();
  *  from now, as one that found nothing is. */
 export const answerDue = (shards: (object | null)[], now = Date.now()) =>
   Math.min(now + SHARD_SECONDS * 1000, ...shards.map(shard => shard && due.get(shard) || Infinity));
-/** Say that `part` was read from `shard`. */
-export const partOf = <T extends object>(part: T, shard: object): T => { const at = due.get(shard); if (at) due.set(part, at); return part };
 
 async function decoded<T>(bytes: ArrayBuffer): Promise<T> {
   const value = await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json();

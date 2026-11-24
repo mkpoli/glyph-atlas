@@ -336,11 +336,12 @@ export async function graphemeForms(env: Env, ctx: ExecutionContext, url: URL, v
   const known = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms?c=${encodeURIComponent(head)}&v=${GRAPHEME_FORMS_SHAPE}`), async () => {
     const members: Json[] = (card.detail.grapheme?.members ?? [{ char: head, code_point: cp(head) }]).filter((m: Json) => !compatibility(m.char)).slice(0, FORMS_MEMBERS);
     const family = new Set<string>(members.map(m => m.char));
+    const shards: (object | null)[] = [card.object];
     const read = await Promise.all(members.map(async m => {
-      const [object, ids] = await Promise.all([characterObject(env, cp(m.char), ctx), /^\p{Script=Han}$/u.test(m.char) ? characterIds(env, m.char, ctx) : null]);
-      return { object, ids, shapes: ids?.shapes ?? [], described: new Set([...ids?.sequences ?? [], ...(ids?.shapes ?? []).map(shape => shape.text)]) };
+      const [object, ids] = await Promise.all([characterObject(env, cp(m.char), ctx), /^\p{Script=Han}$/u.test(m.char) ? characterIds(env, m.char, ctx, shards) : null]);
+      return { object, shapes: ids?.shapes ?? [], described: new Set([...ids?.sequences ?? [], ...(ids?.shapes ?? []).map(shape => shape.text)]) };
     }));
-    due = answerDue([card.object, ...read.flatMap(each => [each.object, each.ids])]);
+    due = answerDue([...shards, ...read.map(each => each.object)]);
     // A member of one shape has no regional shapes, and its descriptions alone say it is written so.
     const shared = (shape: Json, i: number) => members.some((m, j) => j !== i && (read[j].described.has(shape.text) || shape.chars?.includes(m.char)));
     type Via = { char: string; via: string[] };

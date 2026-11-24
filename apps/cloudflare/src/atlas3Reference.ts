@@ -4,7 +4,7 @@
 // (`U+3042`) for a summary, two of the character itself (`好`) for the IDS.
 
 import { COMPONENT_PARTS, COMPONENT_SCAN, rankMatches } from './components';
-import { heldObjects, partOf } from './atlas3Media';
+import { heldObjects } from './atlas3Media';
 
 type Json = any;
 // [other, relation, source, detail, written, widens], from either end of the edge.
@@ -59,12 +59,14 @@ export async function readingKanji(env: Env, reading: string, ctx?: ExecutionCon
 }
 
 // A character's ideographic descriptions, regional shapes and 構形 (docs/decisions/0012), or null. A
-// shard written before the structure layer holds no third value.
+// shard written before the structure layer holds no third value. `shards` takes the shard read, whether or not it
+// holds the character.
 export type Structure = { id: string; label: string };
-export async function characterIds(env: Env, char: string, ctx?: ExecutionContext): Promise<{ sequences: string[]; shapes: Json[] | null; structure: Structure | null } | null> {
+export async function characterIds(env: Env, char: string, ctx?: ExecutionContext, shards: (object | null)[] = []): Promise<{ sequences: string[]; shapes: Json[] | null; structure: Structure | null } | null> {
   const shard = await readIds(env, `${PREFIX}ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, ctx);
+  shards.push(shard);
   const found = shard && Object.hasOwn(shard, char) ? shard[char] : null;
-  return found ? partOf({ sequences: found[0], shapes: found[1], structure: found[2] ? { id: found[2][0], label: found[2][1] } : null }, shard) : null;
+  return found ? { sequences: found[0], shapes: found[1], structure: found[2] ? { id: found[2][0], label: found[2][1] } : null } : null;
 }
 
 // The scheme, source version and policy the shards' structures were read under, or null before a

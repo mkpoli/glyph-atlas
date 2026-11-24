@@ -971,6 +971,20 @@ describe('the forms of a whole grapheme', () => {
       expect(bases(await forms('隆'))[0]).toContainEqual(['⿰阝⿱夊生', '隆']);
     } finally { setSystemTime(); db.exec("DELETE FROM imports WHERE stamp='reference-forms'"); edge.clear() }
   });
+  it('are kept no longer than a shard read without a member of theirs', async () => {
+    const start = Date.now() + 7_200_000, name = `v3/reference/ids/${await referenceShard('𨺓', IDS_DIGITS)}.json.gz`;
+    try {
+      setSystemTime(start);
+      await owned();
+      objects.set(name, json({}));
+      await get('/layers/ids?c=𨺓');
+      // The rest is read afresh: the answer is due when the shard held since the start is.
+      setSystemTime(start + 250_000);
+      for (const url of [...edge.keys()]) if (!url.endsWith(name)) edge.delete(url);
+      expect(bases(await forms('隆'))[0][0]).toEqual(['⿰阝⿱夂生', '隆']);
+      expect(/max-age=(\d+)/.exec([...edge].find(([url]) => url.includes('grapheme-forms?'))![1].headers.get('cache-control')!)![1]).toBe('50');
+    } finally { setSystemTime(); edge.clear() }
+  });
   it('are a kana’s members, and none for a character with no card', async () => {
     expect((await forms('𛂒')).members.map((m: any) => [m.char, m.shapes])).toEqual([['ね', []], ['𛂒', []]]);
     expect((await worker.fetch(new Request('https://glyphatlas.org/layers/graphemes/U%2B4E00/forms'), env, ctx)).status).toBe(404);
