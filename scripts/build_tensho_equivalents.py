@@ -16,7 +16,8 @@ gives every small seal character a Han character as its modern equivalent (`kSEA
   with it as their `kSEAL_MCJK` and those next to them in the block (`ENTRY`), the 古文, 籀文 and 或体 of
   the same entry of 説文解字, if they are of its 字種 (`data/vocab/characters.tsv`). Those of a 親字 that
   is no `kSEAL_MCJK` are all those of its 字種;
-- `parent`: neither holds, and the crop stays on the 親字: it is drawn as no seal character Unicode gives
+- `read`: the drawing was read on its own and the seal character named (`data/tensho/read.tsv`);
+- `parent`: none of these holds, and the crop stays on the 親字: it is drawn as no seal character Unicode gives
   the 親字, or there is none;
 - empty: the 親字 is 〓, a character CODH found no code point for, and the crop has no character.
 
@@ -111,9 +112,15 @@ def seals_by_parent(seals: dict[str, list[str]], heads: dict[str, str]) -> Calla
     return seals_of
 
 
-def place(crops: list[dict], seals: dict[str, list[str]], heads: dict[str, str], near: dict[str, list[str]]) -> None:
-    """Give a crop the one seal character of a 親字 it alone is filed under, or the nearest in drawing of
-    the seal characters of its 親字, or leave it on the 親字."""
+def read_crops(path: Path) -> dict[str, str]:
+    """The seal character each crop read on its own was read as, by its file's name; empty where none."""
+    return {row["crop"]: row["code_point"] for row in read_tsv(path)}
+
+
+def place(crops: list[dict], seals: dict[str, list[str]], heads: dict[str, str], near: dict[str, list[str]],
+          read: dict[str, str]) -> None:
+    """Give a crop the seal character it was read as, the one seal character of a 親字 it alone is
+    filed under, or the nearest in drawing of the seal characters of its 親字, or leave it on the 親字."""
     equivalent = {seal: parent for parent, held in seals.items() for seal in held}
     seals_of = seals_by_parent(seals, heads)
     filed = Counter(unified(crop["parent"]) for crop in crops if crop["parent"] != GETA)
@@ -123,10 +130,15 @@ def place(crops: list[dict], seals: dict[str, list[str]], heads: dict[str, str],
             continue
         parent = unified(crop["parent"])
         found = seals.get(parent, [])
+        name = crop_name({**crop, "parent_code_point": f"U+{crop['parent']}"})
+        if name in read:
+            crop["placed"] = "read" if read[name] else "parent"
+            if read[name]:
+                crop.update(seal=read[name], equivalent=equivalent[read[name]])
+            continue
         if len(found) == 1 and filed[parent] == 1:
             crop.update(placed="equivalent", seal=found[0], equivalent=parent)
             continue
-        name = crop_name({**crop, "parent_code_point": f"U+{crop['parent']}"})
         if name not in near:
             raise SystemExit(f"{name}: not in the table of the nearest seal characters; run models/seal/match.py")
         drawn = [seal for seal in near[name] if seal in seals_of(parent)]
@@ -159,7 +171,7 @@ def write(crops: list[dict], target: Path, book: str, title: str, release: str) 
         "# down each column; image, x, y, w, h and parent (the 親字) are CODH's, the box in pixels of the page",
         "# image; column counts the page's columns of crops from the right; canvas is the page's canvas as the",
         "# holder's manifest names it; char, code_point and equivalent (kSEAL_MCJK) are from SealSources.txt of Unicode",
-        "# 18.0.0; ccz is empty, the book being no edition of 説文解字; placed is equivalent, ink, parent or, for a",
+        "# 18.0.0; ccz is empty, the book being no edition of 説文解字; placed is equivalent, ink, read, parent or, for a",
         "# 親字 with no code point, empty; sha256 is the crop file's.",
     )
     with target.open("w", encoding="utf-8", newline="") as handle:
@@ -244,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="the zips of every volume of one title, each named after its book (TE00024.zip)")
     parser.add_argument("--seal-sources", type=Path, required=True, help="SealSources.txt of Unicode 18.0.0")
     parser.add_argument("--ink", type=Path, default=DATA / "ink.tsv", help="the nearest seal characters of each crop")
+    parser.add_argument("--read", type=Path, default=DATA / "read.tsv", help="the crops read on their own")
     parser.add_argument("--release", default="v2.0", help="the dataset release the books are from")
     parser.add_argument("--out", type=Path, default=DATA, help="the directory of the books' tables")
     args = parser.parse_args(argv)
@@ -251,14 +264,14 @@ def main(argv: list[str] | None = None) -> int:
     record = yaml.safe_load(SOURCE.read_text(encoding="utf-8"))
     volumes = [(path.stem, *read(path, record)) for path in args.books]
     place([crop for _, _, crops, _ in volumes for crop in crops], equivalents(args.seal_sources),
-          graphemes(CHARACTERS), nearest(args.ink))
+          graphemes(CHARACTERS), nearest(args.ink), read_crops(args.read))
     for name, entry, crops, pages in volumes:
         write(crops, args.out / name / "characters.tsv", name, f"{entry['title']} ({entry['edition']})" if "edition" in entry else entry["title"],
               args.release)
         write_pages(crops, pages, args.out / name / "pages.tsv", name, entry["manifest"])
         counts = Counter(crop["placed"] for crop in crops)
         print(f"crops            {len(crops):>6}", file=sys.stderr)
-        for evidence in ("equivalent", "ink", "parent", ""):
+        for evidence in ("equivalent", "ink", "read", "parent", ""):
             print(f"{evidence or 'no character':<16} {counts[evidence]:>6}", file=sys.stderr)
         print(f"pages            {len({crop['canvas'] for crop in crops}):>6}", file=sys.stderr)
         print(f"-> {args.out / name}", file=sys.stderr)
