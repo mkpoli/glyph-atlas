@@ -9,11 +9,10 @@
   import FormText from './FormText.svelte'
   import OriginText from './OriginText.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { countsLabel, ids as readIds, structures as readStructures } from '../lib/layers.js'
-  import { sortForms } from '../lib/formOffers.js'
+  import { countsLabel } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
   import { isFigure } from '../lib/mjFigures.js'
-  import { standing } from '../lib/structures.js'
+  import { cardStructures, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
@@ -75,30 +74,20 @@
   const HAN = /^\p{Script=Han}$/u
   const composable = list => [...new Set(list.map(v => v.char)
     .filter(char => HAN.test(char ?? '') || isSeal(char) || isDescription(char) || isFigure(char ?? '')))]
-  // A character drawn as the card's own (𦤀, 臭 encoded again as its J shape) is left off this row; its
-  // 字体 chip names it by its code point.
-  let twins = $state.raw([])
-  $effect(() => {
-    const char = card?.char
-    twins = []
-    if (!HAN.test(char ?? '')) return
-    let live = true
-    readIds(char).then(found => { if (live) twins = sortForms(char, [], found.shapes ?? []).alike.chars }, () => {})
-    return () => { live = false }
-  })
-  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))])
-    .filter(char => !twins.includes(char)).slice(0, 48))
+  const composedOf = $derived(composable([...members, ...written, ...described, ...related.filter(v => isSeal(v.char) && !inferred(v))]).slice(0, 48).join(''))
   // The forms shown when arranging 構形: the grapheme's 字体 and its related characters.
   const arrangeOf = $derived(composable([...members, ...written, ...described, ...related]))
+  const composedNames = $derived(composed.reduce((n, group) => n + group.chars.length, 0))
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   // A signed-in reader opens the 構形 to arrange them, and the row is read again once they have.
-  let composed = $state([]), arranging = $state(false), arrangedTimes = $state(0)
+  let composed = $state([]), twins = $state([]), arranging = $state(false), arrangedTimes = $state(0)
+  const cardChar = $derived(card?.char)
   $effect(() => {
-    const chars = composedOf.join('')
+    const chars = composedOf, char = cardChar
     void arrangedTimes
-    if (!chars) { composed = []; return }
+    if (!chars) { composed = []; twins = []; return }
     let live = true
-    readStructures(chars).then(found => { if (live) composed = found.items ?? [] }, () => { if (live) composed = [] })
+    cardStructures(char, chars).then(found => { if (live) { composed = found.items; twins = found.twins } }, () => { if (live) { composed = []; twins = [] } })
     return () => { live = false }
   })
   // The words this character is cited as writing (decision 0004), each with the other spellings cited
@@ -130,7 +119,7 @@
         <span class="layer-label">{t('chips.structure')}</span>
         <div class="variant-chips">
           {#each composed as s (s.id)}
-            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedOf.length > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
+            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedNames > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
           {/each}
           {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>
@@ -149,7 +138,7 @@
             aria-pressed={expand !== 'grapheme' && member.code_point === card.code_point}
             aria-label={crops(member) ? `${t('chips.showCharacter', { char: member.char })} · ${formatNumber(crops(member))}`
               : t('chips.showCharacter', { char: member.char })} title={glyphCount(member)} onclick={() => onselect(member.code_point)}>
-            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" />
+            <ReferenceGlyph char={member.char} code_point={member.code_point} script={member.script} size="md" showCodePoint={twins.includes(member.char)} />
             {#if crops(member)}<small class="use">{formatNumber(crops(member))}</small>{/if}
           </button>{#if member.code_point === card.code_point}<ZiLink character={member.char} compact />{/if}</div>
         {/each}

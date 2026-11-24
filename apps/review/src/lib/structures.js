@@ -1,12 +1,28 @@
-import { structures as readStructures } from './layers.js'
+import { ids as readIds, structures as readStructures } from './layers.js'
 import { isDescription } from './ids.js'
 import { isSeal } from './cardTiers.js'
+import { sortForms } from './formOffers.js'
 
 const HAN = /^\p{Script=Han}/u
 /** How many written values one reading asks for. */
 export const NAMES = 48
 /** A written value that can have a 構形: a Han or small seal character, or a description. */
 export const composable = char => HAN.test(char ?? '') || isSeal(char) || isDescription(char)
+
+/**
+ * The 構形 groups of the names on a character's card, `{ id, label, chars, claimed, folded }` each, and
+ * the `twins`: the characters of the group of `char` drawn as `char` itself (𦤀, 臭 encoded again as its
+ * J shape). The group leaves out those built as its own; one a reader filed elsewhere stands there.
+ */
+export async function cardStructures(char, names) {
+  const items = (await readStructures(names)).items ?? []
+  const own = items.find(group => group.chars.includes(char))
+  if (!own?.chars.some(name => name !== char && /^\p{Script=Han}$/u.test(name))) return { items, twins: [] }
+  const alike = await readIds(char).then(found => sortForms(char, [], found.shapes ?? []).alike.chars, () => [])
+  const twins = own.chars.filter(name => alike.includes(name))
+  const folded = new Set((own.folded ?? []).flatMap(part => part.chars))
+  return { items: items.map(group => group === own ? { ...group, chars: group.chars.filter(name => !twins.includes(name) || folded.has(name)) } : group), twins }
+}
 
 /**
  * The 構形 each written value stands under, by its text: `{ id, label, by, others, part }`, `by` who
