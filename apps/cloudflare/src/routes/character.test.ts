@@ -251,8 +251,10 @@ describe('a character page', () => {
     db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
       VALUES(?,'has_form','','',?,0,'asserted',?,'[]','[]','[]','r','now')`).run(publicId(target), target, form);
     const { body } = await get('/layers/characters/U+6642');
-    // The derived form is already a row of the card, so the linked claim does not list it twice.
+    // The derived form is one of the family's 字体 by the claim, and derived no more.
+    expect(body.variants.derived).toEqual([]);
     expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
+      { char: '⿰日寺', code_point: null, form: derivedForm, scheme: 'ids', count: 0, corpus_count: 0 },
       { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
   });
 
