@@ -380,9 +380,9 @@
     <div class="candidate-list browse-panel" id={listId} onmousedown={e => e.preventDefault()}
          onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); done() } }}>{@render browse(done)}</div>
   {:else if open}
-    <!-- Pressing a row keeps focus in the box, as in the panel above. -->
+    <!-- Pressing a link keeps focus in the box, as in the panel above, until its page opens. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="candidate-list" class:carded bind:this={list} onmousedown={e => { if (e.target.closest('a, button')) e.preventDefault() }} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
+    <div class="candidate-list" class:carded bind:this={list} onmousedown={e => { if (e.target.closest('a')) e.preventDefault() }} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
       {#if lead}<div class="candidate-lead">{@render lead()}</div>{/if}
       <div id={listId} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
