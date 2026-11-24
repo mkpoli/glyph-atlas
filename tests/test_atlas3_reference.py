@@ -75,7 +75,7 @@ class Bucket:
         return self.objects.get("v3/reference/manifest.json.gz", {})
 
 
-def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES):
+def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES, group=None):
     for name in ("reference", "load_history"):
         sys.modules.pop(name, None)
     module = importlib.import_module("reference")
@@ -90,6 +90,8 @@ def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES):
     monkeypatch.setattr(module, "fetch_manifest", bucket.manifest)
     monkeypatch.setattr(module, "READINGS", READINGS["path"])
     monkeypatch.setattr(module, "PROBES", probes)
+    if group:
+        monkeypatch.setattr(module, "GROUP", group)
     monkeypatch.setattr(module, "SEND_LOCK", READINGS["path"].parent / "lock" / "reference.lock")
     monkeypatch.setattr(sys, "argv", ["reference.py", *flags])
     module.main()
@@ -250,19 +252,62 @@ def test_a_load_stops_where_a_run_is_filed_under_a_grapheme_whose_head_moves(lay
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (100,)
 
 
-def test_a_load_stops_where_a_live_claim_names_a_grapheme_whose_head_moves(layout, monkeypatch):  # noqa: F811
+def claim(remote, name, predicate, key, actor="ann"):
+    remote.dbs["glyph-atlas-v3"].executescript(f"""INSERT INTO assertions(id,subject,predicate,slot,object,tier,asserted_by,asserted_at)
+      VALUES('{name}','fm:1','{predicate}','','{key}','observed','{actor}','2026-11-24');""")
+
+
+def test_a_load_stops_where_a_live_form_claim_names_a_grapheme_whose_head_moves_and_lists_a_crops(layout, monkeypatch, capsys):  # noqa: F811
     root, _publish, remote = layout
     sealed(root, remote)
-    remote.dbs["glyph-atlas-v3"].executescript("""INSERT INTO assertions(id,subject,predicate,slot,object,tier,asserted_by,asserted_at)
-      VALUES('a','fm:1','written_for','U+3FBDB','U+3FBDB','observed','ann','2026-11-24'),
-            ('b','fm:1','written_for','U+5DF2','U+5DF2','observed','ann','2026-11-24');""")
-    with pytest.raises(SystemExit, match=r"1 written_for of U\+3FBDB$"):
-        load(remote, monkeypatch, "--send")
-    # Taken back, it names none.
-    remote.dbs["glyph-atlas-v3"].executescript("INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES('x','a','retract','ann','2026-11-24');")
+    for name, predicate, key in (("a", "written_for", "U+3FBDB"), ("b", "written_for", "U+4E5F"), ("c", "has_grapheme", "U+3FBDB")):
+        claim(remote, name, predicate, key)
+    for flags in ((), ("--send",)):
+        with pytest.raises(SystemExit, match=r"written_for claims name a grapheme whose head moves: fm:1 for U\+3FBDB$"):
+            load(remote, monkeypatch, *flags)
+    # The owner files the form under the head: nobody's word is taken back, and the card keeps the form.
+    claim(remote, "d", "written_for", "U+5DF2", "owner")
+    capsys.readouterr()
     load(remote, monkeypatch, "--send")
+    said = capsys.readouterr().out
+    # Printed before the rows land and after.
+    assert said.count("has_grapheme claims on 1 moved heads: U+3FBDB\n") == said.count("written_for claims on 1 moved heads: none\n") == 2
     reads = "EXPLAIN QUERY PLAN " + importlib.import_module("reference").CLAIMED
     assert any("assertion_object (object>? AND object<?)" in row[3] for row in remote.dbs["glyph-atlas-v3"].execute(reads))
+
+
+def test_a_stopped_load_is_checked_before_the_rest_of_it_is_sent(layout, monkeypatch, capsys):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    import publish
+    monkeypatch.setattr(publish, "PART_BYTES", 1)
+    real, sent = remote.send, []
+
+    def stops(database, file, stamp):
+        if sent:
+            raise SystemExit("stopped after the first part")
+        return sent.append(stamp) or real(database, file, stamp)
+
+    both(root, remote, "INSERT INTO graphemes(id, text, head) VALUES(102, '\U0003D307', 102), (103, '春', 103);")
+    sources(root, cards=[card("已", members=["已", SEAL]), card(SEAL, head="已", members=["已", SEAL]),
+                         card("春", members=["春", "\U0003D307"]), card("\U0003D307", head="春", members=["春", "\U0003D307"])])
+    monkeypatch.setattr(remote, "send", stops)
+    with pytest.raises(SystemExit, match="stopped"):
+        load(remote, monkeypatch, "--send", group=1)
+    monkeypatch.setattr(remote, "send", real)
+    d1 = remote.dbs["glyph-atlas-v3"]
+    moved = {gid for (gid,) in d1.execute("SELECT id FROM graphemes WHERE id IN (100, 102) AND head<>id")}
+    assert len(moved) == 1
+    left = {100: "U+3FBDB", 102: "U+3D307"}[({100, 102} - moved).pop()]
+    claim(remote, "a", "written_for", left)
+    with pytest.raises(SystemExit, match="written_for claims name a grapheme whose head moves"):
+        load(remote, monkeypatch, "--send")
+    assert len({gid for (gid,) in d1.execute("SELECT id FROM graphemes WHERE id IN (100, 102) AND head<>id")}) == 1
+    d1.executescript("INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES('x','a','retract','ann','2026-11-24');")
+    capsys.readouterr()
+    load(remote, monkeypatch, "--send")
+    assert capsys.readouterr().out.count("run keys on 1 moved heads: none") == 2
+    assert d1.execute("SELECT count(*) FROM graphemes WHERE id IN (100, 102) AND head<>id").fetchone() == (2,)
 
 
 def test_a_load_moves_no_head_but_a_seal_characters_unless_told_to(layout, monkeypatch):  # noqa: F811

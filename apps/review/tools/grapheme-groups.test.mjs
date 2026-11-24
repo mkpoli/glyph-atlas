@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { categoryOf } from '../../cloudflare/src/category.ts'
-import { gatherGraphemes, tileOpens } from '../src/lib/graphemeGroups.js'
+import { gatherGraphemes, rowNamed, tileOpens } from '../src/lib/graphemeGroups.js'
 
 // 大 with its small seal character 𾶱, 民 with two of its own, and は with ハ, as the catalogue and the
 // corpus count them.
@@ -32,5 +32,19 @@ describe('the graphemes a collection lists', () => {
     expect(tileOpens(gathered('kanji')[0], true)).toEqual({ gallery: 'U+5927', scope: 'family' })
     expect([tileOpens(dai, false), tileOpens({ ...dai, corpus: 0 }, true)]).toEqual([{ narrow: 'U+3EDB1' }, { narrow: 'U+3EDB1' }])
     expect(tileOpens(gathered('kana')[0], true)).toEqual({ narrow: 'U+306F' })
+  })
+  it('keep what claims file elsewhere with the grapheme claimed, each label once in a group', () => {
+    // 𽀅 of 叓, a crop of it claimed as 吏 (most of those flagged among them), and か claimed as 加.
+    const LI = '\u{3D005}', rows = [{ label: LI, grapheme: 'U+540F', total: 1, flagged: 1, hard: 0 }, { label: LI, grapheme: 'U+53D3', total: 3, flagged: 0, hard: 0 },
+      { label: 'か', grapheme: 'U+52A0', total: 1, flagged: 0, hard: 0 }, { label: 'か', grapheme: 'U+304B', total: 4, flagged: 0, hard: 0 }]
+    const under = (filter, more = {}) => gatherGraphemes({ categories: rows, corpus: [[LI, 'U+53D3', 2]], inScript: text => categoryOf(text) === filter, ...more })
+    expect(shown(under('seal'))).toEqual([['U+540F', '吏', false, 1, [LI]], ['U+3D005', LI, true, 5, [LI]]])
+    expect(shown(under('seal', { flagged: true, corpus: [] })).map(g => g[0])).toEqual(['U+540F', 'U+3D005'])
+    expect(shown(under('kana'))).toEqual([['U+52A0', '加', false, 1, ['か']], ['U+304B', 'か', false, 4, ['か']]])
+    expect(shown(under('kana', { categories: [{ label: 'か', grapheme: 'U+52A0', total: 1, flagged: 0, hard: 0 }] })).map(g => g[0])).toEqual(['U+52A0'])
+  })
+  it('name the flagged corpus rows of a grapheme, and of one character under a member\u2019s key', () => {
+    const row = { label: '\u{3D307}', grapheme: 'U+6625' }
+    expect([rowNamed(row, 'U+6625'), rowNamed(row, 'U+3D307'), rowNamed(row, 'U+8405'), rowNamed({ label: '\u{3D307}' }, 'U+3D307')]).toEqual([true, true, false, true])
   })
 })

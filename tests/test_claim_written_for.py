@@ -78,7 +78,7 @@ def test_a_claim_names_the_head_its_key_is_filed_under_and_a_form_the_site_holds
     sent = {"id": str(uuid4()), "client_id": "ann", "grapheme": "U+30A2", "remove": False}
     first = client.post("/atlas/forms/" + form + "/written_for", json=sent).json()
     assert first == {"id": form, "grapheme": GRAPHEME, "written_for": [{"grapheme": GRAPHEME, "char": "あ", "by": ["ann"]}]}
-    assert client.post("/atlas/forms/" + form + "/written_for", json=sent).json()["written_for"] == first["written_for"]
+    assert client.post("/atlas/forms/" + form + "/written_for", json=sent).json() == first
     assert client.post("/atlas/forms/" + form + "/written_for", json={**sent, "grapheme": GRAPHEME}).status_code == 409
     assert link(client, form, grapheme="U+30A2", remove=True)["written_for"] == []
     link(client, form, grapheme="U+1F600", remove=True, status=409)

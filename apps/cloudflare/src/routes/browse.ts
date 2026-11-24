@@ -567,7 +567,6 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const family = grapheme && !scoped ? new Set([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id)) : null;
   const member = family && !family.size ? byText.get(graphemeText(grapheme!)) : undefined;
   if (member !== undefined) family!.add(member);
-  const filed = member === undefined ? grapheme : chars.get(member)!.grapheme;
   if (family) narrow(family);
   for (const value of [character, searched]) if (value) {
     const id = byText.get(value) ?? (await env.ATLAS.prepare(graphemeQuery()).bind(value).first<{ id: number }>())?.id;
@@ -580,11 +579,11 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const claimsRead = () => filing ??= filedClaims(env);
   // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
   // characters a claim files under another family is not, as the family's gallery lists them; a member
-  // alone lists only its own character's crops, and a character or a search narrows either as it narrows
-  // the rest. A crop with no character is counted under none, and is listed by none.
-  const claims = family ? await claimsRead() : [];
-  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== filed).map(r => r.id));
-  const here = claims.filter(r => member === undefined && r.kind === 0 && r.head === filed && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
+  // alone lists its character's crops, whatever claims file them under. A character or a search narrows
+  // either as it narrows the rest. A crop with no character is counted under none, and is listed by none.
+  const claims = family && member === undefined ? await claimsRead() : [];
+  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== grapheme).map(r => r.id));
+  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
     && r.state !== null && r.quiz !== null).map(r => ({ ...r, char: r.char!, state: r.state!, quiz: r.quiz! }));
   // -2 matches nothing: a book, script or state the site does not know.
   const book = documentKey ? (await env.ATLAS.prepare(bookQuery()).bind(documentKey).first<{ id: number }>())?.id ?? -2 : null;
