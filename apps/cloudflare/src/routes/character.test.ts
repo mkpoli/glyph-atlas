@@ -413,6 +413,11 @@ describe('decades and the time axis', () => {
     expect(printed.body.buckets.map((b: any) => [b.decade, b.local, b.corpus])).toEqual([[1700, 2, 1]]);
     const some = await get('/layers/chronology?code_point=U%2B6642&scope=grapheme&chars=' + encodeURIComponent('时,旹'));
     expect(some.body.buckets.map((b: any) => [b.decade, ids(b.items)])).toEqual([[1810, [crop(PAGE_B, 2), crop(PAGE_B, 3)]]]);
+    // 殺's 35 Han forms, named apart from its small seal characters: more than a score of characters.
+    const han = readFileSync(new URL('../../../../data/vocab/characters.tsv', import.meta.url), 'utf8').split('\n').map(line => line.split('\t'))
+      .filter(row => row[10] === 'U+6BBA' && row[4] === 'han').map(row => row[1]);
+    expect(han.length).toBe(35);
+    expect((await get('/layers/chronology?code_point=U%2B6642&scope=grapheme&chars=' + encodeURIComponent(han.join(',')))).status).toBe(200);
     const composed = await get('/layers/chronology?code_point=U%2B6642&axis=composed');
     expect(composed.body.buckets.map((b: any) => [b.decade, b.local, b.corpus])).toEqual([[1650, 2, 1]]);
     expect([composed.body.undated.local, composed.body.undated.corpus]).toEqual([2, 1]);

@@ -626,7 +626,7 @@ function chronologyFilter(q: URLSearchParams): ChronologyFilter {
   const production = q.get('production');
   if (production && !/^[a-z_]+(\/[a-z_]+)*$/.test(production)) throw new Problem(422, 'Unknown production.');
   const chars = (q.get('chars') ?? '').split(',').filter(Boolean);
-  if (chars.length > 20 || chars.some(c => [...c].length > 4)) throw new Problem(422, 'Name at most 20 characters.');
+  if (chars.length > FAMILY_MAX || chars.some(c => [...c].length > 4)) throw new Problem(422, `Name at most ${FAMILY_MAX} characters.`);
   return { style: styleGroup(q), production, chars };
 }
 // A production and every node under it: `printed` takes `printed/woodblock`, compared as text. The
