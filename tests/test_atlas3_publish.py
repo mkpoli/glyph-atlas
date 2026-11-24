@@ -805,6 +805,54 @@ def test_published_credits_take_the_words_a_reader_should_see(layout, monkeypatc
         run(publish, monkeypatch, tmp_path / "credits.sqlite")
 
 
+def test_a_corpus_record_is_written_again_with_the_credit_a_reader_should_see(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    noted = "橋本雄太, Honkoku-Lines v2.0; transcriptions from みんなで翻刻 (CC BY-SA 4.0); images per holder"
+    old = {"id": "codh:g1", "label": "が", "attribution": "国立国会図書館", "text_attribution": noted, "box": {"x": 1}}
+    raw = json.dumps(old, ensure_ascii=False).encode()
+    fetched = tmp_path / "fetched"
+    fetched.mkdir()
+    (fetched / PACK[1].removeprefix("packs/")).write_bytes(b"x" * 40 + raw)
+    db = sqlite3.connect(tmp_path / "c.sqlite")
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[1]}',40,{len(raw)},'printed',0,'unassessed','codh:b',NULL)")
+    db.commit()
+    run(publish, monkeypatch, tmp_path / "c.sqlite")
+    crops = remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id")
+    sys.modules.pop("record_credits", None)
+    record_credits = importlib.import_module("record_credits")
+    capsys.readouterr()
+    record_credits.main([str(tmp_path / "out1"), "--books", "codh:", "--list"])
+    assert capsys.readouterr().out.split() == [PACK[1].removeprefix("packs/")]
+    record_credits.main([str(tmp_path / "out1"), "--books", "book:", "--packs", str(fetched)])
+    assert "0 of 0 records" in capsys.readouterr().out
+    record_credits.main([str(tmp_path / "out2"), "--books", "codh:", "--packs", str(fetched)])
+    (glyph, pack, offset, size, *replaced), = sqlite3.connect(tmp_path / "out2" / "records.sqlite").execute("SELECT * FROM record_places")
+    assert replaced == [PACK[1], 40, len(raw)]
+    new = json.loads((tmp_path / "out2" / pack).read_bytes()[offset:offset + size])
+    assert new == {**old, "text_attribution": "橋本雄太, Honkoku-Lines v2.0; みんなで翻刻 (CC BY-SA 4.0)"}
+
+    run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    pid = ids(root)["codh:g1"] // publish.PAGE
+    rev = remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pid}")[0]["rev"]
+    entry, = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-{rev}.json.gz").read_bytes()))["crops"]
+    assert (glyph, entry["record_place"]) == ("codh:g1", [pack, offset, size])
+    assert remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id") == crops, "no crop row changes"
+    capsys.readouterr()
+    run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    assert "nothing changed" in capsys.readouterr().out
+    # A record published since the catalogue was written is kept, not put back.
+    with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
+        db.execute("UPDATE record_places SET offset = 7, old_offset = 41")
+    with pytest.raises(SystemExit, match="published since the catalogue was written, e.g. codh:g1"):
+        run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
+        db.execute("DELETE FROM record_places")
+        db.execute(f"INSERT INTO record_places VALUES('ex:a1', '{PACK[2]}', 0, 1, '{PACK[1]}', 0, 1)")
+    with pytest.raises(SystemExit, match="no published record, e.g. ex:a1"):
+        run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+
+
 def test_a_book_cut_from_its_pages_takes_the_title_of_its_page_records(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     db = sqlite3.connect(catalogue(tmp_path / "c.sqlite", [

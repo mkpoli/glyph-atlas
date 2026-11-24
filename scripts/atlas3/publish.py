@@ -42,6 +42,9 @@ images to the image key map (`media_map.py`).
   moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
   dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
   needs `--approve-styles` naming that count of crops.
+- A catalogue's `record_places` (id, object, offset, size, and the place it replaces), as `record_credits.py` writes it, points each
+  named corpus glyph at its record in that pack, which is in the bucket before the publish. Only the
+  bundles and their pages' revisions change.
 - A catalogue's `credits` (attribution, credit), as `credits.py` writes it, gives every published page
   and crop entry that carries the attribution the credit in its place, or none where it names no one.
   Only their bundles change, and the revisions of their pages.
@@ -1386,6 +1389,8 @@ def main():
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
     m.titled, m.retitle = book_titles(src, tables), args.retitle
+    if "record_places" in tables and tables - {"record_places"}:
+        sys.exit(f"a record_places catalogue holds record_places alone, not {sorted(tables - {'record_places'})}; nothing published")
     if "credits" in tables and tables - {"credits"}:
         sys.exit(f"a credits catalogue holds credits alone, not {sorted(tables - {'credits'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
@@ -1779,6 +1784,30 @@ def main():
             sys.exit(f"{len(unknown)} cut_facts rows name crops the mirror lacks: {unknown[:5]}; nothing published")
         if gone:
             print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
+
+    # A corpus glyph's record written again in another pack: its entry points there, and nothing else moves.
+    if "record_places" in tables:
+        unplaced, moved = [], []
+        for r in src.execute("SELECT * FROM record_places ORDER BY id"):
+            cid = m.known(r["id"])
+            old = entry(cid) if cid is not None else {}
+            if not old.get("record_place") or old.get("retired"):
+                unplaced.append(r["id"])
+                continue
+            place = [r["object"], r["offset"], r["size"]]
+            if old["record_place"] == place:
+                continue
+            # A record published since the catalogue was written holds what the catalogue's does not.
+            if old["record_place"] != [r["old_object"], r["old_offset"], r["old_size"]]:
+                moved.append(r["id"])
+                continue
+            m.touched_pages[cid // PAGE][cid % PAGE] = (
+                {**{k: v for k, v in old.items() if k != "slot"}, "record_place": place}, False)
+        if moved:
+            sys.exit(f"{len(moved)} glyphs' records have been published since the catalogue was written, e.g. {moved[0]}; "
+                     "write it again; nothing published")
+        if unplaced:
+            sys.exit(f"{len(unplaced)} record_places rows name glyphs with no published record, e.g. {unplaced[0]}; nothing published")
 
     # A credit shown otherwise than it was published: each published page and crop entry that carries the
     # catalogue's attribution takes the credit, and loses the field where that names no one.
