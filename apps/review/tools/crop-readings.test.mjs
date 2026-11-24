@@ -4,7 +4,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
 const { beside, clearReading, cropLine, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
-const { HENTAIGANA, plainKana } = await import('../src/lib/hentaigana.js')
+const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
 
@@ -68,12 +68,31 @@ describe('hentaigana', () => {
   it('are the ones of the character table', () => {
     const table = new Map()
     for (const line of readFileSync(new URL('../../../data/vocab/characters.tsv', import.meta.url), 'utf8').split('\n')) {
-      const [point, char, , , kind, , , , , , parent] = line.split('\t')
+      const [point, char, , , kind, , , , jibo, , parent] = line.split('\t')
       if (line.startsWith('#') || kind !== 'hentaigana' || point.includes(' ') || !parent || parent.includes(' ')) continue
       const kana = String.fromCodePoint(parseInt(parent.slice(2), 16))
-      table.set(kana, (table.get(kana) ?? '') + char)
+      table.set(kana, [...table.get(kana) ?? [], { letter: char, jibo }])
     }
     expect([...HENTAIGANA]).toEqual([...table])
+  })
+})
+
+describe('the letters of a kana in a ruby', () => {
+  it('are offered for the kana before the caret, itself first, whichever letter it is written with', () => {
+    expect(lettersAt('しよ', 1)).toMatchObject({ from: 0, to: 1, now: 'し' })
+    const { letters } = lettersAt('しよ', 1)
+    expect(letters[0]).toEqual({ letter: 'し', jibo: null })
+    expect(letters).toContainEqual({ letter: '𛁈', jibo: '志' })
+    expect(lettersAt('𛁈よ', 2)).toMatchObject({ from: 0, to: 2, now: '𛁈' })
+  })
+  it('carry the voicing of the kana', () => {
+    const found = lettersAt('じ', 1)
+    expect(found.letters[0].letter).toBe('じ')
+    expect(found.letters).toContainEqual({ letter: '𛁈\u3099', jibo: '志' })
+    expect(lettersAt('𛁈\u3099', 3)).toMatchObject({ from: 0, to: 3, now: '𛁈\u3099' })
+  })
+  it('are none at the start, after a kanji or for a kana with no hentaigana', () => {
+    expect([lettersAt('し', 0), lettersAt('器', 1), lettersAt('ー', 1)]).toEqual([null, null, null])
   })
 })
 

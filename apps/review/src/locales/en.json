@@ -777,6 +777,8 @@
   "reading.whole": "Read as one",
   "reading.ruby": "Ruby as written",
   "reading.rubyOf": "Ruby beside {char}",
+  "reading.letters": "Letters of this kana",
+  "reading.jibo": "Derived from {char}",
   "reading.needed": "Write a reading.",
   "reading.save": "Save reading",
   "word.label": "Word",
