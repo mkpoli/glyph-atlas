@@ -35,9 +35,11 @@
   import { catalogue, character, cropPixels, request, shuffleSeed, number, stored, remember, saveFile, graphemeCounts } from '../lib/client.js'
   import { paint } from '../lib/collageImage.js'
   import { holderName, licenceName } from '../lib/licence.js'
-  import { markForms, unmarkForms } from '../lib/cropForms.js'
+  import { listForms, markForms, unmarkForms } from '../lib/cropForms.js'
   import { isDescription } from '../lib/ids.js'
-  import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
+  import { isFigure } from '../lib/mjFigures.js'
+  import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
+  import { bulkActionPlan, bulkFormChoices, bulkReviewBatches, bulkReviewBody, bulkReviewOutcome } from '../lib/bulkForms.js'
   import { arrowTarget, toggled, withRange } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades, bookGallery as layerBooks } from '../lib/layers.js'
@@ -50,7 +52,7 @@
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
-  import { cardTargets, galleryCount } from '../lib/cardTiers.js'
+  import { galleryCount } from '../lib/cardTiers.js'
   import { WIDENED_CAP } from '$worker/graphemeTotals.ts'
   import { afterBurst, countsMoved, latest, listDone, owed, savedTile, withSummary } from '../lib/galleryCounts.js'
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
@@ -953,11 +955,26 @@
   // click, a tap or Space toggles a tile, Shift takes the range from the last one in display order, the
   // arrow keys move between tiles, and Esc leaves the mode.
   const reviewer = $derived(Boolean(session.state.user && !session.state.user.anonymous))
-  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
+  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkTargetKind = $state('character'), bulkBusy = $state(false), bulkError = $state('')
   // The last batch save, with its undo, and the crops it could not save, by reason.
   let bulkDone = $state(null), bulkReport = $state([])
-  // A character's page offers the forms its card lists as the character to give a selection.
-  const bulkChoices = $derived(picked ? cardTargets(picked) : [])
+  // A character's page offers the same forms the single-crop form bar does (grapheme members, IVD
+  // figures, regional shapes, attested variants and linked IDS/IVS), falling back to the card's own
+  // targets while `listForms` loads.
+  let listedForms = $state({ char: null, members: [], variants: [], family: [] })
+  $effect(() => {
+    const char = selecting ? picked?.char : null
+    if (!char) return
+    let live = true
+    listForms(char).then(found => { if (live) listedForms = { char, ...found } }, () => {})
+    return () => { live = false }
+  })
+  let lastPickedChar = untrack(() => picked?.char ?? null)
+  $effect(() => {
+    const char = picked?.char ?? null
+    if (char !== lastPickedChar) { lastPickedChar = char; bulkTarget = ''; bulkTargetKind = 'character' }
+  })
+  const bulkChoices = $derived(picked ? bulkFormChoices(listedForms.char === picked.char ? listedForms : null, picked) : [])
   // Crops "Looks right" confirmed on this page: their tick says so, so they drop the empty select box until chosen again.
   let confirmedHere = $state(new Set())
   /** A corpus glyph whose image this site may not show cannot be judged from the grid. A pair or trigram
@@ -1041,11 +1058,15 @@
     }
   }
   const writtenAs = item => item.written_character || item.label
-  /** A tile after a correction, or null when the correction takes it out of what this view shows. */
-  function corrected(item, result) {
-    const next = { ...item, label: bulkTarget, char: bulkTarget, written_character: bulkTarget, identity_status: 'assigned',
-      state: result?.state ?? 'checked', revision: result?.revision ?? item.revision + 1 }
-    return (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
+  /** Format skipped/reported crops with their label, origin and thumbnail so each opens from the report. */
+  function formatReport(entries, tiles) {
+    const byId = new Map(tiles.map(tile => [tile.id, tile]))
+    return entries.map(entry => {
+      const tile = byId.get(entry.id), label = tile ? shownLabel(tile).trim() : '', named = Boolean(label) && !isUnassigned(tile)
+      const origin = tile?.origin === 'corpus' ? 'corpus' : 'collection', shown = named ? label : [label, entry.id].filter(Boolean).join(' ')
+      return { ...entry, label, named, origin, thumb: tile?.image && selectable(tile) ? tile : null,
+        name: origin === 'corpus' ? t('explore.tile.inspectCorpus', { label: shown }) : t('explore.tile.inspect', { label: shown }) }
+    })
   }
   /** Tiles changed (`null` takes one out of the gallery); `now` is each crop as it is, which a run's crops take. */
   function patch(change, now = change) {
@@ -1091,49 +1112,83 @@
     patch(change, current)
   }
   async function applyBulk() {
-    const target = bulkTarget
+    const target = bulkTarget, fromForm = bulkTargetKind === 'form'
     if (!target || bulkBusy) return
-    if (isDescription(target)) return describeBulk(target)
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
-    // A tile a person already checked as the character has nothing to change; every other one is sent,
-    // and one already written as the character is confirmed.
-    const crops = chosen.filter(item => !(writtenAs(item) === target && item.state === 'checked'))
-    let kept = chosen.length - crops.length
+    if (!chosen.length) return
+    const lang = bulkChoices.find(choice => choice.char === target)?.lang ?? ''
     bulkBusy = true; bulkError = ''; bulkReport = []
-    const saved = [], before = {}, after = {}
-    let refused = [], answered = [], waiting = []
+    const distinct = [...new Set(chosen.map(item => isUnassigned(item) ? '' : writtenAs(item)).filter(Boolean))]
+    const families = new Map(await Promise.all(distinct.map(char =>
+      listForms(char).then(found => [char, new Set(found.family)], () => [char, new Set([char])]))))
+    const pickedFamily = listedForms.char === picked?.char ? new Set(listedForms.family) : null
+    const plan = bulkActionPlan({ chosen, target, fromForm, families, picked, pickedFamily })
+    const toReview = plan.filter(entry => entry.needsReview)
+    let answered = [], pausedReviews = [], reviewError = null
     try {
-      ({ answered, kept: waiting } = await sendBatches(correctionBatches(target, crops, ROUND_MAX), ({ id, crops: part }) =>
-        request('/atlas/corrections', { id, character: target,
-          crops: part.map(item => ({ id: item.id, revision: item.revision,
-            ...cropPixels(item) })) })))
+      if (toReview.length) ({ answered, kept: pausedReviews } = await sendBatches(
+        bulkReviewBatches(toReview, target, fromForm, ROUND_MAX), batch => request('/atlas/corrections', bulkReviewBody(batch))))
     } catch (e) {
-      answered = e.answered ?? []; waiting = e.kept ?? []
-      refused = (e.targets ?? []).map(target => target.id)
-      bulkError = refused.length ? t('bulk.refused', { count: refused.length }) : failure(e)
-    } finally {
-      bulkBusy = false
+      answered = e.answered ?? []; pausedReviews = e.kept ?? []; reviewError = e
     }
-    for (const { item: { id, crops: part }, result } of answered) {
-      saved.push(id)
-      const byId = Object.fromEntries((result.results ?? []).map(r => [r.target_id, r]))
-      kept += (result.unchanged ?? []).length
-      for (const item of part) if (byId[item.id]) { before[item.id] = item; after[item.id] = corrected(item, byId[item.id]) }
+    const outcome = bulkReviewOutcome(answered)
+    const pausedReviewIds = new Set(pausedReviews.flatMap(batch => batch.crops).map(entry => entry.item.id))
+    const toClaim = reviewError ? [] : plan.filter(entry =>
+      entry.claimForm && (!entry.needsReview || outcome.saved.has(entry.item.id) || outcome.unchanged.has(entry.item.id) || pausedReviewIds.has(entry.item.id)))
+      .map(entry => entry.item)
+    let marked = [], keptForms = [], formError = null
+    if (toClaim.length) {
+      try { ({ marked, kept: keptForms } = await markForms(toClaim, target)) }
+      catch (e) { marked = e.marked ?? []; keptForms = e.kept ?? []; formError = e }
     }
-    // Batches kept while writes are paused go once they resume; their tiles change then.
-    if (waiting.length && !bulkError) bulkError = t('client.pausedKept')
-    // Crops in a saved or kept batch, tiles with nothing to change, and refused crops are done with.
-    const handled = new Set([...answered.map(({ item }) => item), ...waiting].flatMap(batch => batch.crops)
-      .concat(chosen.filter(item => !crops.includes(item))).map(item => item.id).concat(refused))
-    if (saved.length) {
-      patch(after)
-      bulkDone = { kind: 'correct', batches: saved, count: Object.keys(after).length, char: target, before, kept }
-      runsChanged()
-      readGroupStats()
+    bulkBusy = false
+    const err = reviewError ?? formError
+    if (err) bulkError = failure(err)
+    else if (pausedReviews.length || keptForms.length) bulkError = t('client.pausedKept')
+    const markedById = new Map(marked.map(entry => [entry.crop.id, entry.crop.form]))
+    const keptFormIds = new Set(keptForms.map(crop => crop.id))
+    const before = {}, reviewBefore = {}, after = {}, now = {}, confirmed = []
+    let kept = 0
+    for (const entry of plan) {
+      const { item } = entry
+      const saved = outcome.saved.get(item.id)
+      const hasForm = markedById.has(item.id)
+      if (!entry.claimForm && (!entry.needsReview || outcome.unchanged.has(item.id))) kept += 1
+      if (!saved && !hasForm) continue
+      before[item.id] = item
+      let next = item
+      if (saved) {
+        reviewBefore[item.id] = item
+        next = { ...next, ...(entry.relabel ? { label: entry.reviewCharacter, char: entry.reviewCharacter, written_character: entry.reviewCharacter, identity_status: 'assigned' } : {}),
+          state: saved.state, revision: saved.revision }
+        if (saved.state === 'checked') confirmed.push(item.id)
+      }
+      if (hasForm) next = { ...next, form: markedById.get(item.id) }
+      now[item.id] = next
+      after[item.id] = (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
     }
-    // What was saved, kept or refused leaves the selection; what a later batch never reached stays selected.
+    bulkReport = formatReport([...[...outcome.skipped].map(([id, reason]) => ({ id, reason })), ...outcome.flagged], chosen)
+    const changedCount = Object.keys(now).length
+    if (changedCount) {
+      patch(after, now)
+      if (confirmed.length) confirmedHere = new Set([...confirmedHere, ...confirmed])
+      bulkDone = { kind: 'correct', batches: outcome.batches, described: marked, count: changedCount, char: target, lang, before, reviewBefore, kept }
+      if (outcome.batches.length) { runsChanged(); readGroupStats() }
+      if (marked.length && (isDescription(target) || isFigure(target))) moved('totals')
+    }
+    // Crops whose review and form claim (where needed) were saved, kept, paused or skipped leave the selection;
+    // crops never reached after an error stay selected so retrying picks them up.
+    const handled = new Set()
+    for (const entry of plan) {
+      const id = entry.item.id
+      if (outcome.skipped.has(id)) { handled.add(id); continue }
+      const reviewDone = !entry.needsReview || outcome.saved.has(id) || outcome.unchanged.has(id) || pausedReviewIds.has(id)
+      const formDone = !entry.claimForm || markedById.has(id) || keptFormIds.has(id)
+      if (reviewDone && formDone) handled.add(id)
+    }
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
-    if (refused.length) await refresh(refused)
+    const stale = [...outcome.skipped.keys()]
+    if (stale.length) await refresh(stale)
   }
   /** What a batch save that stopped says: the site's own reasons for a rate limit or a crop that changed. */
   const failure = e => e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
@@ -1163,19 +1218,11 @@
       const next = now[item.id] = { ...item, state: saved.state, revision: saved.revision }
       after[item.id] = (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
     }
-    // Each reported crop keeps its label and origin, so it opens even when reading it again takes its tile away.
-    const tileOf = id => chosen.find(tile => tile.id === id)
-    // A crop with no character to show is named by its image, and by its id to a screen reader.
-    bulkReport = [...plan.report, ...outcome.report].map(entry => {
-      const tile = tileOf(entry.id), label = tile ? shownLabel(tile).trim() : '', named = Boolean(label) && !isUnassigned(tile)
-      const origin = tile?.origin === 'corpus' ? 'corpus' : 'collection', shown = named ? label : [label, entry.id].filter(Boolean).join(' ')
-      return { ...entry, label, named, origin, thumb: tile?.image && selectable(tile) ? tile : null,
-        name: origin === 'corpus' ? t('explore.tile.inspectCorpus', { label: shown }) : t('explore.tile.inspect', { label: shown }) }
-    })
+    bulkReport = formatReport([...plan.report, ...outcome.report], chosen)
     if (outcome.saved.size) {
       patch(after, now)
       confirmedHere = new Set([...confirmedHere, ...outcome.saved.keys()])
-      bulkDone = { kind: 'confirm', batches: answered.map(({ item }) => item.id), count: outcome.saved.size, before }
+      bulkDone = { kind: 'confirm', batches: answered.filter(({ result }) => (result?.results ?? []).length > 0).map(({ item }) => item.id), count: outcome.saved.size, before }
       runsChanged()
       readGroupStats()
     }
@@ -1189,56 +1236,55 @@
     const stale = outcome.report.filter(entry => entry.reason !== 'flagged').map(entry => entry.id)
     if (stale.length) await refresh(stale)
   }
-  // A form written as an ideographic description sequence is a claim on each selected crop and no review,
-  // as it is on one crop: the tiles keep their character and take the form.
   const withForms = marked => Object.fromEntries(marked.flatMap(({ crop }) => { const tile = display.find(item => item.id === crop.id); return tile ? [[crop.id, { ...tile, form: crop.form }]] : [] }))
-  async function describeBulk(target) {
-    const chosen = display.filter(item => selected.has(item.id) && selectable(item))
-    let marked = [], kept = []
-    bulkBusy = true; bulkError = ''; bulkReport = []
-    try { ({ marked, kept } = await markForms(chosen, target)) }
-    catch (e) { marked = e.marked ?? []; kept = e.kept ?? []; bulkError = failure(e) }
-    finally { bulkBusy = false }
-    if (kept.length && !bulkError) bulkError = t('client.pausedKept')
-    if (marked.length) {
-      patch(withForms(marked))
-      bulkDone = { kind: 'form', described: marked, count: marked.length, char: target, kept: 0 }
-    }
-    const handled = new Set([...marked, ...kept.map(crop => ({ crop }))].map(({ crop }) => crop.id))
-    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
-  }
-  async function undoDescribed(done) {
-    let marked = []
-    bulkBusy = true; bulkError = ''
-    try { ({ marked } = await unmarkForms(done.described)) }
-    catch (e) { marked = e.marked ?? []; bulkError = e.message }
-    finally { bulkBusy = false }
-    patch(withForms(marked))
-    const back = new Set(marked.map(({ crop }) => crop.id)), left = done.described.filter(({ crop }) => !back.has(crop.id))
-    bulkDone = left.length ? { ...done, described: left, count: left.length } : null
-  }
   async function undoBulk() {
     const done = bulkDone
     if (!done || bulkBusy) return
-    if (done.kind === 'form') return undoDescribed(done)
     bulkBusy = true; bulkError = ''
+    let leftBatches = [...(done.batches ?? [])], leftForms = [...(done.described ?? [])]
+    let answered = [], pausedBatches = [], unmarked = [], pausedForms = [], failureError = null
     try {
-      const { answered, kept: waiting } = await sendEach([...done.batches].reverse(), id => request(`/atlas/corrections/${id}/undo`, {}))
-      if (done.kind === 'confirm') confirmedHere = new Set([...confirmedHere].filter(id => !(id in done.before)))
-      bulkDone = null; bulkReport = []
-      // Undos kept while writes are paused go once they resume; until then the site still shows those
-      // batches' crops corrected, so the view is read again.
-      if (waiting.length) bulkError = t('client.pausedKept')
-      if (!answered.length) return
-      // Tiles go back at the revision each undo answered, so correcting them again is not refused.
+      if (leftBatches.length) {
+        ({ answered, kept: pausedBatches } = await sendEach([...leftBatches].reverse(), id => request(`/atlas/corrections/${id}/undo`, {})))
+        const undoneIds = new Set([...answered.map(({ item }) => item), ...pausedBatches])
+        leftBatches = leftBatches.filter(id => !undoneIds.has(id))
+      }
+    } catch (e) {
+      answered = e.answered ?? []; pausedBatches = e.kept ?? []; failureError = e
+      const undoneIds = new Set([...answered.map(({ item }) => item), ...pausedBatches])
+      leftBatches = leftBatches.filter(id => !undoneIds.has(id))
+    }
+    if (!failureError && leftForms.length) {
+      try {
+        ({ marked: unmarked, kept: pausedForms } = await unmarkForms(leftForms))
+      } catch (e) {
+        unmarked = e.marked ?? []; pausedForms = e.kept ?? []; failureError = e
+      }
+      const back = new Set([...unmarked.map(({ crop }) => crop.id), ...pausedForms.map(crop => crop.id)])
+      leftForms = leftForms.filter(({ crop }) => !back.has(crop.id))
+    }
+    bulkBusy = false
+    if (failureError) bulkError = failureError.message
+    else if (pausedBatches.length || pausedForms.length) bulkError = t('client.pausedKept')
+    if (answered.length) confirmedHere = new Set([...confirmedHere].filter(id => !(id in (done.reviewBefore ?? done.before ?? {}))))
+    bulkReport = []
+    bulkDone = leftBatches.length || leftForms.length ? { ...done, batches: leftBatches, described: leftForms } : null
+    const formById = new Map(unmarked.map(({ crop }) => [crop.id, crop.form]))
+    if (answered.length) {
+      // Tiles go back at the revision each undo answered, with any undone form claim overlaid.
       const shown = new Set([...items, ...local, ...corpus, ...sample, ...scattered.flatMap(run => run?.crops ?? [])].map(item => item.id))
-      const restored = waiting.length ? null : restoredCrops(done.before, answered)
-      if (restored && Object.keys(restored).every(id => shown.has(id))) patch(restored)
-      else { moved('totals'); await load() }
+      const restored = pausedBatches.length || leftBatches.length ? null : restoredCrops(done.reviewBefore ?? done.before, answered)
+      if (restored && Object.keys(restored).every(id => shown.has(id))) {
+        const merged = { ...withForms(unmarked), ...restored }
+        for (const [id, form] of formById) if (merged[id]) merged[id] = { ...merged[id], form }
+        patch(merged)
+      } else { moved('totals'); await load() }
       runsChanged()
       readGroupStats()
-    } catch (e) { bulkError = e.message }
-    finally { bulkBusy = false }
+    } else if (unmarked.length) {
+      patch(withForms(unmarked))
+      if (done.char && (isDescription(done.char) || isFigure(done.char))) moved('totals')
+    }
   }
   /** Open a crop the last batch save reported, stepping through the reported ones. */
   function openReported(id) {
@@ -1567,7 +1613,7 @@
     {:else}{#each sections as section (section.key)}{#if section.head?.book}{@render bookHeading(section.head)}{:else if section.heading}<div class="visual-grid-heading">{section.heading}</div>{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
   </div>
   {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: picked.char })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
-  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
+  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} bind:targetKind={bulkTargetKind} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>

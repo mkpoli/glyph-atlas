@@ -1099,11 +1099,15 @@ def router(store: Store) -> APIRouter:
         counts = current.counts(row.code_point, expand=expand)
         counts["filtered"] = len(rows)
         page = rows[offset:offset + limit]
-        # Each crop's form, on the version it is listed with (`crop_forms`).
-        forms = store.forms_for({unit.id: evidence.crop_version(unit.id, _source_digest(store, unit), unit.box)
-                                 for unit, *_ in page})
+        # Each crop's form, on the version it is listed with (`crop_forms`), plus its source digest and
+        # evidence version so bulk corrections and form picks on a character's page match the Worker.
+        digests = {unit.id: _source_digest(store, unit) for unit, *_ in page}
+        versions = {unit.id: evidence.crop_version(unit.id, digests[unit.id], unit.box) for unit, *_ in page}
+        forms = store.forms_for(versions)
         return {"query": row.code_point, "expand": expand, "counts": counts,
-                "items": [{**current.item(unit, revision, form, exact), "form": forms.get(unit.id)}
+                "items": [{**current.item(unit, revision, form, exact),
+                           "image_sha256": digests[unit.id], "crop_version": versions[unit.id],
+                           "form": forms.get(unit.id)}
                           for unit, revision, form, exact in page],
                 "next": str(offset + limit) if offset + limit < len(rows) else None}
 

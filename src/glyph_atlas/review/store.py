@@ -1173,6 +1173,34 @@ class Store:
             current = crop_forms.forms_for(conn, {form["crop"]: form["crop_version"]})
         return {"id": response["subject"], "form": current.get(response["subject"]), "replaced": response.get("replaced")}
 
+    def set_forms(self, *, key: str, actor: str, request: dict[str, Any], picks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Set or clear `actor`'s form on each crop of `picks` in one transaction, matching the Worker's
+        `/atlas/forms` route."""
+        signature = ledger.canonical(request)
+        with self._lock, self._connection() as conn, self._transaction(conn):
+            saved = ledger.previous(conn, key, signature)
+            if saved is not None:
+                picked = saved.get("picked") or []
+            else:
+                at = ledger.now()
+                picked = []
+                for i, pick in enumerate(picks):
+                    crop, version, form = pick["crop"], pick["crop_version"], pick["form"]
+                    own = conn.execute(
+                        "SELECT a.id, r.value FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
+                        "WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot='' AND a.asserted_by=? "
+                        "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+                        "ORDER BY a.rowid DESC LIMIT 1", (crop, actor)).fetchone()
+                    if form is None and own is None:
+                        continue
+                    crop_forms.set_form(conn, key=f"{key}/{i}", actor=actor, request={"batch": key, "i": i, **pick},
+                                        crop=crop, crop_version=version, form=form, at=at)
+                    picked.append({"crop": crop, "crop_version": version, "replaced": own[1] if own else None})
+                conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
+                             (key, actor, signature, ledger.canonical({"submission": key, "picked": picked}), at))
+            current = crop_forms.forms_for(conn, {item["crop"]: item["crop_version"] for item in picked})
+        return [{"id": item["crop"], "form": current.get(item["crop"]), "replaced": item["replaced"]} for item in picked]
+
     def forms_for(self, versions: dict[str, str | None]) -> dict[str, dict]:
         """Each crop's form, for crops given with their current evidence versions (`crop_forms.forms_for`)."""
         with self._lock, self._connection() as conn:

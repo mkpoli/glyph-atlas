@@ -165,7 +165,8 @@ export async function setForm(crop, form) {
 // A form claimed on many crops at once is a batch of form picks, each 48 crops: a claim on each crop and
 // no review, as `claimForm` makes on one. The batch names the version of each crop the reader saw, read again for a record that lacks it.
 export const FORM_BATCH = 48
-const picksOf = async (crops, form) => Promise.all(crops.map(async crop => ({ crop: crop.crop_version ? crop : { ...crop, ...await reread(crop) }, form })))
+const picksOf = async (crops, form) => (await Promise.all(crops.map(async crop => ({ crop: crop.crop_version ? crop : { ...crop, ...await reread(crop) }, form }))))
+  .filter(({ crop }) => Boolean(crop.crop_version))
 async function sendPicks(picks) {
   const batches = []
   for (let from = 0; from < picks.length; from += FORM_BATCH) batches.push(picks.slice(from, from + FORM_BATCH))
