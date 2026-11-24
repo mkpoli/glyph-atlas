@@ -10,7 +10,7 @@ import { compatibility, structureKey, written } from '../representation';
 import { claimedStructures, foldsOf, standingOf } from './claims';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { idsCharacter } from '../category';
+import { idsCharacter, isSeal } from '../category';
 import { componentTerm } from '../components';
 import { hira } from '../index';
 import { integer, literal } from '../input';
@@ -120,13 +120,16 @@ export function byGrapheme(found: Json[], members: Map<string, Json>) {
     return [...group, ...rest];
   });
 }
-// A list shows at most GRAPHEME_MEMBERS forms it did not find. A grapheme's forms file under its
-// family, so their cards are in the shards the list has read.
+// A list shows at most GRAPHEME_MEMBERS forms it did not find, small seal characters after every other
+// so they take no place of one. A grapheme's forms file under its family, so their cards are in the
+// shards the list has read.
 const GRAPHEME_MEMBERS = 48;
-function unlistedForms(found: Json[], cards: Map<string, Json>) {
+export function unlistedForms(found: Json[], cards: Map<string, Json>) {
   const listed = new Set(found.map(item => item.code_point));
-  const wanted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
-    .filter(code => !listed.has(code)).slice(0, GRAPHEME_MEMBERS);
+  const unlisted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
+    .filter(code => !listed.has(code));
+  const seals = unlisted.filter(code => isSeal(textOf(code)));
+  const wanted = [...unlisted.filter(code => !isSeal(textOf(code))), ...seals].slice(0, GRAPHEME_MEMBERS);
   return new Map(wanted.filter(code => cards.has(code)).map(code => [code, cards.get(code)]));
 }
 

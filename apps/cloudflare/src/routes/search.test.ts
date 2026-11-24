@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
 import { formNamed } from './claims';
-import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
+import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, unlistedForms, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
 const edge = new Map<string, Response>();
@@ -248,6 +248,22 @@ describe('a character search', () => {
     expect(await chars('ね')).toEqual(['ね', 'ネ', '𛂒', '𛄧', 'ぬ']);
     expect(await chars('とき')).toEqual(['𛄤', '時', '时', '旹', '刻', '鴇']);
     expect(await chars('鯡')).toEqual(['鯡', '𩹉']);
+  });
+
+  it('lists a small seal character only where every other form has its place', () => {
+    // 殺's family and 箕's, from the character table: 52 Han forms and 12 small seal characters.
+    const table = readFileSync(new URL('../../../../data/vocab/characters.tsv', import.meta.url), 'utf8').split('\n').map(line => line.split('\t'));
+    const family = (head: string) => ({ code_point: head, grapheme: { code_point: head,
+      members: table.filter(row => row[10] === head).map(row => ({ code_point: row[0], char: row[1] })).reverse() } });
+    const found = [family('U+6BBA'), family('U+7B95')], cards = new Map(found.flatMap(f => f.grapheme.members).map(m => [m.code_point, m]));
+    expect([found[0].grapheme.members.length, found[1].grapheme.members.length]).toEqual([41, 23]);
+    const seal = (code: string) => /^U\+3[D-F]/.test(code);
+    const listed = [...unlistedForms(found, cards).keys()];
+    expect(listed.length).toBe(48);
+    expect(listed.some(seal)).toBe(false);
+    // 殺 alone leaves room for all of them, after the rest.
+    const alone = [...unlistedForms([found[0]], cards).keys()];
+    expect([alone.length, alone.slice(-6).every(seal), alone.slice(0, -6).some(seal)]).toEqual([40, true, false]);
   });
 
   it('finds the unified ideograph a compatibility ideograph stands for, and lists one only with crops', async () => {
