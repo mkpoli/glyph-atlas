@@ -11,9 +11,9 @@ const card = { code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EE
 
 describe('what stands for a grapheme', () => {
   it('is its 旧字体 and 新字体 where a 新字体 heads it, else its head', () => {
-    expect(['仮', '国', '竜', '発', '鶏'].map(graphemeLabel)).toEqual(['假仮', '國国', '龍竜', '發発', '鷄鶏'])
+    expect(['仮', '国', '竜', '発', '郷'].map(graphemeLabel)).toEqual(['假仮', '國国', '龍竜', '發発', '鄕郷'])
     // The old form alone, a head that is no 新字体, a kana, a description and a key that names nothing.
-    for (const text of ['假', '遇', '神', 'は', '⿰木木', '', 'toString']) expect(graphemeLabel(text)).toBe(text)
+    for (const text of ['假', '遇', '神', '青', 'は', '⿰木木', '', 'toString']) expect(graphemeLabel(text)).toBe(text)
   })
   it('is two characters of two, whatever the table holds', () => {
     for (const [head, old] of Object.entries(LABELS)) expect([...graphemeLabel(head)]).toEqual([old, head])

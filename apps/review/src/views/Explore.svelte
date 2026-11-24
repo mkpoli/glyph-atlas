@@ -305,7 +305,7 @@
   // otherwise than the form; katakana counts as its own writing (ハ stands alone, 𛂞 は and 嶋 島 do not).
   const shownGrapheme = item => { const g = tileGrapheme(item); return g && (isUnassigned(item) || kanaFolded(g) !== kanaFolded(item.label ?? '')) ? g : null }
   // A tile's name for a screen reader: its form, then its grapheme where the caption shows one.
-  const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${graphemeLabel(shownGrapheme(item))})` : shownLabel(item)
+  const tileName = item => shownGrapheme(item) ? `${shownLabel(item)} (${shownGrapheme(item)})` : shownLabel(item)
   const groupLabel = group => group.id === 'unassigned' ? t('corpus.unassigned')
     : group.label === 'Similar forms' ? t('explore.similarForms') : group.label
   /** Whether a crop still waits for a person: flagged, or hard to read after two reviewers skipped it. */
@@ -1431,7 +1431,7 @@
      hover details. The square grid positions the label and footer at its top and bottom through display:contents. -->
 {#snippet tileCaption(item)}
   <span class="tile-caption">
-    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={graphemeLabel(shownGrapheme(item))} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
+    <span class="tile-label"><span class="tile-glyph" class:unassigned={isUnassigned(item)}>{@render tileLabel(item)}</span>{#if shownGrapheme(item)}<span class="tile-grapheme" title={t('chips.grapheme')}><ScriptText text={shownGrapheme(item)} titled={false} /></span>{/if}{#if tileState(item) === 'checked' || !flagged && waiting(tileState(item))}<span class="tile-verdict" aria-hidden="true">{tileState(item) === 'checked' ? '✓' : '!'}</span>{/if}</span>
     <span class="tile-footer">{#if tileCount(item)}{@const count = tileCount(item)}<span class="tile-count" title={[...count.lines, t('tile.countScope')].join('\n')}>{count.text}</span>{/if}{#if tileState(item) === 'withheld'}<span class="tile-withheld">{t('repair.withheld')}</span>{/if}{#if tileDate(item)}<span class="tile-year">{tileDate(item)}</span>{/if}{#if workTitle(item)}<span class="tile-work">{workTitle(item)}</span>{/if}<span class="tile-arrow">↗</span></span>
   </span>
 {/snippet}

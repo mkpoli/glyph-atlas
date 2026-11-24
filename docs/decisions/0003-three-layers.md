@@ -32,17 +32,14 @@ The browsing hierarchy is **grapheme → character → form** (clarified 2026-09
   represented by 仮. Existing kana families remain: ね, ネ and its historical kana
   belong together. Small kana and ligatures retain their own families. Small seal characters
   belong to their Han character's family ([0015](0015-small-seal-forms.md)).
-  **The label of a grapheme** (2026-11-24) is what stands for it where the site names one. Where its head
-  is a 新字体 whose 旧字体 is among its characters, the label is the two side by side, the old form first:
-  假仮, 國国, 龍竜. Elsewhere it is the head. The pairs are the `shinjitai` rows of
-  `data/vocab/kanji-variants.tsv` (Unihan's `kJapaneseOldVariant` and `kJapaneseNewVariant`,
-  cjkvi-variants' `jp-old-style`, OpenCC's `JPShinjitaiCharacters`) whose new form is the head: 354
-  graphemes, the 271 Jōyō pairs below among them. A further 62 heads have only a compatibility ideograph
-  as their old form (神, 海), which is no 字体 ([0013](0013-finer-forms.md)), and keep the head alone. A
-  簡体字 is not added. 郷, 鶏 and 麺 have two old forms: the label shows 鄕, 鷄 and 麵, which all three
-  sources state, and leaves 鄉, 雞 and 麪, which OpenCC alone states. The label is for showing: the key, the
-  address (`/grapheme/U+4EEE`), the order of a list and search are the head's, and the two glyphs are
-  never one character.
+  **The label of a grapheme** (2026-11-24) is what stands for it where the site names one. Where the
+  grapheme is one of the 271 `shinjitai-kyujitai` families below, the label is the 旧字体 and the 新字体 side
+  by side, the old form first: 假仮, 國国, 龍竜. Elsewhere it is the head. The pairs are those of the
+  常用漢字表 (2010; `joyo-2010` in `graphemes.yaml`), which prints the older form beside the new one
+  where the two differ markedly; a pair that differs less (靑 青) is not labelled, nor is a compatibility
+  ideograph ([0013](0013-finer-forms.md)) or a 簡体字. The label is for showing: the key, the address
+  (`/grapheme/U+4EEE`), the order of a list and search are the head's, and the two glyphs are never one
+  character. A badge beside a written character names its grapheme by the head alone.
   `scripts/build_grapheme_labels.py` writes the table (`apps/cloudflare/src/graphemeLabels.json`).
 - **Character** keeps the written identity and code point. 仮 (`U+4EEE`) and 假
   (`U+5047`) remain distinct rows in `characters.tsv`, with separate counts.
