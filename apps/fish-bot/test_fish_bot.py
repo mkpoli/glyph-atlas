@@ -1698,7 +1698,7 @@ def test_a_stretch_that_keeps_failing_backs_off_and_is_skipped(tmp_path, monkeyp
     def remember(room_name, rows, names, known, *, bot_user_id, left_out=(), images=()):
         calls.append(rows[0]["event_id"])
         if rows[0]["event_id"] == "$p0":
-            raise fish_bot.GeminiError("400 Content Exists Risk")
+            raise fish_bot.ModelError("400 Content Exists Risk")
         return fish_bot.Memory(summary="fine", keywords=(), edits=())
 
     monkeypatch.setattr(bot.gemini, "remember", remember)
@@ -2234,7 +2234,7 @@ def test_a_refused_picture_costs_the_picture_not_the_answer(monkeypatch):
     def post(body, **_):
         bodies.append(json.loads(json.dumps(body)))
         if isinstance(body["input"], list):
-            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
+            raise fish_bot.ModelError("Gemini answered 400: invalid image", status=400)
         return answer('{"say": "看不到圖，但我在！"}')
 
     monkeypatch.setattr(model, "_post", post)
@@ -2447,14 +2447,14 @@ def test_every_call_is_counted_with_its_tokens_failures_and_cost(tmp_path, monke
 
     def send(body, **_):
         if not answers:
-            raise fish_bot.GeminiError("Gemini answered 503", status=503)
+            raise fish_bot.ModelError("Gemini answered 503", status=503)
         return answers.pop(0)
 
     monkeypatch.setattr(model, "_send", send)
     model.act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
     found = model.search("tangut")
     assert found[0]["url"] == "https://example.org/tangut" and "Tangut" in found[0]["summary"]
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.fetch("https://example.org")
     rows = {row["kind"]: row for row in store.usage(1)}
     assert (rows["chat"]["calls"], rows["chat"]["tokens_in"], rows["chat"]["tokens_out"]) == (1, 100, 30)
@@ -2513,17 +2513,17 @@ def test_two_processes_share_the_days_money(tmp_path):
 def test_a_refused_call_is_free_and_a_lost_one_is_not(tmp_path, monkeypatch):
     purse = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 1.0)
     model = paid_gemini("key", purse=purse)
-    error = fish_bot.GeminiError("Gemini answered 429", status=429)
+    error = fish_bot.ModelError("Gemini answered 429", status=429)
 
     def send(body, **_):
         raise error
 
     monkeypatch.setattr(model, "_send", send)
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.search("tangut")
     assert purse.spent() == pytest.approx(0)
-    error = fish_bot.GeminiError("Gemini could not be reached: timed out")
-    with pytest.raises(fish_bot.GeminiError):
+    error = fish_bot.ModelError("Gemini could not be reached: timed out")
+    with pytest.raises(fish_bot.ModelError):
         model.search("tangut")
     assert purse.spent() == pytest.approx(fish_bot.CALL_RESERVE)
 
@@ -2657,14 +2657,14 @@ def test_every_tool_call_gets_a_result_past_the_limit(monkeypatch):
 def test_search_without_sources_is_no_result(monkeypatch):
     model = paid_gemini("key")
     monkeypatch.setattr(model, "_send", lambda body, **_: answer("I could not find anything useful."))
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.search("tangut")
 
 
 def test_fetch_without_a_retrieved_page_is_no_result(monkeypatch):
     model = paid_gemini("key")
     monkeypatch.setattr(model, "_send", lambda body, **_: answer("The page talks about Tangut."))
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.fetch("https://example.org")
 
 
@@ -2674,7 +2674,7 @@ def test_fetch_refuses_a_url_context_error(monkeypatch):
         "Could not access URL",
         extra_steps=[{"type": "url_context_result", "result": [{"url": "https://example.org", "status": "error"}]}],
     ))
-    with pytest.raises(fish_bot.GeminiError):
+    with pytest.raises(fish_bot.ModelError):
         model.fetch("https://example.org")
 
 
@@ -2750,7 +2750,7 @@ def test_memory_tries_again_without_pictures_the_model_refuses(monkeypatch):
     def post(body, **_):
         sent.append(body["input"])
         if isinstance(body["input"], list):
-            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
+            raise fish_bot.ModelError("Gemini answered 400: invalid image", status=400)
         return answer('{"summary": "Talked.", "facts": []}')
 
     monkeypatch.setattr(model, "_post", post)
@@ -2795,7 +2795,7 @@ def test_a_refused_picture_leaves_memory_both_text_tries(monkeypatch):
     def post(body, **_):
         sent.append("list" if isinstance(body["input"], list) else "str")
         if sent[-1] == "list":
-            raise fish_bot.GeminiError("Gemini answered 400: invalid image", status=400)
+            raise fish_bot.ModelError("Gemini answered 400: invalid image", status=400)
         if sent.count("str") == 1:
             return answer("not json")
         return answer('{"summary": "Talked.", "facts": []}')
@@ -2970,3 +2970,94 @@ def test_a_call_is_read_even_when_many_lines_followed_it(tmp_path, monkeypatch):
     bot.turn(ROOM, "$call", task="called")
     _, trigger, read = bot.gemini.turns[-1]
     assert read[trigger] == "$call"
+
+
+def deepseek_answer(text, **usage):
+    return {"choices": [{"message": {"content": text}}], "usage": usage}
+
+
+def test_deepseek_costs_double_in_its_peak_hours():
+    usage = {"prompt_cache_hit_tokens": 1_000_000, "prompt_cache_miss_tokens": 2_000_000, "completion_tokens": 500_000}
+    utc = fish_bot.datetime.UTC
+    monday = fish_bot.datetime.datetime(2026, 11, 23, 2, tzinfo=utc)
+    calm = 0.003 + 2 * 0.15 + 0.5 * 0.60
+    assert fish_bot.deepseek_cost(usage, monday) == pytest.approx(2 * calm)
+    assert fish_bot.deepseek_cost(usage, monday.replace(hour=5)) == pytest.approx(calm)
+    assert fish_bot.deepseek_cost(usage, monday.replace(day=22)) == pytest.approx(calm)
+    assert fish_bot.deepseek_cost({"prompt_tokens": 1_000_000}, monday.replace(hour=5)) == pytest.approx(0.15)
+    assert fish_bot.deepseek_cost(None, monday) == 0.0
+
+
+def test_deepseek_remembers_with_pictures_from_the_shared_money(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    model = fish_bot.DeepSeek("key")
+    model.purse = fish_bot.Purse(store, 1.0)
+    sent = []
+
+    def send(body, **_):
+        sent.append(body)
+        return deepseek_answer('{"summary": "They read a scan.", "facts": []}', prompt_tokens=5000, completion_tokens=100)
+
+    monkeypatch.setattr(model, "_send", send)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AAAA")])
+    assert memory.summary == "They read a scan."
+    assert sent[0]["thinking"] == {"type": "disabled"}
+    assert sent[0]["messages"][1]["content"][-1] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+    row = store.usage(1)[0]
+    assert (row["kind"], row["calls"], row["tokens_in"], row["tokens_out"]) == ("memory", 1, 5000, 100)
+    assert 0 < row["cost"] < 0.002
+
+
+def test_deepseek_drops_pictures_it_refuses(monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    model.purse = OpenPurse()
+
+    def send(body, **_):
+        if isinstance(body["messages"][1]["content"], list):
+            raise fish_bot.ModelError("DeepSeek answered 400", status=400)
+        return deepseek_answer('{"summary": "Talked.", "facts": []}')
+
+    monkeypatch.setattr(model, "_send", send)
+    memory = model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER, images=[(0, "data:image/png;base64,AAAA")])
+    assert memory.summary == "Talked."
+
+
+@pytest.mark.parametrize("answer", [{}, {"choices": []}, {"choices": ["odd"]}, {"choices": [{"message": None}]}, []])
+def test_an_odd_deepseek_answer_is_an_error(answer, monkeypatch):
+    model = fish_bot.DeepSeek("key")
+    model.purse = OpenPurse()
+    monkeypatch.setattr(model, "_send", lambda body, **_: answer)
+    with pytest.raises(fish_bot.ModelError):
+        model.remember("Room", [message_row("hi")], {}, [], bot_user_id=USER)
+
+
+def test_memory_goes_to_gemini_only_when_deepseek_fails(tmp_path):
+    bot, _, _ = make_bot(tmp_path)
+
+    class Helper:
+        error = None
+
+        def remember(self, *_, **__):
+            if self.error:
+                raise self.error
+            return fish_bot.Memory(summary="by DeepSeek", keywords=(), edits=())
+
+    bot.deepseek = Helper()
+    rows = [message_row("hi")]
+    assert bot._remember("Room", rows, {}, [], bot_user_id=USER).summary == "by DeepSeek"
+    assert bot.gemini.memories == []
+    bot.deepseek.error = fish_bot.ModelError("DeepSeek answered 402", status=402)
+    bot._remember("Room", rows, {}, [], bot_user_id=USER)
+    assert len(bot.gemini.memories) == 1
+    bot.deepseek.error = fish_bot.SpendError("spent")
+    with pytest.raises(fish_bot.SpendError):
+        bot._remember("Room", rows, {}, [], bot_user_id=USER)
+
+
+def test_deepseek_is_configured_by_its_key_file(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[deepseek]\napi_key_file = "deepseek-key"\n[budget]\ndaily_usd = 0.5\n')
+    config = fish_bot.Config.load(path)
+    assert config.deepseek_key_file == tmp_path / "deepseek-key" and config.daily_usd == 0.5
+    path.write_text("")
+    assert fish_bot.Config.load(path).deepseek_key_file is None

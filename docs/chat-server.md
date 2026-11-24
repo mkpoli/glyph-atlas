@@ -437,6 +437,8 @@ Fill them:
   the account and prints a password; `!admin users issue-token bigfatfish <password>` prints a token.
   Set the account's display name to `大肥魚`.
 - `gemini-key` — the paid Google AI Studio API key for `gemini-4-hydrogen`.
+- `deepseek-key` — the DeepSeek API key, named in `[deepseek]`. It does the work nobody hears, such as
+  memory; Gemini does it when DeepSeek fails or is not configured.
 - `github-token` — a fine-grained token for `mkpoli/glyph-atlas` with **Issues: read and write** and
   **Metadata: read-only**. No other repository or permission is needed: the same token reads the
   public repositories for lookups. Without this file the bot still chats and looks up the web, but it
@@ -465,7 +467,7 @@ journalctl -u fish-bot -f
 ```
 
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
-estimated cost from Gemini 4 Hydrogen's Standard price table, with each Google Search query at
+estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, with each Google Search query at
 $14 per 1,000 (the free 5,000 a month are shared with the account's other projects), logged once a
 day. `[budget] daily_usd` limits what a day may cost: a call sets $0.05 aside before it is sent and is
 settled at its real cost (one that costs more may pass the limit by the difference), and once the

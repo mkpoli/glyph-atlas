@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"stopped before {case['name']}: {error}")
             failed += 1
             break
-        except (fb.GeminiError, fb.MatrixError, fb.GitHubError) as error:
+        except (fb.ModelError, fb.MatrixError, fb.GitHubError) as error:
             said, tools, broken = "", [], [f"error: {error}"]
         failed += bool(broken)
         print(f"{'FAIL' if broken else 'pass'}  {case['name']}  ({time.monotonic() - started:.1f}s, tools: {', '.join(tools) or '-'})")
