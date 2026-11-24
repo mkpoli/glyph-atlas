@@ -20,7 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import { charOf, gatherGraphemes, tileOpens } from '../lib/graphemeGroups.js'
+  import { charOf, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -279,8 +279,6 @@
   // Read only with a grapheme chosen: gathering the graphemes sorts thousands of them, and every page of
   // the collection brings their counts again.
   const chosenGrapheme = $derived(grapheme ? graphemes.find(group => group.key === grapheme) : undefined)
-  // A key the counts file under another grapheme names one character of it, alone.
-  const memberKey = $derived(Boolean(grapheme) && ![undefined, grapheme].includes(tileCounts?.keys.get(charOf(grapheme))))
   // The browse panel counts single graphemes, pairs or trigrams; the choice is remembered. Runs are
   // counted for the work chosen, or the whole collection, and read when the panel first shows them.
   // A save can relabel part of a run, so it drops the counts and the panel reads them again.
@@ -297,9 +295,7 @@
   }
   function runsChanged() { if (counting) loadRuns(); else { runsFor = null; runsRequest += 1 } }
   $effect(() => { if (counting && unit + '|' + work !== runsFor) untrack(loadRuns) })
-  /** The grapheme a corpus row is filed under, as the catalogue files a label. */
   const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
-  const rowGrapheme = row => row.grapheme?.code_point ?? row.grapheme ?? codesOf(row.label ?? '')
   const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard)
     .map(w => ({ ...w, count: flagged ? w.flagged + w.hard : w.total })))
   /** The label a tile shows. `identity.js` names an unassigned crop and a group without a label in
@@ -655,7 +651,7 @@
       if (error) throw error
       if (closed || id !== requestId) return
       // A corpus glyph belongs to no work of this collection, so choosing a work leaves them out.
-      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || (memberKey ? codesOf(row.label ?? '') : rowGrapheme(row)) === grapheme))
+      sample = work ? [] : result.items.filter(row => (!query || row.label.includes(query)) && (!grapheme || rowNamed(row, grapheme)))
       sampleFault = null
       return
     }

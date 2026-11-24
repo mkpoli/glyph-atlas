@@ -262,13 +262,19 @@ describe('the browse page', () => {
   });
 
   it('lists a grapheme under its key, and one character alone under a member’s', async () => {
-    const { env } = await setup();
+    const { env, db } = await setup();
     const of = async (key: string) => (await get(env, `/atlas?grapheme=${key}&seed=3&limit=40`));
     const whole = await of('U%2B306F'), member = await of('U%2B30CF');
     expect(new Set(whole.items.map((i: any) => i.label))).toEqual(new Set(['は', 'ハ', '𛂞']));
     expect([...new Set(member.items.map((i: any) => i.label))]).toEqual(['ハ']);
     expect([member.total, member.items.length]).toEqual([whole.items.filter((i: any) => i.label === 'ハ').length, member.total]);
     expect((await of('U%2B9999')).total).toBe(0);
+    // A crop claimed for 所 leaves は's listing, and is of ハ still.
+    const id = member.items.find((i: any) => i.origin !== 'corpus').id;
+    db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES(?,'has_grapheme','','',?,0,'asserted','U+6240','[]','[]','[]','r','2026-11-24')`).run(id, cropOf(id));
+    const ids = async (key: string) => (await of(key)).items.map((i: any) => i.id);
+    expect([(await ids('U%2B306F')).includes(id), (await ids('U%2B30CF')).includes(id)]).toEqual([false, true]);
   });
 
   it('page through every crop once from the seed’s point, the cursor ending where the index does', async () => {
