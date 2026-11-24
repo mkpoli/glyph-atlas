@@ -660,6 +660,7 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
     { predicate: 'read_as', method: input.method as string | null, member: member({ run: input.run, at: place, reading: input.reading }) },
     ...(input.ruby == null ? [] : [{ predicate: 'bears_ruby', method: null, member: member({ run: input.run, at: place, ruby: input.ruby }) }])]);
   for (const each of claims.flat()) checkClaims(each.predicate, [each.member], {}, tools.fail, each.method);
+  if (!clear && input.ruby != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
   if (new Set(places).size !== places.length) tools.fail(422, 'Each place of the run is one crop.');
   const crops = await Promise.all([named, ...others.map(other => other.id)].map(one => ledger.crop(env, one)));
   if (new Set(crops.map(crop => crop.id)).size !== crops.length) tools.fail(422, 'Each place of the run is one crop.');

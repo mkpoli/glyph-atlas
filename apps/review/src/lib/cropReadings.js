@@ -1,5 +1,4 @@
 import { request } from './client.js'
-import { readCrop } from './cropCache.js'
 
 /** The most characters read together, as the site takes them (`RUN_MAX`, `apps/cloudflare/src/ledger.ts`). */
 export const RUN_MAX = 12
@@ -9,18 +8,20 @@ export const textParts = text => (text ?? '').normalize('NFC').match(/\P{M}\p{M}
 
 const readable = part => /[\p{L}\p{N}]/u.test(part) || /\p{Co}/u.test(part) || part === '〓'
 const bare = part => [...part][0]
-const same = (part, char) => Boolean(char) && (part === char || bare(part) === char || part === bare(char))
+const composed = text => text?.normalize('NFC') ?? ''
+const same = (part, label) => { const char = composed(label); return Boolean(char) && (part === char || bare(part) === char || part === bare(char)) }
 // The characters a crop may stand as in its line: what it is labelled, what it was read as, what its source gives.
 const charsOf = crop => [crop.label, crop.written_character, crop.source_label].filter(Boolean)
 
 /** The published crops beside the one at `at` that the line's text agrees with, by place: each neighbour in
  *  reading order is the next character of the text that a reader can pick, and the first that is another
- *  character ends its side. */
+ *  character, or stands past one that is not published, ends its side. */
 export function beside(parts, at, neighbours) {
   const found = new Map()
   for (const side of [1, -1]) {
-    let place = at
+    let place = at, steps = 0
     for (const item of neighbours.filter(one => Math.sign(one.offset) === side).sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))) {
+      if (Math.abs(item.offset) !== ++steps) break
       do place += side; while (parts[place] !== undefined && !readable(parts[place]))
       if (parts[place] === undefined || !same(parts[place], item.label)) break
       found.set(place, item)
@@ -43,8 +44,8 @@ export function cropLine(crop, neighbours = []) {
     return { parts, at, also: places.filter(place => place !== at) }
   }
   const line = neighbours.filter(one => one.offset === 0 || one.label).sort((a, b) => a.offset - b.offset)
-  const here = line.findIndex(one => one.offset === 0), own = crop.written_character ?? crop.label ?? ''
-  return here < 0 ? { parts: [own], at: 0, also: [] } : { parts: line.map(one => one.offset === 0 ? own : one.label), at: here, also: [] }
+  const here = line.findIndex(one => one.offset === 0), own = composed(crop.written_character ?? crop.label)
+  return here < 0 ? { parts: [own], at: 0, also: [] } : { parts: line.map(one => one.offset === 0 ? own : composed(one.label)), at: here, also: [] }
 }
 
 /** The places a run around `at` can reach: the characters up to the punctuation either side of it. */
@@ -80,13 +81,10 @@ async function send(crop, value) {
 /**
  * Save how a crop is read: `run` with the crop at `at`, the `reading` over each character or over all of
  * them, what it rests on and the ruby as the page writes it, or null. The published crops of the run (`crops`, by place in it)
- * are saved with it, each at the version it is shown at now.
+ * are saved with it, each at the version it is shown at.
  */
-export async function setReading(crop, { run, at, reading, ruby = null, method, crops = new Map() }) {
-  const others = await Promise.all([...crops].map(async ([place, one]) => {
-    const record = await readCrop(one.id)
-    return { id: record.id, crop_version: record.crop_version, at: place }
-  }))
+export function setReading(crop, { run, at, reading, ruby = null, method, crops = new Map() }) {
+  const others = [...crops].map(([place, one]) => ({ id: one.id, crop_version: one.crop_version, at: place }))
   return send(crop, { run, at, reading, ruby, method, others })
 }
 

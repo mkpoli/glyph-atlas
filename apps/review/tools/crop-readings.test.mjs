@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
-const request = mock(), readCrop = mock(async id => ({ id, crop_version: id + '@now' }))
+const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-mock.module('../src/lib/cropCache.js', () => ({ readCrop }))
 const { beside, clearReading, cropLine, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
@@ -26,6 +25,13 @@ describe('a crop on its line', () => {
   })
   it('stops a side at a crop the text does not give', () => {
     expect([...at(crop(), near([[-2, 'て'], [-1, '緒'], [0, '器'], [1, 'に']])).crops.keys()]).toEqual([7])
+  })
+  it('stops a side past a crop that is not published, so a repeated character is never another\'s', () => {
+    expect([...at(crop({ text: '器ここに' }), near([[0, '器'], [2, 'こ']])).crops.keys()]).toEqual([])
+  })
+  it('is found by a compatibility ideograph its line composes', () => {
+    expect(at(crop({ label: '\uFA19', text: '明神社' }), near([[-1, '明'], [0, '\uFA19']]))).toMatchObject({ at: 1, parts: ['明', '\u795E', '社'] })
+    expect(cropLine(crop({ label: '\uFA19', text: null }), []).parts).toEqual(['\u795E'])
   })
   it('without a line that holds it, stands among its neighbours, or alone', () => {
     const line = at(crop({ text: null }), near([[-1, '諸'], [0, '器'], [1, 'に']]))
@@ -76,9 +82,9 @@ describe('the reading client', () => {
   it('names the other crops of the run at the version they are shown at', async () => {
     const item = crop(), slot = { status: 'asserted' }
     request.mockResolvedValue({ reading: slot })
-    expect(await setReading(item, { ...value, crops: new Map([[0, { id: 'other' }]]) })).toEqual({ ...item, reading: slot })
+    expect(await setReading(item, { ...value, crops: new Map([[0, { id: 'other', crop_version: 'other@shown' }]]) })).toEqual({ ...item, reading: slot })
     expect(request.mock.calls[0]).toEqual([`/atlas/characters/${item.id}/reading`,
-      { id: expect.any(String), crop_version: 'v', ...value, others: [{ id: 'other', crop_version: 'other@now', at: 0 }] }])
+      { id: expect.any(String), crop_version: 'v', ...value, others: [{ id: 'other', crop_version: 'other@shown', at: 0 }] }])
   })
   it('sends a lost save again as itself, an answered or refused one anew', async () => {
     const item = crop()

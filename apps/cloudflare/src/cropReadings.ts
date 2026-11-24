@@ -4,6 +4,7 @@
 // `setReading` in `routes/claims.ts`.
 import { cropSlots, slotHolders, slotValuesHeld } from './cropPanels';
 import { slotBacking } from './cropWords';
+import { canonical } from './input';
 import { PREDICATES } from './ledger';
 
 type Json = Record<string, any>;
@@ -20,7 +21,8 @@ export async function cropReadings(env: Env, ids: number[]): Promise<Map<number,
   const methods = new Map(backing.length ? (await env.ATLAS.prepare(readingMethodsQuery()).bind(JSON.stringify(backing)).all<{ id: string; method: string }>())
     .results.map(r => [r.id, r.method]) : []);
   for (const row of rows) {
-    const values = slotValuesHeld(row).map((m: Json) => m.value), slot: Json = { status: row.status, values, by: slotHolders(row) };
+    // Readers who agree hold one value between them.
+    const values = [...new Map(slotValuesHeld(row).map((m: Json) => [canonical(m.value), m.value])).values()], slot: Json = { status: row.status, values, by: slotHolders(row) };
     const crop = found.get(row.crop) ?? { status: null, values: [], methods: [], by: [], ruby: null };
     if (row.predicate === 'bears_ruby') crop.ruby = slot;
     else {

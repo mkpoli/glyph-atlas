@@ -625,6 +625,12 @@ describe('a crop read in a run', () => {
     expect([await of(local), await of(corpus)]).toEqual([null, null]);
   });
 
+  it('shows one value for readers who agree, beside a third who does not', async () => {
+    const { local, set, of } = read();
+    await set(); await set({}, 'other'); await set({ run: ['器'], at: 0, reading: ['うつわ'], ruby: null, others: [] }, 'third');
+    expect((await of(local))?.values).toHaveLength(2);
+  });
+
   it('may have one reading for all of its characters', async () => {
     const { set } = read();
     const answer = await set({ run: ['村', '落'], reading: ['ざいご'], ruby: ['ざいご'] });
@@ -636,6 +642,7 @@ describe('a crop read in a run', () => {
     for (const value of [{ run: [] }, { run: '諸器' }, { at: 2 }, { at: 0.5 }, { reading: [] }, { reading: ['', ''] }, { reading: ['し', 'よ', 'き'] }, { reading: ['し よ', 'き'] },
       { reading: ['𛁈よ', 'き'] }, { run: ['諸', '器 '] }, { run: Array(13).fill('諸'), reading: ['き'] }, { ruby: ['(き)'] }])
       await expect(set(value)).rejects.toThrow('422');
+    await expect(set({ ruby: ['しよき'] })).rejects.toThrow('422 The ruby is split as the reading is.');
     for (const method of [undefined, 'guess']) await expect(set({ method })).rejects.toThrow('422 read_as names how it is known');
     const other = { id: publicId(corpus), crop_version: version(corpus, 'rev1') };
     await expect(set({ others: [{ ...other, at: 1 }] })).rejects.toThrow('422 Each place of the run is one crop.');

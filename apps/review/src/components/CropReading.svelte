@@ -24,7 +24,9 @@
   let neighbours = $state([]), arriving = null
   // What is written over each place of the line, and over the run as a whole.
   let readings = $state({}), rubies = $state({}), whole = $state(false), wholeReading = $state(''), wholeRuby = $state('')
-  let method = $state('context'), picked = $state(null), probable = $state(false), choices = $state([])
+  let method = $state('context'), choices = $state([])
+  // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
+  let chosen = $state(undefined), probable = $state(false)
 
   const values = $derived(item.reading?.values ?? [])
   const rubyValues = $derived(item.reading?.ruby?.values ?? [])
@@ -33,12 +35,16 @@
   const known = $derived(Object.hasOwn(item, 'reading'))
   const mine = slot => Boolean(signedInUser()?.id && slot?.by?.includes(signedInUser().id))
   // Only a reader's own claim can be cleared; the others stand until their readers take them back.
+  // The word the reader holds alone, which the editor shows chosen until they choose another.
+  const held = $derived(mine(item.word) && item.word.status !== 'disputed' ? words[0] : null)
+  const picked = $derived(chosen === undefined ? held?.word ?? null : chosen)
+  const offered = $derived(held?.word && !choices.some(choice => choice.id === held.word) ? [{ id: held.word, reading: held.reading, class: held.class, spellings: [] }, ...choices] : choices)
   const own = $derived(mine(item.reading) || mine(item.reading?.ruby) || mine(item.word))
   const busy = $derived(disabled || pending)
 
   const places = $derived(line ? Array.from({ length: to - from + 1 }, (_, i) => from + i) : [])
   // The published crops of the line the run can be saved on with this one.
-  const crops = $derived(line ? beside(line.parts, line.at, neighbours) : new Map())
+  const crops = $derived(new Map(line ? [...beside(line.parts, line.at, neighbours)].filter(([, one]) => one.crop_version) : []))
   // A run ends at the punctuation either side of the crop.
   const within = $derived(line ? stretch(line.parts, line.at) : null)
   const run = $derived(places.map(place => line.parts[place]))
@@ -54,15 +60,14 @@
     for (const place of places) if (readings[place] === undefined && kana(line.parts[place])) readings[place] = plainKana(line.parts[place])
   }
   function open() {
-    error = ''; picked = words[0]?.word ?? null; probable = words[0]?.form === 'probable'; choices = []
-    readings = {}; rubies = {}; whole = false; wholeReading = ''; wholeRuby = ''; touched = false
+    error = ''; chosen = undefined; probable = held?.form === 'probable'; choices = []; touched = false
     const value = values[0] ?? rubyValues[0] ?? null
     method = item.reading?.methods?.[0] ?? untrack(() => method)
     place(cropLine(item), value)
     editing = true
     tick().then(() => root?.querySelector('.reading-over input')?.focus({ preventScroll: true }))
     neighbours = []
-    arriving = item.origin === 'corpus' ? null : readLine(item.id).then(({ items }) => {
+    arriving = item.origin === 'corpus' ? null : readLine(item.id, { reach: RUN_MAX - 1 }).then(({ items }) => {
       if (!editing) return
       neighbours = items
       if (!touched) place(cropLine(item, items), value)
@@ -70,14 +75,17 @@
   }
   // Stand the crop on its line, with the run of an earlier reading where the line still holds it.
   function place(next, value) {
-    const start = value ? next.at - value.at : next.at, held = value && value.run.every((part, i) => next.parts[start + i] === part)
-    line = value && !held ? { parts: value.run, at: value.at, also: [] } : next
+    const start = value ? next.at - value.at : next.at, kept = value && value.run.every((part, i) => next.parts[start + i] === part)
+    line = value && !kept ? { parts: value.run, at: value.at, also: [] } : next
     from = value ? line.at - value.at : line.at; to = from + (value?.run.length ?? 1) - 1
-    if (value && !touched) {
-      const over = values[0]?.reading ?? [], beside = rubyValues[0]?.ruby ?? []
-      whole = value.run.length > 1 && (over.length === 1 || (!over.length && beside.length === 1))
-      if (whole) { wholeReading = over[0] ?? ''; wholeRuby = beside[0] ?? '' }
-      else value.run.forEach((_, i) => { readings[from + i] = over[i] ?? ''; rubies[from + i] = beside[i] ?? '' })
+    readings = {}; rubies = {}; whole = false; wholeReading = ''; wholeRuby = ''
+    if (value) {
+      // The ruby beside another run is another's, and says nothing of this one.
+      const together = one => one.at === value.at && JSON.stringify(one.run) === JSON.stringify(value.run)
+      const over = value.reading ?? [], beside = rubyValues.find(together)?.ruby ?? []
+      whole = value.run.length > 1 && (over.length || beside.length) === 1
+      if (whole) { wholeReading = over.join(''); wholeRuby = beside.join('') }
+      else value.run.forEach((_, i) => { readings[from + i] = over[i] ?? ''; if (beside.length === value.run.length) rubies[from + i] = beside[i] })
     }
     fill()
   }
@@ -111,12 +119,13 @@
   // Read as one, a run keeps what was written over its characters, and back.
   function toggleWhole() {
     touched = true
-    if (!whole) { wholeReading = reading.join(''); wholeRuby = ruby.join('') }
+    if (!whole) { wholeReading = reading.join('') || wholeReading; wholeRuby = ruby.join('') || wholeRuby }
     whole = !whole
   }
   function pick(choice) {
-    picked = picked === choice.id ? null : choice.id
-    if (picked && !reads) { if (places.length > 1) whole = true; if (places.length > 1) wholeReading = choice.reading; else readings[from] = choice.reading }
+    touched = true
+    chosen = picked === choice.id ? null : choice.id
+    if (chosen && !reads) { whole = places.length > 1; if (whole) wholeReading = choice.reading; else readings[from] = choice.reading }
   }
 
   $effect(() => {
@@ -137,10 +146,13 @@
       await arriving
       const others = new Map(places.flatMap((place, i) => place !== line.at && crops.has(place) ? [[i, crops.get(place)]] : []))
       // The reading is written in ordinary kana; a hentaigana typed there is the page's, kept in the ruby.
-      let result = await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby : null, method, crops: others })
-      if (picked) result = (await setWord(result, { word: picked, method, form: probable ? 'probable' : 'certain' })).crop
-      else if (mine(item.word)) result = (await clearWord(result)).crop
+      let result = await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null, method, crops: others })
       saved?.(result)
+      // The word is written only when the reader chose one here, or changed how sure its form is.
+      if (picked ? picked !== held?.word || probable !== (held?.form === 'probable') : chosen === null && held) {
+        result = (picked ? await setWord(result, { word: picked, method, form: probable ? 'probable' : 'certain' }) : await clearWord(result)).crop
+        saved?.(result)
+      }
       leave()
     } catch (e) { error = e.message }
     finally { pending = false; working?.(false) }
@@ -150,9 +162,8 @@
     pending = true; working?.(true); error = ''
     try {
       let result = item
-      if (mine(item.reading) || mine(item.reading?.ruby)) result = await clearReading(result)
-      if (mine(item.word)) result = (await clearWord(result)).crop
-      saved?.(result)
+      if (mine(item.reading) || mine(item.reading?.ruby)) { result = await clearReading(result); saved?.(result) }
+      if (mine(item.word)) { result = (await clearWord(result)).crop; saved?.(result) }
       leave()
     } catch (e) { error = e.message }
     finally { pending = false; working?.(false) }
@@ -186,7 +197,7 @@
         {#if value.form === 'probable'}<span>{t('word.probable')}</span>{/if}
       {/each}
     {/if}
-    {#if item.reading?.status === 'disputed' || item.word?.status === 'disputed'}<span>{t('reading.disputed')}</span>{/if}
+    {#if [item.reading, item.reading?.ruby].some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span>{t('reading.disputed')}</span>{/if}
     {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{values.length || words.length ? t('reading.edit') : t('reading.add')}</button>
       {#if own}<button type="button" disabled={busy} onclick={clear}>{t('reading.clear')}</button>{/if}{/if}
   </div>
@@ -223,10 +234,10 @@
         <span>{t('reading.method')}</span>
         {#each METHODS as value}<label class:chosen={method === value}><input type="radio" name="{uid}-method" {value} bind:group={method} disabled={busy} />{t(`reading.methods.${value}`)}</label>{/each}
       </div>
-      {#if choices.length}
+      {#if offered.length}
         <div class="reading-words">
           <span>{t('word.label')}</span>
-          {#each choices as choice (choice.id)}
+          {#each offered as choice (choice.id)}
             <button type="button" aria-pressed={picked === choice.id} disabled={busy} onclick={() => pick(choice)}><b>{choice.reading}</b> <span>{choice.class}</span> <span>{choice.spellings.join('・')}</span></button>
           {/each}
           {#if picked}<button type="button" role="switch" aria-checked={probable} disabled={busy} onclick={() => probable = !probable}>{t('word.probable')}</button>{/if}

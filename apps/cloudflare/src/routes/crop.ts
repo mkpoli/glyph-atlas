@@ -12,7 +12,8 @@ import { axisOf } from '../dating';
 import { honkokuPage } from '../honkoku';
 import { cropForms, cropGraphemes, cropWords } from '../cropPanels';
 import { cropReadings } from '../cropReadings';
-import { MARKS, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
+import { RUN_MAX } from '../ledger';
+import { MARKS, cropVersion, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
 
 type Json = Record<string, any>;
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {
@@ -160,17 +161,17 @@ async function listedCrops(env: Env, ids: number[]): Promise<Map<number, { row: 
 const boxOf = (row: Listed, entry: Json) => row.x !== null ? { x: row.x, y: row.y, w: row.w, h: row.h } : entry.box ?? null;
 
 // A crop's neighbours on its line, in reading order: the pairs `runs` holds are followed forward by their
-// first crop (`run_first`) and backward by their second (`run_second`), at most `LINE_REACH` steps each way,
+// first crop (`run_first`) and backward by their second (`run_second`), at most `reach` steps each way,
 // one row a step. The size test is kept off the forward step's index (`+`), or the planner would read every
 // pair of the size; the backward step repeats `run_second`'s condition, so its index is used.
-const LINE_REACH = 4;
-export const lineQuery = () => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN runs p ON p.first=a.id AND +p.size=2 WHERE a.d<${LINE_REACH}),
+const LINE_REACH = 4, LINE_REACH_MAX = RUN_MAX - 1;
+export const lineQuery = (reach = LINE_REACH) => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
+    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN runs p ON p.first=a.id AND +p.size=2 WHERE a.d<${reach}),
   behind(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.first,b.d-1 FROM behind b CROSS JOIN runs p ON p.second=b.id AND p.size=2 WHERE b.d>-${LINE_REACH})
+    SELECT p.first,b.d-1 FROM behind b CROSS JOIN runs p ON p.second=b.id AND p.size=2 WHERE b.d>-${reach})
   SELECT d,id FROM ahead UNION ALL SELECT d,id FROM behind WHERE d<0`;
 // What the inspector's line strip needs of each neighbour: the crop as the review path judges it (revision
-// and pixels), the label it carries now, and what is painted in its place until it loads. A crop with no
+// and pixels), the version a claim on it names, the label it carries now, and what is painted in its place until it loads. A crop with no
 // neighbours has an empty line.
 export function lineItems(steps: { d: number; id: number }[], crops: Map<number, { row: Listed; entry: Json }>): Json[] {
   const seen = new Set<number>();
@@ -180,17 +181,20 @@ export function lineItems(steps: { d: number; id: number }[], crops: Map<number,
     seen.add(step.id);
     const { row, entry } = found;
     return [{ id: publicId(row.id), offset: step.d, label: row.char ?? entry.label ?? null, image: entry.image ?? null, revision: row.revision,
-      image_sha256: entry.image_sha256 ?? null, state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null }];
+      image_sha256: entry.image_sha256 ?? null, crop_version: cropVersion(publicId(row.id), { ...entry, box: boxOf(row, entry) }),
+      state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null }];
   });
   return items.length > 1 ? items : [];
 }
 // The edge keeps a copy per catalogue version; a review or an undo makes a new key.
-async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name: string) {
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
+// `LINE_SHAPE` is part of its key: it moves when the answer gains or changes a field.
+const LINE_SHAPE = 2;
+async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name: string, reach: number) {
+  const key = new Request(`${url.origin}${url.pathname}?r=${reach}&v=${encodeURIComponent(`${LINE_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const steps = (await env.ATLAS_RUNS.prepare(lineQuery()).bind(id).all<{ d: number; id: number }>()).results;
-  const body = { id: name, reach: LINE_REACH, items: lineItems(steps, await listedCrops(env, [...new Set(steps.map(s => s.id))])) };
+  const steps = (await env.ATLAS_RUNS.prepare(lineQuery(reach)).bind(id).all<{ d: number; id: number }>()).results;
+  const body = { id: name, reach, items: lineItems(steps, await listedCrops(env, [...new Set(steps.map(s => s.id))])) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
@@ -255,8 +259,9 @@ export async function cropRoute(env: Env, ctx: ExecutionContext, url: URL): Prom
   if (neighbours) {
     const raw = neighbours[1], text = segment(raw, ABSENT), param = await cropParam(env, raw, ctx);
     if (param && 'moved' in param) return movedPathResponse(url, raw, param.moved);
+    const asked = Number(q.get('reach') ?? LINE_REACH), reach = Number.isSafeInteger(asked) && asked >= 1 ? Math.min(asked, LINE_REACH_MAX) : LINE_REACH;
     // An id that names no live crop has an empty line, as one with no neighbours.
-    const body = param && 'id' in param ? await line(env, ctx, url, param.id, text) : { id: text, reach: LINE_REACH, items: [] };
+    const body = param && 'id' in param ? await line(env, ctx, url, param.id, text, reach) : { id: text, reach, items: [] };
     return json(body, 200, { 'cache-control': 'no-cache' });
   }
   const shown = path.match(/^\/atlas\/pages\/([^/]+)$/);
