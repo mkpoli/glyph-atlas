@@ -1,9 +1,14 @@
 import { describe, expect, it, mock } from 'bun:test'
 
 const calls = []
+const shapes = { 臭: [{ text: '⿱自犬', regions: 'GHTKPV' }, { text: '⿱自大', regions: 'J', chars: ['𦤀'] }] }
+const asked = []
+let answer = null
 const FAIL = '鬱'
 mock.module('../src/lib/layers.js', () => ({
+  ids: async char => { asked.push(char); return { shapes: shapes[char] ?? [] } },
   structures: async (chars, of) => {
+    if (answer) return { items: answer }
     calls.push({ chars, of })
     if (chars.includes(FAIL)) throw new Error('429')
     const items = [...chars].map((c, i) => ({
@@ -17,7 +22,7 @@ mock.module('../src/lib/layers.js', () => ({
   },
 }))
 
-const { NAMES, standing } = await import('../src/lib/structures.js')
+const { cardStructures, NAMES, standing } = await import('../src/lib/structures.js')
 
 describe('reading structures beyond NAMES', () => {
   it('chunks composable names by NAMES and merges every answer into known', async () => {
@@ -73,5 +78,29 @@ describe('reading structures beyond NAMES', () => {
     const result = await standing(['あ', 'カ'], initial)
     expect(calls).toHaveLength(0)
     expect(result).toBe(initial)
+  })
+})
+
+describe("the 構形 of a character's card", () => {
+  const read = async (char, items) => { asked.length = 0; answer = items; try { return await cardStructures(char, '') } finally { answer = null } }
+
+  it('leaves a character drawn as the bare character out of the group the two share', async () => {
+    const items = [{ id: 'st:1', label: '⿱自犬', chars: ['臭', '𦤀', '\u{3EC9F}'] }, { id: 'st:2', label: '⿱自死', chars: ['臰'] }]
+    const found = await read('臭', items)
+    expect([found.items.map(group => group.chars.join('')), found.twins]).toEqual([['臭\u{3EC9F}', '臰'], ['𦤀']])
+    expect(asked).toEqual(['臭'])
+  })
+
+  it('keeps it where a reader filed it', async () => {
+    const items = [{ id: 'st:1', label: '⿱自犬', chars: ['臭'] }, { id: 'st:3', label: '⿱自大', chars: ['𦤀'], claimed: { 𦤀: ['u1'] } }]
+    const found = await read('臭', items)
+    expect([found.items.map(group => group.chars.join('')), found.twins]).toEqual([['臭', '𦤀'], []])
+    expect(asked).toEqual([])
+  })
+
+  it('keeps it where a reader filed it under a 構形 folded into this one', async () => {
+    const items = [{ id: 'st:1', label: '⿱自犬', chars: ['臭', '𦤀'], claimed: { 𦤀: ['u1'] }, folded: [{ id: 'st:3', label: '⿱自大', by: ['u1'], chars: ['𦤀'] }] }]
+    const found = await read('臭', items)
+    expect([found.items[0].chars, found.twins]).toEqual([['臭', '𦤀'], ['𦤀']])
   })
 })
