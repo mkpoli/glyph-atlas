@@ -487,7 +487,7 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
     rows = {char: row for name in shards for char, row in bucket.objects[f"v3/reference/{name}"].items()}
     assert shards != held
-    # A small seal character has its Han equivalent's structure (𾲟 is 臭's seal form).
+    # A small seal character is proposed its Han equivalent's structure (𾲟 is 臭's seal form).
     assert rows.pop("𾲟") == [[], None, [smell.id, smell.label]]
     # A description the site names something by is a key of its own; one that names no structure has none.
     # A character with no description to edit keeps its structure. A regional shape another character

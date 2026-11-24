@@ -16,7 +16,7 @@
   import FormText from './FormText.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import { setStructure, setFold } from '../lib/cropForms.js'
-  import { composable, NAMES } from '../lib/structures.js'
+  import { composable, NAMES, proposed } from '../lib/structures.js'
   import { isDescription } from '../lib/ids.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -294,7 +294,8 @@
     chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     chip?.focus({ preventScroll: true })
   }
-  const titleOf = form => form.regions ? `${form.char} ${form.regions}` : form.char
+  const proposedHere = char => known.has(char) && proposed(char, known.get(char).by)
+  const titleOf = form => form.regions ? `${form.char} ${form.regions}` : proposedHere(form.char) ? `${form.char} · ${t('chips.derived')}` : form.char
   function cancel(event) { if (held || lifted) { event.preventDefault(); release() } }
   function closed() { if (wrote) changed(); close() }
   onMount(() => {
@@ -312,7 +313,7 @@
     aria-disabled={!me || Boolean(busy)} title={titleOf(form)} aria-label={titleOf(form)}
     onpointerdown={event => down(event, 'form', form.char)} onpointermove={move} onpointerup={up} onpointercancel={lost} onlostpointercapture={lost}
     onclick={event => tap(event, 'form', form.char)} onkeydown={event => keys(event, 'form', form.char)}>
-    <FormText text={form.char} script={form.script} lang={form.lang} />
+    <FormText text={form.char} script={form.script} lang={form.lang} />{#if proposedHere(form.char)}<sup aria-hidden="true">*</sup>{/if}
   </button>{#if mine}<button type="button" class="take" disabled={Boolean(busy)} aria-label={t('structure.take', { form: form.char })} title={t('structure.take', { form: form.char })}
     onclick={event => { event.stopPropagation(); takeOut(form.char) }}>×</button>{/if}
 {/snippet}
@@ -421,6 +422,7 @@
   .tray.landed{animation:landed .7s ease-out}
   @keyframes landed{from{background:var(--accent-light);box-shadow:0 0 0 2px var(--accent)}}
   .token{display:inline-flex;align-items:stretch;border-radius:7px}
+  .piece sup{font-size:11px;line-height:1;color:var(--muted);margin-left:-4px;align-self:flex-start}
   .piece{display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;cursor:grab;user-select:none;-webkit-user-select:none;
     font-family:var(--char-font)}
   .piece[aria-disabled="true"]{cursor:default}

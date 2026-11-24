@@ -75,11 +75,12 @@ one is met with a decision.
 
 A small seal character (Unicode's Seal block) is proposed the structure of its Han equivalent, the
 `kSEAL_MCJK` of SealSources.txt: 𾲟 has 臭's `⿱自犬`, and 𽌇 has 萅's `⿱艸旾`, apart from 春
-`⿱𡗗日`. The file calls the value the modern CJK equivalent and says nothing of structure. The value
-follows the seal form's composition in most cases (𽀅 has 叓, where 吏 is written today) and not in
-all: 書 is 聿 over 者 in seal (說文 从聿者聲) and has 書. How many differ is not measured; a reader's
-claim overrides the proposal. 94 Han characters are the value of several seal characters (折, 殺, 民),
-which are drawn apart; those seal characters have no structure.
+`⿱𡗗日`. The file calls the value the modern CJK equivalent and says nothing of structure. The value can
+follow the seal form's composition (𽀅 has 叓, where 吏 is written today) and need not; how many
+differ is not measured. The site marks a proposed structure with an asterisk until a reader files
+the seal character. 書 is 聿 over 者 in seal (說文解字 聿部, 從聿者聲; 說文繫傳 卷六, Wikisource), so
+its seal character has no structure, nor do those whose value several share: 94 Han characters (折,
+殺, 民) are each the value of more than one.
 
 The rules are wider than Unicode's unification. The IRG lists 艸 and 艹, 火 and 灬, 网 and 罒 as not
 unifiable for encoding, and they are one component here; so are the simplified radicals 讠, 钅, 纟

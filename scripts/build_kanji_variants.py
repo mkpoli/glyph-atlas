@@ -26,7 +26,7 @@ row reads "b is the <relation> of a".
 `shuowen`               directed: b is the 說文解字 隸定字 of a (OpenCC SealVariants)
 `small-seal`            not a variant, another script; directed: b is the small seal character (小篆) whose
                         modern CJK equivalent Unicode gives as a (SealSources.txt kSEAL_MCJK). The
-                        equivalent follows the structure of the seal form, so a is often the 隸定字 and
+                        equivalent can follow the structure of the seal form, so a may be the 隸定字 and
                         not the character now written: 𽀅 has 叓, which `shuowen` gives for 吏
 `reduction`             directed: an MJ figure of a reduces to b (MJ縮退マップ; detail names the table)
 `compatibility`         directed: a is a compatibility character whose decomposition is b (UnicodeData)

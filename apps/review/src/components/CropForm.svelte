@@ -22,7 +22,7 @@
   import IdsComposer from './IdsComposer.svelte'
   import StructureDialog from './StructureDialog.svelte'
   import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
-  import { standing } from '../lib/structures.js'
+  import { proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
@@ -74,6 +74,7 @@
     const place = (form, into, rest) => {
       const structure = structureOf.get(form.char)
       if (!structure) { rest.push(form); return }
+      form = { ...form, proposed: proposed(form.char, structure.by) }
       const home = groups.get(structure.id) ?? into.get(structure.id)
       if (home) { home.forms.push(form); return }
       into.set(structure.id, { id: structure.id, label: structure.label, own: structure.id === ownStructure?.id, forms: [form] })
@@ -162,7 +163,8 @@
     : item.regions ? `${item.char}\n${item.regions}` : item.code_point ?? item.char
   // A registered figure on the bar names its MJ figure, and a regional shape its regions, since either
   // can look like the character itself.
-  const chipTitle = char => { const form = bar.find(chip => chip.char === char); return form?.mj ? `${char} ${form.mj}` : form?.regions ? `${char} ${form.regions}` : char }
+  const chipTitle = char => { const form = bar.find(chip => chip.char === char); return form?.mj ? `${char} ${form.mj}` : form?.regions ? `${char} ${form.regions}`
+    : proposed(char, structureOf.get(char)?.by) && structureOf.has(char) ? `${char} · ${t('chips.derived')}` : char }
   // 1–0 choose the bar's forms, as Quick Review's form bar does; a key typed into a field is the field's.
   function keydown(event) {
     if (disabled || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return

@@ -12,7 +12,7 @@
   import { countsLabel } from '../lib/layers.js'
   import { isDescription } from '../lib/ids.js'
   import { isFigure } from '../lib/mjFigures.js'
-  import { cardStructures, standing } from '../lib/structures.js'
+  import { cardStructures, proposed, standing } from '../lib/structures.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { page } from '$app/state'
   import { t, formatNumber, localize } from '../lib/i18n.svelte.js'
@@ -69,8 +69,8 @@
   const glyphCount = v => crops(v) ? t('explore.meta.glyphs', { count: crops(v) }) : undefined
   const shareLabel = v => writers.has(v.code_point) ? t('chips.alsoOther') : t('chips.alsoWritten', { char: card.char })
   // The 構形 of the grapheme's 字体, each with the characters and described forms that share it (峰 and
-  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), and the small seal characters Unicode gives
-  // as its own (𾲟 with 臭). A name with no structure, and a site that knows none yet, shows no row.
+  // 峯 are two, 說 and 説 one, and ⿰月兊 sits with 脫), and the small seal characters whose modern
+  // equivalent Unicode gives as one of them (𾲟 with 臭), marked as proposed. A name with no structure, and a site that knows none yet, shows no row.
   const HAN = /^\p{Script=Han}$/u
   const composable = list => [...new Set(list.map(v => v.char)
     .filter(char => HAN.test(char ?? '') || isSeal(char) || isDescription(char) || isFigure(char ?? '')))]
@@ -119,7 +119,7 @@
         <span class="layer-label">{t('chips.structure')}</span>
         <div class="variant-chips">
           {#each composed as s (s.id)}
-            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedNames > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{/if}{/each}</span>{/if}</span>
+            <span class="variant structure"><span lang="zh">{s.label}</span>{#if composedNames > 1}<span class="sharing">{#each s.chars as name (name)}{#if isDescription(name)}<FormText text={name} />{:else}<ScriptText text={name} lang="zh" titled={false} />{#if proposed(name, s.claimed?.[name])}<sup class="derived-mark" title="{name} · {t('chips.derived')}">*</sup>{/if}{/if}{/each}</span>{/if}</span>
           {/each}
           {#if signedInUser()}<button type="button" class="arrange" aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>{/if}
         </div>

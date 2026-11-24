@@ -212,6 +212,11 @@ def test_a_seal_character_has_its_han_equivalents_structure():
     shared = [han for han, count in Counter(row["a"] for row in stated).items() if count > 1]
     assert len(shared) == 94 and "折" in shared
     assert not set(shared) & set(structures.seal_equivalents().values())
+    equivalents = structures.seal_equivalents()
+    held = {row["b"] for row in stated if row["a"] in shared}
+    assert held.isdisjoint(equivalents) and len(equivalents) == 11328 - len(held) - 1 == 11135
+    # The seal form of 書 is 聿 over 者.
+    assert structures.for_character("𽣆") is None
     assert structures.for_character("𽋎") is None and structures.for_character("𽋏") is None
     assert all(structures.for_character(seal) for seal in structures.seal_equivalents())
 

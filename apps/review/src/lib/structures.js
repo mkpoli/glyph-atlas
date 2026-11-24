@@ -8,6 +8,9 @@ const HAN = /^\p{Script=Han}/u
 export const NAMES = 48
 /** A written value that can have a 構形: a Han or small seal character, or a description. */
 export const composable = char => HAN.test(char ?? '') || isSeal(char) || isDescription(char)
+/** Whether a form stands under its 構形 as a proposal: a small seal character has that of its modern
+ *  CJK equivalent until a reader files it (decision 0012). `by` is who filed it there. */
+export const proposed = (char, by) => isSeal(char) && !by
 
 /**
  * The 構形 groups of the names on a character's card, `{ id, label, chars, claimed, folded }` each, and

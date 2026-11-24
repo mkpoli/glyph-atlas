@@ -66,6 +66,9 @@ SAME = frozenset({"z"})
 #: equivalent.
 SEAL = range(0x3D000, 0x3FC40)
 SEAL_SOURCE = "unicode-ucd"
+#: The Han values whose seal form is known to be built otherwise: 書 is 聿 over 者 in seal (說文解字 聿部,
+#: 從聿者聲; 說文繫傳 卷六, Wikisource).
+SEAL_UNLIKE = frozenset("書")
 APART = "non-cognate"
 #: The level of the IRG's unifiable list this layer reads. A level-2 entry lists characters its
 #: variation tells apart (壬 and 王: 任 and 仼).
@@ -305,17 +308,17 @@ def seal_equivalents() -> dict[str, str]:
     Unicode's SealSources.txt (the `small-seal` rows of the 異体字 graph from unicode-ucd), where no
     other seal character has the same one.
 
-    The file calls the value the modern CJK equivalent and says nothing of structure. It follows the
-    seal form's composition in most cases (𽀅 has 叓, where 吏 is written today) and not in all: 書 is
-    聿 over 者 in seal (說文 从聿者聲). So the structure is a proposal, which a reader's claim
-    overrides. Where several seal characters share a value (折, 殺, 民), they are drawn apart and the
-    value cannot say which is built as it, so none takes it."""
+    The file calls the value the modern CJK equivalent and says nothing of structure. It can follow
+    the seal form's composition (𽀅 has 叓, where 吏 is written today) and need not, so the structure
+    is a proposal: the site marks it, and a reader's filing overrides it. SEAL_UNLIKE are the values
+    known to differ. Where several seal characters share a value (折, 殺, 民), it cannot say which is
+    built as it, so none takes it."""
     seals: dict[str, set[str]] = {}
     for row in refs.variant_edges():
         if row["relation"] == "small-seal" and row["source"] == SEAL_SOURCE:
             seal, han = (row["a"], row["b"]) if ord(row["a"][0]) in SEAL else (row["b"], row["a"])
             seals.setdefault(han, set()).add(seal)
-    return {seal: han for han, found in seals.items() if len(found) == 1 for seal in found}
+    return {seal: han for han, found in seals.items() if len(found) == 1 and han not in SEAL_UNLIKE for seal in found}
 
 
 def for_character(char: str) -> Structure | None:
