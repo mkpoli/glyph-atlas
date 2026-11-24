@@ -309,7 +309,7 @@ account IDs. People who asked to be forgotten are not greeted.
 She also reads along. She opens a room with unread lines at random times, on average 25 minutes after
 the first of them (`[chat] visit_minutes`; sooner after a question or a laugh, later when she lately
 spoke there, at most `visits_per_hour` in all), and waits for a burst to end. The model then rates
-its interest from 0 to 5: it speaks from 3, adds an emoji or a sticker from 2, and otherwise only
+its interest from 0 to 5: it speaks from 3, adds an emoji (or, in the mood, a sticker) from 2, and otherwise only
 reads. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
 [arXiv 2501.00383](https://arxiv.org/abs/2501.00383), 2024; its thresholds were set by trial and
 error, as are these) and GroupGPT splits the decision to chime in from the reply
@@ -386,8 +386,9 @@ She sends stickers from 大肥鱼日常表情包 by Nobu.Mashiro ([@wr3162](http
 start the bot fetches the 16 images from that post and reads the bundled ones from
 `/opt/fish-bot/stickers/`, checks each against the hash in `STICKERS` and uploads it to the
 homeserver once; a sticker whose image no longer matches is left out. Discord, Telegram and QQ show
-them; the QQ bridge sends a sticker as an image. After she sends one in a room, she is offered none
-there for 15 minutes.
+them; the QQ bridge sends a sticker as an image. The last eight she sent in a room
+rest there, so a talk gets different ones. A draw each turn decides whether she is in the mood for
+one (`STICKER_MOOD`); when she is not, she sends one only if someone asks.
 
 When a person asks her to file something, she hands the discussion to the issue desk: it reads the
 latest messages, checks the open issues for duplicates, and files in `mkpoli/glyph-atlas` only when

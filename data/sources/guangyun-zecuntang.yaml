@@ -15,19 +15,24 @@ format:
   sbgy_id: "w + volume (1 digit) + leaf (2) + side (a recto, b verso) + column (2, counted from the right) + position in the column (2), e.g. w107b0601; the ids are those of cjkvi-dict sbgy.xml"
   headwords: "字頭 may carry collation marks: ［X］ a character to supply, ｛X｝ one to delete, A〈B〉 a printed A corrected to B"
 title: 廣韻（澤存堂本）
+# A volume's title: work, volume, then the printing with whose copy or photographs these are (`of`).
+work: 廣韻
+printing: 澤存堂本
+volumes: {"1": 卷一　上平聲, "2": 卷二　下平聲, "3": 卷三　上聲, "4": 卷四　去聲, "5": 卷五　入聲}
 register: kanbun
 copies:
   # Each copy of the printing the headwords are cut from. `offset`: an opening's number less the
   # leaf whose verso it shows on the right (leaf = number - offset). `comb`: the scan is flat, so its columns
   # are found as one evenly spaced row.
   - id: photographs
+    of: 韻典網照片
     title: 廣韻 五卷（張氏澤存堂刊本）
     kind: directory
     repository: https://github.com/nk2028/tshet-uinh-images
     revision: 54ebf944fb7cb73eaafe563a68fc77f2d6740b24
     path: 廣韻/澤存堂本
     holder: null
-    attribution: "nk2028『tshet-uinh-images』廣韻/澤存堂本; its README names 韻典網 as the source and no holding library"
+    attribution: nk2028『tshet-uinh-images』廣韻/澤存堂本（韻典網）
     licence: unknown
     image_kind: flat-reproduction
     enlarge: 1
@@ -40,12 +45,13 @@ copies:
       - {volume: "4", label: 去聲卷第四, files: volume4, offset: 4}
       - {volume: "5", label: 入聲卷第五, files: volume5, offset: 3}
   - id: ioc
+    of: 東京大學藏
     title: 廣韻 五卷 康熙四十三年序張氏澤存堂刊本（倉石文庫）
     kind: commons-pdf
     repository: https://commons.wikimedia.org/wiki/Category:廣韻
     holder: 東京大學東洋文化研究所
     shelfmark: 倉石文庫 10505
-    attribution: 東京大学東洋文化研究所所蔵漢籍善本全文影像資料庫（Wikimedia Commons IOC.UTokyo-000146 to 000150）
+    attribution: 東京大学東洋文化研究所所蔵漢籍善本全文影像資料庫（Wikimedia Commons IOC.UTokyo-000146–000150）
     licence: PD
     licence_evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000146_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷一.pdf
     image_kind: flat-reproduction

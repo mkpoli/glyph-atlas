@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress } from '../src/lib/reviewRounds.js'
+import { dealsFor, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress } from '../src/lib/reviewRounds.js'
 
 const categories = [{ label: '仮', pending: 1 }, { label: '假', pending: 5 },
   { label: 'あ', pending: 6 }, { label: 'い', pending: 12 }, { label: 'う', pending: 8 }]
@@ -31,6 +31,13 @@ test('characters of one grapheme make one round, counting all their pending crop
     { label: '假', grapheme: 'U+4EEE', pending: 4 }, { label: '※', pending: 1 }])
   assert.deepEqual(rounds.map(r => [r.label, r.char, r.pending, r.members.map(m => m.label)]), [
     ['U+4EEE', '仮', 6, ['假', '仮']], ['U+3042', 'あ', 3, ['あ']], ['U+203B', '※', 1, ['※']]])
+})
+
+test('a round is dealt for a grapheme, or for one of its characters alone', () => {
+  const rounds = roundGraphemes([{ label: '春', grapheme: 'U+6625', pending: 2 }, { label: '\u{3D307}', grapheme: 'U+6625', pending: 3 },
+    { label: 'は', grapheme: 'U+306F', pending: 1 }])
+  const held = key => rounds.filter(group => dealsFor(group, key)).map(group => group.label)
+  assert.deepEqual([held('U+6625'), held('U+3D307'), held('U+30CF')], [['U+6625'], ['U+6625'], []])
 })
 
 test('the reference strip tags confirmed crops before seen ones', () => {

@@ -48,7 +48,8 @@ export const PENDING = 0, CHECKED = 1, FLAGGED = 2, SEEN = 3, HARD = 4;
 export const KANJI = 2, KANA = 3, HANGUL = 5;
 // An isolate holds the pointer for a minute; each setup reads its own as if later than any other test.
 let later = 0;
-export async function setup() {
+/** The catalogue; `more` adds to it before its answers are published, given the corpus page's id. */
+export async function setup(more: (db: Database, page: number) => void = () => {}) {
   const db = new Database(':memory:'); databases.push(db);
   const migrations = new URL('../../migrations-atlas/', import.meta.url);
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
@@ -85,6 +86,7 @@ export async function setup() {
   const corpus: [number, number | null, number, number][] = [[0, 1, PENDING, 2], [1, 1, PENDING, 2], [2, 1, PENDING, 2], [3, 1, PENDING, 2],
     [4, 3, PENDING, 4], [5, 3, PENDING, 4], [6, 3, CHECKED, 4], [7, 5, PENDING, 2], [8, 4, PENDING, 3], [9, null, PENDING, 2]];
   for (const [slot, char, state, production] of corpus) insert.run(cropId(c, slot), 1, 3, char, production, null, state, 1, shuffle(cropId(c, slot)));
+  more(db, c);
   const text = (char: number | null) => char === null ? '' : (db.query('SELECT text FROM graphemes WHERE id=?').get(char) as { text: string }).text;
   const records = corpus.map(([slot, char]) => new TextEncoder().encode(JSON.stringify({ id: `codh:${slot}`, label: text(char), proxyable: slot !== 2,
     image: `/atlas/media/c${slot}.webp`, text: 'line' })));

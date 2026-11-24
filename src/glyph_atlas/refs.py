@@ -1107,6 +1107,27 @@ WRITES = "writes"
 STANDS_FOR = "stands-for"
 
 
+#: The role of a row by which a small seal character (`b`) is a member (`shape_families.SEAL`).
+SEAL = "seal"
+#: The relation of a family that only its small seal characters make more than one character.
+SMALL_SEAL = "small-seal"
+#: The code points of Unicode's Seal block.
+SEAL_BLOCK = range(0x3D000, 0x3FC40)
+
+
+def is_small_seal(char: str) -> bool:
+    """Whether a character is a small seal character (小篆)."""
+    return len(char) == 1 and ord(char) in SEAL_BLOCK
+
+
+def transcribed(members: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The members of a family a transcription may write under one code point: every one but the small
+    seal characters. A corpus that writes 仮 and 假 under 仮 never writes 𾛷 so, and the classifier
+    trained on it has no seal form in its class, so a seal character among the members never makes a
+    glyph's character uncertain (docs/decisions/0015-small-seal-forms.md)."""
+    return [member for member in members if not is_small_seal(member["char"])]
+
+
 @cache
 def _source_record(identifier: str) -> dict:
     return yaml.safe_load((SOURCES / f"{identifier}.yaml").read_text(encoding="utf-8"))
@@ -1120,7 +1141,8 @@ def _grapheme_families() -> dict[str, dict]:
     A curated family may hold more members than graphemes.yaml names, each joined by an edge of
     the tsv; every member of a family must be one of the two, or the table is stale. The members
     the tsv joins follow the stated ones, most attested first (the sources whose edges reach them),
-    then by code point: 时 before 㫭 and 峕 in the family of 時.
+    then by code point: 时 before 㫭 and 峕 in the family of 時. The family's drawn forms follow, and its
+    small seal characters come last.
     """
     path = VOCAB / "graphemes.yaml"
     document = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
@@ -1133,7 +1155,7 @@ def _grapheme_families() -> dict[str, dict]:
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
         attested: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
-            if row["role"] not in (WRITES, STANDS_FOR):
+            if row["role"] not in (WRITES, STANDS_FOR, SEAL):
                 for end in ("a", "b"):
                     attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
         members = stated + sorted(set(attested) - set(stated),
@@ -1142,6 +1164,7 @@ def _grapheme_families() -> dict[str, dict]:
             members = [head]
         # A drawn form is a member of the family it is written for, after its characters.
         members += [form.code_point for form in drawn_forms.written_for(to_char(head))]
+        members += sorted((to_code_point(row["b"]) for row in edges.get(head, ()) if row["role"] == SEAL), key=_point_order)
         writing: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
             if row["role"] in (WRITES, STANDS_FOR):
@@ -1163,7 +1186,7 @@ def _grapheme_families() -> dict[str, dict]:
             "members": members,
             "stated": stated if family else [],
             "writers": writers,
-            "relation": family["relation"] if family else SHAPE_VARIANT,
+            "relation": family["relation"] if family else SHAPE_VARIANT if attested or writing else SMALL_SEAL,
             "evidence": evidence,
         }
     return families
@@ -1311,7 +1334,7 @@ def kana_origins() -> dict[str, frozenset[str]]:
     found: dict[str, set[str]] = {}
     for row in (row for row in _read_tsv(KANA_ORIGINS_TSV) if row["field"] == "平仮名字源"):
         info = grapheme_info(row["origin_code_point"])
-        members = {row["origin"], *(member["char"] for member in (info or {}).get("members") or [])}
+        members = {row["origin"], *(member["char"] for member in transcribed((info or {}).get("members") or []))}
         for member in members:
             found.setdefault(member, set()).add(row["kana"])
     return {kanji: frozenset(kana) for kanji, kana in found.items()}

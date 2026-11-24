@@ -65,7 +65,10 @@ D1 rows (`migrations-atlas/0004_reference.sql`) for what a query filters, joins 
 under its card's one code point); and the citations of the sources behind them, `variant_sources` and
 `word_sources` in `site` (0005), whose other keys `books.py` writes. Cards name characters by `graphemes` id: a
 card's character or family head the layout lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
-Graphemes are written as `publish.py` writes them, through `char_text`.
+Graphemes are written as `publish.py` writes them, through `char_text`. Before anything is sent, and in a
+dry run, a load that moves a head is checked (`check_heads`): it stops where it moves other than a small
+seal character's (`--heads` lets it), where a run is filed under a moved grapheme, and where a live claim
+names one. The check reads D1 and writes nothing.
 
 Only what differs is sent: the rows that differ from `out/atlas.sqlite`, as statements in parts
 under `out/reference-load/reference-<generation>-<digest>/`, each confirmed by its stamp in `imports`
@@ -99,12 +102,13 @@ import sys
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from contextlib import closing
 
 from build import OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
-from publish import BUCKET, CF, R2_REMOTE, applied, lit, send, upload
+from publish import BUCKET, CF, R2_REMOTE, RUNS_DATABASE, applied, graphemes_of, lit, query, send, upload
 
-from glyph_atlas import reference_input
+from glyph_atlas import reference_input, refs
 from glyph_atlas import structures as structure_layer
 from glyph_atlas.representation import is_sequence
 from glyph_atlas.site import pass_headers
@@ -519,11 +523,11 @@ def component_lists():
     if held:
         yield f"components/{object_key(code_point_of(component))}.json.gz", component_list(held)
     same, other = [], {}
-    for query, c in source("han_component_names").execute("SELECT query, component FROM han_component_names ORDER BY query"):
-        if query == c:
-            same.append(query)
+    for typed, c in source("han_component_names").execute("SELECT query, component FROM han_component_names ORDER BY query"):
+        if typed == c:
+            same.append(typed)
         else:
-            other[query] = c
+            other[typed] = c
     yield "components/names.json.gz", compact({"same": "".join(same), "other": other})
 
 
@@ -687,6 +691,48 @@ def statements(ref, atlas, new, new_heads, changed):
 def loads(atlas):
     """The names of the reference loads the local copy holds a part of."""
     return {s.split(".")[0] for (s,) in atlas.execute("SELECT stamp FROM imports WHERE stamp LIKE 'reference-%'")}
+
+
+def moved_heads(atlas, changed):
+    """Each character whose family head this load moves, by its text: the changed heads but those that
+    only name a grapheme, until now under no head, as its own."""
+    held = {gid: (text, head) for gid, text, head in atlas.execute("SELECT id, text, coalesce(head, id) FROM graphemes")}
+    return sorted(held[gid][0] for gid, head in changed.items() if held[gid][1] != head)
+
+
+# The runs whose key a grapheme claim has moved since the last publish (`publish.take_moves`), as D1 files
+# them: per move, its row and the few runs its first crop starts, by `run_first_all`.
+MOVED_RUNS = "SELECT DISTINCT r.graphemes FROM run_moves m CROSS JOIN runs r ON r.first = m.first AND r.size = m.size"
+# The live claims that name a grapheme, by it: the `U+` range of `assertion_object`, two rows a claim and
+# one or two more for its actions.
+CLAIMED = """SELECT a.object, a.predicate, count(*) AS n FROM assertions a WHERE a.object >= 'U+' AND a.object < 'U,'
+  AND a.predicate IN ('has_grapheme', 'written_for')
+  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion = a.id AND x.action = 'retract') GROUP BY 1, 2"""
+
+
+def check_heads(moved, any_head):
+    """Stop a load whose moved heads the site's records do not follow: a head of other than a small seal
+    character, unless `any_head`; a run filed under a moved grapheme, in the local copy of the runs
+    or among the runs D1 has moved since; or a live claim that names one."""
+    if not moved:
+        return
+    others = [text for text in moved if not refs.is_small_seal(text)]
+    if others and not any_head:
+        sys.exit(f"this load moves the heads of {len(others):,} characters that are not small seal, "
+                 f"{' '.join(others[:20])}; --heads lets it")
+    if not (OUT / "atlas-runs.sqlite").exists():
+        sys.exit("the local copy of the runs is missing: a run spelled with a moved grapheme cannot be found")
+    texts = set(moved)
+    with closing(sqlite3.connect(f"file:{OUT / 'atlas-runs.sqlite'}?mode=ro", uri=True)) as runs:
+        keys = {key for (key,) in runs.execute("SELECT graphemes FROM run_stats")}
+    keys |= {r["graphemes"] for r in query(RUNS_DATABASE, MOVED_RUNS)}
+    spelled = sorted(key for key in keys if not texts.isdisjoint(graphemes_of(key)))
+    if spelled:
+        sys.exit(f"{len(spelled):,} run keys hold a grapheme whose head moves: {' '.join(spelled)}")
+    points = {code_point_of(text) for text in moved}
+    claims = [f"{r['n']} {r['predicate']} of {r['object']}" for r in query("glyph-atlas-v3", CLAIMED) if r["object"] in points]
+    if claims:
+        sys.exit(f"claims name a grapheme whose head moves: {', '.join(claims)}")
 
 
 def finish(atlas):
@@ -870,6 +916,7 @@ def only(kind, send):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="load the rows into glyph-atlas-v3 and upload the objects")
+    parser.add_argument("--heads", action="store_true", help="let the load move the heads of characters that are not small seal")
     parser.add_argument("--only", choices=tuple(ALONE), help="make (and with --send, upload) these objects alone")
     parser.add_argument("--check", metavar="URL", help="ask the site at URL for each probe; exit 1 on a miss")
     args = parser.parse_args()
@@ -908,9 +955,12 @@ def main():
         run = OUT / "reference-load" / f"reference-{len(loads(atlas)) + 1}-{rows_digest}"
         built(run, "rows", groups)
     parts = len(list(run.glob("*.sql"))) if run else 0
+    moved = moved_heads(atlas, changed_heads)
+    notes["characters whose family head moves"] = len(moved)
     text = report(ref, written, objects, gone, notes, parts)
     (OUT / "reference-report.txt").write_text(text)
     print(text + (f"{parts} parts -> {run}" if run else "the local copy already holds these rows"), flush=True)
+    check_heads(moved, args.heads)
     if not args.send:
         print("dry run: nothing sent", flush=True)
         return

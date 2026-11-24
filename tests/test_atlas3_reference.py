@@ -207,12 +207,82 @@ def test_search_names_load_under_one_code_point_and_change_as_the_aliases_do(lay
     assert local.execute("SELECT * FROM names ORDER BY text").fetchall() == [("ne", 0x306D, 3), ("ね", 0x306D, 0)]
 
 
+SEAL = "\U0003FBDB"
+
+
+def sealed(root, remote):
+    """𿯛 as a grapheme of its own, and the input that files it under 已."""
+    both(root, remote, f"INSERT INTO graphemes(id, text, head) VALUES(100, '{SEAL}', 100), (101, '已', 101);")
+    sources(root, cards=[card("已", members=["已", SEAL]), card(SEAL, head="已", members=["已", SEAL])])
+
+
+def spell(root, remote, where, key):
+    """The fixture's run あい, filed under `key` in D1 or in the local copy."""
+    db = remote.dbs["glyph-atlas-v3-runs"] if where == "d1" else sqlite3.connect(root / "out" / "atlas-runs.sqlite")
+    db.executescript(f"UPDATE runs SET graphemes='{key}'; UPDATE run_stats SET graphemes='{key}';")
+    return db
+
+
+def test_a_load_that_files_a_seal_character_under_its_kanji_moves_that_head_alone(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    load(remote, monkeypatch, "--send")
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (101,)
+    assert "characters whose family head moves: 1\n" in (root / "out" / "reference-report.txt").read_text()
+
+
+@pytest.mark.parametrize("flags", [(), ("--send",)])
+def test_a_load_stops_where_a_run_is_filed_under_a_grapheme_whose_head_moves(layout, monkeypatch, flags):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    # Spelled so in the local copy, or only in D1, where a claim moved it since the last publish.
+    spell(root, remote, "local", SEAL + "い")
+    with pytest.raises(SystemExit, match=f"1 run keys hold .* {SEAL}い"):
+        load(remote, monkeypatch, *flags)
+    spell(root, remote, "local", "あい")
+    first = ids(root)["ex:a1"]
+    spell(root, remote, "d1", SEAL + "い").executescript(f"INSERT INTO run_moves VALUES({first}, 2, {first});")
+    with pytest.raises(SystemExit, match=f"1 run keys hold .* {SEAL}い"):
+        load(remote, monkeypatch, *flags)
+    (root / "out" / "atlas-runs.sqlite").unlink()
+    with pytest.raises(SystemExit, match="local copy of the runs is missing"):
+        load(remote, monkeypatch, *flags)
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (100,)
+
+
+def test_a_load_stops_where_a_live_claim_names_a_grapheme_whose_head_moves(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    remote.dbs["glyph-atlas-v3"].executescript("""INSERT INTO assertions(id,subject,predicate,slot,object,tier,asserted_by,asserted_at)
+      VALUES('a','fm:1','written_for','U+3FBDB','U+3FBDB','observed','ann','2026-11-24'),
+            ('b','fm:1','written_for','U+5DF2','U+5DF2','observed','ann','2026-11-24');""")
+    with pytest.raises(SystemExit, match=r"1 written_for of U\+3FBDB$"):
+        load(remote, monkeypatch, "--send")
+    # Taken back, it names none.
+    remote.dbs["glyph-atlas-v3"].executescript("INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES('x','a','retract','ann','2026-11-24');")
+    load(remote, monkeypatch, "--send")
+    reads = "EXPLAIN QUERY PLAN " + importlib.import_module("reference").CLAIMED
+    assert any("assertion_object (object>? AND object<?)" in row[3] for row in remote.dbs["glyph-atlas-v3"].execute(reads))
+
+
+def test_a_load_moves_no_head_but_a_seal_characters_unless_told_to(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    both(root, remote, "INSERT INTO graphemes(id, text, head) VALUES(100, '萅', 100), (101, '春', 101);")
+    sources(root, cards=[card("春", members=["春", "萅"]), card("萅", head="春", members=["春", "萅"])])
+    for flags in ((), ("--send",)):
+        with pytest.raises(SystemExit, match="1 characters that are not small seal, 萅; --heads"):
+            load(remote, monkeypatch, *flags)
+    load(remote, monkeypatch, "--send", "--heads")
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (101,)
+
+
 def test_heads_of_graphemes_a_publish_made_come_from_the_cards(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     both(root, remote, "INSERT INTO graphemes(id, text, head) VALUES(100, 'ゑ', NULL);")
     sources(root, cards=[card("ゑ", head="ヱ", members=["ヱ", "ゑ"]), card("ヱ", members=["ヱ", "ゑ"]),
                          card("い", head="𛀆")])
-    load(remote, monkeypatch, "--send")
+    sqlite3.connect(root / "out" / "atlas-runs.sqlite").executescript("DELETE FROM run_stats;")
+    load(remote, monkeypatch, "--send", "--heads")
     db = remote.dbs["glyph-atlas-v3"]
     katakana, hentaigana = grapheme(db, "ヱ"), grapheme(db, "𛀆")
     assert db.execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (katakana,)

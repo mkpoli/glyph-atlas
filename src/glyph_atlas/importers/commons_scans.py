@@ -188,8 +188,7 @@ def collect_file(
         origin=origin,
         dating=dating,
         image_rights=Rights(licence=licence, holder=holder,
-                            attribution=f"{holder or 'unstated holder'}, via Wikimedia Commons, "
-                                        f"{commons['description_url']}",
+                            attribution=", ".join(filter(None, (holder, "Wikimedia Commons", commons["description_url"]))),
                             evidence=commons["description_url"], checked=checked),
         meta={
             "language": language,

@@ -40,7 +40,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .. import recorded_terms, tables
+from .. import recorded_terms, refs, tables
 from ..schema import (
     PAGE_SCOPE,
     Box,
@@ -1180,10 +1180,10 @@ class Store:
 
     def set_written_for(self, **written: Any) -> dict[str, Any]:
         """Say a form is written for a grapheme, or take the claim back (`crop_forms.set_written_for`), and
-        return the graphemes the form writes now."""
+        return the grapheme claimed and the graphemes the form writes now."""
         with self._lock, self._connection() as conn, self._transaction(conn):
             crop_forms.set_written_for(conn, **written)
-            return {"id": written["form"], "written_for": crop_forms.written_for(conn, written["form"])}
+            return {"id": written["form"], "grapheme": refs.grapheme(written["grapheme"]), "written_for": crop_forms.written_for(conn, written["form"])}
 
     def written_for(self, form: str) -> list[dict[str, Any]]:
         """The graphemes a form is written for (`crop_forms.written_for`)."""

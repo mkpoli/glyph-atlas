@@ -150,6 +150,9 @@ STANDALONE = "STCharacters (also itself)"
 WRITES = "writes"
 #: The role of an edge by which a form with no character of its own stands for a family (`_add_stand_ins`).
 STANDS_FOR = "stands-for"
+#: The role of an edge by which a small seal character (`b`) is a member by the Han character Unicode
+#: gives as its modern equivalent (`a`); `scripts/build_character_table.py` adds them.
+SEAL = "seal"
 #: cjkvi tables whose rows only say two characters are related (関連字, 原規格分離).
 RELATED_ONLY = frozenset({"cjkvi/variant", "jisx0212/variant", "jisx0213/variant", "ucs-scs/variant"})
 #: Relations another source uses for the same character in another shape; they corroborate a

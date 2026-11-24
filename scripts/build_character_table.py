@@ -32,7 +32,8 @@ Sources, all from one Unicode release:
 - `data/vocab/kanji-variants.tsv`, `data/vocab/kanji-equivalents.tsv` and `data/vocab/mj-kanji.tsv`
   for the kanji grapheme families no curated row states: `glyph_atlas.shape_families` joins the
   characters a source defines as one character in another shape, and the build writes the edges
-  each family rests on to `data/vocab/grapheme-families.tsv`.
+  each family rests on to `data/vocab/grapheme-families.tsv`. The `small-seal` rows of
+  `kanji-variants.tsv` then put each small seal character under the grapheme of its Han character.
 - `data/vocab/gugyeol.tsv`, hand-kept, for the 구결자 of the Hanyang private-use convention
   (U+F67E to U+F77C). Unicode assigns them nothing but a private-use code point, so the file is
   what gives each its script, reading and 字母.
@@ -566,7 +567,7 @@ def build(
     _add_readings(characters)
     _add_graphemes(characters, kana, curated)
     _add_voiced_graphemes(characters, voiced, curated)
-    families = _add_shape_families(characters, document, ucd, vocab, refused)
+    families = _add_seal_members(characters, _add_shape_families(characters, document, ucd, vocab, refused), vocab)
     _add_confusables(characters, lookalikes)
     sequences, evidence = _voiced_sequences(characters, voiced, mj)
     _check_graphemes(characters, sequences)
@@ -687,6 +688,37 @@ def _add_shape_families(
     return families
 
 
+def _add_seal_members(
+    characters: dict[int, Character], families: list[shape_families.Family], vocab: Path,
+) -> list[shape_families.Family]:
+    """Put each small seal character under the grapheme of its Han character, and add the edge that says
+    so to that grapheme's family (docs/decisions/0015-small-seal-forms.md).
+
+    The Han character is the one Unicode gives as the modern equivalent (`kSEAL_MCJK`, the `small-seal`
+    rows of kanji-variants.tsv): 𽌇 joins 春 through 萅, and 𽀅 joins 叓, a grapheme of its own, though
+    吏 is written today. Several seal characters of one Han character all join it. A grapheme of one
+    character makes a family with its seal characters. This runs after the shape families, which the
+    seal characters take no part in: no tie of a seal character counts where a Han character is joined.
+    """
+    found = {family.head: family for family in families}
+    for row in read_table(vocab / VARIANTS_NAME):
+        if row["relation"] != "small-seal":
+            continue
+        han, seal = characters[ord(row["a"])], characters[ord(row["b"])]
+        if seal.grapheme != seal.code_point:
+            raise ValueError(f"{seal.code_point} is under {seal.grapheme} and the small seal of {han.code_point}")
+        seal.grapheme = han.grapheme
+        head = chr(int(han.grapheme.removeprefix("U+"), 16))
+        family = found.setdefault(head, shape_families.Family(head, {head}))
+        family.members.add(seal.char)
+        family.edges.append(shape_families.Edge(row["a"], row["b"], row["relation"], row["source"], row["detail"],
+                                                shape_families.SEAL))
+    apart = [row.code_point for row in characters.values() if row.script == "seal" and row.grapheme == row.code_point]
+    if apart:
+        raise ValueError(f"{len(apart)} small seal characters have no Han character: " + ", ".join(apart[:5]))
+    return sorted(found.values(), key=lambda family: ord(family.head))
+
+
 def _check_graphemes(characters: dict[int, Character], sequences: list[Character] = ()) -> None:
     """Fail the build when a character hangs under a grapheme it does not belong to.
 
@@ -710,7 +742,7 @@ def _check_graphemes(characters: dict[int, Character], sequences: list[Character
                 HIRAGANA_FIRST <= int(grapheme.code_point.removeprefix("U+"), 16) <= HIRAGANA_LAST
             ):
                 broken.append(f"{row.code_point} {row.name} -> {row.grapheme}")
-        elif row.name and "SMALL" in row.name and (grapheme is None or "SMALL" not in (grapheme.name or "")):
+        elif row.script in ("hiragana", "katakana") and "SMALL" in (row.name or "") and (grapheme is None or "SMALL" not in (grapheme.name or "")):
             named = grapheme.name if grapheme else "a character the table does not hold"
             broken.append(f"{row.code_point} {row.name} -> {row.grapheme} {named}")
     if broken:
@@ -870,7 +902,9 @@ def _add_graphemes(
        characters of the map read alike, the hiragana of the modern block names the grapheme: い is
        the grapheme of the I-1 to I-4 hentaigana, and 𛄠, the historic katakana, is a form of it.
     3. Any other character is its own grapheme, which is every kanji, every digraph and every kana
-       no reading reaches. 子 is a form of nothing and nothing is a form of it.
+       no reading reaches. 子 is a form of nothing and no kana is a form of it. The kanji of one family
+       and the small seal characters of a kanji are placed after, by `_add_shape_families` and
+       `_add_seal_members`.
 
     `grapheme` is one code point and not a list. A character whose name names several kana, as 𛂘
     names ね and こ, is a form of each - but a record has one grapheme, and rule 1 is how the
@@ -1214,7 +1248,7 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
         lines.append(f"# source {identifier}: {record['name']}; {record['licence']} "
                      f"({record['licence_evidence']}); {record['attribution']}")
     lines += [
-        (f"#   from {VARIANTS_NAME} (compatibility, z, reduction and the corroborating rows), "
+        (f"#   from {VARIANTS_NAME} (compatibility, z, reduction, the corroborating rows and small-seal), "
          f"{EQUIVALENTS_NAME} (itaiji, source mj-kanji: the MJ文字情報一覧表's X0213 column) and "
          f"{MJ_KANJI_NAME} (実装したUCS, the default figure of a code point)"),
         (f"#   unihan: Unihan_IRGSources.txt kIRG_JSource J0 (JIS X 0208) of Unicode {RELEASE}, "
@@ -1223,7 +1257,8 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
         ("# role: merge joins a and b; corroborates is the second source a reduction between two "
          "JIS X 0208 characters needs; writes says the end outside the family, a form that writes "
          "several characters, writes this one too; stands-for says the end outside the family, a "
-         "form with no reading or definition of its own, stands for this one."),
+         "form with no reading or definition of its own, stands for this one; seal says b, a small seal "
+         "character, is a member by a, the Han character Unicode gives as its modern equivalent."),
         "# columns: " + ", ".join(FAMILY_FIELDS),
         (f"# families: {len(emitted)} ({sum(1 for family in emitted if family.curated)} curated), "
          f"characters: {sum(len(family.members) for family in emitted)}, "

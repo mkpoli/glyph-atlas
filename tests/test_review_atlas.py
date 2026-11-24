@@ -362,19 +362,32 @@ def test_a_stale_undo_does_not_withdraw_other_answers(dataset):
 
 def test_a_round_is_dealt_for_a_grapheme_and_its_members(dataset):
     """A round names its family's head and lists the characters it deals: あ's family holds ア and its
-    hentaigana. A key that names a member is refused, as it names no round of its own."""
+    hentaigana. A key that names a member deals that member alone."""
     client = TestClient(create_app(dataset))
     data = client.get('/atlas', params={"purpose": "review", "grapheme": "U+3042", "state": "pending"}).json()
     assert data["grapheme"]["code_point"] == "U+3042" and data["grapheme"]["char"] == "あ"
     assert data["grapheme"]["members"][0] == "あ" and "ア" in data["grapheme"]["members"]
     assert data["items"] and {item["label"] for item in data["items"]} <= set(data["grapheme"]["members"])
     assert "grapheme" not in client.get('/atlas', params={"grapheme": "U+3042"}).json(), "browsing names no round"
-    assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).status_code == 422
+    # シ is filed under し, whose family's round deals it too.
+    family, member = (client.get('/atlas', params={"purpose": "review", "grapheme": key, "state": "pending"}).json() for key in ("U+3057", "U+30B7"))
+    assert "シ" in family["grapheme"]["members"] and family["total"] == 4
+    assert member["grapheme"] == {"code_point": "U+30B7", "char": "シ", "members": ["シ"]} and member["total"] == 4
+    assert client.get('/atlas', params={"grapheme": "U+30B7"}).json()["total"] == 4
+    assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).json()["total"] == 0
     for key in ("invalid", "U+110000"):
         assert client.get('/atlas', params={"purpose": "review", "grapheme": key}).status_code == 422
     payload = round_payload(client)
     payload['grapheme'] = "U+110000"
     assert client.post('/atlas/rounds', json=payload).status_code == 422
+    # A round of ア holds no あ, and one of シ is saved as し's.
+    payload['grapheme'] = "U+30A2"
+    assert client.post('/atlas/rounds', json=payload).status_code == 409
+    saved = {**payload, "grapheme": "U+30B7", "answers": [
+        {"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"], "verdict": "match"} for item in member["items"]]}
+    assert client.post('/atlas/rounds', json=saved).status_code == 200
+    assert client.post('/atlas/rounds', json=saved).status_code == 200
+    assert {json.loads(event.evidence)["grapheme"] for event in Store(dataset).events()} == {"U+3057"}
 
 
 def test_round_rejects_other_category_or_repeated_character(dataset):
@@ -2108,15 +2121,14 @@ def test_a_correction_gives_crops_one_character_with_the_sites_rules(dataset):
 
 def test_a_voiced_sequence_is_filed_under_its_grapheme():
     """𛂞 + U+3099 is a form of ば; ツ + U+309A, which no precomposed kana voices, files under itself."""
-    from glyph_atlas.review.atlas import BadRequest, grapheme_members
+    from glyph_atlas.review.atlas import grapheme_members
 
     assert grapheme_of("\U0001B09E゙") == grapheme_of("バ") == "U+3070"
     assert grapheme_of("ツ゚") == "U+30C4 U+309A"
     members = grapheme_members("U+3070")
     assert members[:2] == ["ば", "バ"] and "\U0001B09E゙" in members
     assert len(members) == len(set(members)) == 13
-    with pytest.raises(BadRequest):
-        grapheme_members("U+1B09E U+3099")
+    assert grapheme_members("U+1B09E U+3099") == ["\U0001B09E゙"]
 
 
 def test_group_stats_count_each_script_group_and_review_state(dataset):

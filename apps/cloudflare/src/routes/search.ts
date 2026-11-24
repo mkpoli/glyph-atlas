@@ -10,7 +10,7 @@ import { compatibility, structureKey, written } from '../representation';
 import { claimedStructures, foldsOf, standingOf } from './claims';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { idsCharacter } from '../category';
+import { idsCharacter, isSeal } from '../category';
 import { componentTerm } from '../components';
 import { hira } from '../index';
 import { integer, literal } from '../input';
@@ -56,14 +56,21 @@ async function aliasHits(env: Env, index: NameIndex, term: string, limit: number
 }
 
 // The `data` of the cards of each family the codes file under, by code point: the cards held already,
-// and one summary shard per family of the rest.
+// and one summary shard per family of the rest. While a reference load lands, `graphemes` can file a
+// character under a family whose shard does not hold it yet, or a shard held here can be the one from
+// before: such a character's card is read from its own object, which every load keeps under one key.
 async function cardsOf(env: Env, codes: string[], held: Map<string, Json>, ctx?: ExecutionContext): Promise<Map<string, Json>> {
   const wanted = [...new Set(codes)].filter(code => !held.has(code));
   if (!wanted.length) return held;
   const rows = (await env.ATLAS.prepare(headsQuery()).bind(JSON.stringify(wanted.map(textOf)))
     .all<{ text: string; head: string | null }>()).results;
   const heads = new Map(rows.map(row => [cp(row.text), row.head === null ? cp(row.text) : cp(row.head)]));
-  return new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
+  const cards = new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
+  await Promise.all(wanted.filter(code => !cards.has(code)).map(async code => {
+    const card = await characterObject(env, code, ctx);
+    if (card) cards.set(code, card.data);
+  }));
+  return cards;
 }
 
 // The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
@@ -120,13 +127,16 @@ export function byGrapheme(found: Json[], members: Map<string, Json>) {
     return [...group, ...rest];
   });
 }
-// A list shows at most GRAPHEME_MEMBERS forms it did not find. A grapheme's forms file under its
-// family, so their cards are in the shards the list has read.
+// A list shows at most GRAPHEME_MEMBERS forms it did not find, small seal characters after every other
+// so they take no place of one. A grapheme's forms file under its family, so their cards are in the
+// shards the list has read.
 const GRAPHEME_MEMBERS = 48;
-function unlistedForms(found: Json[], cards: Map<string, Json>) {
+export function unlistedForms(found: Json[], cards: Map<string, Json>) {
   const listed = new Set(found.map(item => item.code_point));
-  const wanted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
-    .filter(code => !listed.has(code)).slice(0, GRAPHEME_MEMBERS);
+  const unlisted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
+    .filter(code => !listed.has(code));
+  const seals = unlisted.filter(code => isSeal(textOf(code)));
+  const wanted = [...unlisted.filter(code => !isSeal(textOf(code))), ...seals].slice(0, GRAPHEME_MEMBERS);
   return new Map(wanted.filter(code => cards.has(code)).map(code => [code, cards.get(code)]));
 }
 
