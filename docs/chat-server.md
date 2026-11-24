@@ -310,7 +310,7 @@ She also reads along. She opens a room with unread lines at random times, on ave
 the first of them (`[chat] visit_minutes`; sooner after a question or a laugh, later when she lately
 spoke there, at most `visits_per_hour` in all), and waits for a burst to end. The model then rates
 its interest from 0 to 5: it speaks from 3, adds an emoji (or, in the mood, a sticker) from 2, and otherwise only
-reads. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
+reads. It reads 20 lines and the pictures not read yet. It may look a fact up before it speaks. She never files from these turns. Inner Thoughts voices a thought once its score passes a threshold (Liu et al.,
 [arXiv 2501.00383](https://arxiv.org/abs/2501.00383), 2024; its thresholds were set by trial and
 error, as are these) and GroupGPT splits the decision to chime in from the reply
 ([arXiv 2603.01059](https://arxiv.org/abs/2603.01059), 2026). Each visit's interest and outcome are
