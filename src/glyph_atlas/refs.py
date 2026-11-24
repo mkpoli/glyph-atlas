@@ -438,20 +438,55 @@ def ids_sequences(char: str) -> list[str]:
 SOURCE_REGIONS = "GHMTJKPVUSB"
 
 
+@cache
+def _by_region(char: str) -> tuple[tuple[str, frozenset[str]], ...]:
+    """`char`'s descriptions as BabelStone's sources use them, each with the source letters it names."""
+    found: dict[str, set[str]] = {}
+    for sequence in han_components._sequences().get(char, ()):
+        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
+        if named:
+            found.setdefault(han_component_variants.REGION.sub("", sequence), set()).update(named)
+    return tuple((text, frozenset(named)) for text, named in found.items())
+
+
+@cache
+def _in_region(char: str, region: str, depth: int = 0) -> str:
+    """`char` as `region` draws it: itself, or its description there where its sources draw it in
+    several ways (勺 is ⿹勹一 in K and ⿹勹丶 in J), with every part spelt out alike. A character with
+    no description there, or several, stands as itself."""
+    described = _by_region(char)
+    drawn = [text for text, named in described if region in named]
+    if len(described) < 2 or len(drawn) != 1 or drawn[0] == char or depth > 8:
+        return char
+    return _spelt(drawn[0], region, depth + 1)
+
+
+def _spelt(text: str, region: str, depth: int = 0) -> str:
+    return "".join(_in_region(part, region, depth) for part in han_components.TOKEN.findall(text))
+
+
 def regional_shapes(char: str) -> list[dict[str, str]]:
     """The shapes BabelStone gives `char` by source, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
     and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. Only source letters
     count (`SOURCE_REGIONS`), read as `han_component_variants.regions` reads a tag: 主's ⿱亠土 (X)
-    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph."""
+    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph.
+
+    A part is written as the region itself draws it, so one shape can be spelt twice: 酌 is ⿰酉勺 in
+    GHTJPV and ⿰酉⿹勹丶 in K, whose own 勺 is ⿹勹一. Shapes that come to one description in every
+    region they name are one, under the shorter spelling. A shape whose regions draw a part of it in
+    different ways (灼's ⿰火勺, in J's neighbours and in K) is compared with none."""
     usable = ids_sequences(char)
-    found: dict[str, set[str]] = {}
-    for sequence in han_components._sequences().get(char, ()):
-        text = han_component_variants.REGION.sub("", sequence)
-        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
-        if named and text in usable:
-            found.setdefault(text, set()).update(named)
-    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in named)}
-            for text, named in found.items()] if len(found) > 1 else []
+    named = [(text, regions) for text, regions in _by_region(char) if text in usable]
+    if len(named) < 2:
+        return []
+    shapes: dict[str, tuple[str, frozenset[str]]] = {}
+    for text, regions in named:
+        spelt = {_spelt(text, region) for region in regions}
+        key = spelt.pop() if len(spelt) == 1 else text
+        kept = shapes.get(key)
+        shapes[key] = (min((kept[0], text), key=lambda t: len(han_components.TOKEN.findall(t))), kept[1] | regions) if kept else (text, regions)
+    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in regions)}
+            for text, regions in shapes.values()] if len(shapes) > 1 else []
 
 
 def substitutes(component: str) -> list[dict[str, Any]]:
