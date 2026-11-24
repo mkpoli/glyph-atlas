@@ -537,7 +537,6 @@
   "pages.draw.hint": "開啟「繪製」，在標記上拖曳即可畫框。捲動縮放，拖曳平移。",
   "pages.draw.off": "繪製",
   "pages.draw.on": "繪製中",
-  "pages.draw.unavailable": "照片不在快取中，或頁面未記錄尺寸，此頁無法畫框。",
   "pages.loading": "載入中…",
   "pages.next": "下一頁 →",
   "pages.source.openIn": "以檢視器開啟：",

@@ -521,7 +521,6 @@
   "pages.draw.hint": "Bật Vẽ, rồi kéo qua một ký hiệu để đóng khung nó. Cuộn để phóng to, kéo để di chuyển.",
   "pages.draw.off": "Vẽ",
   "pages.draw.on": "Đang vẽ",
-  "pages.draw.unavailable": "Không thể vẽ khung trên trang này: thiếu ảnh hoặc thiếu kích thước trang.",
   "pages.loading": "Đang tải…",
   "pages.next": "Trang tiếp →",
   "pages.source.openIn": "Mở bằng ",

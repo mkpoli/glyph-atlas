@@ -529,7 +529,6 @@
   "pages.draw.hint": "「描画」をオンにして記号の上をドラッグすると枠ができます。スクロールで拡大・縮小、ドラッグで移動します。",
   "pages.draw.off": "描画",
   "pages.draw.on": "描画中",
-  "pages.draw.unavailable": "写真がキャッシュにないか、ページの寸法が記録されていないため、このページには枠を描けません。",
   "pages.loading": "読み込み中…",
   "pages.next": "次のページ→",
   "pages.source.openIn": "ビューアで開く：",
