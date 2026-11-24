@@ -1,0 +1,60 @@
+{
+  "epochs": 60,
+  "trained_on": {
+    "glyphs": 11328,
+    "crops": 9341,
+    "agreed": 10425
+  },
+  "seconds": 551,
+  "font": "https://github.com/mkpoli/sealie/releases/download/v1.3.1-c8d4a98/Sealie-Medium.ttf",
+  "held_back": {
+    "crops": 1038,
+    "first": 0.9461,
+    "first_three": 0.9836
+  },
+  "held_back_first_round": {
+    "crops": 1038,
+    "first": 0.9239,
+    "first_three": 0.9778
+  },
+  "alone_TE00003": {
+    "crops": 12,
+    "first": 0.6667,
+    "first_three": 0.6667
+  },
+  "alone_TE00003_first_round": {
+    "crops": 12,
+    "first": 0.5833,
+    "first_three": 0.6667
+  },
+  "alone_TE00024": {
+    "crops": 2384,
+    "first": 0.943,
+    "first_three": 0.9715
+  },
+  "alone_TE00024_first_round": {
+    "crops": 2384,
+    "first": 0.8947,
+    "first_three": 0.9484
+  },
+  "alone_TE00025": {
+    "crops": 2263,
+    "first": 0.9359,
+    "first_three": 0.9677
+  },
+  "alone_TE00025_first_round": {
+    "crops": 2263,
+    "first": 0.8926,
+    "first_three": 0.9421
+  },
+  "alone_TE00026": {
+    "crops": 1578,
+    "first": 0.9214,
+    "first_three": 0.9563
+  },
+  "alone_TE00026_first_round": {
+    "crops": 1578,
+    "first": 0.808,
+    "first_three": 0.8992
+  }
+}
