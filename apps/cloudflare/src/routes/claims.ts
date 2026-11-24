@@ -6,7 +6,7 @@ import { aliasCrop } from '../atlas3Aliases';
 import { characterIds, structureSource } from '../atlas3Reference';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
-import { cropGraphemes } from '../cropPanels';
+import { cropGraphemes, cropStructures } from '../cropPanels';
 import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
@@ -112,7 +112,7 @@ const PROBLEMS: Record<FormProblem | 'private', string> = {
   private: 'A private-use character names nothing without the namespace of its mapping.',
 };
 // The reader's own latest live claim in a crop's single-valued slot: one range of `assertion_crop`.
-export const ownClaimQuery = (predicate: 'has_form' | 'writes_word' | 'has_grapheme', owned: string) => `SELECT a.id,a.object,a.method,a.confidence,a.confidence_scheme,
+export const ownClaimQuery = (predicate: 'has_form' | 'writes_word' | 'has_grapheme' | 'built_as', owned: string) => `SELECT a.id,a.object,a.method,a.confidence,a.confidence_scheme,
   ${predicate === 'has_form' ? '(SELECT r.value FROM forms f JOIN representations r ON r.id=f.anchor WHERE f.id=a.object)' : 'NULL'} AS text
   FROM assertions a WHERE a.crop=? AND a.predicate='${predicate}' AND a.scope='' AND a.slot='' AND (a.asserted_by=? OR a.asserted_by IN ${owned})
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
@@ -260,6 +260,43 @@ export async function setGrapheme(env: Env, input: Json, named: string, actor: s
     : await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger);
   const result = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, replaced: own?.object ?? null }, ledger);
   return { id: publicId(crop.id), grapheme_claim: (await cropGraphemes(env, [crop.id])).get(crop.id) ?? null, replaced: result.replaced ?? null };
+}
+
+/** Say what structure one crop is built as where no recorded form names its shape (named as `setStructure`
+ *  names one), or take back the reader's own claim with no structure named. The reader's own form on the
+ *  crop is taken back by the same save: it would name the shape this one leaves open. A form chosen later
+ *  leaves the structure. Answers the crop's structure and form slots, the structure the save took back,
+ *  and the value of the form it took back (`replaced_form`). */
+export async function setCropStructure(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
+  const ledger = ledgerTools(env, tools, ctx);
+  const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: named, input });
+  const answer = async (crop: number, replaced: string | null, form: string | null) => ({ id: publicId(crop), structure: (await cropStructures(env, [crop])).get(crop) ?? null,
+    form: await formOfCrop(env, crop), replaced, replaced_form: form });
+  const saved = await savedSubmission(env, key, signature, tools.fail);
+  if (saved) {
+    const { crop } = await withCrop(env, saved, ledger.alias);
+    if (crop == null) tools.fail(404, NOT_HERE);
+    return answer(crop, saved.replaced ?? null, saved.form ?? null);
+  }
+  const found = input.char == null && input.structure == null ? null : await namedStructure(env, input, tools, ctx, true);
+  const crop = await ledger.crop(env, named), owned = ownedActors(actor);
+  const [own, form] = await Promise.all((['built_as', 'has_form'] as const).map(predicate => env.ATLAS.prepare(ownClaimQuery(predicate, owned)).bind(crop.id, actor).first<Own>()));
+  if (!found && !own) tools.fail(409, 'You have no structure on this crop to clear.');
+  sameVersion(crop, input.crop_version, tools.fail);
+  const at = new Date().toISOString(), plan: Plan = { statements: [], keys: [], crops: [crop.id] };
+  const add = (part: { statements: D1PreparedStatement[]; keys: Plan['keys'] }) => { plan.statements.push(...part.statements); plan.keys.push(...part.keys) };
+  if (!found) add(await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger));
+  else {
+    const { structure, source } = found;
+    const member: Member = { object: structure.id, value: null, confidence: null, confidence_scheme: null };
+    checkClaims('built_as', [member], { [structure.id]: 'structure' }, tools.fail);
+    if (source) plan.statements.push(structureRow(env, structure, source, actor, at));
+    add(await planClaim(env, { key, actor, crop, predicate: 'built_as', scope: '', members: [member], at, method: 'form-picker' }, ledger));
+    if (form) add(await planAction(env, { key: key + '/form', actor, target: form.id, action: 'retract', reason: 'replaced', admin: false, at }, ledger));
+  }
+  const replaced = { replaced: own?.object ?? null, form: found ? form?.text ?? null : null };
+  const result = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, ...replaced }, ledger);
+  return answer(crop.id, result.replaced ?? null, result.form ?? null);
 }
 
 // A form's `written_for` claims: the graphemes the form writes. A claim is not about a crop, so it has
@@ -725,7 +762,7 @@ export async function bookDates(env: Env, book: number | null): Promise<Json> {
 /** A write to the ledger: a claim, an action on one, a crop's form, reading, word or grapheme, or a fold of a structure. `null` for another path. */
 export async function claimWrite(env: Env, request: Request, path: string, me: { id: string; admin: boolean }, tools: ClaimTools,
   limit: () => Promise<void>, ctx?: ExecutionContext): Promise<Json | Response | null> {
-  const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|reading|word|grapheme)$/),
+  const acted = path.match(/^\/atlas\/claims\/([^/]+)\/actions$/), picked = path.match(/^\/atlas\/characters\/([^/]+)\/(form|reading|word|grapheme|structure)$/),
     linked = path.match(/^\/atlas\/forms\/([^/]+)\/(written_for|structure)$/);
   if (path !== '/atlas/claims' && path !== '/atlas/forms' && path !== '/atlas/structures/folds' && !acted && !picked && !linked) return null;
   // A claim, an action or a crop's form is a few small rows, and one address is held to a rate.
@@ -740,7 +777,8 @@ export async function claimWrite(env: Env, request: Request, path: string, me: {
       : await setWrittenFor(env, input, target, me.id, tools, ctx);
     if (picked) return picked[2] === 'word' ? await setWord(env, input, target, me.id, tools, ctx)
       : picked[2] === 'reading' ? await setReading(env, input, target, me.id, tools, ctx)
-      : picked[2] === 'grapheme' ? await setGrapheme(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
+      : picked[2] === 'grapheme' ? await setGrapheme(env, input, target, me.id, tools, ctx)
+      : picked[2] === 'structure' ? await setCropStructure(env, input, target, me.id, tools, ctx) : await setForm(env, input, target, me.id, tools, ctx);
     const ledger = ledgerTools(env, tools, ctx);
     return acted ? await actOnClaim(env, input, target, me.id, me.admin, ledger) : await writeClaim(env, input, me.id, ledger);
   } catch (error) {

@@ -13,6 +13,8 @@
   // last without a caption. A small seal character stands last in its 構形 and takes a number key only
   // after every other form has one. A form's 構形 is read before the form is shown, so the chips, and the
   // number keys with them, keep their places.
+  // Where no form names the crop's shape, its 構形 alone can be given and the form left for later: the ？ at
+  // the end of its character's own 構形, and any 構形 of the bar from the picker.
   // A signed-in reader opens the 構形 of the bar's forms to arrange them, where a form, typed, derived
   // or encoded, is filed under another 構形.
   import { untrack } from 'svelte'
@@ -23,8 +25,10 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
-  import { proposed, standing } from '../lib/structures.js'
+  import { builtAs, listForms, formOf, setWrittenFor } from '../lib/cropForms.js'
+  import { headTarget, proposed, standing } from '../lib/structures.js'
+  import { isDescription } from '../lib/ids.js'
+  import { isSeal } from '../lib/cardTiers.js'
   import { groupForms, keyOrder } from '../lib/formOffers.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -69,7 +73,7 @@
   const ownStructure = $derived(structureOf.get(current) ?? null)
   const relatedChars = $derived(new Set(listed.related.map(form => form.char)))
   const me = $derived(signedInUser()?.id ?? null)
-  const barGroups = $derived(groupForms(bar, { structureOf, related: relatedChars, own: (ownStructure?.part ?? ownStructure)?.id, proposed }))
+  const barGroups = $derived(groupForms(bar, { structureOf, related: relatedChars, own: (ownStructure?.part ?? ownStructure)?.id ?? builtAs(crop)[0]?.structure, proposed }))
   const captioned = $derived(barGroups.some(group => group.label))
   // The bar's forms in the order the number keys reach them.
   const ordered = $derived(keyOrder(barGroups))
@@ -90,6 +94,26 @@
     ['derived', t('chips.derived'), listed.derived],
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   function choose(char) { onchoose(char === chosen ? null : char) }
+  // The 構形 the crop is said to be built as, and the one chosen here (`{ structure, label, target }`; with
+  // no `target` the reader's own word is taken back).
+  const built = $derived(builtAs(crop))
+  const mineBuilt = $derived(me ? built.find(value => value.by.includes(me)) : null)
+  const open = $derived(chosen && typeof chosen === 'object' ? chosen : null)
+  // What names a block's 構形 in a save: an encoded character its description puts there, else a described
+  // form, else a regional shape of the crop's character, else its id, which a claim has named.
+  function targetOf(block) {
+    const ranked = block.forms.flatMap(form => {
+      const stands = structureOf.get(form.char)
+      if (!stands || stands.by) return []
+      const [rank, target] = form.regions ? [1, { char: form.char, of: written }] : isDescription(form.char) ? [2, { char: form.char }] : isSeal(form.char) ? [1.5, { char: form.char }] : [3, { char: form.char }]
+      return (stands.part ?? stands).id === block.id ? [[rank, target]] : stands.id === block.id && headTarget(stands, target) ? [[rank / 10, headTarget(stands, target)]] : []
+    }).sort((a, b) => b[0] - a[0])
+    return ranked[0]?.[1] ?? { structure: block.id }
+  }
+  function leaveOpen(block) { onchoose(open?.structure === block.id ? null : { structure: block.id, label: block.label, target: targetOf(block) }) }
+  const blocks = $derived(others ? [] : barGroups.flatMap(group => group.blocks).filter(block => block.label))
+  const shapes = $derived(new Map(blocks.filter(block => block.forms.some(form => form.char === written) || built.some(value => value.structure === block.id) || open?.structure === block.id)
+    .map(block => [block.id, { title: t('form.structureOnly.title', { structure: block.label }), chosen: open?.structure === block.id, current: !chosen && built.some(value => value.structure === block.id) }])))
   // The grapheme's forms changed for every crop of its family, so the card is read again after a save.
   async function reload() {
     const id = crop?.id, char = written
@@ -166,19 +190,26 @@
 
 <div class="crop-form" bind:this={root}>
   <div class="form-row copyable" class:captioned>
-    <FormChips groups={barGroups} order={ordered} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
-      {#if !others}<CopyValue value={chosen ?? current} />{/if}
+    <FormChips groups={barGroups} order={ordered} open={shapes} onopen={leaveOpen} {chosen} {current} {disabled} label={t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
+      {#if !others}<CopyValue value={open ? open.label ?? written : chosen ?? (current || written)} />{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} {disabled} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
   </div>
   {#if others && ownStructure}
     <div class="form-own"><span class="form-own-label">{t('chips.structure')}</span><span><IdsLabel text={(ownStructure.part ?? ownStructure).label} />{#if proposed(current, ownStructure.by)}<sup title={t('chips.derived')}>*</sup>{/if}</span></div>
   {/if}
+  {#if built.length && !others}
+    <div class="form-built" class:dropped={open && !open.target}><span class="form-own-label">{t('chips.structure')}</span>
+      {#each built as value, i (value.structure)}{#if i} / {/if}<IdsLabel text={value.label} />{/each}
+      {#if mineBuilt}<button type="button" class="form-unlink" {disabled} aria-pressed={Boolean(open && !open.target)} onclick={() => onchoose(open && !open.target ? null : { structure: null, label: null, target: null })}
+        aria-label={t('form.structureOnly.remove', { structure: mineBuilt.label })} title={t('form.structureOnly.remove', { structure: mineBuilt.label })}>×</button>{/if}
+    </div>
+  {/if}
   {#if me && !others && captioned}
     <button type="button" class="form-arrange" {disabled} aria-haspopup="dialog" onclick={() => arranging = true}>{t('structure.arrange')}</button>
   {/if}
   {#if arranging}
-    <StructureDialog of={written} forms={arranged} known={structureOf} read={stands} current={chosen ?? current} close={() => arranging = false} changed={rearranged} />
+    <StructureDialog of={written} forms={arranged} known={structureOf} read={stands} current={open ? current : chosen ?? current} close={() => arranging = false} changed={rearranged} />
   {/if}
   {#if linkedHere || canLink}
     <div class="form-link">
@@ -208,6 +239,17 @@
           </div>
         </div>
       {/each}
+      {#if blocks.length && !q}
+        <div class="form-section">
+          <span class="form-section-title">{t('form.structureOnly')}</span>
+          <div class="form-options">
+            {#each blocks as block (block.id)}
+              <button type="button" class="form-option form-structure" class:chosen={open?.structure === block.id} {disabled} aria-pressed={open?.structure === block.id}
+                title={t('form.structureOnly.title', { structure: block.label })} onclick={() => { picking = false; leaveOpen(block) }}><span lang="zh">{block.label}</span></button>
+            {/each}
+          </div>
+        </div>
+      {/if}
       {#if composing}
         <IdsComposer {disabled} start={query.trim()} char={written} onuse={char => add({ char })} />
       {:else}
@@ -233,6 +275,9 @@
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .form-picker :global(.character-search){width:100%;min-width:0}
+  .form-built{display:flex;align-items:baseline;gap:8px;font-size:14px;line-height:22px}
+  .form-built.dropped :global(.ids-label){text-decoration:line-through;color:var(--muted)}
+  .form-option.form-structure{font-family:var(--char-font);font-size:15px;border-style:dashed}
   .form-section{display:flex;flex-direction:column;gap:6px}
   .form-section-title{font-size:11px;color:var(--muted)}
   .form-options{display:flex;flex-wrap:wrap;gap:6px}
