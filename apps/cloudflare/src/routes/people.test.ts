@@ -11,6 +11,7 @@ import { StaleCrop } from '../atlas3Crops';
 import { canonical } from '../index';
 import { Problem } from '../busy';
 import { bookDatingQuery } from '../dating';
+import { anchoredForm, representationId, typed, type Representation } from '../representation';
 import { FAVOURITES_HELD, FavouriteError, favouriteCountQuery, favouriteCrops, favouriteIds, favouriteIdsQuery, favouritePageQuery,
   setFavourite } from './favourites';
 import { decodeCursor, encodeCursor, history, historyQuery } from './history';
@@ -193,11 +194,13 @@ describe('the history', () => {
 
   it('reads each page by index, never the whole journal', () => {
     const { atlas } = setup();
-    for (const [actors, label, cursor] of [[null, null, null], [[1, 2], null, { at: 5, src: 0, id: 3 }], [null, { text: 'あ', shown: 1 }, null],
-      [[1], { text: 'い', shown: 2 }, { at: 5, src: 1, id: 3 }]] as const) {
+    for (const [actors, label, cursor] of [[null, null, null], [[1], null, { at: 5, src: 0, id: 3 }], [null, { text: 'あ', shown: 1, form: 'fm:1' }, null],
+      [[1], { text: 'い', shown: 2, form: 'fm:2' }, { at: 5, src: 1, id: 3 }], [null, null, { at: 5, src: 2, id: 3 }]] as const) {
       const { sql, values } = historyQuery(actors as number[] | null, label, cursor);
       const details = plan(atlas, sql, [...values, 41]);
-      expect(scans(details, ['events', 'submissions', 'seen', 'graphemes', 'pages', 'crops'])).toEqual([]);
+      expect(scans(details, ['events', 'submissions', 'seen', 'graphemes', 'pages', 'crops', 'assertions', 'structures', 'forms', 'representations', 'actors'])).toEqual([]);
+      expect(details.some(d => /INDEX ledger_structure_/.test(d))).toBe(true);
+      expect(details.some(d => /^SCAN l(?! USING INDEX ledger_structure_at)/.test(d))).toBe(false);
       if (actors) expect(details.some(d => /SEARCH events USING INDEX event_actor_history/.test(d) || /SEARCH events USING INDEX event_shown/.test(d))).toBe(true);
       if (label && !actors) expect(details.some(d => /event_shown/.test(d))).toBe(true);
       if (label && !actors) expect(details.some(d => /submission_label/.test(d))).toBe(true);
@@ -232,9 +235,54 @@ describe('the history', () => {
     expect(read.flat().map(i => i.id)).toEqual(want);
   });
 
+  // Structures and the saves that arrange them, as `setStructure` and `setFold` write them.
+  function arranged(atlas: Database) {
+    const structure = (id: string, label: string) => atlas.prepare(`INSERT INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,'ids','1','p','u1','now')`).run(id, label);
+    structure('st:a', '⿰言兌'); structure('st:b', '⿱自犬'); structure('st:c', '⿰糸宿');
+    const form = ['fm:1', '説'];
+    atlas.prepare("INSERT INTO representations(id,scheme,value) VALUES('rp:1','unicode',?)").run(form[1]);
+    atlas.exec("INSERT INTO forms(id,anchor,created_by,created_at) VALUES('fm:1','rp:1','u1','now')");
+    const save = (id: string, m: number, request: object, subject: string, replaced: unknown, claim: [string, string] | null, actor = 'u1') => {
+      atlas.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)').run(`${actor}:${id}`, actor, canonical(request), canonical({ submission: id, subject, replaced }), minute(m));
+      if (claim) atlas.prepare(`INSERT INTO assertions(id,submission,subject,predicate,object,tier,asserted_by,asserted_at) VALUES(?,?,?,?,?,'observed',?,?)`)
+        .run(id, `${actor}:${id}`, subject, claim[0], claim[1], actor, minute(m));
+    };
+    save('s1', 20, { form: '説', structure: { char: '說' } }, 'fm:1', [], ['has_structure', 'st:a']);
+    save('s2', 21, { form: '説', structure: { char: '臭', replace: true } }, 'fm:1', ['st:a'], ['has_structure', 'st:b']);
+    // Filed again where it stands: nothing changed.
+    save('s3', 22, { form: '説', structure: { char: '臭' } }, 'fm:1', [], null);
+    save('s4', 23, { fold: { from: { char: '臭' }, into: { char: '縮' } } }, 'st:b', null, ['folds_into', 'st:c'], 'u2');
+    save('s5', 24, { form: '説', structure: { structure: 'st:b', remove: true } }, 'fm:1', ['st:b'], null);
+    save('s6', 25, { fold: { from: { structure: 'st:b' }, remove: true } }, 'st:b', 'st:c', null, 'u2');
+    // A save of another kind.
+    save('s7', 26, { crop: 'x', input: { form: '説' } }, 'x', null, ['has_form', 'fm:1']);
+  }
+  it('lists each arrangement of 構形 that changed something, with what it went between', async () => {
+    const { atlas, env } = setup();
+    arranged(atlas);
+    const read = async (params = {}) => (await pages(b => history(env, new URLSearchParams({ limit: '2', ...params, ...(b ? { before: b } : {}) }), 'u1', tools))).flat();
+    const rows = (await read()).filter(i => i.kind === 'filing' || i.kind === 'fold');
+    expect(rows.map(i => [i.kind, i.label, i.from, i.into, i.reviewer.name, i.reviewer.mine])).toEqual([
+      ['fold', '⿱自犬', '⿰糸宿', null, 'anon-00aa11', false], ['filing', '説', '⿱自犬', null, 'Ada', true], ['fold', '⿱自犬', null, '⿰糸宿', 'anon-00aa11', false],
+      ['filing', '説', '⿰言兌', '⿱自犬', 'Ada', true], ['filing', '説', null, '⿰言兌', 'Ada', true]]);
+    expect(rows[1]).toMatchObject({ at: minute(24), form: 'fm:1', target: null });
+    // They stand among the reviews, newest first, and narrow with them.
+    expect((await read()).map(i => i.at)).toEqual((await read()).map(i => i.at).sort().reverse());
+    expect((await read({ user: 'u2' })).filter(i => i.kind === 'fold').length).toBe(2);
+    expect((await read({ user: 'u2' })).some(i => i.kind === 'filing')).toBe(false);
+  });
+
+  it('narrows arrangements to those of one form', async () => {
+    const { atlas, env } = setup();
+    arranged(atlas);
+    atlas.exec(`UPDATE ledger_submissions SET response=json_set(response,'$.subject','${await anchoredForm(await representationId(typed('説') as Representation))}') WHERE id IN ('u1:s1','u1:s5')`);
+    const { items } = await history(env, new URLSearchParams({ label: '説' }), 'u1', tools);
+    expect(items.map((i: Json) => [i.kind, i.id[0]])).toEqual([['filing', 'a'], ['filing', 'a']]);
+  });
+
   it('keeps a cursor to its three numbers', () => {
     expect(decodeCursor(encodeCursor({ at: 5, src: 1, id: 9 }))).toEqual({ at: 5, src: 1, id: 9 });
-    for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,2,3]'), btoa('["1",0,3]'), btoa('["soon","cf:x"]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
+    for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,3,3]'), btoa('["1",0,3]'), btoa('["soon","cf:x"]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
   });
 
   it('goes on from a page loaded before the cutover, from before its last row\'s time', async () => {
@@ -297,6 +345,17 @@ describe('the ranking', () => {
     const after = await rankingRows(env);
     expect(after).toMatchSnapshot();
     expect(after.map(r => [r.name, r.total])).toEqual([['Ada', 6], ['anon-00aa11', 3], [null, 1]]);
+  });
+  it('counts each form filed and each structure folded that still stands', async () => {
+    const { atlas, env } = setup();
+    const before = new Map((await rankingRows(env)).map(r => [r.user, r.total]));
+    const claim = atlas.prepare(`INSERT INTO assertions(id,submission,subject,predicate,object,tier,asserted_by,asserted_at) VALUES(?,?,?,?,?,'observed','u1','${minute(1)}')`);
+    claim.run('f1', 'u1:s1', 'fm:1', 'has_structure', 'st:a');
+    claim.run('f2', 'u1:s2', 'fm:2', 'has_structure', 'st:a');
+    claim.run('f3', 'u1:s3', 'st:a', 'folds_into', 'st:b');
+    atlas.exec(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at) VALUES('r1','u1:s4','f2','retract','u1','${minute(2)}')`);
+    const after = new Map((await rankingRows(env)).map(r => [r.user, r.total]));
+    expect(after.get('u1')! - before.get('u1')!).toBe(2);
   });
   it('reads each table by index, the reviews from the running totals', () => {
     const { atlas } = setup();

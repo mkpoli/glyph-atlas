@@ -10,6 +10,8 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { t, withText, formatDateTime, localize } from '../lib/i18n.svelte.js'
   import { groupRuns } from '../lib/historyGroups.js'
+  import { characterAddress } from '../lib/addresses.js'
+  import { isSequence } from '../lib/ids.js'
   import { holdsLegacyReviewer, sessionStarted } from '../lib/session.svelte.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
@@ -72,6 +74,16 @@
     if (item.verdict === 'unsure') return t('history.decision.unsure')
     return t('history.decision.reported')
   }
+  // An arrangement of 構形 in its words and the structures it names, in the order the language puts them.
+  const isArranged = item => item.kind === 'filing' || item.kind === 'fold'
+  function arrangedLine(item) {
+    const key = item.kind === 'fold' ? (item.into ? 'merged' : 'split') : item.into ? (item.from ? 'moved' : 'filed') : 'taken'
+    return t(`history.decision.${key}`, { from: '\u0001', structure: '\u0002' }).split(/([\u0001\u0002])/)
+      .filter(Boolean).map(part => part === '\u0001' ? { label: item.from } : part === '\u0002' ? { label: item.into ?? item.from } : { words: part })
+  }
+  // Where an arrangement's form is shown: its character's page, or the page of a described form or a figure.
+  const formAddress = item => item.kind !== 'filing' || !item.label ? null
+    : [...item.label].length === 1 && !isSequence(item.label) ? characterAddress('U+' + item.label.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')) : `/form/${encodeURIComponent(item.form)}`
   // A batch correction's edits arrive together; they read as one row, undone together.
   const rows = $derived(items.reduce((list, item) => {
     const last = list.at(-1)
@@ -147,6 +159,13 @@
                   <span class="history-label">{@render label(item.label)}</span>
                   <span class="history-decision"><ScriptLine line={decisionText(item)} />{#if item.also && hasIssueTitle(item.also)} · {t(`issue.${item.also}.title`)}{/if}</span>
                 </div>
+              {:else if isArranged(item)}
+                <svelte:element this={formAddress(item) ? 'a' : 'div'} class="history-row" href={formAddress(item) ? localize(formAddress(item)) : undefined}>
+                  <span class="history-time">{when(item.at)}</span>
+                  {@render reviewer(item)}
+                  <span class="history-label">{@render label(item.label)}</span>
+                  <span class="history-decision arranged">{#each arrangedLine(item) as part, i (i)}{#if part.words}{part.words}{:else}<span class="history-structure" lang="zh">{part.label ?? t('history.noLabel')}</span>{/if}{/each}</span>
+                </svelte:element>
               {:else}
                 <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
                         aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
@@ -222,6 +241,9 @@
     background: transparent; padding: 14px 6px; font-size: 13px; text-align: left;
   }
   .history-row:hover { background: var(--surface-tile); }
+  a.history-row { color: inherit; text-decoration: none; }
+  .history-decision.arranged { white-space: normal; overflow-wrap: anywhere; }
+  .history-structure { font-family: var(--char-font); font-size: 15px; }
   .history-row.undo .history-decision { color: var(--wrong); }
   .history-row.passed .history-decision { color: var(--muted); }
   .history-year { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
