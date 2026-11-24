@@ -50,7 +50,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import evidence, han_components, images, refs, visual_families, written_with
+from .. import evidence, han_components, images, refs, representation, visual_families, written_with
 from ..production import production_info
 from ..representation import written
 from ..schema import Box, Character, Document, Page, Unit
@@ -134,6 +134,27 @@ class LayerEdit(BaseModel):
     issue: Literal["character", "crop", "merged", "blank", "unclear", "other"] = "character"
     #: The box is wrong too, beside a wrong or joined character: the crop stays reported for it.
     bad_crop: bool = False
+    #: A form claimed with the character it is a form of, on the evidence version the reviewer saw.
+    form: str | None = Field(default=None, min_length=1, max_length=256)
+    crop_version: str | None = Field(default=None, min_length=1, max_length=1024)
+
+
+def _form_of(edit: LayerEdit) -> str | None:
+    """The form a correction claims, checked against the character it names, as the Worker checks it."""
+    if edit.form is None:
+        return None
+    if edit.character is None or edit.crop_version is None:
+        raise BadRequest("A form is claimed with the character it is a form of, on the crop it was seen on.")
+    form = identity_text(edit.form)
+    try:
+        named = representation.typed(form)
+    except ValueError as error:
+        raise BadRequest(str(error)) from error
+    character = identity_text(canonical_identity(edit.character))
+    written = {"ids": character, "ivs": named.value[0]}.get(named.scheme, named.value)
+    if written != character:
+        raise BadRequest("This form is another character's.")
+    return form
 
 
 def _source_digest(store: Store, unit: Unit) -> str | None:
@@ -1264,6 +1285,12 @@ def router(store: Store) -> APIRouter:
                 "total_kind": payload["total_kind"], "available": len(items),
                 "items": items}
 
+    def claim_form(edit: LayerEdit, unit_id: str, version: str) -> None:
+        """Claim a correction's form on the crop as the correction leaves it; a repeat claims nothing more."""
+        if (form := _form_of(edit)) is not None:
+            store.set_form(key=f"{edit.client_id}:{edit.id}", actor=edit.client_id, request={"layer": edit.model_dump(mode="json")},
+                           crop=unit_id, crop_version=version, form=form)
+
     @api.post("/layers/units/{unit_id}")
     def correct(unit_id: str, edit: LayerEdit) -> dict[str, Any]:
         """Correct the character or the crop of one occurrence — each in its own layer.
@@ -1290,12 +1317,13 @@ def router(store: Store) -> APIRouter:
         if any(row["review"]["target_id"] != unit_id for row in previous):
             raise HTTPException(409, "This submission id was already used for another occurrence.")
         if previous:
-            evidence = next((json.loads(row["review"]["evidence"]) for row in previous
+            recorded = next((json.loads(row["review"]["evidence"]) for row in previous
                              if row["field"] == "review" and row["review"]["evidence"]), {})
-            if evidence.get("request") != edit.model_dump(mode="json"):
+            if recorded.get("request") != edit.model_dump(mode="json"):
                 raise StoreError("This submission id was already used for a different correction.")
-            correction = evidence.get("layer_correction", {})
-            return {"results": previous, "duplicate": True, "resolved": bool(evidence.get("resolved")),
+            claim_form(edit, unit_id, edit.crop_version)
+            correction = recorded.get("layer_correction", {})
+            return {"results": previous, "duplicate": True, "resolved": bool(recorded.get("resolved")),
                     "changed": correction.get("changed", []),
                     "layers": {key: value for key, value in correction.items() if key != "changed"}}
 
@@ -1306,6 +1334,8 @@ def router(store: Store) -> APIRouter:
         digest = _source_digest(store, unit)
         if edit.image_sha256 != digest:
             raise HTTPException(409, "The source image changed. Reload this occurrence.")
+        if _form_of(edit) is not None and edit.crop_version != evidence.crop_version(unit.id, digest, unit.box):
+            raise HTTPException(409, "This crop was cut again. Reload it.")
 
         if edit.box is not None:
             page = _page(store, unit.page_id) if unit.page_id else None
@@ -1396,6 +1426,7 @@ def router(store: Store) -> APIRouter:
                                 ensure_ascii=False),
         ))
         results = store.record_batch(requests)
+        claim_form(edit, unit_id, evidence.crop_version(unit.id, digest, edit.box or unit.box))
         # The counts a reader sees next must be the counts after this correction, which the journal
         # stamp already says: nothing else to invalidate.
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 from uuid import uuid4
 
 import pytest
@@ -694,6 +694,24 @@ def test_a_retried_correction_answers_the_first_result(dataset):
     changed = api.post(f"/layers/units/{unit['id']}", json={**payload, "character": "U+5B50"})
     assert changed.status_code == 400, changed.text
     assert "submission id" in changed.json()["detail"]
+
+
+def test_a_form_is_claimed_with_the_character_it_is_a_form_of(dataset):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
+    version = api.get(f"/atlas/characters/{quote(unit['id'], safe='')}").json()["crop_version"]
+    payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"], "image_sha256": digest_of(dataset),
+               "character": "子", "verdict": "wrong", "issue": "character", "form": "子", "crop_version": version}
+    events = len(Store(dataset).events())
+    for refused in ({"form": "⿰木"}, {"form": "孑"}, {"form": "孑\U000e0100"}, {"crop_version": None}, {"character": None}):
+        assert api.post(f"/layers/units/{unit['id']}", json={**payload, **refused}).status_code == 422, refused
+    assert api.post(f"/layers/units/{unit['id']}", json={**payload, "crop_version": "another"}).status_code == 409
+    assert len(Store(dataset).events()) == events and not Store(dataset).forms_for({unit["id"]: version})
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).status_code == 200
+    saved = Store(dataset).forms_for({unit["id"]: version})[unit["id"]]
+    assert [value["text"] for value in saved["values"]] == ["子"]
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).json()["duplicate"] is True
+    assert Store(dataset).forms_for({unit["id"]: version})[unit["id"]] == saved
 
 
 def test_a_correction_refuses_a_second_character_and_a_stale_revision(dataset):

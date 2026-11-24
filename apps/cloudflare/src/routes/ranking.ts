@@ -5,9 +5,9 @@
 // however many members or rows its submission wrote. A person's claims are the ones a submission
 // wrote; a source's or a model's (written by a publication, with none), one moved from the written
 // forms (counted as their archived row), and the claim naming a form that a first choice writes
-// beside it count as nobody's. A form chosen as
-// another member of the crop's grapheme also renames the crop by a review, which its claim names
-// (`input.review`), and counts once, as that review. A user counts the work of every id they hold; an
+// beside it count as nobody's. A form claimed by the
+// review that names its character counts once, as that review: the two share a submission, or, for one
+// saved before they did, the claim's request names the review (`input.review`). A user counts the work of every id they hold; an
 // old reviewer id nobody holds counts on its own.
 //
 // Reviews are each actor's running total in `actor_stats`, which every review batch and undo keeps, so
@@ -28,7 +28,7 @@ export const rankingQuery = () => `WITH work(actor,n) AS (
       LEFT JOIN ledger_submissions l ON l.id=a.submission
       WHERE a.submission IS NOT NULL AND a.legacy IS NULL AND a.predicate<>'represented_by'
       AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')
-      AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.key=l.actor||':'||json_extract(l.request,'$.input.review') AND s.undone=0)
+      AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.key IN (a.submission,l.actor||':'||json_extract(l.request,'$.input.review')) AND s.undone=0)
       GROUP BY a.asserted_by
     UNION ALL SELECT actor,count(DISTINCT assertion) FROM assertion_actions WHERE action IN ('accept','reject','adjudicate') GROUP BY actor),
   who(key,user,actor,n) AS (SELECT coalesce(a.user,'actor:'||w.actor),a.user,w.actor,w.n FROM work w LEFT JOIN actors a ON a.key=w.actor)

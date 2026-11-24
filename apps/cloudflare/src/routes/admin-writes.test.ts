@@ -14,9 +14,9 @@ import type { CropChange, Submission } from './review';
 const reverted: [number, number, { by: string; reason: string; reviewer?: number[] } | undefined][] = [];
 let blocked = new Set<number>();
 mock.module('./review', () => ({
-  revert: async (_env: Env, submission: Submission, actor: number, rejection?: { by: string; reason: string; reviewer?: number[] }) => {
+  revert: async (_env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }) => {
     if (blocked.has(submission.id)) throw new Problem(409, 'A later review changed this crop. It cannot be undone.');
-    reverted.push([submission.id, actor, rejection]);
+    reverted.push([submission.id, actor, rejection && { by, ...rejection }]);
     return { results: [] };
   },
   actorFor: async (env: Env, user: string) => (await env.ATLAS.prepare('SELECT id FROM actors WHERE key=?').bind(user).first<{ id: number }>())!.id,

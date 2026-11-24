@@ -230,7 +230,7 @@ export async function reject(env: Env, admin: string, input: Json, tools: AdminT
   for (const submission of rows) {
     if (spent && spent + submission.crops > REJECT_CROPS) break;
     spent += submission.crops; done.push(submission);
-    try { await revert(env, submission, actor, { by: admin, reason, reviewer }); rejected++ }
+    try { await revert(env, submission, actor, admin, { reason, reviewer }); rejected++ }
     catch (error) {
       // A crop someone else has changed since stays as it is; a crop no longer in the collection
       // cannot be put back. Either way the rest go on.
