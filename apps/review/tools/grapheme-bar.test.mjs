@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { NO_FORMS, foldGroups, graphemeChips, listedOf } from '../src/lib/graphemeBar.js'
+import { NO_FORMS, barKey, foldGroups, graphemeChips, listedOf } from '../src/lib/graphemeBar.js'
 import { chipsOf, groupForms } from '../src/lib/formOffers.js'
 
 // 図's family, cut: 圖 has two regional shapes and a figure, 图 a loan, 啚 is a variant of 圖 outside it, and
@@ -53,15 +53,22 @@ describe('the bar of a whole grapheme', () => {
 
 describe('what a bar lists before it is read', () => {
   const chars = ({ ready, listed }) => [ready, (listed.chips ?? listed.members).map(form => form.char)]
-  const own = { ...NO_FORMS, char: '図', whole: false, members: [{ char: '図' }, { char: '圖' }] }, whole = { ...NO_FORMS, char: '図', whole: true, chips: [{ char: '圖' }, { char: '図' }] }
+  const bar = (key, chips) => ({ ...NO_FORMS, key, chips: chips.map(char => ({ char })) })
+  const assigned = barKey('a', '図', false, ['図', '図']), whole = barKey('a', '図', true, ['図', '図'])
   it('is the character a crop has, and nothing for one with none', () => {
-    expect(chars(listedOf({ char: null, whole: false, ...NO_FORMS }, '図', false))).toEqual([true, ['図']])
-    expect(chars(listedOf({ char: null, whole: false, ...NO_FORMS }, '図', true))).toEqual([false, []])
+    const nothing = { key: null, ...NO_FORMS }
+    expect([chars(listedOf(nothing, assigned, '図', false)), chars(listedOf(nothing, whole, '図', true))]).toEqual([[true, ['図']], [false, []]])
   })
   it('is never the bar of a crop of the other kind', () => {
-    expect([chars(listedOf(own, '図', false)), chars(listedOf(own, '図', true))]).toEqual([[true, ['図', '圖']], [false, []]])
-    expect([chars(listedOf(whole, '図', true)), chars(listedOf(whole, '図', false))]).toEqual([[true, ['圖', '図']], [true, ['図']]])
-    expect(chars(listedOf(whole, '所', true))).toEqual([false, []])
+    expect(chars(listedOf(bar(assigned, ['図', '圖']), whole, '図', true))).toEqual([false, []])
+    expect(chars(listedOf(bar(whole, ['圖', '図']), assigned, '図', false))).toEqual([true, ['図']])
+    expect(chars(listedOf(bar(whole, ['圖', '図']), whole, '図', true))).toEqual([true, ['圖', '図']])
+  })
+  it('is never another crop’s where it has no character, or that of another name its source gives', () => {
+    for (const next of [barKey('b', '図', true, ['図', '図']), barKey('a', '図', true, ['圖', '図']), barKey('a', '所', true, ['図', '図'])])
+      expect(chars(listedOf(bar(whole, ['圖', '図']), next, '図', true))).toEqual([false, []])
+    // A character's bar is the same from crop to crop.
+    expect(barKey('b', '図', false, ['圖', '図'])).toBe(assigned)
   })
 })
 

@@ -29,21 +29,23 @@
   import { baseOf, builtAs, listForms, listGrapheme, formOf } from '../lib/cropForms.js'
   import { proposed, standing, structureTarget } from '../lib/structures.js'
   import { chipsOf, groupForms } from '../lib/formOffers.js'
-  import { NO_FORMS, foldGroups, listedOf } from '../lib/graphemeBar.js'
+  import { NO_FORMS, barKey, foldGroups, listedOf } from '../lib/graphemeBar.js'
   import { graphemeChar, isUnassigned } from '../lib/identity.js'
   import { signedInUser } from '../lib/session.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing. `onchoose` is given the form, and the character choosing it names.
   let { crop, chosen = null, onchoose, disabled = false, others = false } = $props()
-  let offered = $state({ char: null, whole: false, ...NO_FORMS }), added = $state([]), attempt = $state(0)
+  let offered = $state({ key: null, ...NO_FORMS }), added = $state([]), attempt = $state(0)
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false)
   let arranging = $state(false), expanded = $state(false)
   const unassigned = $derived(isUnassigned(crop))
   // The character whose forms are asked for: the crop's own, or its grapheme's where it has none.
   const asked = $derived(unassigned ? graphemeChar(crop) ?? '' : crop?.written_character ?? crop?.label ?? '')
-  const list = char => unassigned ? listGrapheme(char, [crop?.source_label, crop?.label]) : listForms(char)
+  const focal = $derived([crop?.source_label ?? null, crop?.label ?? null])
+  const key = $derived(barKey(crop?.id, asked, unassigned, focal))
+  const list = char => unassigned ? listGrapheme(char, focal) : listForms(char)
   const current = $derived(formOf(crop))
   // The 構形 each form stands under, by the form's text; a form the site knows no structure of has
   // none. The crop's character is named too, for its regional shapes.
@@ -55,18 +57,18 @@
   const composed = (names, known = new Map(), of) => stands(names, known, of).catch(() => known)
   const formsIn = found => found.chips ?? [...found.members, ...found.variants, ...found.related]
   $effect(() => {
-    const id = crop?.id, char = asked, whole = unassigned, own = untrack(() => current)
+    const id = crop?.id, bar = key, char = asked, whole = unassigned, own = untrack(() => current)
     attempt
     added = []; picking = false; query = ''; failed = false; composing = false; arranging = false; expanded = false
     list(char).then(found => [found, false], () => [whole ? null : { ...NO_FORMS, members: [{ char }] }, true])
       .then(async ([found, unread]) => {
         const read = found ? await composed([own, ...formsIn(found).map(form => form.char)], new Map(), shapedIn(found, char)) : new Map()
-        if (id !== crop?.id || char !== asked || whole !== unassigned) return
-        if (found) { structureOf = read; offered = { char, whole, ...found } }
+        if (id !== crop?.id || bar !== key) return
+        if (found) { structureOf = read; offered = { key: bar, ...found } }
         failed = unread
       })
   })
-  const { ready, listed } = $derived(listedOf(offered, asked, unassigned))
+  const { ready, listed } = $derived(listedOf(offered, key, asked, unassigned))
   // The character the forms stand around: the crop's own, or its grapheme's head.
   const written = $derived(listed.of ?? asked)
   // The grapheme's forms and related characters: its members, its variants, and its related characters, which

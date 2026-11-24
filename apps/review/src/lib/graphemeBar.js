@@ -54,11 +54,14 @@ export function graphemeChips(found, figures, focal = []) {
 
 /** A bar no form has been read for. */
 export const NO_FORMS = { members: [], variants: [], related: [], derived: [], alike: [] }
-/** What a crop's bar lists of the forms last read (`offered`: of the character `char`, or with `whole` of its whole
- *  grapheme): those read for a crop as it is, or until then its own character alone. A crop with no character
- *  (`whole`) lists nothing until then, and is not `ready`: what choosing a form assigns is not known. */
-export function listedOf(offered, char, whole) {
-  const read = offered.char === char && offered.whole === whole
+/** What a crop's bar is read for, as one string: its character `char`, or with no character of its own (`whole`) the
+ *  crop itself, and the characters its source names its grapheme by (`focal`). */
+export const barKey = (id, char, whole, focal) => JSON.stringify(whole ? [char, id, focal] : [char])
+/** What a crop's bar lists of the forms last read (`offered`): those read for its `key`, or until then its character
+ *  `char` alone. A crop with no character (`whole`) lists nothing until then, and is not `ready`: what choosing a
+ *  form assigns is not known. */
+export function listedOf(offered, key, char, whole) {
+  const read = offered.key === key
   return { ready: read || !whole, listed: read ? offered : { ...NO_FORMS, members: whole ? [] : [{ char }] } }
 }
 
