@@ -1,14 +1,14 @@
 <script>
   // One grapheme and the forms it gathers, with their own code points and counts: 仮 and 假 under one
-  // heading. The heading links to the grapheme's page (the collection narrowed to it when it has none); choosing a form opens that form's own gallery;
-  // "All forms" chooses the whole family. The grapheme browser shows it over a pointed tile, and the
-  // search box for each grapheme a query names.
+  // heading. The heading links to the grapheme's page (the collection narrowed to it when it has none);
+  // choosing a form opens that form's own gallery. The grapheme browser shows it over a pointed tile, and
+  // the search box for each grapheme a query names.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { number } from '../lib/client.js'
   import { t, localize } from '../lib/i18n.svelte.js'
-  import { graphemeAddress } from '../lib/gallery.js'
+  import { graphemeAddress } from '../lib/addresses.js'
 
-  let { group, onchoose = () => {}, onform = () => {} } = $props()
+  let { group, onform = () => {} } = $props()
   const codes = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 </script>
 
@@ -24,7 +24,6 @@
       </button></li>
     {/each}
   </ul>
-  <button type="button" class="card-all" onclick={() => onchoose(group.key)}>{t('chips.allForms')}</button>
 </div>
 
 <style>
@@ -37,6 +36,4 @@
   li button:hover,li button:focus-visible{background:var(--accent-light);color:var(--accent)}
   code{font-family:"GenZui Sans",ui-monospace,monospace;font-size:10px;color:var(--muted)}
   li small{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-  .card-all{display:block;min-height:0;width:100%;margin-top:6px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;padding:8px 6px 2px;text-align:left;font-size:12px;color:var(--accent)}
-  .card-all:hover,.card-all:focus-visible{text-decoration:underline;text-underline-offset:3px}
 </style>

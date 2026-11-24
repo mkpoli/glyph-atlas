@@ -36,7 +36,6 @@
     tokenLabel = '',
     ontokenclear = () => {},
     groupOf = null,
-    onchoosegroup = () => {},
     onform = () => {},
     // Rows name the code point rather than the reading.
     codePoints = false,
@@ -350,7 +349,7 @@
       {#if failed}<p class="candidate-status" role="alert">{t('search.failed')} <button type="button" onclick={() => seek(value)}>{t('common.tryAgain')}</button></p>{/if}
       {#if carded}
         {#each cards as group (group.key)}
-          <div class="search-card"><GraphemeCard {group} onchoose={key => chose(onchoosegroup, key)} onform={form => chose(onform, form)} /></div>
+          <div class="search-card"><GraphemeCard {group} onform={form => chose(onform, form)} /></div>
         {/each}
         {#if others.length}
           <details class="candidate-others"><summary>{t('search.others', { count: others.length })}</summary>

@@ -43,8 +43,8 @@ export const rowNamed = (row, key) => rowGrapheme(row) === key || codesOf(row.la
 
 /**
  * What a chosen tile opens: the gallery of a tile that counts corpus glyphs, which the collection's own
- * listing leaves out (`corpus`, whether the tiles count them), a grapheme's whole family or, `alone`, its
- * one character; any other narrows the listing to the tile's own key, keeping the listing's filters.
+ * listing leaves out (`corpus`, whether the tiles count them), the grapheme's or, `alone`, its one
+ * character's (`of`); any other narrows the listing to the tile's own key, keeping the listing's filters.
  */
 export const tileOpens = (group, corpus) =>
-  corpus && group.corpus > 0 ? { gallery: group.key, scope: group.alone ? 'exact' : 'family' } : { narrow: group.key }
+  corpus && group.corpus > 0 ? { gallery: group.key, of: group.alone ? 'character' : 'grapheme' } : { narrow: group.key }

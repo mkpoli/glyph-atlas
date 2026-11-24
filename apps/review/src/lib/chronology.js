@@ -1,5 +1,5 @@
 import { request } from './client.js'
-import { slug } from './gallery.js'
+import { slug } from './addresses.js'
 
 // A character's crops along its time axis (編年): the address, and the Worker's decades with a sample of
 // each (`/layers/chronology`).

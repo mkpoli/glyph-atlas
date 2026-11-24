@@ -42,9 +42,11 @@
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades, bookGallery as layerBooks } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize, formatNumber, formatCompactNumber } from '../lib/i18n.svelte.js'
-  import { characterAddress, collectionAddress, corpusScope, expandFor, graphemeAddress, scopeFor, bookPage, bookScope, styleCounts, unslug } from '../lib/gallery.js'
+  import { collectionAddress, expandFor, galleryAddress, galleryPage, graphemeAddress, graphemeOf } from '../lib/addresses.js'
+  import { corpusScope, bookPage, bookScope, styleCounts } from '../lib/gallery.js'
   import { keyText } from '../lib/codePoints.js'
   import { useSession } from '../lib/session.svelte.js'
+  import { galleryTitle } from '../lib/citation.js'
   import { roundAddress } from '../lib/reviewRounds.js'
   import { hasCharacterPage, pointOf } from '../lib/issues.js'
   import BulkBar from '../components/BulkBar.svelte'
@@ -52,10 +54,10 @@
   // `initial` is the collection page the server rendered: the seed it shuffled with, the filters in the
   // address, the progress line and, for a search, a grapheme or a work, the collection's rows; without
   // rows the view loads them and the corpus sample itself, with the same seed and filters.
-  // `gallery` is a character's page instead (`lib/gallery.js`).
-  // `addressed` is the collection and character pages, whose address this view keeps; the Flagged view
+  // `gallery` is a character's or a grapheme's page instead (`lib/gallery.js`).
+  // `addressed` is the collection, character and grapheme pages, whose address this view keeps; the Flagged view
   // and the collection behind a crop's dialog leave theirs alone.
-  // `shown` is the character on show, for the page's title; the view changes it in place.
+  // `shown` is the character or grapheme on show, for the page's title; the view changes it in place.
   let { flagged = false, addressed = false, inspect, ink = 'original', onink = () => {}, initial = null, gallery = null, shown = $bindable() } = $props()
   const session = useSession()
   const asked = untrack(() => initial), first = asked?.result ? asked : null, opened = untrack(() => gallery)
@@ -135,17 +137,17 @@
   // A run the collection holds no crop of, read one character at a time: its characters are tabs, and
   // the gallery on show is the chosen one's.
   let split = $state(null), splitting = false
-  $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point } : null })
+  $effect(() => { shown = picked?.code_point ? { char: picked.char, code_point: picked.code_point, of: expand === 'grapheme' ? 'grapheme' : 'character' } : null })
   /**
-   * The address says what is on show, so it can be shared and reloaded: a character's page with its
-   * scope and visual group, or the collection with its search and filters. The view changes what it
+   * The address says what is on show, so it can be shared and reloaded: a character's page or a
+   * grapheme's with what it is narrowed to, or the collection with its search and filters. The view changes what it
    * shows in place and rewrites the address to match, so typing never leaves the page.
    */
   function showInAddress() {
     // While a crop is open the address is the crop's; the list's own entry keeps the list's.
     if (!addressed || page.state.inspect) return
     const [path, search = ''] = (picked?.code_point
-      ? characterAddress(picked.code_point, { scope: scopeFor(expand, picked), visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
+      ? galleryAddress(picked, expand, { visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
       // Text still being chosen from the candidate list is not a search yet.
       : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })).split('?')
     const target = localize(path) + (search && '?' + search)
@@ -834,9 +836,9 @@
     } finally { if (!closed && id === requestId) { loading = false; growing = false } }
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
-  // `scope` is an address's: `exact`, `family` or `variants`, or gives one for the card; without one the
-  // card's default applies.
-  async function pick(item, scope = null) {
+  // `of` is whether it is chosen as a character or as a grapheme, or says so for the card; `scope` is a
+  // character address's. A grapheme is shown by its head's card, whichever member names it.
+  async function pick(item, of = 'character', scope = null) {
     let expansionWillLoad = false
     // Any choice but one of the run's tabs leaves the run.
     if (!splitting) split = null
@@ -856,10 +858,11 @@
     visual = ''; analysis = null; familyTotal = null; unassignedCount = null
     if (item.code_point) {
       try {
-        const card = await layerCharacter(item.code_point, 'none')
+        let card = await layerCharacter(item.code_point, 'none')
+        const nextExpand = expandFor(typeof of === 'function' ? of(card) : of, scope), head = graphemeOf(card).code_point
+        if (nextExpand === 'grapheme' && head !== card.code_point) card = await layerCharacter(head, 'none')
         if (closed || current !== pickId) return   // a newer choice owns the gallery now
         picked = { ...bare, ...item, ...card }; query = card.char
-        const nextExpand = expandFor(typeof scope === 'function' ? scope(card) : scope, card)
         expansionWillLoad = expand !== nextExpand
         expand = nextExpand
         analysis = card.visual_analysis ?? null
@@ -1221,8 +1224,8 @@
   }
   function select(value) { split = null; grapheme = value; load() }
   function openGrapheme(key) {
-    const group = graphemeByKey.get(key), { gallery, scope } = group ? tileOpens(group, countsCorpus) : {}
-    if (gallery) pick({ code_point: gallery, char: charOf(gallery) }, scope)
+    const group = graphemeByKey.get(key), { gallery, of } = group ? tileOpens(group, countsCorpus) : {}
+    if (gallery) pick({ code_point: gallery, char: charOf(gallery) }, of)
     else select(key)
   }
   // An address that narrows the collection to a grapheme it holds no crop of (one held only as corpus
@@ -1232,7 +1235,7 @@
     if (!grapheme || work || flagged || query || result.total > 0) return false
     if (filter !== 'all' && !graphemes.some(group => [group.key, group.grapheme].includes(grapheme) && group.corpus > 0)) return false
     const key = grapheme
-    pick({ code_point: key, char: charOf(key) }, card => card.grapheme && card.grapheme.code_point !== key ? 'exact' : 'family')
+    pick({ code_point: key, char: charOf(key) }, card => card.grapheme && card.grapheme.code_point !== key ? 'character' : 'grapheme')
     return true
   }
   // A run with no crop opens its first character, and the others stay a tab away.
@@ -1255,13 +1258,6 @@
   function groupOf(item) {
     const group = graphemeByKey.get(item.grapheme?.code_point ?? codesOf(item.char ?? '')) ?? graphemeByKey.get(codesOf(item.char ?? ''))
     return group && group.members.some(member => member.label === item.char) ? group : null
-  }
-  /** "All forms" in a query's card: the collection narrowed to that grapheme, as in the browser. */
-  function chooseGrapheme(key) {
-    clearTimeout(searchTimer); pickId += 1; requestId += 1; choosing = false
-    visual = ''; analysis = null; familyTotal = null; unassignedCount = null
-    query = ''; picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusOffset = 0; corpusAfter = null; localAfter = null; localAnswered = false
-    openGrapheme(key)
   }
   function shuffle() { let next; do next = shuffleSeed(); while (next === seed); seed = next; load() }
   // The gallery as one image: every crop it holds so far, in the columns it shows them in, over a
@@ -1308,12 +1304,11 @@
    */
   function followAddress() {
     const { path } = delocalize(location.pathname)
-    const code = path.startsWith('/character/') ? unslug(path.slice(11)) : null
-    const scope = new URLSearchParams(location.search).get('scope')
-    if (code && code !== picked?.code_point) pick({ code_point: code }, scope)
-    // Back or Forward between two scopes of the same character: the widening the address names.
-    else if (code && picked && expandFor(scope, picked) !== expand) expand = expandFor(scope, picked)
-    else if (!code && path === '/') {
+    const named = galleryPage(path), scope = new URLSearchParams(location.search).get('scope')
+    if (named && named.codePoint !== picked?.code_point) pick({ code_point: named.codePoint }, named.of, scope)
+    // Back or Forward between a grapheme, its head and the head's variants: the widening the address names.
+    else if (named && expandFor(named.of, scope) !== expand) expand = expandFor(named.of, scope)
+    else if (path === '/') {
       const wanted = new URLSearchParams(location.search)
       const q = wanted.get('q') ?? '', g = wanted.get('grapheme') ?? '', w = wanted.get('work') ?? '', group = wanted.get('group') ?? 'all'
       if (!picked && q === query.trim() && g === grapheme && w === work && group === filter) return
@@ -1434,7 +1429,7 @@
 {/snippet}
 <section class="explore">
   <div class="page-status">
-    <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : t('explore.heading.atlas')}</h1>
+    <h1 class="visually-hidden">{flagged ? t('explore.heading.flagged') : shown ? galleryTitle(shown) : t('explore.heading.atlas')}</h1>
     <SiteLinks />
     {#if picked}
       <div class="collection-meta"><span class="live-dot"></span><span>{t('explore.meta.glyphs', { count: display.length })}</span><span class="meta-divider">/</span><span>{expand === "grapheme" ? t('explore.meta.characters', { count: picked.grapheme?.character_count ?? 1 }) : expand === "variants" ? t('explore.meta.characters', { count: 1 + (picked.variants?.items?.length ?? 0) }) : t('explore.meta.characters', { count: 1 })}</span></div>
@@ -1466,14 +1461,14 @@
       <!-- A grid draws a slice at a time; another order or kind starts it again from the first. -->
       {#if counting}{#key unit + '|' + work}<NgramGrid kind={unit} {runs} failed={runsFailed} onretry={loadRuns} {work} />{/key}
       {:else}{#key order}<GraphemeGrid groups={graphemes} value={grapheme} onchoose={key => { close(); openGrapheme(key) }}
-                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }, 'exact') }} />{/key}{/if}
+                    onform={form => { close(); pick({ code_point: codesOf(form), char: form }) }} />{/key}{/if}
     {/snippet}
     {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
     <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
          them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
-      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} onchoosegroup={chooseGrapheme} lead={run ? runLead : null}
-                       onform={form => pick({ code_point: codesOf(form), char: form }, true)}
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} {groupOf} lead={run ? runLead : null}
+                       onform={form => pick({ code_point: codesOf(form), char: form })}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: charOf(grapheme) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}
                        onimage={flagged ? null : file => { if (file || !imaging) imaging = { file, key: (imaging?.key ?? 0) + 1 } }} />
@@ -1514,7 +1509,7 @@
   {#if split}<div class="split-term"><span>{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}<ScriptText text={split.term} />{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}</span>
     <div class="split-tabs" role="group" aria-label={t('explore.byCharacter')}>{#each split.parts as part}<button type="button" aria-pressed={split.active === part} onclick={() => openPart(part)}><ScriptText text={part} /></button>{/each}</div></div>{/if}
   {#if picked}
-    <CharacterChips card={picked} bind:expand onselect={item => pick({ code_point: item }, 'exact')} />
+    <CharacterChips card={picked} bind:expand />
     {#if charRuns?.char === picked.char && charRuns.items.length}<RunStrip runs={charRuns.items} heading={t('explore.runs.with', { char: picked.char })} />{/if}
     {#if styled || style}<StyleFilter counts={styles} value={style} onchange={value => { style = value; load() }} />{/if}
     {#if picked && expand !== 'variants'}<PeriodFilter counts={decadeCounts} value={yearRange} order={dateOrder} onchange={value => { yearRange = value; load() }} onorder={value => { dateOrder = value; if (value === 'book') visual = ''; load() }} />{/if}

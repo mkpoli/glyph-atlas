@@ -1,7 +1,7 @@
 <script>
   import { tick } from 'svelte'
   // The character a crop is written as, in its script's colour, and the script named beside it; the
-  // character leads to its whole grapheme family on its page. Given `reading` ({ item, disabled, working,
+  // character leads to the page of the grapheme it is a form of. Given `reading` ({ item, disabled, working,
   // saved }), a button beside the character names the grapheme (字種) the crop is read as: a holding claim for another grapheme shows that one, and a press opens the grapheme
   // picker. The button's space is held from the first render, so the record's claim fills it without
   // moving anything.
@@ -12,7 +12,7 @@
   import { claimedGrapheme, scriptInfo } from '../lib/identity.js'
   import { graphemeChoices } from '../lib/cropGraphemes.js'
   import { hasCharacterPage, isSingle, pointOf } from '../lib/issues.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { graphemeAddress } from '../lib/addresses.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   let { char = '', script = '', size = 'lg', reading = null } = $props()
   // The script is the character's own, by its code point; the record's statement is used only for a
@@ -23,7 +23,7 @@
   const KNOWN = ['hiragana', 'katakana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'symbol', 'mixed', 'unknown']
   const key = $derived(own !== 'unknown' ? own : KNOWN.includes(scriptInfo(char, script).key) ? scriptInfo(char, script).key : 'unknown')
   const name = $derived(hentaigana ? t('script.hentaigana') : t(`script.${key}`))
-  const href = $derived(hasCharacterPage(char) ? localize(characterAddress(pointOf(char), { scope: 'family' })) : null)
+  const href = $derived(hasCharacterPage(char) ? localize(graphemeAddress(pointOf(char), char)) : null)
 
   const claim = $derived(reading?.item?.grapheme_claim ?? null)
   const disputed = $derived(claim?.status === 'disputed')

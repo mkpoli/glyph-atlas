@@ -2,13 +2,15 @@ import { HREFLANG, LOCALES, localize } from './i18n.svelte.js'
 import { familyCodes } from './forms.js'
 import { catalogue } from './client.js'
 import { hasCharacterPage, pointOf } from './issues.js'
+import { characterAddress, graphemeAddress } from './addresses.js'
+import { keyText } from './codePoints.js'
 
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
 const xml = body => new Response(`<?xml version="1.0" encoding="UTF-8"?>\n${body}\n`, {
   headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=86400' },
 })
 
-/** The sitemap files the index names: the collection's own pages, and each language's character pages. */
+/** The sitemap files the index names: the collection's own pages, and each language's character and grapheme pages. */
 export const index = origin => xml(`<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${['/sitemaps/pages.xml', ...LOCALES.map(locale => `/sitemaps/characters/${locale.tag}.xml`)]
   .map(path => `  <sitemap><loc>${escape(origin + path)}</loc></sitemap>`).join('\n')}
@@ -37,9 +39,12 @@ export async function pagePaths(fetch) {
   return paths
 }
 
-/** A page for every single character the collection holds crops of. */
+/** A page for every single character the collection holds crops of, and for every grapheme it holds
+ *  several forms of: one form's page stands for a grapheme of no other. */
 export async function characterPaths(fetch) {
   const { categories } = await catalogue({ limit: 1 }, { fetch })
-  return [...new Set(categories.filter(category => category.total > 0 && hasCharacterPage(category.label))
-    .map(category => '/character/' + pointOf(category.label).split(' ').join('-')))]
+  const held = categories.filter(category => category.total > 0), forms = new Map()
+  for (const { label, grapheme } of held) if (grapheme) forms.set(grapheme, (forms.get(grapheme) ?? new Set()).add(label))
+  return [...new Set([...[...forms].filter(([key, labels]) => labels.size > 1 && hasCharacterPage(keyText(key) ?? '')).map(([key]) => graphemeAddress(key, keyText(key))),
+    ...held.filter(({ label }) => hasCharacterPage(label)).map(({ label }) => characterAddress(pointOf(label)))])]
 }

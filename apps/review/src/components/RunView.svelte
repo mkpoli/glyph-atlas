@@ -21,7 +21,7 @@
   import WorkFilter from './WorkFilter.svelte'
   import { RUN_FIRST, runAddress, runOccurrences, runRelated } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
-  import { characterAddress, collectionAddress } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress } from '../lib/addresses.js'
   import { runText } from '../lib/runs.js'
   import { mergeCropPatch, occurrenceState, occurrenceWritten, resolveInspectedCrop } from '../lib/sequenceReview.js'
   import { character, number } from '../lib/client.js'

@@ -55,8 +55,7 @@ A seal character's own card opens on its own crops.
 
 ## What a Han reader sees change
 
-- A gallery of a whole grapheme lists the crops of its seal characters, as it lists every member's. 仮
-  and the other families a card opens on show them without being asked.
+- A grapheme's page (`/grapheme/U+4EEE`) lists the crops of its seal characters, as it lists every member's.
 - The glyphs counted for a family (`family_glyphs`, `family_total`) count them, on the card of one
   member too.
 - A selection on a Han card can be marked as a seal character, and a search for a kanji lists its seal

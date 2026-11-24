@@ -28,8 +28,8 @@ describe('the graphemes a collection lists', () => {
   })
   it('open their own gallery or narrow the listing by their own key, so the tile chosen is the one marked', () => {
     const [dai, ...min] = gathered('seal')
-    expect(min.map(g => tileOpens(g, true))).toEqual(MIN.map((_, i) => ({ gallery: ['U+3F54D', 'U+3F54E'][i], scope: 'exact' })))
-    expect(tileOpens(gathered('kanji')[0], true)).toEqual({ gallery: 'U+5927', scope: 'family' })
+    expect(min.map(g => tileOpens(g, true))).toEqual(MIN.map((_, i) => ({ gallery: ['U+3F54D', 'U+3F54E'][i], of: 'character' })))
+    expect(tileOpens(gathered('kanji')[0], true)).toEqual({ gallery: 'U+5927', of: 'grapheme' })
     expect([tileOpens(dai, false), tileOpens({ ...dai, corpus: 0 }, true)]).toEqual([{ narrow: 'U+3EDB1' }, { narrow: 'U+3EDB1' }])
     expect(tileOpens(gathered('kana')[0], true)).toEqual({ narrow: 'U+306F' })
   })

@@ -2,16 +2,18 @@
   import { page } from '$app/state'
   import { t, HREFLANG, localize, delocalize } from '$lib/i18n.svelte.js'
   // `title` is the page's own name; the site's name follows it. A page kept out of search results
-  // (a reviewer's working view) passes `index={false}`. `data` is the page's JSON-LD, if any.
-  let { title = '', description = t('meta.description'), image = null, index = true, type = 'website', data = null } = $props()
+  // (a reviewer's working view) passes `index={false}`. `data` is the page's JSON-LD, if any. `path` is the
+  // address search engines keep the page at, without its language: its own, unless another page shows the same.
+  let { title = '', description = t('meta.description'), image = null, index = true, type = 'website', data = null,
+    path = delocalize(page.url.pathname).path } = $props()
   const site = $derived(t('app.name'))
   const full = $derived(title ? `${title} · ${site}` : site)
-  const canonical = $derived(page.url.origin + page.url.pathname)
+  const tag = $derived(delocalize(page.url.pathname).tag)
+  const canonical = $derived(page.url.origin + localize(path, tag))
   // The same page in every interface language; the unprefixed address, which picks the reader's
   // language, is the default. Languages without a supported hreflang code stay outside this
   // reciprocal set, as they do in the sitemap.
-  const path = $derived(delocalize(page.url.pathname).path)
-  const alternates = $derived(HREFLANG.some(locale => locale.tag === delocalize(page.url.pathname).tag)
+  const alternates = $derived(HREFLANG.some(locale => locale.tag === tag)
     ? HREFLANG.map(locale => ({ tag: locale.tag, href: page.url.origin + localize(path, locale.tag) })) : [])
   const picture = $derived(image ? new URL(image, page.url.origin).href : null)
   // A JSON-LD block is script text: `<` is escaped so no value can close the element.
