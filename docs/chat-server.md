@@ -480,11 +480,12 @@ After a change to her prompts, replay the cases in `apps/fish-bot/replay.json` o
 is a short room log that once went wrong (an invented reading, a wrong era name, an answer taken from
 old chat instead of the homeserver) or must stay cheap (small talk without lookups), with the tools
 she must use and the words she must or must not say. It reads the homeserver, GitHub and the web
-but posts nothing:
+but posts nothing. It needs a Gemini key from a project of its own and refuses the bot's; it prints
+what the run should cost, stops at `--max-usd` (0.35), and all runs of a day stop at $0.50:
 
 ```sh
 scp apps/fish-bot/fish_bot.py apps/fish-bot/replay.py apps/fish-bot/replay.json root@glyphatlas-matrix:/tmp/
-ssh root@glyphatlas-matrix 'cd /tmp && python3 replay.py --config /etc/fish-bot/config.toml'
+ssh root@glyphatlas-matrix 'cd /tmp && python3 replay.py --key-file /root/gemini-test-key --config /etc/fish-bot/config.toml'
 ```
 
 The database is `/var/lib/fish-bot/chat.sqlite3`; text older than 180 days is deleted. The bot reads
