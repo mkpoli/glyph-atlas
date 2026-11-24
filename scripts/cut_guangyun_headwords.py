@@ -253,7 +253,7 @@ def main() -> int:
             boxes = [box for box, _ in detector.boxes_at(image, scale)]
             unit = leaf_text.side(boxes)
             found = leaf_text.axes(leaf_text.big(boxes, unit), unit) if boxes else []
-            even = leaf_text.flat(found, COLUMNS, image.width) if copy["image_kind"] == "flat-reproduction" else None
+            even = leaf_text.flat(found, COLUMNS, image.width) if copy.get("comb") else None
             middle = even[0] if even else leaf_text.gutter(found, image.width, COLUMNS) if found else None
             halves = {}
             if middle is not None:
