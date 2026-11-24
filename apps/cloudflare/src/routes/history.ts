@@ -23,12 +23,17 @@ const UNDO = `(SELECT code FROM codes WHERE field='kind' AND key='undo')`;
 const LISTED = `(kind IN ${VERDICTS} OR (kind=${UNDO} AND EXISTS(SELECT 1 FROM events p WHERE p.id=events.reverses AND p.kind IN ${VERDICTS})))`;
 // A save of the ledger that arranges 構形 (a form filed, a structure folded), as migration 0021 indexes
 // them, and its time as the other rows have it. One that changed nothing (the filing already stood) wrote
-// no claim and took none back.
-const ARRANGES = `coalesce(json_type(request, '$.structure'), json_type(request, '$.fold')) IS NOT NULL`;
-const ARRANGED = `(json_extract(response,'$.replaced[0]') IS NOT NULL OR json_type(response,'$.replaced')='text'
-    OR EXISTS(SELECT 1 FROM assertions a WHERE a.asserted_by=l.actor AND a.submission=l.id AND a.legacy IS NULL AND a.predicate<>'represented_by'))`;
+// no claim and took none back; a claim of another kind can carry either key in its request.
+const ARRANGES = `iif(json_valid(request), coalesce(json_type(request, '$.structure'), json_type(request, '$.fold')), NULL) IS NOT NULL`;
+const OWN_CLAIM = `a.asserted_by=l.actor AND a.submission=l.id AND a.legacy IS NULL AND a.predicate<>'represented_by' AND a.predicate IN ('has_structure','folds_into')`;
+const ARRANGED = `(json_extract(response,'$.subject') GLOB 'fm:*' OR json_extract(response,'$.subject') GLOB 'st:*')
+    AND (json_extract(response,'$.replaced[0]') IS NOT NULL OR json_type(response,'$.replaced')='text' OR EXISTS(SELECT 1 FROM assertions a WHERE ${OWN_CLAIM}))`;
+// The structures a save took back: a list, or the one a fold left.
+const REPLACED = `json_each(iif(json_type(l.response,'$.replaced')='array',json_extract(l.response,'$.replaced'),json_array(json_extract(l.response,'$.replaced'))))`;
 const SAVED_AT = `CAST(strftime('%s',at) AS INTEGER)*1000+CAST(substr(at,21,3) AS INTEGER)`;
 const iso = (at: number) => new Date(at).toISOString();
+// The last time a date holds.
+const LATEST = 8.64e15;
 // D1 takes at most five terms in a compound SELECT and each id is three arms (its reviews, its passed
 // rounds, its arrangements), so a user's ids are read one to a statement, in one batch, each statement
 // bounded by the LIMIT, and the statements' pages merged here.
@@ -46,7 +51,7 @@ export function decodeCursor(value: string): Cursor {
     // goes on from before that time.
     if (Array.isArray(d) && d.length === 2 && typeof d[0] === 'string' && typeof d[1] === 'string' && Number.isSafeInteger(Date.parse(d[0])))
       return { at: Date.parse(d[0]), src: 0, id: 0 };
-    if (!Array.isArray(d) || d.length !== 3 || !d.every(Number.isSafeInteger) || ![0, 1, 2].includes(d[1])) throw 0;
+    if (!Array.isArray(d) || d.length !== 3 || !d.every(Number.isSafeInteger) || ![0, 1, 2].includes(d[1]) || Math.abs(d[0]) > LATEST) throw 0;
     return { at: d[0], src: d[1], id: d[2] };
   } catch { throw new Problem(422, 'Invalid cursor.') }
 }
@@ -84,9 +89,9 @@ export function historyQuery(actors: number[] | null, label: { text: string; sho
   const round = (filter: string[]) => `SELECT 1 AS src,id,at,actor,NULL AS crop,NULL AS kind,NULL AS issue,NULL AS kept_issue,NULL AS shown,NULL AS named,
     NULL AS text,NULL AS reverses,id AS submission,(SELECT count(*) FROM seen k WHERE k.submission=submissions.id) AS passed,
     ${ROUND_LABEL} AS label,NULL AS save FROM submissions WHERE ${filter.join(' AND ')}`;
-  const arrangement = (filter: string[]) => `SELECT 2 AS src,l.rowid AS id,${SAVED_AT} AS at,(SELECT p.id FROM actors p WHERE p.key=l.actor) AS actor,NULL AS crop,NULL AS kind,
-    NULL AS issue,NULL AS kept_issue,NULL AS shown,NULL AS named,NULL AS text,NULL AS reverses,NULL AS submission,NULL AS passed,NULL AS label,l.id AS save
-    FROM ledger_submissions l WHERE ${filter.join(' AND ')}`;
+  const arrangement = (filter: string[]) => `SELECT 2 AS src,o.row AS id,${SAVED_AT} AS at,(SELECT p.id FROM actors p WHERE p.key=o.actor) AS actor,NULL AS crop,NULL AS kind,
+    NULL AS issue,NULL AS kept_issue,NULL AS shown,NULL AS named,NULL AS text,NULL AS reverses,NULL AS submission,NULL AS passed,NULL AS label,o.id AS save
+    FROM (SELECT l.rowid AS row,l.id,l.actor,l.at FROM ledger_submissions l WHERE ${filter.join(' AND ')} ORDER BY l.at DESC,l.rowid DESC LIMIT ?LIMIT) o`;
   const arms = actors === null ? [event(events), round(rounds), arrangement(arrangements)]
     : actors.flatMap(actor => { const a = bind(actor);
       return [event([...events, `actor=${a}`]), round([...rounds, `actor=${a}`]), arrangement([...arrangements, `actor=(SELECT p.key FROM actors p WHERE p.id=${a})`])]; });
@@ -97,16 +102,19 @@ export function historyQuery(actors: number[] | null, label: { text: string; sho
     json_extract(s.request,'$.input.id') AS request_id,kc.key AS kind_key,ic.key AS issue_key,kept.key AS kept_key,gs.text AS shown_text,
     gn.text AS named_text,pg.book,c.kind AS crop_kind,
     json_type(l.request,'$.fold') IS NOT NULL AS fold,json_extract(l.response,'$.subject') AS subject,fr.value AS form_text,fs.label AS from_label,
-    (SELECT st.label FROM assertions a JOIN structures st ON st.id=a.object WHERE a.asserted_by=l.actor AND a.submission=l.id AND a.legacy IS NULL
-      AND a.predicate<>'represented_by' AND a.predicate IN ('has_structure','folds_into') LIMIT 1) AS into_label,
-    (SELECT st.label FROM structures st WHERE st.id=coalesce(json_extract(l.response,'$.replaced[0]'),json_extract(l.response,'$.replaced'))) AS replaced_label
+    coalesce((SELECT st.label FROM assertions a JOIN structures st ON st.id=a.object WHERE ${OWN_CLAIM} LIMIT 1),
+      iif(json_extract(l.request,'$.structure.remove') IS 1,NULL,(SELECT st.label FROM assertions a JOIN structures st ON st.id=a.object
+        WHERE a.subject=json_extract(l.response,'$.subject') AND a.predicate='has_structure' AND a.scope='' AND a.asserted_by=l.actor AND a.asserted_at<l.at
+          AND a.object NOT IN (SELECT value FROM ${REPLACED}) ORDER BY a.rowid DESC LIMIT 1))) AS into_label,
+    (SELECT json_group_array(st.label) FROM ${REPLACED} j JOIN structures st ON st.id=j.value) AS replaced_labels
     FROM (${arms.join(' UNION ALL ')} ORDER BY at DESC,src DESC,id DESC LIMIT ?${values.length + 1}) h
     LEFT JOIN submissions s ON s.id=h.submission LEFT JOIN codes kc ON kc.field='kind' AND kc.code=h.kind
     LEFT JOIN codes ic ON ic.field='issue' AND ic.code=h.issue LEFT JOIN codes kept ON kept.field='issue' AND kept.code=h.kept_issue LEFT JOIN graphemes gs ON gs.id=h.shown
     LEFT JOIN graphemes gn ON gn.id=h.named LEFT JOIN pages pg ON pg.id=h.crop>>24 LEFT JOIN crops c ON c.id=h.crop
     LEFT JOIN ledger_submissions l ON l.id=h.save LEFT JOIN forms fo ON fo.id=json_extract(l.response,'$.subject') LEFT JOIN representations fr ON fr.id=fo.anchor
     LEFT JOIN structures fs ON fs.id=json_extract(l.response,'$.subject') ORDER BY h.at DESC,h.src DESC,h.id DESC`;
-  return { sql, values };
+  // The arrangements' own LIMIT is the page's.
+  return { sql: sql.replaceAll('?LIMIT', `?${values.length + 1}`), values };
 }
 
 // A review keeps the words it was saved with. One saved while crops carried a reading names the
@@ -118,14 +126,14 @@ export type HistoryRow = { src: 0 | 1 | 2; id: number; at: number; actor: number
   key: string | null; target_type: string | null; target: string | null; request_id: string | null;
   kind_key: string | null; issue_key: string | null; kept_key: string | null; shown_text: string | null; named_text: string | null; book: number | null;
   crop_kind: number | null; fold: number | null; subject: string | null; form_text: string | null; from_label: string | null;
-  into_label: string | null; replaced_label: string | null };
+  into_label: string | null; replaced_labels: string | null };
 export type Reviewer = { user: string | null; name: string | null; image: string | null };
 
 /** A history row as the page shows it. A round's or batch's id is the request's own, as its undo
  *  names it. A passed round is listed by its submission's number, since its key begins with the actor
  *  key, and an old reviewer id is all it takes to claim one. `actor` tells reviewers apart by number. An
  *  arrangement names the form filed (`label`, its id `form`) or the structure folded, and the structure
- *  labels it went between: `into` null for one taken out or split off, `from` null for one first filed. */
+ *  labels it went between: `into` null for one taken out or split off, `from` empty for one first filed. */
 export function historyItem(row: HistoryRow, reviewer: Reviewer, me: string | null = null): Json {
   const who = { ...reviewer, mine: Boolean(me && reviewer.user === me) };
   const at = new Date(row.at).toISOString();
@@ -134,7 +142,7 @@ export function historyItem(row: HistoryRow, reviewer: Reviewer, me: string | nu
   if (row.src === 2) {
     const fold = Boolean(row.fold);
     return { id: `a${row.id}`, at, target: null, label: fold ? row.from_label : row.form_text, kind: fold ? 'fold' : 'filing', reviewer: who, actor: row.actor,
-      form: fold ? null : row.subject, from: row.replaced_label, into: row.into_label, verdict: null, issue: null, character: null, text: null,
+      form: fold ? null : row.subject, from: JSON.parse(row.replaced_labels ?? '[]'), into: row.into_label, verdict: null, issue: null, character: null, text: null,
       round: null, batch: null, undoes: null };
   }
   const kind = row.kind_key, undo = kind === 'undo';

@@ -201,6 +201,9 @@ describe('the history', () => {
       expect(scans(details, ['events', 'submissions', 'seen', 'graphemes', 'pages', 'crops', 'assertions', 'structures', 'forms', 'representations', 'actors'])).toEqual([]);
       expect(details.some(d => /INDEX ledger_structure_/.test(d))).toBe(true);
       expect(details.some(d => /^SCAN l(?! USING INDEX ledger_structure_at)/.test(d))).toBe(false);
+      // The arrangements are read along their index and stop at the LIMIT: the inner query sorts nothing.
+      const inner = /\(SELECT l\.rowid[^]*?LIMIT \?\d+\)/.exec(sql)![0].slice(1, -1);
+      expect(plan(atlas, inner, [...values, 41]).filter(d => d.includes('TEMP B-TREE'))).toEqual([]);
       if (actors) expect(details.some(d => /SEARCH events USING INDEX event_actor_history/.test(d) || /SEARCH events USING INDEX event_shown/.test(d))).toBe(true);
       if (label && !actors) expect(details.some(d => /event_shown/.test(d))).toBe(true);
       if (label && !actors) expect(details.some(d => /submission_label/.test(d))).toBe(true);
@@ -254,7 +257,9 @@ describe('the history', () => {
     save('s4', 23, { fold: { from: { char: '臭' }, into: { char: '縮' } } }, 'st:b', null, ['folds_into', 'st:c'], 'u2');
     save('s5', 24, { form: '説', structure: { structure: 'st:b', remove: true } }, 'fm:1', ['st:b'], null);
     save('s6', 25, { fold: { from: { structure: 'st:b' }, remove: true } }, 'st:b', 'st:c', null, 'u2');
-    // A save of another kind.
+    // Saves of another kind, one with a key of its own called `fold`, and one whose request is not JSON.
+    save('s8', 27, { subject: 'book:1', fold: 1 }, 'book:1', null, ['date_printed', 'x']);
+    atlas.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)').run('u1:s9', 'u1', '{', '{}', minute(28));
     save('s7', 26, { crop: 'x', input: { form: '説' } }, 'x', null, ['has_form', 'fm:1']);
   }
   it('lists each arrangement of 構形 that changed something, with what it went between', async () => {
@@ -263,13 +268,23 @@ describe('the history', () => {
     const read = async (params = {}) => (await pages(b => history(env, new URLSearchParams({ limit: '2', ...params, ...(b ? { before: b } : {}) }), 'u1', tools))).flat();
     const rows = (await read()).filter(i => i.kind === 'filing' || i.kind === 'fold');
     expect(rows.map(i => [i.kind, i.label, i.from, i.into, i.reviewer.name, i.reviewer.mine])).toEqual([
-      ['fold', '⿱自犬', '⿰糸宿', null, 'anon-00aa11', false], ['filing', '説', '⿱自犬', null, 'Ada', true], ['fold', '⿱自犬', null, '⿰糸宿', 'anon-00aa11', false],
-      ['filing', '説', '⿰言兌', '⿱自犬', 'Ada', true], ['filing', '説', null, '⿰言兌', 'Ada', true]]);
+      ['fold', '⿱自犬', ['⿰糸宿'], null, 'anon-00aa11', false], ['filing', '説', ['⿱自犬'], null, 'Ada', true], ['fold', '⿱自犬', [], '⿰糸宿', 'anon-00aa11', false],
+      ['filing', '説', ['⿰言兌'], '⿱自犬', 'Ada', true], ['filing', '説', [], '⿰言兌', 'Ada', true]]);
     expect(rows[1]).toMatchObject({ at: minute(24), form: 'fm:1', target: null });
     // They stand among the reviews, newest first, and narrow with them.
     expect((await read()).map(i => i.at)).toEqual((await read()).map(i => i.at).sort().reverse());
     expect((await read({ user: 'u2' })).filter(i => i.kind === 'fold').length).toBe(2);
     expect((await read({ user: 'u2' })).some(i => i.kind === 'filing')).toBe(false);
+  });
+
+  it('names every structure a form was moved from, and the one it already stood under', async () => {
+    const { atlas, env } = setup();
+    arranged(atlas);
+    atlas.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)').run('u1:s10', 'u1',
+      canonical({ form: '説', structure: { char: '臭', replace: true } }), canonical({ submission: 's10', subject: 'fm:1', replaced: ['st:a', 'st:c'] }), minute(40));
+    const { items } = await history(env, new URLSearchParams({ limit: '1' }), 'u1', tools);
+    expect(items[0]).toMatchObject({ kind: 'filing', label: '説', into: '⿱自犬' });
+    expect([...items[0].from].sort()).toEqual(['⿰糸宿', '⿰言兌'].sort());
   });
 
   it('narrows arrangements to those of one form', async () => {
@@ -282,7 +297,7 @@ describe('the history', () => {
 
   it('keeps a cursor to its three numbers', () => {
     expect(decodeCursor(encodeCursor({ at: 5, src: 1, id: 9 }))).toEqual({ at: 5, src: 1, id: 9 });
-    for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,3,3]'), btoa('["1",0,3]'), btoa('["soon","cf:x"]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
+    for (const bad of ['not-base64!!', btoa('[1,2]'), btoa('[1,3,3]'), btoa('[9007199254740991,0,0]'), btoa('["1",0,3]'), btoa('["soon","cf:x"]')]) expect(() => decodeCursor(bad)).toThrow('Invalid cursor.');
   });
 
   it('goes on from a page loaded before the cutover, from before its last row\'s time', async () => {

@@ -77,9 +77,9 @@
   // An arrangement of 構形 in its words and the structures it names, in the order the language puts them.
   const isArranged = item => item.kind === 'filing' || item.kind === 'fold'
   function arrangedLine(item) {
-    const key = item.kind === 'fold' ? (item.into ? 'merged' : 'split') : item.into ? (item.from ? 'moved' : 'filed') : 'taken'
+    const key = item.kind === 'fold' ? (item.into ? 'merged' : 'split') : item.into ? (item.from.length ? 'moved' : 'filed') : 'taken'
     return t(`history.decision.${key}`, { from: '\u0001', structure: '\u0002' }).split(/([\u0001\u0002])/)
-      .filter(Boolean).map(part => part === '\u0001' ? { label: item.from } : part === '\u0002' ? { label: item.into ?? item.from } : { words: part })
+      .filter(Boolean).map(part => part === '\u0001' ? { labels: item.from } : part === '\u0002' ? { labels: item.into ? [item.into] : item.from } : { words: part })
   }
   // Where an arrangement's form is shown: its character's page, or the page of a described form or a figure.
   const formAddress = item => item.kind !== 'filing' || !item.label ? null
@@ -164,7 +164,7 @@
                   <span class="history-time">{when(item.at)}</span>
                   {@render reviewer(item)}
                   <span class="history-label">{@render label(item.label)}</span>
-                  <span class="history-decision arranged">{#each arrangedLine(item) as part, i (i)}{#if part.words}{part.words}{:else}<span class="history-structure" lang="zh">{part.label ?? t('history.noLabel')}</span>{/if}{/each}</span>
+                  <span class="history-decision arranged">{#each arrangedLine(item) as part, i (i)}{#if part.words}{part.words}{:else}{#each part.labels as structure, k (k)}{#if k}{' '}{/if}<span class="history-structure" lang="zh">{structure}</span>{:else}{t('history.noLabel')}{/each}{/if}{/each}</span>
                 </svelte:element>
               {:else}
                 <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
