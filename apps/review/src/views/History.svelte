@@ -243,7 +243,7 @@
   .history-row:hover { background: var(--surface-tile); }
   a.history-row { color: inherit; text-decoration: none; }
   .history-decision.arranged { white-space: normal; overflow-wrap: anywhere; }
-  .history-structure { font-family: var(--char-font); font-size: 15px; }
+  .history-structure { display: inline-block; font-family: var(--char-font); font-size: 15px; }
   .history-row.undo .history-decision { color: var(--wrong); }
   .history-row.passed .history-decision { color: var(--muted); }
   .history-year { margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
