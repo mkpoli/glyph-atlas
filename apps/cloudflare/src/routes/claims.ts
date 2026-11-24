@@ -201,12 +201,12 @@ export async function planReviewForm(env: Env, review: { key: string; actor: str
     .bind(key, actor, signature, JSON.stringify({ submission: key, crop: crop.id, cut: crop.cut }), at)];
 }
 
-// The form claims a review's submission wrote on its crops, each with the claims of the same reader it
-// replaced: the submission's ledger row, then each crop's forms by `assertion_crop`, then their actions by theirs.
+// The form claims a review's submission wrote on its crops that nobody has taken back, each with the claims of the
+// same reader it replaced: the submission's ledger row, then each crop's forms by `assertion_crop`, then their actions by theirs.
 export const reviewFormsQuery = () => `SELECT a.id,a.subject,(SELECT json_group_array(json_object('id',o.id,'set',o.alternative_set)) FROM assertions o
     JOIN assertion_actions x ON x.assertion=o.id AND x.action='retract' WHERE o.crop=a.crop AND o.predicate='has_form' AND x.submission=?1) AS replaced
   FROM ledger_submissions l CROSS JOIN json_each(?2) j CROSS JOIN assertions a ON a.crop=j.value AND a.predicate='has_form'
-  WHERE l.id=?1 AND a.submission=?1`;
+  WHERE l.id=?1 AND a.submission=?1 AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`;
 /** The rows that take back the form a review's submission claimed and put back the reader's own claim it
  *  replaced, for the batch that undoes the review (`by`, the reader or an admin). Rows of the ledger are
  *  never changed, so a claim comes back as a new row of the submission that made it, naming the row it

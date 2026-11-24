@@ -1343,6 +1343,20 @@ describe('a form claimed with its character', () => {
     expect(picked.live(0)).toEqual([{ form: '⿴囗斗', by: 'u1', cut: 0 }]);
   });
 
+  it('is undone in as many statements however often the form after it was claimed and undone', async () => {
+    const statements = async (times: number) => {
+      const made = judged();
+      expect((await made.save(1, 0)).status).toBe(200);
+      for (let n = 2; n < 2 + times; n++) { await made.again(n, 0); expect((await made.undo(n)).status).toBe(200); }
+      let sent = 0;
+      const counting = { ...made.env, ATLAS: { ...made.env.ATLAS, batch: (list: D1PreparedStatement[]) => { sent += list.length; return made.env.ATLAS.batch(list); } } } as Env;
+      expect(await reject(counting, 'admin', { actor: 'u1' }, { text } as any)).toMatchObject({ rejected: 1 });
+      expect(made.live(0)).toEqual([]);
+      return sent;
+    };
+    expect(await statements(6)).toBe(await statements(0));
+  });
+
   it('brings back a rejected form rejected, a disputed one decided and an accepted one accepted', async () => {
     const rejected = judged();
     await rejected.pick(10, 0, '図' + IVS);
