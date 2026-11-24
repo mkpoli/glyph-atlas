@@ -24,8 +24,9 @@ row reads "b is the <relation> of a".
                         jp-old-style with its variation selectors removed)
 `regional`              directed: b is the form a regional standard writes for a (OpenCC TW/HKVariants)
 `shuowen`               directed: b is the 說文解字 隸定字 of a (OpenCC SealVariants)
-`small-seal`            not a variant, another script; directed: b is the small seal character (小篆) whose
-                        modern CJK equivalent Unicode gives as a (SealSources.txt kSEAL_MCJK). The
+`small-seal`            another script's form of one grapheme; directed: b is the small seal character (小篆)
+                        whose modern CJK equivalent Unicode gives as a (SealSources.txt kSEAL_MCJK), and the
+                        character table puts b under a's grapheme. No gallery widens by it. The
                         equivalent can follow the structure of the seal form, so a may be the 隸定字 and
                         not the character now written: 𽀅 has 叓, which `shuowen` gives for 吏
 `reduction`             directed: an MJ figure of a reduces to b (MJ縮退マップ; detail names the table)
