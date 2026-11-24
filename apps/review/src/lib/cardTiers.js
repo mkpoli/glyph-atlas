@@ -26,7 +26,7 @@ export function cardTiers(card) {
     .filter(member => form(member) || member.code_point === card?.code_point)
   const members = family.filter(member => !isSeal(member.char)), seals = family.filter(member => isSeal(member.char))
   // The variants a gallery widens to, characters related otherwise, and the derived tier — forms up to two
-  // component substitutions may write this character as, folded after the attested variants, each with a
+  // component substitutions, or parts as registered figures, may write this character as, folded after the attested variants, each with a
   // mark, no gallery widening to them. A card cached before the derived tier existed has none.
   const variants = { items: [], related: [], sources: {}, ...card?.variants, derived: card?.variants?.derived ?? [] }
   const grapheme = card?.grapheme ?? card

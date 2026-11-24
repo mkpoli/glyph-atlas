@@ -12,7 +12,8 @@ import { DRAWN, DRAWN_NAMESPACE, DRAWN_VERSION } from './drawnFormsData';
 
 export const FORM_LONGEST = 64;
 const BINARY = new Set([...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯']), TERNARY = new Set([...'⿲⿳']), UNARY = new Set([...'⿾⿿〾']);
-const arity = (c: string) => BINARY.has(c) ? 2 : TERNARY.has(c) ? 3 : UNARY.has(c) ? 1 : 0;
+/** How many descriptions an operator takes, 0 for any other character. */
+export const arity = (c: string) => BINARY.has(c) ? 2 : TERNARY.has(c) ? 3 : UNARY.has(c) ? 1 : 0;
 // Radicals, katakana letters, strokes, the ideograph blocks, private use and ？. Planes 2 and 3 hold
 // ideographs only.
 const COMPONENTS: [number, number][] = [[0x2E80, 0x2FDF], [0x30A1, 0x30FA], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],

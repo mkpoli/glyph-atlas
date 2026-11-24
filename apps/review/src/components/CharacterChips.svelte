@@ -25,6 +25,7 @@
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
   import { cardTiers, inferred, isSeal, structureForms } from '../lib/cardTiers.js'
+  import { partName } from '../lib/partFigures.js'
   // `narrowed` is the style group, order and years the gallery is shown with, which the pages of the
   // grapheme and of its forms keep.
   let { card = null, expand = $bindable('none'), narrowed = {}, onreview = null } = $props()
@@ -69,9 +70,10 @@
   const rank = relation => (RELATION_RANK.indexOf(relation) + RELATION_RANK.length + 1) % (RELATION_RANK.length + 1)
   const mainRelation = v => relationsOf(v).sort((a, b) => rank(a.relation) - rank(b.relation))[0]?.name ?? ''
   // A derived chip's evidence, after the word that marks it: each route it came by, each substitution
-  // as made with its count of contexts and the pairs behind it with their sources.
+  // as made with its count of contexts and the pairs behind it with their sources; a part written as
+  // a registered figure has neither.
   const derivedTitle = v => `${v.char} · ${t('chips.derived')}\n` + (v.routes ?? []).map(route => route.map(s =>
-    `${s.was} → ${s.became} · ${s.count}\n` + s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`).join('\n')).join('\n+ ')).join('\n\n')
+    [`${s.was} → ${partName(s.became)}${s.count ? ` · ${s.count}` : ''}`, ...s.pairs.map(p => `${p.a} ${p.b} ${p.sources.join(', ')}`)].join('\n')).join('\n+ ')).join('\n\n')
   // A small seal character of the grapheme names the Han character that makes it one and the source.
   const sealTitle = v => [`${v.char} ${v.code_point}`, ...(grapheme.evidence ?? []).flatMap(source => (source.edges ?? [])
     .filter(edge => edge.role === 'seal' && edge.b === v.char).map(edge => `${t('chips.relation.smallSeal')}: ${edge.a} · ${source.id}`)),
