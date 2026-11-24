@@ -19,10 +19,10 @@ function heldValues(row: Json, methods: Map<string, string>): Json[] {
   // A slot that stands names its members once, whoever made them; its supporting claims all hold that value.
   const members: Json[] = row.status === 'disputed' ? slotValuesHeld(row) : slotValuesHeld(row).flatMap((m: Json) => slotBacking(row).map(assertion => ({ ...m, assertion })));
   for (const m of members) {
-    const key = canonical(m.value), one = found.get(key) ?? { value: m.value, held: [] };
+    const key = canonical(m.value), one = found.get(key) ?? { value: m.value as Json, held: [] as string[] };
     one.held.push(m.assertion); found.set(key, one);
   }
-  return [...found.values()].map(({ value, held }) => ({ ...value, by: [...new Set(held.flatMap(id => author.get(id) ?? []))],
+  return [...found.values()].map(({ value, held }) => ({ ...value, by: [...new Set(held.flatMap(id => author.has(id) ? [author.get(id)!] : []))],
     ...(methods.size ? { methods: PREDICATES.read_as.methods!.filter(method => held.some(id => methods.get(id) === method)) } : {}) }));
 }
 
