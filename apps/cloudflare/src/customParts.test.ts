@@ -25,5 +25,8 @@ describe('parts no code point names', () => {
     expect(drawnWith('⿱&X-00087;龴')).toBe('⿱⿵𠆢一龴');
     expect(drawnWith('令')).toBe('令');
     expect(drawnWith('⿰{5}又')).toBeNull();
+    expect(drawnWith('&X-01548;')).toBe('⿰⺀⺀');
+    expect(drawnWith('&CDP-8C78;')).toBe('コ');
+    expect(unknownParts('{１２}')).toEqual([]);
   });
 });

@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from glyph_atlas import custom_parts
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +42,17 @@ def test_drawn_writes_a_description_in_encoded_characters():
     assert custom_parts.drawn("令") == "令"
     # {5}, the left of 叚, has no drawing in encoded characters.
     assert custom_parts.drawn("⿰{5}又") is None
+    # A form no source names as a component draws as its expression; one drawn first by a private-use
+    # glyph takes its next drawing.
+    assert custom_parts.drawn("&X-01548;") == "⿰⺀⺀"
+    assert custom_parts.drawn("&CDP-8C78;") == "コ"
+    assert custom_parts.parts()["X-00081"].editorial and not custom_parts.parts()["X-00087"].editorial
+
+
+def test_the_grammar_is_ids_inputs():
+    assert custom_parts.unknown("{１２}") == [] and custom_parts.spelt("{１２}") == "{１２}"
+    found = custom_parts.TOKEN.findall("&A-U-i005+81FC;#(-丨𠃍-一z){12345}&1bad;")
+    assert found == ["&A-U-i005+81FC;", "#(-丨𠃍-一z)"]
 
 
 def test_the_table_matches_its_build(tmp_path, monkeypatch):
@@ -47,7 +60,7 @@ def test_the_table_matches_its_build(tmp_path, monkeypatch):
     build = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(build)
     if not build.CACHE.exists():
-        return
+        pytest.skip("the upstream file is not in cache/; run scripts/build_custom_parts.py")
     data = build.fetched()
     assert (ROOT / "data" / "vocab" / "custom-parts.tsv").read_text(encoding="utf-8") == build.table(data)
     assert (ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts").read_text(encoding="utf-8") == build.module(data)

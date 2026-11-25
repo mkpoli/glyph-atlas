@@ -43,7 +43,7 @@ upstreams:
     attribution: 黒丿乀 (@midzchi_)
     weakness: the stroke table is an image and its author warns it holds mistakes
 notes:
-  - "Which shape a part is, which name another source gives the same shape, and how a character decomposes are facts, so the atlas treats the table as public domain, as it does cjkvi-variants, and credits every source; CHISE IDS states GPL-2.0-or-later for its files, and nothing of CHISE's own text or files is copied, only which of its entities is which shape."
+  - "ids-input states GPL-2.0-or-later for the file, for its CHISE rows (its licence field, docs/custom-components.md). Which shape a part is, which name another source gives the same shape, and how a character decomposes are facts, so the atlas treats the table as public domain, as it does cjkvi-variants, and credits every source; CHISE IDS states GPL-2.0-or-later for its files, and nothing of CHISE's own text or files is copied, only which of its entities is which shape."
   - "An identifier is written &X-NNNNN; inside a description. ids-input also maps each to private-use code point U+F0000 plus its number; the atlas never stores that character, since its drawn forms (data/vocab/drawn-forms.yaml) begin at U+F0000."
-  - "Drawings: 52 numbered parts are written out by BabelStone's fragments (an editorial one for {82}, 聿, and {12}); 69 only by the private-use glyph of BabelStone Han PUA; 763 parts of all three sources by descriptions in encoded characters alone."
+  - "Drawings: 52 numbered parts are written out by fragments, BabelStone's note 6 except the editorial ones of {12} and {82}; 69 only by the private-use glyph of BabelStone Han PUA. 1217 parts come out in encoded characters, taking each part's drawings in ids-input's order and a form no source names as a component as its expression."
 checked: 2026-11-26

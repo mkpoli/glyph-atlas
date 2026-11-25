@@ -5,8 +5,8 @@ the top of 合), CHISE IDS as an entity (`&CDP-8BD0;`) and zi.tools as a stroke 
 ids-input gives each such shape one identifier and lists every name it is known by; the atlas writes
 the part with its identifier, `&X-00087;`, whatever it was typed as (`spelt`). An identifier taken out
 of use answers for the one it was merged into. `drawn` writes a description out in encoded characters
-where every such part of it has a drawing in them (`{88}` as ⿵𠆢一); 69 numbered parts are drawn only by
-BabelStone Han PUA's private-use glyph.
+where every such part of it has a drawing in them (`{88}` as ⿵𠆢一), taking a part's drawings in
+ids-input's order; 69 numbered parts are drawn only by BabelStone Han PUA's private-use glyph.
 """
 
 from __future__ import annotations
@@ -17,20 +17,26 @@ from functools import cache
 from pathlib import Path
 
 TABLE = Path(__file__).resolve().parents[2] / "data" / "vocab" / "custom-parts.tsv"
-#: One part no code point names, in any of the three spellings or as an identifier.
-TOKEN = re.compile(r"\{\d+\}|&[A-Za-z0-9+._-]+;|#\([^()\s]*\)")
+#: One part no code point names, in ids-input's grammar (src/core/custom.js): a number of up to four
+#: digits, an entity, a stroke chain.
+TOKEN = re.compile(r"\{[0-9]{1,4}\}|&[A-Za-z][A-Za-z0-9+_-]{0,45};|#\([^\s()\[\]{}#&;]{1,44}\)")
 #: A drawing in BabelStone Han PUA's private-use characters, which only that font draws.
-PRIVATE = re.compile(r"[\uE000-\uF8FF]")
-IDENTIFIER = re.compile(r"&(X-\d{5});")
+PRIVATE = re.compile(r"[-]")
+IDENTIFIER = re.compile(r"&(X-[0-9]{5});")
 
 
 @dataclass(frozen=True)
 class Part:
     key: str
     names: tuple[str, ...]
-    draw: str
-    approximate: bool
+    draws: tuple[str, ...]
+    approximate: tuple[str, ...]
+    editorial: bool
     description: str
+
+
+def _split(text: str) -> tuple[str, ...]:
+    return tuple(text.split(" ")) if text else ()
 
 
 @cache
@@ -40,11 +46,11 @@ def _table() -> tuple[dict[str, Part], dict[str, str]]:
     for line in TABLE.read_text(encoding="utf-8").splitlines():
         if not line or line.startswith("#"):
             continue
-        key, names, draw, approximate, description, gone = line.split("\t")
+        key, names, draws, approximate, editorial, description, gone = line.split("\t")
         if gone:
             retired[key] = "" if gone == "withdrawn" else gone
         else:
-            parts[key] = Part(key, tuple(names.split(" ")) if names else (), draw, approximate == "1", description)
+            parts[key] = Part(key, _split(names), _split(draws), _split(approximate), editorial == "1", description)
     return parts, retired
 
 
@@ -84,9 +90,9 @@ def unknown(text: str) -> list[str]:
 
 
 def drawn(text: str, depth: int = 0) -> str | None:
-    """`text` with each such part written as what draws it, in encoded characters only, or None where
-    a part has no drawing in them (BabelStone Han PUA's private-use glyph is none). A drawing may
-    itself name such a part, so it is written out again."""
+    """`text` with each such part written as the first of its drawings that comes out in encoded
+    characters only, or None where none does (BabelStone Han PUA's private-use glyph is none). A
+    drawing may itself name such a part, so it is written out again."""
     if depth > 8:
         return None
     missing = False
@@ -94,8 +100,8 @@ def drawn(text: str, depth: int = 0) -> str | None:
     def written(found: re.Match[str]) -> str:
         nonlocal missing
         key = identifier(found.group())
-        draw = parts()[key].draw if key else ""
-        out = drawn(draw, depth + 1) if draw and not PRIVATE.search(draw) else None
+        out = next((out for draw in (parts()[key].draws if key else ())
+                    if not PRIVATE.search(draw) and (out := drawn(draw, depth + 1)) is not None), None)
         if out is None:
             missing = True
             return found.group()
