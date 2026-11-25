@@ -20,9 +20,6 @@ from test_atlas3_withdraw import entry_of
 def relabel(layout, monkeypatch):  # noqa: F811
     sys.modules.pop("relabel", None)
     module = importlib.import_module("relabel")
-    # The layout's crops are kana, which stand here for the Han characters a relabel is between.
-    real = module.refs.script_of
-    monkeypatch.setattr(module.refs, "script_of", lambda c: module.Script.HAN if c in "あいうかゑ" else real(c))
     db = sqlite3.connect(layout[0] / "out" / "atlas-runs.sqlite")
     db.execute("CREATE TABLE IF NOT EXISTS run_text(first INTEGER, size INTEGER, text TEXT NOT NULL, PRIMARY KEY(first, size)) WITHOUT ROWID")
     db.execute("INSERT OR REPLACE INTO run_text SELECT first, size, graphemes FROM runs")
@@ -53,9 +50,9 @@ def test_a_crop_goes_to_the_other_character_with_its_run_and_nothing_else_change
     after = crops(remote)
     assert labels(remote)[number["ex:a1"]] == "う"
     changed = {c for c in after[number["ex:a1"]] if after[number["ex:a1"]][c] != before[number["ex:a1"]][c]}
-    assert changed <= {"char", "family", "revision"} and after[number["ex:a1"]]["revision"] == before[number["ex:a1"]]["revision"] + 1
+    assert changed <= {"char", "family", "revision", "category"} and after[number["ex:a1"]]["revision"] == before[number["ex:a1"]]["revision"] + 1
     assert all(after[c] == before[c] for c in before if c != number["ex:a1"])
-    assert entry_of(root, "ex:a1") == {**was, "label": "う"}
+    assert entry_of(root, "ex:a1") == {**was, "label": "う", "script": "hiragana"}
     assert runs(remote) == [("うい", 1)]
     # Asked again, the relabel finds the crop filed there.
     again = write(relabel, monkeypatch, tmp_path / "again.sqlite", ("ex:a1", "あ", "う"), ("ex:b1", "う", "う"))
@@ -84,9 +81,20 @@ def test_a_crop_the_site_holds_otherwise_is_left_out(layout, relabel, monkeypatc
         "ex:b1: the site holds no ゑ", "ex:none: not a collected crop on the site"]
     with pytest.raises(SystemExit):
         write(relabel, monkeypatch, path, ("ex:a1", "あ", "う"))
-    monkeypatch.setattr(relabel.refs, "script_of", lambda c: relabel.Script.HIRAGANA)
-    write(relabel, monkeypatch, tmp_path / "kana.sqlite", ("ex:a1", "あ", "う"))
-    assert "left out: ex:a1: あ and う are not both Han" in capsys.readouterr().out
+    monkeypatch.setattr(relabel.refs, "script_of", lambda c: relabel.Script.HANGUL)
+    write(relabel, monkeypatch, tmp_path / "hangul.sqlite", ("ex:a1", "あ", "う"))
+    assert "left out: ex:a1: う is neither Han nor kana" in capsys.readouterr().out
+
+
+def test_a_crop_takes_the_script_category_and_jibo_of_its_new_character(layout, relabel, monkeypatch, tmp_path):  # noqa: F811
+    root = layout[0]
+    for script, category, jibo in ((relabel.Script.HAN, "kanji", None), (relabel.Script.HENTAIGANA, "kana", "宇")):
+        monkeypatch.setattr(relabel.refs, "script_of", lambda c, script=script: script)
+        monkeypatch.setattr(relabel.refs, "jibo_of_unit", lambda c, jibo=jibo: jibo)
+        path = write(relabel, monkeypatch, tmp_path / f"{category}.sqlite", ("ex:a1", "あ", "う"))
+        found, data = sqlite3.connect(path).execute("SELECT category, data FROM units WHERE id='ex:a1'").fetchone()
+        assert (found, json.loads(data)["script"], json.loads(data).get("jibo")) == (category, str(script), jibo)
+    assert "jibo" not in entry_of(root, "ex:a1")
 
 
 def refused(publish, remote, monkeypatch, path):
