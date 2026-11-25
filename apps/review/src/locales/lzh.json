@@ -667,6 +667,8 @@
   "quiz.suspect.readsAs": "疑作{character}",
   "quiz.suspect.doubtful": "疑",
   "quiz.suspect.none": "此無可疑",
+  "quiz.correct": "擇正字",
+  "quiz.correctCharacter": "擇第{number}截之正字",
   "quiz.skipCharacter": "置第{number}字",
   "quiz.skipSelected": "{skip}所擇",
   "quiz.skippedNotSaved": "置{count} · 未存",

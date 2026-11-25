@@ -709,6 +709,8 @@
   "quiz.suspect.readsAs": "Reads as {character}",
   "quiz.suspect.doubtful": "Doubtful",
   "quiz.suspect.none": "No suspects are left here.",
+  "quiz.correct": "Choose the correct character",
+  "quiz.correctCharacter": "Choose the correct character of crop {number}",
   "quiz.skipCharacter": "Skip character {number}",
   "quiz.skipSelected": "{skip} selected",
   "quiz.skippedNotSaved": "{count} skipped · not saved",

@@ -674,6 +674,8 @@
   "quiz.suspect.readsAs": "固體羅{character}",
   "quiz.suspect.doubtful": "勤䀡吏",
   "quiz.suspect.none": "空羣塳割𠎬疑𱜢於低。",
+  "quiz.correct": "𫾗𡨸中",
+  "quiz.correctCharacter": "𫾗𡨸中𧵑塳割{number}",
   "quiz.skipCharacter": "𠬃過𡨸{number}",
   "quiz.skipSelected": "{skip}各目㐌𫾗",
   "quiz.skippedNotSaved": "{count}㐌𠬃過 · 𣗓留",

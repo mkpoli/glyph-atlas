@@ -673,6 +673,8 @@
   "quiz.suspect.readsAs": "{character}に見える",
   "quiz.suspect.doubtful": "要確認",
   "quiz.suspect.none": "疑わしいものはもうありません。",
+  "quiz.correct": "正しい文字を選ぶ",
+  "quiz.correctCharacter": "切り出し{number}の正しい文字を選ぶ",
   "quiz.skipCharacter": "文字{number}をスキップ",
   "quiz.skipSelected": "選択済みを{skip}",
   "quiz.skippedNotSaved": "{count}件スキップ · 未保存",
