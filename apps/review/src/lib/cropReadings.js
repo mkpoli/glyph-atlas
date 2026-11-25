@@ -48,6 +48,19 @@ export function cropLine(crop, neighbours = []) {
   return here < 0 ? { parts: [own], at: 0, also: [] } : { parts: line.map(one => one.offset === 0 ? own : composed(one.label)), at: here, also: [] }
 }
 
+/**
+ * A crop's reading on the line its source gives: the line before and after the run, and the reading the
+ * run holds. Null while readers disagree, or where the line does not hold the run, or holds it twice.
+ */
+export function readingLine(crop) {
+  const [value, ...others] = crop?.reading?.values ?? []
+  if (!value || others.length || crop.reading.status === 'disputed') return null
+  const parts = textParts(crop.text)
+  const starts = parts.flatMap((_, i) => value.run.every((part, j) => parts[i + j] === part) ? [i] : [])
+  if (starts.length !== 1) return null
+  return { before: parts.slice(0, starts[0]).join(''), value, after: parts.slice(starts[0] + value.run.length).join('') }
+}
+
 const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.stringify(b.run)
 /**
  * What the editor opens with, for a reader: the reading and the rubies they hold, or, holding none, the
