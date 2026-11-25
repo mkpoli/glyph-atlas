@@ -19,6 +19,8 @@ export const APP = join(ROOT, 'apps', 'review')
 const FOLDER = 'atlas-review-', OWNER = '.owner'
 /** Whether the process that made a folder still runs: its pid and the time it started, which a later process of the same pid does not share. */
 const started = pid => { try { return readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ')[19] } catch { return null } }
+/** Whether a process can still write; one that ended and nobody has waited for cannot. */
+const running = pid => { try { return !/^.*\) [ZX] /s.test(readFileSync(`/proc/${pid}/stat`, 'utf8')) } catch { return false } }
 /** Removes the folders of checks that were killed before they removed their own (one of a run still going, or kept with
  *  `--keep`, stays; so does a folder no check signed). */
 export function sweep(parent = tmpdir()) {
@@ -97,11 +99,16 @@ export async function boot(config) {
   const api = config.external ? (config.externalApi ?? config.external).replace(/\/$/, '') : `http://127.0.0.1:${config.port}`
   const base = config.external ? config.external.replace(/\/$/, '') : `http://127.0.0.1:${webPort}`
   let fixture = null
+  let build = null
   let server = null
   let web = null
   const log = []
-  // The services go before the folder they write in, however the run ends.
-  process.prependListener('exit', () => { for (const child of [web, server]) if (child && child.exitCode === null) child.kill('SIGKILL') })
+  // What writes in the folder goes before it, however the run ends.
+  process.prependListener('exit', () => {
+    const left = [build, web, server].filter(child => child && child.exitCode === null && !child.signalCode)
+    for (const child of left) child.kill('SIGKILL')
+    for (let tries = 0; tries < 200 && left.some(child => running(child.pid)); tries++) Bun.sleepSync(5)
+  })
 
   if (!config.external) {
     // A dataset directory that a previous run left behind would carry its reviewed state in
@@ -109,7 +116,7 @@ export async function boot(config) {
     for (const stale of ['review.sqlite', 'review.sqlite-wal', 'review.sqlite-shm', 'reviews.jsonl']) {
       rmSync(join(config.directory, stale), { force: true })
     }
-    const build = Bun.spawn([config.python, join(HERE, 'fixture.py'), config.directory], {
+    build = Bun.spawn([config.python, join(HERE, 'fixture.py'), config.directory], {
       stdout: 'pipe',
       stderr: 'pipe',
     })
