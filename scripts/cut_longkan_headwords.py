@@ -66,6 +66,8 @@ COST = -0.3
 MARGIN = 0.3
 #: The table pages searched either side of the one a half-leaf is expected to show.
 REACH, WIDE_REACH = 12, 40
+#: How many of the pages closest at first sight have their sizes fitted.
+CANDIDATES = 4
 #: A headword's height and a gloss row in half-column pitches: what the fit of a page tries.
 HEADS = (1.2, 1.35, 1.5, 1.65, 1.8, 1.95)
 ROWS = (0.72, 0.8, 0.88, 0.96, 1.04, 1.12)
@@ -130,6 +132,13 @@ def fitted(page: tape.Half, slots: list[tape.Slot], alike: np.ndarray) -> tuple[
     return best[0] / len(slots), best[1], best[2]
 
 
+def native(box: Box, times: int) -> Box:
+    """`box` on the image at its own size: every pixel it touches on the image enlarged `times`."""
+    x0, y0 = box.x // times, box.y // times
+    x1, y1 = -(-(box.x + box.w) // times), -(-(box.y + box.h) // times)
+    return Box(x=x0, y=y0, w=x1 - x0, h=y1 - y0)
+
+
 def ordered(found: list[tuple[int, int, bool]]) -> set[int]:
     """Which of the half-leaves (index, table page, borne out) run in the book's order: the longest run of rising pages."""
     tails: list[int] = []
@@ -178,7 +187,7 @@ def main() -> int:
     anchors = tape.Anchors(args.fonts.split(","), classifier.features)
     slots_of = {page: longkan.slots(rows) for page, rows in entries.items()}
 
-    found, expected = [], None
+    found, last = [], None  # `last`: the half-leaf last borne out, as its index in the book (two to a scan page), and its table page
     for leaf, url, image in leaves(copy, args.pdf, only):
         big = image.resize((image.width * copy["enlarge"], image.height * copy["enlarge"]), Image.Resampling.LANCZOS)
         boxes = [box for box, _ in detector.boxes_at(big, float(copy["scale"]))]
@@ -189,7 +198,8 @@ def main() -> int:
                 continue
             page.candidates = tape.recut(big, page)
             crops = np.stack([classifier.features(big.crop((b.x, b.y, b.x + b.w, b.y + b.h))) for _, _, b in page.candidates])
-            centre = expected + 1 if expected is not None else 2 * leaf - (2 if side == "left" else 3)
+            index = 2 * leaf + (side == "left")
+            centre = last[1] + index - last[0] if last is not None else 2 * leaf - (2 if side == "left" else 3)
             for reach in (REACH, WIDE_REACH):
                 costs = {}
                 for number in range(centre - reach, centre + reach + 1):
@@ -202,15 +212,20 @@ def main() -> int:
             if not costs:
                 found.append({"leaf": leaf, "side": side, "url": url, "size": image.size, "skipped": "no table page in reach"})
                 continue
-            number = min(costs, key=costs.get)
-            alike = tape.similarity(slots_of[number], crops, anchors)
-            cost, head, row = fitted(page, slots_of[number], alike)
-            others = [v for n, v in costs.items() if n != number]
-            found.append({"leaf": leaf, "side": side, "url": url, "size": image.size, "table_page": number, "cost": cost,
-                          "margin": min(others) - costs[number] if others else 0.0, "page": page, "head": head, "row": row, "alike": alike,
-                          "good": cost <= COST and (not others or min(others) - costs[number] >= MARGIN)})
+            # Sizes are fitted for the pages that came closest at first sight: one that fits best at other sizes is found.
+            near = sorted(costs, key=costs.get)[:CANDIDATES]
+            sized = {}
+            for number in near:
+                alike = tape.similarity(slots_of[number], crops, anchors)
+                sized[number] = (*fitted(page, slots_of[number], alike), alike)
+            number = min(sized, key=lambda n: sized[n][0])
+            cost, head, row, alike = sized[number]
+            others = [sized[n][0] for n in sized if n != number] + [v for n, v in costs.items() if n not in sized]
+            margin = min(others) - cost if others else 0.0
+            found.append({"leaf": leaf, "side": side, "url": url, "size": image.size, "table_page": number, "cost": cost, "margin": margin,
+                          "page": page, "head": head, "row": row, "alike": alike, "good": cost <= COST and (not others or margin >= MARGIN)})
             if found[-1]["good"]:
-                expected = number
+                last = (index, number)
             print(json.dumps({"leaf": leaf, "side": side, "page": number, "cost": round(cost, 2), "margin": round(found[-1]["margin"], 2),
                               "good": found[-1]["good"]}), flush=True)
     in_order = ordered([(k, f["table_page"], f["good"]) for k, f in enumerate(found) if "table_page" in f])
@@ -235,9 +250,7 @@ def main() -> int:
                 if chance[n, j] < POSTERIOR or f["alike"][n, j] < ALIKE:
                     continue
                 entry = next(e for e in entries[f["table_page"]] if e.row == slot.entry)
-                box = f["page"].candidates[j][2]
-                scale = copy["enlarge"]
-                box = Box(x=round(box.x / scale), y=round(box.y / scale), w=max(1, round(box.w / scale)), h=max(1, round(box.h / scale)))
+                box = native(f["page"].candidates[j][2], copy["enlarge"])
                 volume = entry.volume
                 documents.setdefault(volume, document_of(source, copy, volume))
                 page_id = f"{CORPUS}-{copy['id']}:{f['leaf']}"

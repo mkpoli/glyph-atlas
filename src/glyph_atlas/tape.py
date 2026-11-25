@@ -139,7 +139,9 @@ def half(boxes: Sequence[Box], lowest: float, highest: float) -> Half | None:
     def middle(c: int, y: float) -> float:
         return origin + (odd + 2 * c) * pitch + y * tilt
     height = bottom - top
-    candidates = sorted(((used.index(c) * height + place - top, c, box) for c, box, place in found if c in used), key=lambda z: z[0])
+    # A column with too few boxes to count still takes its length on the tape.
+    first = used[0] if used else 0
+    candidates = sorted((((first - c) * height + place - top, c, box) for c, box, place in found if c in used), key=lambda z: z[0])
     return Half(strength, pitch, tilt, gloss, top, bottom, used, middle, candidates)
 
 
@@ -274,5 +276,7 @@ def posterior(slots: Sequence[Slot], page: Half, alike: np.ndarray, head: float,
         terms = [np.full(m, -MISSED * (n - 1 - k))] + [
             np.logaddexp.reduce(edges[k, c] + (backward[c] - shape[c])[None, :], axis=1) for c in range(k + 1, min(n, k + SKIP + 1))]
         backward[k] = np.logaddexp.reduce(np.stack(terms), axis=0)
-    total = np.logaddexp.reduce((forward - MISSED * (n - 1 - np.arange(n))[:, None]).ravel())
+    # The pairing that misses every slot is one of them.
+    paired = (forward - MISSED * (n - 1 - np.arange(n))[:, None]).ravel()
+    total = np.logaddexp(np.logaddexp.reduce(paired), -MISSED * n)
     return np.exp(forward + backward - total)

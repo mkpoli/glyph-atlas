@@ -107,3 +107,22 @@ def test_the_tables_fields_are_the_headwords_printed():
 def test_a_section_or_a_tone_takes_a_place_of_its_own():
     rows = [longkan.Entry(1, "鈂", "音容也。", "1", "金", "平聲", 9), longkan.Entry(2, "鋼", "", "1", "金", "上聲", 9), longkan.Entry(3, "人", "", "1", "人", "上聲", 9)]
     assert [(s.char, s.entry) for s in longkan.slots(rows)] == [("鈂", 1), (None, -1), ("鋼", 2), (None, -1), ("人", 3)]
+
+
+def test_a_page_with_nothing_placed_has_no_certain_pair():
+    slots = [Slot("一", 0, 1)]
+    page = SimpleNamespace(candidates=[(0.0, 0, Box(x=0, y=0, w=1, h=1))])
+    assert tape.posterior(slots, page, np.full((1, 1), np.nan), 140.0, 40.0)[0, 0] == pytest.approx(1 / (1 + np.exp(-1)))
+
+
+def test_a_column_with_few_boxes_keeps_its_length_on_the_tape():
+    boxes, pitch = [], 90
+    for column in range(10):
+        left = 300 + column * 2 * pitch
+        rows = range(6, 25) if column != 5 else range(6, 7)
+        boxes += [Box(x=left + part * pitch - 35, y=row * 82, w=70, h=76) for row in rows for part in range(2)]
+        boxes.append(Box(x=left - 20, y=300, w=140, h=140))
+    page = tape.half(boxes, 80, 95)
+    heights = {c: place for place, c, _ in page.candidates}
+    assert max(page.columns) - min(page.columns) == 9
+    assert heights[page.columns[-1]] > 8 * (page.bottom - page.top) * 0.9, "the last column's headword is nine columns along"
