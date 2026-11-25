@@ -15,7 +15,7 @@
   // candidates then show as the grapheme cards the collection's browser shows, each leading to its grapheme's
   // page, and the characters it holds none of fold away beneath them in cards of their own.
   // A `lead` snippet is a row the page puts above the candidates while the list is open.
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { graphemeLabel, labelParts } from '$worker/graphemeLabel.ts'
   import ScriptText from './ScriptText.svelte'
@@ -179,8 +179,10 @@
     input?.focus()
   }
 
-  // Enter in the box opens the first candidate, with or without cards: トモ still opens 𪜈.
-  function choose(index = active) {
+  // Enter in the box opens the first candidate, with or without cards: トモ still opens 𪜈. Over cards it is the
+  // first candidate a card shows, unless every candidate is folded away.
+  const shownFirst = $derived(cards.length ? Math.max(0, items.findIndex(item => groupOf(item))) : 0)
+  function choose(index = carded ? shownFirst : active) {
     if (loading || index < 0) return
     const item = items[index]
     if (!item) return
@@ -226,7 +228,9 @@
 
   const browsing = $derived(open && Boolean(browse) && !value.trim())
 
+  // What a closed fold holds takes no focus, so the arrows pass over it to what follows.
   const focusable = () => [...(list?.querySelectorAll('a[href], button:not(:disabled), summary') ?? [])]
+    .filter(element => !element.closest('details:not([open])') || element.matches('details > summary'))
   /** Arrow keys among the cards' buttons; Escape, or an arrow past either end, returns to the box. */
   function walk(event) {
     if (event.key === 'Escape') { event.preventDefault(); done(); return }
@@ -308,6 +312,13 @@
       view?.removeEventListener('resize', again)
       view?.removeEventListener('scroll', again)
     }
+  })
+
+  // Cards drawn again (the site's counts arrive, a further page is read) take the focus of the one the arrows
+  // stood on with them: it goes back to the box, where the arrows start again.
+  $effect(() => {
+    void cards; void unheld
+    tick().then(() => { if (open && carded && document.activeElement === document.body) { quiet = true; input?.focus(); quiet = false } })
   })
 
   onMount(() => {

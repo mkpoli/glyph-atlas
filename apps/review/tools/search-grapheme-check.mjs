@@ -64,6 +64,13 @@ try {
     await opened()
     await key('ArrowDown', 40); await key('Enter', 13)
     await follows('the arrow and Enter')
+
+    // The fold of characters held nowhere is passed over while closed: the arrows reach the box again.
+    await opened()
+    const stops = await browser.evaluate(`document.querySelectorAll('.collection-toolbar .candidate-list a[href], .collection-toolbar .candidate-list button:not(:disabled), .collection-toolbar .candidate-list summary').length`)
+    for (let i = 0; i <= stops + 1; i++) await key('ArrowDown', 40)
+    const at = await browser.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(BOX)}) || document.activeElement.matches('.collection-toolbar .candidate-list *')`)
+    assert(at, `${path}: the arrows lose the list`)
   }
 
   await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.select-toggle') !== null` })
