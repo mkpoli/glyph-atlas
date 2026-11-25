@@ -24,6 +24,7 @@
   const own = $derived(item?.style_basis === 'unit' ? item.style : 'unassessed')
   // A server that names the styles it can store (`style_choices`) offers only those.
   const choices = $derived(item?.style_choices ? STYLES.filter(value => item.style_choices.includes(value)) : STYLES)
+  const kind = value => t(`style.kind.${STYLES.includes(value) ? value : 'unassessed'}`)
   // The server names the basis `document-confirmed`; a catalogue key has no hyphen.
   const basis = $derived((item?.style_basis ?? 'none').replaceAll('-', '_'))
 
@@ -45,16 +46,18 @@
 
 {#if item?.style}
   <div class="style-field">
-    <!-- A style nobody assessed says nothing, nor one outside the vocabulary (older codes such as `printed`), so only the menu is shown. -->
-    {#if item.style !== 'unassessed' && STYLES.includes(item.style)}<span class="style-value">{t('style.label')}: <b>{t(`style.kind.${item.style}`)}</b>
-      {#if item.style_basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>{/if}
     {#if item.style_editable && editable}
-      <label class="style-own">{item.style === 'unassessed' ? t('style.label') : t('style.own')}
+      <label class="style-own">{t('style.label')}
         <select value={own} {disabled} onchange={choose}>
-          <option value="unassessed">{t('style.inherit')}</option>
+          <option value="unassessed">{t('style.inherit', { style: kind(item.style_inherited) })}</option>
           {#each choices as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
         </select>
       </label>
+      {#if own === 'unassessed' && basis !== 'none'}<span>{t(`style.basis.${basis}`)}</span>{/if}
+    {:else if item.style !== 'unassessed' && STYLES.includes(item.style)}
+      <!-- A style nobody assessed says nothing, nor one outside the vocabulary (older codes such as `printed`). -->
+      <span class="style-value">{t('style.label')}: <b>{kind(item.style)}</b>
+        {#if basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>
     {/if}
     {#if error}<span class="style-error" role="alert">{error}</span>{/if}
   </div>

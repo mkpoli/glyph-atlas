@@ -81,5 +81,8 @@ drawn again were each tried first and set aside.
   https://glyphatlas.org/ja/forms/U+4E8B, read 2026-11-16, grouped into two forms by mkpoli on the
   same day, and a third supplied as a drawing on 2026-11-18. The cluster keys and the third's
   provenance are in `data/vocab/drawn-forms.yaml`.
+- The two cursive forms of 時 (U+F0003, U+F0004): the clusters of forms revision 582865e3b2b68c53 on
+  https://glyphatlas.org/ja/forms/U+6642, read and grouped by mkpoli on 2026-11-24. Cluster keys and
+  provenance are in `data/vocab/drawn-forms.yaml`.
 - `docs/decisions/0013-finer-forms.md`, `docs/design/form-model.md` (the `pua` scheme and its
   namespace and version).
