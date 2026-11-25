@@ -150,7 +150,7 @@ COMMAND = r"(?:(?:^|(?<=\s))!|^/)fish"
 # A Han name is written against the words around it (大肥魚餓嗎, 大肥魚喫🍚), so it calls the bot
 # unless a neighbour makes it something else: a letter or digit after it (大肥鱼V4, DeepSeek news), a
 # word after it that turns the fish into food (大肥鱼头), or 減 before it (减肥鱼油, slimming fish oil).
-HAN = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0003134f"
+HAN = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0003347f"
 # What asks the bot to introduce itself: a call that is the request and nothing else, such as
 # `!fish 自我介紹` or 大肥魚，自我介紹一下. 自我介紹一下，我是新來的 is a newcomer's own introduction.
 INTRO_WORD = r"(?:intro|introduce yourself|自我介[紹绍]|自己紹介|자기\s?소개)"
@@ -210,7 +210,7 @@ MAX_SUMMARY = 1500
 # Scripts written without spaces between words are indexed as character pairs, the usual way to
 # search CJK text without a dictionary; other scripts by word.
 SPACELESS = (HAN + "\u3040-\u30ff\u31f0-\u31ff\u3100-\u312f\uac00-\ud7af\u1100-\u11ff"
-             "\U00017000-\U00018cff\U0001b000-\U0001b2ff")
+             "\U00013000-\U000143ff\U00017000-\U000191df\U0001b000-\U0001b2ff\U0003d000-\U0003fc3f")
 TERM = re.compile(rf"[{SPACELESS}]+|[^\W_{SPACELESS}]+")
 # Looking things up in a called turn: the web through Gemini's Google Search grounding (5,000 free
 # queries/month on the paid tier) and URL context tool (run on Google's side, so the homeserver's
