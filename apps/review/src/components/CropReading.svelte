@@ -5,7 +5,7 @@
   // dictionary that the characters write can be named with it.
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
-  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingChips, setReading, stretch } from '../lib/cropReadings.js'
+  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingEntries, setReading, stretch } from '../lib/cropReadings.js'
   import { toSource } from '../lib/cropBox.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
@@ -13,7 +13,7 @@
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
   import ReadingPlaces from './ReadingPlaces.svelte'
-  import ReadingChip from './ReadingChip.svelte'
+  import ReadingEntry from './ReadingEntry.svelte'
   import { otherPlaces, placesText, runPlaces } from '../lib/readingPlaces.js'
   import ScriptText from './ScriptText.svelte'
 
@@ -35,10 +35,10 @@
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
   let chosen = $state(undefined), probable = $state(false), changed = false
 
-  const chips = $derived(readingChips(item.reading))
+  const entries = $derived(readingEntries(item.reading))
   const words = $derived(item.word?.values ?? [])
   // The reading that stands alone, whose run the other places of can be read alike; how many there are is asked after a save.
-  const standing = $derived(chips.length === 1 && chips[0].notes.length === 1 && item.reading.status !== 'disputed' ? chips[0].notes[0] : null)
+  const standing = $derived(entries.length === 1 && entries[0].notes.length === 1 && item.reading.status !== 'disputed' ? entries[0].notes[0] : null)
   let placed = $state.raw(null), showing = $state(false)
   const counted = $derived(placed && standing && placed.text === placesText(standing) ? placed : null)
   // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
@@ -215,15 +215,16 @@
 
 <div class="reading-field" class:editing bind:this={root}>
   <div class="reading-slot">
-    {#if !chips.length}<span>{t('reading.label')}</span>{/if}
-    {#each chips as chip}<ReadingChip {chip} />{/each}
-    {#each words as value}
-      <span class="reading-word"><span class="reading-badge">{t('word.label')}</span><b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>
-        {#if value.form === 'probable'}<span class="reading-badge">{t('word.probable')}</span>{/if}</span>
-    {/each}
-    {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-badge disputed">{t('reading.disputed')}</span>{/if}
-    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>
-      {#if standing && placesText(standing) && counted?.others !== 0}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if counted?.others}<span class="reading-count">{counted.others}</span>{/if}</button>{/if}{/if}
+    <div class="reading-entries">
+      {#each entries as entry}<ReadingEntry {entry} />{:else}<div class="reading-entry">{t('reading.label')}</div>{/each}
+      {#if words.length}<div class="reading-entry">{t('word.label')}
+        {#each words as value}<span><b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>{#if value.form === 'probable'}{' '}{t('word.probable')}{/if}</span>{/each}</div>{/if}
+    </div>
+    {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-disputed">{t('reading.disputed')}</span>{/if}
+    {#if !editing}<div class="reading-acts">
+      <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{entries.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+      {#if standing && placesText(standing) && counted?.others !== 0}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if counted?.others}{' '}{counted.others}{/if}</button>{/if}
+    </div>{/if}
   </div>
   {#if editing && line}
     <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
@@ -297,19 +298,21 @@
 <style>
   .reading-field{font-size:12px;color:var(--muted);display:grid;gap:8px;min-width:0}
   .reading-field.editing{flex:1 1 100%}
-  .reading-slot,.reading-methods,.reading-words,.reading-actions{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
-  .reading-slot{min-height:32px}
+  .reading-methods,.reading-words,.reading-actions{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+  /* The runs stand one to a line, and what can be done with them is at the end of the first. */
+  .reading-slot{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline;min-height:32px}
+  .reading-entries{display:grid;gap:8px;min-width:0}
+  .reading-entry{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}
+  .reading-acts{display:flex;flex-wrap:wrap;gap:4px 16px;margin-inline-start:auto}
   b{color:var(--ink);font-weight:600}
   button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
-  .reading-slot>button{min-height:32px}
-  @media(max-width:700px){.reading-slot,.reading-slot>button{min-height:36px}}
   button:hover:not(:disabled){border-color:var(--line-strong)}
   button:disabled{opacity:.5;cursor:default}
   button:focus-visible,input:focus-visible{outline:3px solid var(--focus-ring);outline-offset:1px}
-  .reading-word{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--surface)}
-  .reading-badge{font-size:11px;color:var(--muted)}
-  .reading-badge.disputed{color:var(--wrong)}
-  .reading-count{margin-inline-start:6px;color:var(--accent);font-weight:600}
+  .reading-acts button{min-height:32px;padding:0;border:0;background:none;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+  .reading-acts button:not(:disabled):hover{color:var(--ink)}
+  @media(max-width:700px){.reading-slot,.reading-acts button{min-height:36px}}
+  .reading-disputed{color:var(--wrong)}
   .reading-clear{margin-inline-end:auto}
   .reading-editor{display:grid;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface);min-width:0}
   .reading-line{display:flex;flex-wrap:wrap;row-gap:4px;font-family:var(--char-font);font-size:19px;line-height:1}

@@ -66,14 +66,14 @@ const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.strin
  * What the inspector shows of a crop's runs: each run with the rubies the page writes beside it, and the notes
  * readers make of how it is read.
  */
-export function readingChips(slot) {
-  const chips = []
+export function readingEntries(slot) {
+  const entries = []
   for (const [field, values] of [['ruby', slot?.ruby?.values], ['left', slot?.left?.values], ['notes', slot?.values]]) for (const value of values ?? []) {
-    let chip = chips.find(one => together(one.run, value))
-    if (!chip) chips.push(chip = { run: value, ruby: [], left: [], notes: [] })
-    chip[field].push(value)
+    let entry = entries.find(one => together(one.run, value))
+    if (!entry) entries.push(entry = { run: value, ruby: [], left: [], notes: [] })
+    entry[field].push(value)
   }
-  return chips
+  return entries
 }
 
 /**

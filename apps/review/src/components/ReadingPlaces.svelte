@@ -3,10 +3,10 @@
   // page around the run. A place that is read already shows its reading, and nothing is written at any
   // place but by its own button.
   import { onMount } from 'svelte'
-  import { readingChips, setReading } from '../lib/cropReadings.js'
+  import { readingEntries, setReading } from '../lib/cropReadings.js'
   import { bookOf, placeReading, placesSaved, placesText, readingPlaces, readingsNow, runPlaces } from '../lib/readingPlaces.js'
   import { t } from '../lib/i18n.svelte.js'
-  import ReadingChip from './ReadingChip.svelte'
+  import ReadingEntry from './ReadingEntry.svelte'
   import RunImage from './RunImage.svelte'
 
   // `first` is a first page already read; `word` is the dictionary word the reader holds on the run.
@@ -99,7 +99,7 @@
             </div>
             <button type="button" class="place-confirm" disabled={Boolean(saving)} onclick={() => confirm(place)}>{saving === place.id ? t('common.saving') : t('reading.places.confirm', { reading: value.reading.join('') })}</button>
           {:else if place.read}
-            <span class="place-read">{#each readingChips(place.read) as chip}<ReadingChip {chip} />{/each}{#if place.read.status === 'disputed'}<span class="disputed">{t('reading.disputed')}</span>{/if}</span>
+            <span class="place-read">{#each readingEntries(place.read) as entry}<ReadingEntry {entry} />{/each}{#if place.read.status === 'disputed'}<span class="disputed">{t('reading.disputed')}</span>{/if}</span>
           {/if}
           {#if refused[place.id]}<span class="place-error" role="alert">{refused[place.id]}</span>{/if}
         </div>
