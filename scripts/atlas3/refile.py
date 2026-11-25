@@ -14,10 +14,16 @@ runs once every part has landed:
   that meet in one add up there. A run the Worker moved meanwhile is left where it is, and read and filed again;
 - `run_written` names the character of a crop written apart from its new head, and drops one that is the head,
   where a run of the crop stands as it was filed. A crop with no character (a corpus glyph known by its label) is
-  written as its row there says, or as the head its run named;
+  written as its row there says, or as the head its run named, and its row stays, though it be the head: its other
+  runs, in another batch or moved meanwhile, are filed by it;
 - the local copy then takes D1's rows (`publish.snapshot`), the answers of the books and shards those runs
   are in are written again and uploaded, and a stamp in glyph-atlas-v3 moves the publication key the runs'
   cached answers are kept under.
+
+The answers the galleries and the counts are read from are `answers.py`'s, run as soon as a load that moved heads
+ends: the load, the runs and the answers in that order, with no publication between. Until it has run the grapheme
+browser, the rounds' list and the tiles count each form under the grapheme the last publication did, while cards,
+galleries, listings under a grapheme, runs and a crop's own record name the new one.
 
 The heads and the runs are in two databases, so a load can stop between them, or between two parts of the
 runs. The next `reference.py --send` goes on: it reads D1's rows again and sends what still differs. A load
@@ -70,7 +76,7 @@ def targets(run, own, claimed, moved):
 def filing(rows, own, claimed, held, moved):
     """The statements that file `rows` under their targets, and the runs that move, {(first, size)}. `own` gives
     each crop's character, `claimed` the head its claim reads, `held` the characters `run_written` holds."""
-    own = held | own
+    known, own = own, held | own
     statements, moves, written = [], set(), {}
     for run in rows:
         heads = targets(run, own, claimed, moved)
@@ -88,7 +94,7 @@ def filing(rows, own, claimed, held, moved):
         where = f"({' OR '.join(sorted(set(filed)))})"
         if char != head and held.get(crop) != char:
             statements.append(f"INSERT OR REPLACE INTO run_written(crop,char) SELECT {crop},{publish.lit(char)} WHERE {where};")
-        elif char == head and crop in held:
+        elif char == head and crop in held and crop in known:
             statements.append(f"DELETE FROM run_written WHERE crop={crop} AND {where};")
     return statements, moves
 

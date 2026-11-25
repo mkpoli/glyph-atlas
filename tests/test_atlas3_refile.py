@@ -324,6 +324,45 @@ def test_a_corpus_glyph_known_by_its_label_alone_is_filed_and_written_by_it(layo
     consistent(root, remote)
 
 
+LABELLED = 9_040
+
+
+def labelled(root, remote, others):
+    """A corpus glyph with no character its row calls 春, under 萅, and a run with each of `others`, before it or after:
+    the load gives 春 its own head and leaves 萅."""
+    both(root, remote, "UPDATE graphemes SET head=100 WHERE id=101;")
+    sources(root, cards=[c for c in cards(萅="萅", 春="春")])
+    crop_of(root, remote, LABELLED, None, kind=1)
+    for i, (crop, before) in enumerate(others):
+        crop_of(root, remote, crop, "の")
+        run_of(root, remote, *(("の萅", crop, LABELLED) if before else ("萅の", LABELLED, crop)), shuffle=70 + i, written=[(LABELLED, "春")] if not i else ())
+
+
+@pytest.mark.parametrize("batch", [1, 100])
+@pytest.mark.parametrize("others", [[(8_990, True), (9_050, False)], [(9_050, False), (9_060, True)]])
+def test_a_glyph_known_by_its_label_is_filed_in_every_batch_its_runs_are_in(layout, monkeypatch, others, batch):  # noqa: F811
+    root, _publish, remote = layout
+    spread(root, remote)
+    labelled(root, remote, others)
+    load(remote, monkeypatch, "--heads")
+    load(remote, monkeypatch, "--send", "--heads", batch=batch)
+    keys = {r[0] for r in remote.dbs["glyph-atlas-v3-runs"].execute("SELECT graphemes FROM runs WHERE first=? OR second=?", (LABELLED, LABELLED))}
+    assert keys == {"の春", "春の"} and held_by(remote)[LABELLED] == "春"
+    consistent(root, remote)
+
+
+def test_a_glyph_known_by_its_label_is_filed_though_the_worker_moves_one_of_its_runs_meanwhile(layout, monkeypatch):  # noqa: F811
+    """The Worker reads the の after the glyph as 留 between the read and the send; the glyph's part of that run is filed next."""
+    root, publish, remote = layout
+    spread(root, remote)
+    labelled(root, remote, [(8_990, True), (9_050, False)])
+    before_the_send(remote, monkeypatch, publish, lambda: (worker_moves(remote, LABELLED, "萅の", "萅留"), claim(remote, 9_050, "留")))
+    load(remote, monkeypatch, "--send", "--heads")
+    keys = {r[0] for r in remote.dbs["glyph-atlas-v3-runs"].execute("SELECT graphemes FROM runs WHERE first=? OR second=?", (LABELLED, LABELLED))}
+    assert keys == {"の春", "春留"} and held_by(remote)[LABELLED] == "春"
+    consistent(root, remote)
+
+
 def test_a_crop_a_claim_reads_as_a_member_that_moves_goes_with_it(layout, monkeypatch, capsys):  # noqa: F811
     """d is a 留 a claim reads as 备, which stands under 留 and goes to 備: neither its run's key nor its character moves."""
     root, _publish, remote = layout
