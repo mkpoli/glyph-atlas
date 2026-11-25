@@ -452,10 +452,39 @@ def test_the_table_of_forms_is_whole():
     assert [row["full"] for row in rows if row["char"] == "后"] == ["后", "後"]
 
 
+def script(name: str):
+    spec = importlib.util.spec_from_file_location(name, ROOT / f"scripts/{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_download_is_kept_by_its_pin(monkeypatch):
+    """A changed pin is another file, so the one kept from the last is not read for it."""
+    asked = []
+
+    def download(url, path, **given):
+        asked.append(path)
+        raise EOFError
+
+    def kept(build):
+        monkeypatch.setattr(build, "download", download)
+        with pytest.raises(EOFError):
+            build.main()
+        return asked[-1]
+
+    build = script("build_tongyong_forms")
+    first = kept(build)
+    monkeypatch.setattr(build, "SHA256", "0" * 64)
+    assert kept(build) != first
+    build = script("build_headword_readings")
+    first, record = kept(build), build.record
+    monkeypatch.setattr(build, "record", lambda name: {**record(name), "revision": "0" * 40})
+    assert kept(build) != first
+
+
 def test_the_collation_of_a_headword_is_read():
-    spec = importlib.util.spec_from_file_location("build_headword_readings", ROOT / "scripts/build_headword_readings.py")
-    build = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(build)
+    build = script("build_headword_readings")
     assert [build.headword(text) for text in ("東", "［東］", "甲〈乙〉", "｛丙｝", "⿰木木")] == ["東", "東", "乙", None, None]
 
 

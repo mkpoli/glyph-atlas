@@ -36,7 +36,7 @@ def rows(text: str) -> list[list[str]]:
 
 def main() -> None:
     source = yaml.safe_load(SOURCE.read_text(encoding="utf-8"))
-    path = download(source["access"]["forms"], ROOT / "cache" / "tongyong" / "variants.txt")
+    path = download(source["access"]["forms"], ROOT / "cache" / "tongyong" / f"variants-{SHA256[:16]}.txt")
     if (found := hashlib.sha256(path.read_bytes()).hexdigest()) != SHA256:
         raise SystemExit(f"{path}: sha256 {found}, not {SHA256}")
     table = rows(path.read_text(encoding="utf-8"))

@@ -72,7 +72,7 @@ def shuowen(entries: list[dict]) -> list[tuple[str, ...]]:
 def main() -> None:
     sound, graph = record("guangyun-zecuntang"), record("shuowen")
     table = download(f"https://raw.githubusercontent.com/nk2028/tshet-uinh-data/{sound['revision']}/{GUANGYUN_PATH}",
-                     CACHE / "guangyun.csv")
+                     CACHE / f"guangyun-{sound['revision']}.csv")
     archive = download(f"{graph['url']}/archive/{graph['revision']}.zip", CACHE / f"shuowen-{graph['revision']}.zip", expected="zip")
     with zipfile.ZipFile(archive) as files:
         entries = sorted((json.loads(files.read(name)) for name in files.namelist()
