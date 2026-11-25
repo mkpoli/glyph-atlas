@@ -339,12 +339,13 @@
     if (!box || !treeEl?.contains(box)) return
     const path = parsePath(box.getAttribute('data-hover-path') ?? '')
     if (!path.length) return
-    touch = { path, pointer: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
+    touch = { path, tree, pointer: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
   }
   function touchMove(event) {
     if (!touch || event.pointerId !== touch.pointer) return
     if (!touch.moved) {
       if (Math.hypot(event.clientX - touch.x, event.clientY - touch.y) < 8) return
+      if (touch.tree !== tree) { touch = null; return }
       touch.moved = true; swallowed = true
       dragging = { path: touch.path, tree }
       ghost = { text: text(partAt(tree, touch.path)) || EMPTY, x: event.clientX, y: event.clientY }
@@ -359,11 +360,11 @@
   }
   function touchUp(event) {
     if (!touch || event.pointerId !== touch.pointer) return
-    const from = touch.path, moved = touch.moved, landed = overPath
+    const from = touch.path, source = touch.tree, moved = touch.moved, landed = overPath
     touch = null
     if (!moved) return
     dragging = null; overPath = null; overSwap = false; ghost = null
-    if (landed != null) {
+    if (landed != null && source === tree) {
       const to = parsePath(landed)
       if (siblings(from, to)) reorder(from, to)
       else if (swappable(from, to)) exchange(from, to)
