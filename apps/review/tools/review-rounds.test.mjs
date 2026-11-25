@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dealsFor, firstCrops, nextGrapheme, openingRound, mergeReferences, roundGraphemes, roundAddress,
+  dealsFor, dealtRound, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress,
   QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
   normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
 } from '../src/lib/reviewRounds.js'
@@ -37,23 +37,24 @@ test('characters of one grapheme make one round, counting all their pending crop
     ['U+4EEE', '仮', 6, ['假', '仮']], ['U+3042', 'あ', 3, ['あ']], ['U+203B', '※', 1, ['※']]])
 })
 
-test('a round is dealt for a grapheme, or for one of its characters alone', () => {
-  const rounds = roundGraphemes([{ label: '春', grapheme: 'U+6625', pending: 2 }, { label: '\u{3D307}', grapheme: 'U+6625', pending: 3 },
-    { label: 'は', grapheme: 'U+306F', pending: 1 }])
-  const held = key => rounds.filter(group => dealsFor(group, key)).map(group => group.label)
-  assert.deepEqual([held('U+6625'), held('U+3D307'), held('U+30CF')], [['U+6625'], ['U+6625'], []])
-})
-
-test('an asked round is opened under its head before the counts file it there, and gives way when it deals none', () => {
+test('a named round is dealt whatever the counts hold, and gives way when it deals none', async () => {
   // The counts still file the seal character under itself, and hold no pending crop of 萅 or 春.
   const stale = roundGraphemes([{ label: '\u{3D307}', grapheme: 'U+3D307', pending: 3 }, { label: 'は', grapheme: 'U+306F', pending: 9 }])
-  const asked = { target: 'U+8405', named: 'U+6625', asked: true }
-  assert.equal(openingRound(stale, asked), 'U+6625')
-  assert.equal(openingRound([], asked), 'U+6625')
-  // Chosen in the page, a target is one the counts hold.
-  assert.equal(openingRound(stale, { ...asked, asked: false }), null)
-  assert.equal(openingRound(stale, { target: 'U+306F', named: 'U+306F', asked: false }), 'U+306F')
-  assert.equal(openingRound(stale, { target: null, named: null, asked: true }), null)
+  let asked
+  const deal = (held, named, counts = stale) => { asked = []; return dealtRound(counts, named, left => left[0]?.label ?? null,
+    async key => { asked.push(key); return { items: held.includes(key) ? [{ id: key }] : [] } }) }
+  for (const counts of [stale, []]) {
+    assert.equal((await deal(['U+6625', 'U+306F'], 'U+6625', counts)).chosen, 'U+6625')
+    assert.deepEqual(asked, ['U+6625'])
+  }
+  // The same round again, in another material or after a refusal: the counts hold it no more than they did.
+  assert.deepEqual(await deal(['U+306F'], 'U+6625'), { chosen: 'U+306F', result: { items: [{ id: 'U+306F' }] } })
+  assert.deepEqual(asked, ['U+6625', 'U+306F'])
+  assert.equal((await deal(['U+3D307'], null)).chosen, 'U+3D307')
+  assert.deepEqual(asked, ['U+306F', 'U+3D307'])
+  assert.deepEqual(await deal([], 'U+6625'), { chosen: null, result: null })
+  assert.deepEqual(asked, ['U+6625', 'U+306F', 'U+3D307'])
+  assert.equal((await dealtRound(stale, 'U+6625', () => null, async () => ({ items: [{}] }), () => true)).chosen, null)
 })
 
 test('the reference strip tags confirmed crops before seen ones', () => {
