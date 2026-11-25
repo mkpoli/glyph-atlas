@@ -218,7 +218,7 @@ describe('a character page', () => {
     // The 字体 row counts each form's images, the 字種 row its grapheme's: 時's family bills 7 crops and
     // 2 corpus glyphs, and 呆, with no grapheme row, reads as unused rather than failing the card.
     expect(body.grapheme.members.map((m: any) => [m.char, m.count, m.corpus_count]))
-      .toEqual([['時', 5, 2], ['时', 1, 0], ['旹', 1, 0], ['呆', 0, 0]]);
+      .toEqual([['時', 5, 2], ['时', 1, 0], ['旹', 1, 0], ['呆', 0, 0], ['\u{F0003}', 0, 0], ['\u{F0004}', 0, 0]]);
     expect([body.grapheme.count, body.grapheme.corpus_count]).toEqual([7, 2]);
     // 峕 heads its own family row, so its one crop is counted once, not twice.
     expect(body.variants.writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 1, 0]]);
