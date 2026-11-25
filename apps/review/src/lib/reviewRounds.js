@@ -108,6 +108,14 @@ export function roundGraphemes(categories) {
 /** Whether a grapheme's counts hold the round a key names: its own, or that of one of its characters alone. */
 export const dealsFor = (group, key) => group.label === key || group.members.some(m => m.label === graphemeText(key))
 
+/**
+ * The round a target opens with, or null for none of it: the key `named`, the target's as it is now. An asked one (an
+ * address's or a history entry's) is tried whatever the counts hold, since they are the last publication's and the round
+ * deals by the tables as they stand; one that deals no crop gives way to the next.
+ */
+export const openingRound = (available, { target, named, asked }) =>
+  target && (asked || available.some(group => dealsFor(group, named))) ? named : null
+
 /** The next grapheme to review: an unvisited full round, then an unvisited smaller one, largest first. */
 export function nextGrapheme(categories, current, history, seed) {
   const others = categories.filter(c => c.pending > 0 && c.label !== current)

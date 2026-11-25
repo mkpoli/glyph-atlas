@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dealsFor, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress,
+  dealsFor, firstCrops, nextGrapheme, openingRound, mergeReferences, roundGraphemes, roundAddress,
   QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
   normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
 } from '../src/lib/reviewRounds.js'
@@ -42,6 +42,18 @@ test('a round is dealt for a grapheme, or for one of its characters alone', () =
     { label: 'は', grapheme: 'U+306F', pending: 1 }])
   const held = key => rounds.filter(group => dealsFor(group, key)).map(group => group.label)
   assert.deepEqual([held('U+6625'), held('U+3D307'), held('U+30CF')], [['U+6625'], ['U+6625'], []])
+})
+
+test('an asked round is opened under its head before the counts file it there, and gives way when it deals none', () => {
+  // The counts still file the seal character under itself, and hold no pending crop of 萅 or 春.
+  const stale = roundGraphemes([{ label: '\u{3D307}', grapheme: 'U+3D307', pending: 3 }, { label: 'は', grapheme: 'U+306F', pending: 9 }])
+  const asked = { target: 'U+8405', named: 'U+6625', asked: true }
+  assert.equal(openingRound(stale, asked), 'U+6625')
+  assert.equal(openingRound([], asked), 'U+6625')
+  // Chosen in the page, a target is one the counts hold.
+  assert.equal(openingRound(stale, { ...asked, asked: false }), null)
+  assert.equal(openingRound(stale, { target: 'U+306F', named: 'U+306F', asked: false }), 'U+306F')
+  assert.equal(openingRound(stale, { target: null, named: null, asked: true }), null)
 })
 
 test('the reference strip tags confirmed crops before seen ones', () => {

@@ -26,7 +26,7 @@
   import { isDescription } from '../lib/ids.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
   import {
-    dealsFor, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress,
+    dealsFor, firstCrops, nextGrapheme, openingRound, roundGraphemes, graphemeText, roundAddress,
     ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences,
     QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
     normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
@@ -259,8 +259,7 @@
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
       let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
       for (let tries = 0; tries < 8; tries++) {
-        chosen = tries === 0 && target && available.some(c => dealsFor(c, named) || dealsFor(c, target)) ? named
-          : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
+        chosen = tries === 0 && openingRound(available, { target, named, asked }) || nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
         result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
           ...suspectsParam(only), ...(cursor ? { cursor } : {}) }), away)
