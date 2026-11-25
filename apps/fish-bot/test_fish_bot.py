@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import io
+import itertools
 import json
 import sqlite3
 import urllib.parse
@@ -3305,3 +3306,291 @@ def test_an_empty_exclusion_counts_everyone(tmp_path):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
     store.add_event("$a", ROOM, "@reader:example", 3_600_000 * 24 * 400, "hi", "m.text", backfilled=False)
     assert sum(store.hours(0, [])) == 1 and store.hours(0, [])[9] == 1
+
+
+def sleeper(tmp_path, monkeypatch, *, act_value=None, error=None):
+    """A bot that could not answer a call in ROOM, and a clock to wake it with."""
+    bot, matrix, store = make_bot(tmp_path, act=act_value or act("啊，剛醒！萍是十九畫～"))
+    clock = {"now": 10_000.0, "ms": fish_bot.now_ms()}
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: clock["ms"])
+    bot.active_rooms = {ROOM}
+    bot._heard_at = 0.0
+    answering = bot.gemini.act
+
+    def fail(*_, **__):
+        raise error or fish_bot.SpendError("spent")
+
+    def wake(minutes=2.0):
+        bot.gemini.act = answering
+        clock["now"] += 60 * minutes
+        clock["ms"] += int(60_000 * minutes)
+
+    bot.gemini.act = fail
+    return bot, matrix, store, wake
+
+
+def raises(error):
+    def fail(*_, **__):
+        raise error
+    return fail
+
+
+def call_her(bot, event_id, text="大肥魚，「萍」幾畫？", sender="@reader:example"):
+    call = event(text, event_id=event_id, sender=sender, origin_server_ts=fish_bot.now_ms())
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+
+
+def test_missed_calls_of_a_room_are_answered_together_when_the_money_is_back(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    call_her(bot, "$two", "大肥魚宕機了喵？", sender="@other:example")
+    assert store.outcome("$one")[0] == store.outcome("$two")[0] == "deferred"
+    assert len(matrix.sent) == 1
+    wake()
+    bot.catch_up()
+    assert [(task, read[trigger]) for task, trigger, read in bot.gemini.turns] == [("catchup", "$two")]
+    missed = json.loads(bot.gemini.rooms)
+    assert [line["line"] for line in missed] == ["大肥魚，「萍」幾畫？", "大肥魚宕機了喵？"]
+    assert matrix.sent[-1][1]["body"] == "啊，剛醒！萍是十九畫～"
+    assert matrix.sent[-1][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$two"}}
+    assert store.outcome("$one")[0] == store.outcome("$two")[0] == "caught-up"
+    wake(60)
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_catching_up_leaves_money_for_who_calls_next(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    wake()
+    monkeypatch.setattr(bot.gemini.purse, "remaining", lambda: fish_bot.CATCH_UP_FLOOR - 0.01)
+    for _ in range(20):
+        wake()
+        bot.catch_up()
+    assert bot.gemini.turns == [] and store.outcome("$one")[0] == "deferred"
+    monkeypatch.setattr(bot.gemini.purse, "remaining", lambda: fish_bot.CATCH_UP_FLOOR)
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_a_call_lost_to_a_failing_model_is_tried_again_ever_later_then_dropped(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, error=fish_bot.ModelError("Gemini answered 429", status=429))
+    call_her(bot, "$one")
+    assert store.outcome("$one")[0] == "deferred" and matrix.sent == []
+    failing = []
+
+    def fail(*_, **__):
+        failing.append(fish_bot.now_ms())
+        raise fish_bot.ModelError("Gemini answered 503", status=503)
+
+    for _ in range(60 * 6):
+        wake(1)
+        bot.gemini.act = fail
+        bot.catch_up()
+    assert len(failing) == fish_bot.CATCH_UP_TRIES
+    gaps = [later - earlier for earlier, later in itertools.pairwise(failing)]
+    assert gaps == sorted(gaps) and gaps[0] < gaps[-1]
+    assert store.outcome("$one")[0] == "expired"
+
+
+def test_a_failure_then_an_answer(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, error=fish_bot.ModelError("Gemini could not be reached"))
+    call_her(bot, "$one")
+    wake()
+    bot.catch_up()
+    assert store.outcome("$one")[0] == "caught-up" and len(matrix.sent) == 1
+
+
+def test_an_answer_to_something_else_does_not_close_an_older_question(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$glyph")
+    wake()
+    call_her(bot, "$hello", "大肥魚早安")
+    assert store.outcome("$hello")[0] == "chatted"
+    wake()
+    bot.catch_up()
+    assert bot.gemini.turns[-1][0] == "catchup" and store.outcome("$glyph")[0] == "caught-up"
+
+
+def test_more_calls_than_fit_are_answered_in_order(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    total = fish_bot.CATCH_UP_LINES + 2
+    for number in range(total):
+        call_her(bot, f"$c{number}", f"大肥魚，第{number}問", sender=f"@reader{number}:example")
+        wake(0.05)
+        bot.gemini.act = raises(fish_bot.SpendError("spent"))
+    wake()
+    bot.catch_up()
+    assert [line["line"] for line in json.loads(bot.gemini.rooms)] == [f"大肥魚，第{n}問" for n in range(fish_bot.CATCH_UP_LINES)]
+    assert store.outcome(f"$c{total - 1}")[0] == "deferred"
+    wake()
+    bot.catch_up()
+    assert {store.outcome(f"$c{number}")[0] for number in range(total)} == {"caught-up"}
+
+
+def test_a_reply_that_cannot_be_posted_keeps_the_calls(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    wake()
+    send = matrix.send
+
+    def broken(*_, **__):
+        raise fish_bot.MatrixError(502, "bad gateway")
+
+    monkeypatch.setattr(matrix, "send", broken)
+    bot.catch_up()
+    assert store.outcome("$one")[0] == "deferred"
+    monkeypatch.setattr(matrix, "send", send)
+    wake(10)
+    bot.catch_up()
+    assert store.outcome("$one")[0] == "caught-up"
+
+
+def test_a_reply_of_which_the_first_bubble_got_out_is_not_posted_again(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, act_value=act("答案甲", "答案乙"))
+    call_her(bot, "$one")
+    wake()
+    send = matrix.send
+    sent = []
+
+    def once(room_id, content, key, kind="m.room.message"):
+        if sent:
+            raise fish_bot.MatrixError(502, "bad gateway")
+        sent.append(content["body"])
+        return send(room_id, content, key, kind)
+
+    monkeypatch.setattr(matrix, "send", once)
+    bot.catch_up()
+    assert sent == ["答案甲"] and store.outcome("$one")[0] == "caught-up"
+
+
+def test_the_calls_are_closed_only_once_the_reply_is_out(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch)
+    bot._pace = 1.0
+    call_her(bot, "$one")
+    wake()
+    bot.catch_up()
+    assert bot._outbox == {} and matrix.sent[-1][1]["body"].startswith("啊") and store.outcome("$one")[0] == "caught-up"
+
+
+def test_a_failing_issue_desk_does_not_answer_again(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch, act_value=act("好，我報上去", issue=True))
+    wake()
+    monkeypatch.setattr(bot, "_to_desk", raises(fish_bot.SpendError("spent")))
+    call_her(bot, "$bug")
+    assert store.outcome("$bug")[0] == "chatted" and store.deferred_rooms() == []
+    bot._listen(ROOM, "@reader:example")
+    talk = bot._talks[ROOM]
+    store.add_event("$more", ROOM, "@reader:example", fish_bot.now_ms(), "記得報", "m.text", backfilled=False)
+    talk.event_id, talk.sender, talk.body, talk.due = "$more", "@reader:example", "記得報", -1e9
+    bot.follow()
+    assert store.db.execute("SELECT COUNT(*) FROM deferred").fetchone()[0] == 0
+
+
+def test_a_fresh_call_neither_waits_for_nor_hurries_an_older_one(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$old")
+    for _ in range(fish_bot.CATCH_UP_TRIES - 1):
+        store.postpone_deferred(["$old"])
+    wake(60 * 3)
+    bot.gemini.act = raises(fish_bot.ModelError("Gemini answered 503", status=503))
+    call_her(bot, "$new", sender="@other:example")
+    assert [row["event_id"] for row in store.deferred(ROOM, 8)] == ["$old"]
+    bot.catch_up()
+    wake(60 * 3)
+    bot.gemini.act = raises(fish_bot.ModelError("Gemini answered 503", status=503))
+    bot.catch_up()
+    assert store.outcome("$old")[0] == "expired" and store.outcome("$new")[0] == "deferred"
+
+
+def test_a_call_is_kept_even_when_the_typing_notice_fails(tmp_path, monkeypatch):
+    bot, matrix, store, _ = sleeper(tmp_path, monkeypatch, error=fish_bot.ModelError("Gemini answered 503", status=503))
+    real = matrix.typing
+
+    def typing(room_id, user_id, timeout_ms=1):
+        if timeout_ms == 0:
+            raise fish_bot.MatrixError(502, "bad gateway")
+        return real(room_id, user_id)
+
+    monkeypatch.setattr(matrix, "typing", typing)
+    with contextlib.suppress(fish_bot.MatrixError):
+        call_her(bot, "$one")
+    assert store.outcome("$one")[0] == "deferred"
+
+
+def test_redacted_forgotten_and_old_calls_are_let_go(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$redacted")
+    store.delete_event("$redacted")
+    call_her(bot, "$forgotten", sender="@gone:example")
+    store.forget_person("@gone:example")
+    call_her(bot, "$old", sender="@late:example")
+    wake(60 * fish_bot.CATCH_UP_HOURS + 5)
+    bot.catch_up()
+    assert bot.gemini.turns == [] and store.outcome("$old")[0] == "expired"
+    assert store.db.execute("SELECT COUNT(*) FROM deferred").fetchone()[0] == 0
+
+
+def test_one_room_at_a_time_and_a_busy_one_holds_up_no_other(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    for room in (ROOM, "!second:example"):
+        store.add_event(f"$in{room}", room, "@reader:example", fish_bot.now_ms(), "大肥魚？", "m.text", backfilled=False)
+        store.defer(f"$in{room}", room, "@reader:example", 60_000)
+    bot.active_rooms = {ROOM, "!second:example"}
+    wake()
+    bot._heard_at = bot._heard_in[ROOM] = fish_bot.time.monotonic()
+    bot.catch_up()
+    bot.catch_up()
+    assert [read for _, _, read in bot.gemini.turns] == [["$in!second:example"]]
+    wake()
+    bot._heard_in[ROOM] = fish_bot.time.monotonic()
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 1
+    bot._heard_in.clear()
+    wake()
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 2
+
+
+def test_a_restart_keeps_what_was_missed_and_waits_before_trying_again(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    wake()
+
+    def crash(*_, **__):
+        raise KeyboardInterrupt
+
+    bot.gemini.act = crash
+    with pytest.raises(KeyboardInterrupt):
+        bot.catch_up()
+    assert store.deferred_rooms() == [] and store.outcome("$one")[0] == "deferred"
+    wake()
+    assert store.deferred_rooms() == [ROOM]
+
+
+def test_nothing_left_to_say_is_quiet_and_done(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, act_value=act())
+    call_her(bot, "$one")
+    said = len(matrix.sent)
+    wake()
+    bot.catch_up()
+    assert len(matrix.sent) == said and store.outcome("$one")[0] == "caught-up"
+
+
+def test_a_missed_follow_up_is_kept_only_for_her_partner(tmp_path, monkeypatch):
+    bot, _, store, _ = sleeper(tmp_path, monkeypatch)
+    for sender, kept in (("@partner:example", True), ("@bystander:example", False)):
+        bot._listen(ROOM, "@partner:example")
+        talk = bot._talks[ROOM]
+        store.add_event(f"$l{sender}", ROOM, sender, fish_bot.now_ms(), "不是啦", "m.text", backfilled=False)
+        talk.event_id, talk.sender, talk.body, talk.due = f"$l{sender}", sender, "不是啦", -1e9
+        bot.follow()
+        assert bool(store.outcome(f"$l{sender}")) is kept
+
+
+def test_the_catch_up_task_names_the_lines_and_allows_silence():
+    payload = json.loads(fish_bot.format_chat("Room", "", [message_row("hi")], {}, task="catchup", trigger=0,
+                                              bot_user_id=USER, rooms='[{"sender": "A", "line": "hi"}]'))
+    assert '[{"sender": "A", "line": "hi"}]' in payload["task"] and "stay quiet" in payload["task"]
