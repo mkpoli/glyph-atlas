@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { d1 } from './forms.test';
-import { setAvatar } from './avatar';
+import { PICTURE_PATH, picture, setAvatar } from './avatar';
 
 function setup() {
   const db = new Database(':memory:');
@@ -77,5 +77,23 @@ describe('a reader\'s picture', () => {
     globalThis.fetch = (async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
     expect((await setAvatar(env, me, 'gravatar', post('{}'))).status).toBe(200);
     expect(image()).toBe(`https://gravatar.com/avatar/${hash}?s=256`);
+  });
+  it('is found by the user alone, and only for a signed-in user in good standing', async () => {
+    const { db, env, me } = setup();
+    const none = await picture(env, me.id);
+    expect([none.status, none.headers.get('location')]).toEqual([404, null]);
+    await setAvatar(env, me, 'github', post('{}'));
+    const found = await picture(env, me.id);
+    expect([found.status, found.headers.get('location')]).toEqual([302, 'https://avatars.githubusercontent.com/u/583231?v=4']);
+    expect(found.headers.get('cache-control')).toBe('public, max-age=300');
+    expect((await picture(env, '00000000-0000-0000-0000-000000000002')).status).toBe(404);
+    for (const state of ['banned', 'isAnonymous']) {
+      db.exec(`UPDATE "user" SET ${state}=1`);
+      expect((await picture(env, me.id)).status).toBe(404);
+      db.exec(`UPDATE "user" SET ${state}=0`);
+      expect((await picture(env, me.id)).status).toBe(302);
+    }
+    expect('/api/avatars/00000000-0000-0000-0000-000000000001'.match(PICTURE_PATH)?.[1]).toBe(me.id);
+    expect('/api/avatars/00000000-0000-0000-0000-000000000001/0123456789abcdef.webp').not.toMatch(PICTURE_PATH);
   });
 });
