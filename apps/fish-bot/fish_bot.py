@@ -40,7 +40,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -245,6 +245,11 @@ CGROUP = Path("/proc/self/cgroup")
 # Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
 # may pass the day's limit by the difference, once.
 CALL_RESERVE = 0.05
+# A day's money is its own daily_usd, what the days before left or overdrew, and what it may borrow
+# from the days after: up to this many days' worth either way. Quiet days pay for busy ones, and over
+# time the spending averages at most daily_usd.
+SAVE_DAYS = 1.0
+BORROW_DAYS = 1.0
 # As the day's money goes she saves in this order, so that what is left answers people and one voice
 # does it: she opens no rooms unasked while the day's spending is ahead of its pace, which rises from
 # the first share at midnight (JST) to the second at the day's end, so evenings keep their visits; past
@@ -1182,6 +1187,10 @@ class Store:
                 posted_at INTEGER NOT NULL,
                 PRIMARY KEY (day, room_id)
             );
+            CREATE TABLE IF NOT EXISTS budget (
+                day TEXT PRIMARY KEY,
+                usd REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS usage (
                 day TEXT NOT NULL,
                 kind TEXT NOT NULL,
@@ -1314,14 +1323,34 @@ class Store:
     def spent(self, day: str) -> float:
         return float(self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage WHERE day=?", (day,)).fetchone()[0])
 
-    def reserve(self, kind: str, amount: float, limit: float) -> str | None:
-        """Book an amount on today unless the day's total would pass the limit; returns the day."""
+    def budgets(self, before: str) -> list[tuple[float, float]]:
+        """The money and the cost of each day before one, from the first day with a budget. A day
+        nothing was called on has the money of the day before it."""
+        money = {str(row["day"]): float(row["usd"]) for row in self.db.execute(
+            "SELECT day, usd FROM budget WHERE day<? ORDER BY day", (before,))}
+        if not money:
+            return []
+        first = datetime.date.fromisoformat(min(money))
+        cost = {str(row["day"]): float(row["cost"]) for row in self.db.execute(
+            "SELECT day, SUM(cost) AS cost FROM usage WHERE day>=? AND day<? GROUP BY day", (first.isoformat(), before))}
+        days = []
+        usd = 0.0
+        for number in range((datetime.date.fromisoformat(before) - first).days):
+            day = (first + datetime.timedelta(days=number)).isoformat()
+            usd = money.get(day, usd)
+            days.append((usd, cost.get(day, 0.0)))
+        return days
+
+    def reserve(self, kind: str, amount: float, usd: float, limit: Callable[[str], float]) -> str | None:
+        """Book an amount on today, whose own money is `usd`, unless the day's total would pass its
+        limit; returns the day."""
         self.db.commit()
         self.db.execute("BEGIN IMMEDIATE")
         try:
             # The day is read under the lock, which may have been waited for past midnight.
             day = local_day(now_ms())
-            if self.spent(day) + amount > limit:
+            self.db.execute("INSERT INTO budget(day, usd) VALUES(?,?) ON CONFLICT(day) DO UPDATE SET usd=excluded.usd", (day, usd))
+            if self.spent(day) + amount > limit(day):
                 return None
             self.db.execute(
                 "INSERT INTO usage(day, kind, calls, cost) VALUES(?,?,1,?) "
@@ -2396,9 +2425,10 @@ def _require_service() -> None:
 
 
 class Purse:
-    """One day's money for model calls, kept in a database so that every process using it shares the
-    limit. A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at
-    its real cost afterwards; a process that dies in between leaves the reserve spent."""
+    """The money for model calls, kept in a database so that every process using it shares the limit. A
+    day may spend its own money, with what earlier days left and what it may borrow from later ones.
+    A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at its
+    real cost afterwards; a process that dies in between leaves the reserve spent."""
 
     def __init__(self, store: Store, daily_usd: float):
         self.store = store
@@ -2407,10 +2437,18 @@ class Purse:
     def spent(self) -> float:
         return self.store.spent(local_day(now_ms()))
 
+    def allowance(self, day: str) -> float:
+        """What a day may spend: its own money, what the days before saved or overdrew, and a loan."""
+        carried = 0.0
+        for usd, spent in self.store.budgets(day):
+            carried = min(carried + usd - spent, SAVE_DAYS * usd)
+        return self.daily_usd + carried + BORROW_DAYS * self.daily_usd
+
     def share(self) -> float:
-        """How much of the day's money is gone, 1 when all of it is or the amount cannot be read."""
+        """How much of the day's allowance is gone, 1 when all of it is or it cannot be read."""
         try:
-            return self.spent() / self.daily_usd if self.daily_usd > 0 else 1.0
+            allowance = self.allowance(local_day(now_ms()))
+            return self.spent() / allowance if allowance > 0 else 1.0
         except sqlite3.Error:
             log.exception("reading the money spent")
             return 1.0
@@ -2418,11 +2456,11 @@ class Purse:
     def reserve(self, kind: str) -> str:
         """Set money aside for one call, or refuse it. Returns the day it is booked on."""
         try:
-            day = self.store.reserve(kind, CALL_RESERVE, self.daily_usd)
+            day = self.store.reserve(kind, CALL_RESERVE, self.daily_usd, self.allowance)
         except sqlite3.Error as error:
             raise SpendError(f"the money spent could not be read: {error}") from None
         if day is None:
-            raise SpendError(f"today's ${self.daily_usd:.2f} for model calls is spent")
+            raise SpendError("the money for model calls is spent")
         return day
 
     def settle(self, kind: str, day: str, *, cost: float, failed: bool = False, tokens_in: int = 0,
