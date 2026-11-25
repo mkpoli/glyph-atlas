@@ -95,20 +95,22 @@ export function listForms(char) {
   return cards.get(char)
 }
 
+const loneGrapheme = char => ({ head: char, members: [{ char, code_point: pointOf(char), script: '', shapes: [] }], variants: [], related: [], derived: [], forms: [] })
 // What the site answers of a grapheme, with each member's figures once their font is loaded; one whose font
 // or figures could not be read is offered without them, and that answer is not kept.
 function readWhole(char) {
   const key = 'grapheme ' + char
   if (!cards.has(key)) {
     let partial = false
-    const loaded = readGrapheme(pointOf(char)).then(async found => [found, new Map(await Promise.all(found.members.filter(member => HAN.test(member.char)).map(async ({ char }) =>
+    const loaded = readGrapheme(pointOf(char)).catch(error => error?.status === 404 ? loneGrapheme(char) : Promise.reject(error)).then(async found => [found, new Map(await Promise.all(found.members.filter(member => HAN.test(member.char)).map(async ({ char }) =>
       [char, await figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures)).catch(() => { partial = true; return [] })])))])
     cards.set(key, loaded.then(whole => (partial && cards.delete(key), whole), error => { cards.delete(key); throw error }))
   }
   return cards.get(key)
 }
-/** The forms offered for a crop of the grapheme `char` is of, whose own character nobody has assigned: those of
- *  the whole grapheme (`graphemeChips`), the 構形 of the characters its source names it by (`focal`) first. */
+/** The forms offered for a crop of the grapheme `char` is of, where its own character is not known or is another's:
+ *  those of the whole grapheme (`graphemeChips`), the 構形 of the characters named (`focal`) first. A character the
+ *  site does not hold offers itself alone. */
 export async function listGrapheme(char, focal = []) {
   const [found, figures] = await readWhole(char)
   return { members: [], variants: [], ...graphemeChips(found, figures, focal) }

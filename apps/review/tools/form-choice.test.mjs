@@ -10,6 +10,10 @@ describe('a form chosen on an assigned crop', () => {
     expect(of('圖', '圖', 'character')).toBe(null)
     expect(of('圖', '圖', 'crop')).toBe('圖')
   })
+  it('is a form of the wrong character\'s correction while that is the one chosen', () => {
+    const corrected = (form, base, written) => characterNamed({ form, base, character: '時', issue: 'character', written })
+    expect([corrected('圖\u{E0100}', '圖', '圖'), corrected('⿴囗啚', '圖', '圖'), corrected('圖\u{E0100}', '圖', '図'), corrected('圖', null, '圖')]).toEqual(['圖', '圖', null, null])
+  })
 })
 
 describe('a form chosen on a crop with no character', () => {
