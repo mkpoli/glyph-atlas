@@ -7,15 +7,21 @@ character (or merged family) holds at least `READS_AS` of the probability, and t
 A kanji the classifier merely finds unfamiliar is not a suspect: on the Quick review dataset those
 were nearly all good crops in a hand or a print the training set lacked.
 
-Two readings are expected rather than suspicious, and are not marks:
+Four readings are expected rather than suspicious, and are not marks:
 
 - a look-alike: a pair the classifier itself confuses on at least `LOOKALIKE_RATE` of its held-out
   test crops of either character, `LOOKALIKE_MISREADS` times or more, as 太 read as 大 (`lookalikes`);
 - a kana derived from the label, as 於 read as お or 太 read as た: in cursive the kanji and its kana
   are one shape. Hentaigana carry their 字母 in the character layer; the modern hiragana take theirs
-  from `refs.kana_origins`.
+  from `refs.kana_origins`;
+- the kanji a kana label derives from, as 𛂙 read as 乃 or や read as 也, for the same reason;
 - a reading reviewers checked on sample crops and found to be the label, as 可 read as 一
   (`refs.suspect_forms`); a real swap between such a label and reading is then not marked either.
+
+A kana read as the 字母 of another kana of the same sound is written as that kana, and the mark names it: く read
+as 具 is 𛀰. Where the 字母 has several (と read as 登: 𛁺, 𛁻) the crop is marked and no character is named.
+
+How often a reviewer takes the character a mark names is measured in docs/reports/suspect-readings.md.
 
 Measured on 2026-09-26 against the hosted reviews of the Quick review dataset (149 crops a reviewer
 marked wrong, 2,151 left unflagged or confirmed), the rule marks 121 of the wrong crops and 6 of the
@@ -108,6 +114,17 @@ class Labels:
                 self.kana[letter].update(row.readings or ())
         # The modern hiragana each kanji is the cursive form of: 太 gives た, the hiragana itself.
         self.cursive = refs.kana_origins()
+        # The kanji each kana derives from, and the kana of each sound each kanji is the 字母 of.
+        self.parents: dict[str, set[str]] = defaultdict(set)
+        self.derived: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for row in refs.characters():
+            for letter in row.jibo or ():
+                self.parents[row.char].add(letter)
+                for reading in row.readings or ():
+                    self.derived[letter, reading].append(row.char)
+        for kanji, kanas in self.cursive.items():
+            for letter in kanas:
+                self.parents[letter].add(kanji)
         # Readings whose sampled crops reviewers found to be the label (可 read as 一).
         self.forms = refs.suspect_forms()
 
@@ -148,7 +165,7 @@ class Labels:
         from .atlas import kana_of
 
         if (frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ())
-                or (label, reads) in self.forms):
+                or reads in self.parents.get(label, ()) or (label, reads) in self.forms):
             return True
         # A hentaigana of the label, or the hiragana one reads as. A katakana is a part of some
         # kanji, not the label's cursive, so one that only sounds like it (以 read as イ) is not.
@@ -156,6 +173,21 @@ class Labels:
             return False
         readings = {reads, kana_of(reads), *refs.readings(refs.to_code_point(reads))} - {None}
         return bool(readings & self.kana.get(label, set()))
+
+    def named(self, label: str, reads: str) -> str | None:
+        """The character a mark on `label` names where the classifier reads `reads`: for a 字母 of the label's sound
+        the kana it gives, or nothing where it gives several."""
+        from .atlas import kana_of
+
+        found = self.derived.get((reads, kana_of(label) or label), []) if kana(label) else []
+        return reads if not found else found[0] if len(found) == 1 else None
+
+    def again(self, label: str, mark: dict) -> dict | None:
+        """A mark made before, as this rule makes it, or `None` where it makes none."""
+        reads = mark["reads_as"]
+        if reads and self.expected(label, reads):
+            return None
+        return {**mark, "reads_as": self.named(label, reads) if reads else None}
 
     def judge(self, probabilities: np.ndarray, labels: list[str]) -> list[dict | None]:
         """A mark for each crop that is a suspect, `None` for each that is not.
@@ -174,10 +206,8 @@ class Labels:
             top = int(totals.argmax())
             name, label = self.names[top], labels[row]
             reads = name if name and name != label and totals[top] >= READS_AS else None
-            if reads and self.expected(label, reads):
-                continue
             if reads or kana(label):
-                marks[row] = {"p": round(float(p[row]), 4), "reads_as": reads}
+                marks[row] = self.again(label, {"p": round(float(p[row]), 4), "reads_as": reads})
         return marks
 
 
@@ -208,6 +238,20 @@ def _write(target: Path, suspects: dict[str, dict], scored: int, inputs: dict,
                                     ensure_ascii=False, sort_keys=True))
     os.replace(temporary, target)
     return {"scored": scored, "suspects": len(suspects), "revision": revision}
+
+
+def rejudge(source: Path, target: Path) -> dict[str, Any]:
+    """Write the marks of `source` as the rule on expected readings and named kana now makes them.
+
+    The classifier is not run: a crop it did not mark stays unmarked.
+    """
+    document = json.loads(source.read_text())
+    labels = Labels([])
+    marks = {identity: labels.again(mark["label"], mark) for identity, mark in document["suspects"].items()}
+    kept = {identity: mark for identity, mark in marks.items() if mark}
+    renamed = sum(mark["reads_as"] != document["suspects"][identity]["reads_as"] for identity, mark in kept.items())
+    written = _write(target, kept, document["scored"], {"source": document["revision"]}, scored_ids=document.get("scored_ids"))
+    return {**written, "dropped": len(marks) - len(kept), "renamed": renamed}
 
 
 def refs_table(name: str) -> Path:
