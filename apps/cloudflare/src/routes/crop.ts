@@ -61,7 +61,7 @@ const documentFor = ({ row, record }: FoundCrop): string | null => row.kind === 
 // The statuses of a grapheme slot that file its crop, as the galleries read them (`FILES`, atlas3Gallery.ts).
 const FILING = new Set(['asserted', 'accepted', 'adjudicated']);
 /** A crop's record for its inspector, with its grapheme, form, structure, reading, word, book's dates and the claims they
- *  rest on. A grapheme claim that holds names the grapheme the crop is filed under. */
+ *  rest on. A grapheme claim that holds names the grapheme the crop is filed under, and `own_grapheme` is its character's. */
 export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
   const id = found.row.id, document = documentFor(found);
   // The styles a reviewer may give it: those a publication has numbered (`setStyle`), read as they stand, since a
@@ -70,7 +70,7 @@ export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
     cropReadings(env, [id]), cropWords(env, [id]), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
   const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
   const styles = numbered.results.map(row => row.key);
-  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null,
+  const record = { ...found.record, ...(filed ? { grapheme: filed, own_grapheme: found.record.grapheme } : {}), grapheme_claim: claim, form: forms.get(id) ?? null,
     structure: structures.get(id) ?? null, reading: readings.get(id) ?? null, word: words.get(id) ?? null,    style_choices: styles };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };

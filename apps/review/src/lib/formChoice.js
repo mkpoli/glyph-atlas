@@ -2,11 +2,10 @@
 // and claims the form with it. `base` is the character the form is a form of (`baseOf`), `character` the
 // crop's own ('' for one nobody has assigned).
 
-/** The character a chosen form names as the crop's, or null where it names none or only the crop's own. A
- *  wrong character names its own, and the form beside it is not written; on a crop with no character it is
- *  how the character a form names is shown chosen (`written`). */
+/** The character a chosen form names as the crop's, or null where it names none or only the crop's own. Under a
+ *  wrong character it is the one chosen (`written`), which the form is a form of. */
 export const characterNamed = ({ form, base, character, issue, unassigned = false, written = '' }) =>
-  form != null && base != null && base !== character && (unassigned ? issue === 'character' && written === base : issue !== 'character') ? base : null
+  form != null && base != null && base !== character && (issue === 'character' ? written === base : !unassigned) ? base : null
 
 /** The review that names `character` and claims `form` with it, on the pixels and the version the reader saw.
  *  A bad crop stands beside the character, redrawn (`box`) or reported. */

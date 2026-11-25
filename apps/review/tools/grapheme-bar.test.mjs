@@ -91,3 +91,11 @@ describe('a bar of many forms', () => {
     expect(foldGroups(groupForms(list.slice(0, 40), { structureOf })).hidden).toEqual([])
   })
 })
+
+describe('the bar of a crop given another character', () => {
+  it('lists that character until its grapheme is read', () => {
+    const { ready, listed } = listedOf({ key: 'other' }, 'key', '転', true, '転')
+    expect([ready, listed.chips.map(chip => [chip.char, chip.base]), listed.bases.get('転')]).toEqual([false, [['転', '転']], '転'])
+    expect(listedOf({ key: 'other' }, 'key', '転', true).listed.members).toEqual([])
+  })
+})
