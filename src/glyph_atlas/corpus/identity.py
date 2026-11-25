@@ -11,6 +11,9 @@ from ..clusters import is_conjoining_jamo_syllable
 
 NORMALIZED_CORPORA = frozenset({"codh", "codh-full"})
 NORMALIZATION_EVIDENCE = "https://codh.rois.ac.jp/char-shape/#version"
+#: What names the form of a block whose source leaves several, by its shape (docs/reports/kokatsuji-forms.md).
+SHAPE_EVIDENCE = "data/vocab/kokatsuji-forms.tsv"
+BLOCKS = "codh-omt:001:"
 IDENTITY_FIELDS = (
     "source_label", "source_code_point", "written_character", "identity_basis",
     "identity_status", "identity_evidence", "grapheme", "family_members",
@@ -40,8 +43,16 @@ def family_of(code_point: str | None) -> dict[str, Any] | None:
     return None
 
 
-def identity_fields(
-    row: dict[str, Any], corpus: str | None, *, human_character: str | None = None,
+def shape_of(identity: str | None, code_point: str | None, source_label: str | None) -> str | None:
+    """The character a 古活字データセット block is printed as, where its 字母 is that of several and the
+    source names none. A row stands only for a block that still has the kana the row repeats."""
+    if code_point or not (identity or "").startswith(BLOCKS):
+        return None
+    row = refs.kokatsuji_forms().get(identity.removeprefix(BLOCKS))
+    return refs.to_char(row["code_point"]) if row and row["kana"] == source_label else None
+
+
+def identity_fields(    row: dict[str, Any], corpus: str | None, *, human_character: str | None = None,
     source_revision: str | None = None,
 ) -> dict[str, Any]:
     """Resolve identity without rewriting the source's own class or transcription.
@@ -85,6 +96,9 @@ def identity_fields(
             # family (𛂞 is は's), a kanji variant has its own (仿 is not 倣's), and a reported
             # character brings its own.
             family = family_of(" ".join(refs.to_code_points(written)))
+    elif shape := shape_of(identity, cp, source_label):
+        written, basis, ambiguous = shape, "glyph_shape", False
+        family = family_of(refs.to_code_point(shape))
     else:
         try:
             from ..visual_families import assignment_for, evidence_signature
@@ -110,7 +124,7 @@ def identity_fields(
         "written_character": written,
         "identity_basis": basis,
         "identity_status": "assigned" if written else "unassigned",
-        "identity_evidence": NORMALIZATION_EVIDENCE if normalized else None,
+        "identity_evidence": SHAPE_EVIDENCE if basis == "glyph_shape" else NORMALIZATION_EVIDENCE if normalized else None,
         # A character with no family (one Unicode lacks, written as an IDS) is its own grapheme, as the
         # Worker files it.
         "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(written)) if written else None),
