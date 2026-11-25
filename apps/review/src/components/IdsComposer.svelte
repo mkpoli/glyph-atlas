@@ -5,24 +5,22 @@
   //
   // The sequence is held twice, kept in step: as text in the field, which also takes the ASCII
   // operator names (LR or lr for ⿰), and as a tree of boxes laid out as the operators place their
-  // parts, where an empty slot shows (and is written) as ⬚. A sequence with an empty slot is not
-  // whole; ？ typed into a slot is the part no character names. One part of the tree is chosen at a time. An operator
-  // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失⬚); put on an operator, it takes
-  // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
-  // A component found, typed into the part field or offered by the variant table replaces the chosen
-  // part, as does one of the part's registered figures (辶 with one dot, U+8FB6 U+E0101), and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
-  // The part picker under the tree has three tabs: a component found by name or reading, the parts
-  // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
+  // parts, where an empty slot shows (and is written) as ⬚. Selecting text in the sequence field
+  // selects that part in the tree so clicking an operator or component acts on it. Parts can be
+  // reordered within a node or swapped across branches by dragging (mouse or touch), lifting with
+  // Space, or pressing Alt+Arrow; right-click, Menu or Shift+F10 opens a part's context menu.
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
+  import { tokens } from 'han-compose/tokens'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
   import FigureText from './FigureText.svelte'
   import OperatorIcon from './OperatorIcon.svelte'
-  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, layout, nextEmpty, parse, partAt, paths,
-    replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
+  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, layout, neighbor, nextEmpty, parse, partAt, paths,
+    rangeToken, reorderSiblings, replaceAt, samePath, siblings, swapOp, swapParts, swappable, unalias, unwrap, clear, wrap, write,
+    namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar, regionNames, startCharacter, variants } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
   import { figuresFor } from '../lib/partFigures.js'
@@ -33,11 +31,12 @@
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
   const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
   const HISTORY = 100
+  const PART_DRAG = 'application/x-ids-part'
   // Where the preview's drawings come from and the terms they carry.
   const SOURCES = 'https://github.com/mkpoli/glyph-atlas/blob/main/docs/licensing.md#composer-drawings'
 
-  let tree = $state(null), chosen = $state(null), draft = $state(''), piece = $state(''), note = $state('')
-  let field = $state(null), slot = $state(null), root = $state(null), query = $state('')
+  let tree = $state(null), chosen = $state(null), lone = $state(false), draft = $state(''), piece = $state(''), note = $state('')
+  let field = $state(null), slot = $state(null), root = $state(null), treeEl = $state(null), query = $state('')
   let past = $state.raw([]), future = $state.raw([]), typing = false, run = false
   // What the IDS route answered for each character met so far (its descriptions and regional
   // shapes, or that it is loading or failed), and what the variant table says of each component in
@@ -112,7 +111,7 @@
   }
   function reset(text) {
     draftRev += 1
-    draft = text; chosen = null; piece = ''
+    draft = text; chosen = null; lone = false; piece = ''
     tree = parse(text, { open: true }).tree ?? null
   }
 
@@ -141,7 +140,7 @@
   }
   function commit(next, select) {
     draftRev += 1
-    tree = next; chosen = select; note = ''
+    tree = next; chosen = select; lone = false; note = ''
     if (!typing) draft = write(next)
     const part = select ? partAt(next, select) : undefined
     piece = text(part)
@@ -175,19 +174,37 @@
     change(found.tree, null)
     typing = false
   }
+  // Sync a non-empty text selection in the sequence field with the tree's chosen part so clicking an
+  // operator, component, swap, Clear or Unwrap acts on what was selected in the field.
+  function selectField() {
+    if (!field || typed.problem || tree === null) return
+    const start = field.selectionStart ?? 0, end = field.selectionEnd ?? 0
+    if (start === end) return
+    const token = rangeToken(tokens(draft), start, end)
+    if (!token) return
+    const node = partAt(tree, token.path)
+    if (node === undefined) return
+    chosen = token.path
+    lone = isNode(node) && token.start === start && (end === token.tokenEnd || end === start + node.op.length)
+    note = ''
+    piece = text(node)
+    if (typeof node === 'string') { read(lookupChar(node)); readFigures(lookupChar(node)) }
+  }
 
   // Where an operator or a part goes when nothing is chosen: the first empty slot.
   const target = () => chosen ?? (tree === null ? [] : nextEmpty(tree))
-  function operator(op) {
+  function operator(op, explicitAt = undefined) {
     if (disabled) return
-    const at = target()
+    if (explicitAt === undefined && typed.problem && draft) { note = t('form.ids.problem.draft'); return }
+    const replace = explicitAt === undefined && lone
+    const at = explicitAt === undefined ? target() : explicitAt
     // Every slot filled and none chosen: the whole sequence becomes the operator's first part.
     if (!at) { change(wrap(op, tree), arity(op) > 1 ? [1] : []); return }
     const part = partAt(tree, at)
     if (isNode(part)) {
-      const swapped = swapOp(tree, at, op)
+      const swapped = swapOp(tree, at, op, { drop: replace })
       if (swapped.problem) note = t(`form.ids.problem.${swapped.problem}`, { name: name(op) })
-      else change(swapped.tree, at)
+      else { change(swapped.tree, at); if (replace) lone = true }
       return
     }
     // The slot's part stays first; the slot to fill next is the new one beside it, or the operator's
@@ -195,8 +212,9 @@
     const select = part === null ? [...at, 0] : arity(op) === 1 ? at : [...at, 1]
     change(replaceAt(tree, at, wrap(op, part)), select)
   }
-  function place(part) {
-    const at = target()
+  function place(part, explicitAt = undefined) {
+    if (explicitAt === undefined && typed.problem && draft) { note = t('form.ids.problem.draft'); return }
+    const at = explicitAt === undefined ? target() : explicitAt
     if (!at) { note = t('form.ids.chooseFirst'); return }
     const next = replaceAt(tree, at, part)
     change(next, nextEmpty(next, at) ?? at)
@@ -204,8 +222,22 @@
   function component(item) { query = ''; if (!disabled) place(item.char) }
   function swap(item) { place(parse(item.char).tree ?? item.char) }
   function split(sequence) { const found = parse(sequence, { open: true }); if (!found.problem) place(found.tree) }
-  // A part or a node taken from the parts palette or the "Take parts from" tree, as written.
-  function take(written) { const found = parse(written, { open: true }); if (!disabled && !found.problem && found.tree !== null) place(found.tree) }
+  // A part or a node taken from the parts palette, "Take parts from", or a text drop.
+  function take(written, explicitAt = undefined) {
+    if (disabled) return
+    const found = parse(unalias(written), { open: true })
+    if (!found.problem && found.tree !== null) place(found.tree, explicitAt)
+  }
+  function reorder(from, to) {
+    if (disabled) return
+    const next = reorderSiblings(tree, from, to)
+    if (next !== tree) change(next, to)
+  }
+  function exchange(from, to) {
+    if (disabled) return
+    const next = swapParts(tree, from, to)
+    if (next !== tree) change(next, to)
+  }
   // The descriptions a component can be split into, those the editor can read.
   const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
   // The picked part as its other figures, the bare character among them once it carries a selector.
@@ -215,14 +247,15 @@
     return [...(picked !== base && found.length ? [{ char: base, mj: null }] : []), ...found.filter(figure => figure.char !== picked)]
   })
   const point = text => [...text].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')
-  function choose(path) {
-    chosen = samePath(chosen, path) ? null : path
+  function choose(path, { toggle = true } = {}) {
+    chosen = path && toggle && samePath(chosen, path) ? null : path
+    lone = false
     note = ''
     const part = chosen ? partAt(tree, chosen) : undefined
     piece = text(part)
     if (typeof part === 'string') { read(lookupChar(part)); readFigures(lookupChar(part)) }
   }
-  function remove(path) { if (!disabled && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
+  function remove(path) { if (!disabled && path && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
 
   // The part field: Apply or Enter puts what it holds in the chosen slot and moves on to the next empty one.
@@ -238,17 +271,178 @@
   }
 
   const pathKey = path => path.join('.')
+  const parsePath = written => written === '' ? [] : written.split('.').map(Number)
   async function focusChosen() {
     await tick()
     if (chosen) root?.querySelector(`[data-path="${pathKey(chosen)}"]`)?.focus()
   }
+
+  // Drag-and-drop reorder (siblings) and swap (across branches), plus touch drag and Space carry.
+  let overPath = $state(null), overSwap = $state(false)
+  let dragging = $state.raw(null), carry = $state.raw(null)
+  const overKind = path => overPath !== pathKey(path) ? null : overSwap ? 'swap' : 'move'
+  $effect(() => {
+    const current = tree
+    untrack(() => { if (carry && carry.tree !== current) carry = null })
+  })
+  function startDrag(event, path) {
+    if (disabled || !path.length || !event.dataTransfer) return
+    dragging = { path, tree }
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(PART_DRAG, '1')
+    event.stopPropagation()
+  }
+  function endDrag() { dragging = null; overPath = null; overSwap = false }
+  function dragover(event, path) {
+    if (disabled || !event.dataTransfer) return
+    if (event.dataTransfer.types.includes(PART_DRAG)) {
+      if (!dragging || dragging.tree !== tree) return
+      const isSwap = !siblings(dragging.path, path)
+      if (isSwap && !swappable(dragging.path, path)) return
+      event.preventDefault(); event.stopPropagation()
+      event.dataTransfer.dropEffect = 'move'
+      overPath = pathKey(path); overSwap = isSwap
+      return
+    }
+    if (!event.dataTransfer.types.includes('text/plain')) return
+    event.preventDefault(); event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+    overPath = pathKey(path); overSwap = false
+  }
+  function drop(event, path) {
+    overPath = null; overSwap = false
+    if (event.dataTransfer?.types.includes(PART_DRAG)) {
+      if (!dragging || dragging.tree !== tree) return
+      const from = dragging.path, move = siblings(from, path), isSwap = !move && swappable(from, path)
+      dragging = null
+      if (!move && !isSwap) return
+      event.preventDefault(); event.stopPropagation()
+      if (move) reorder(from, path); else exchange(from, path)
+      return
+    }
+    const given = event.dataTransfer?.getData('text/plain')?.trim()
+    if (!given) return
+    event.preventDefault(); event.stopPropagation()
+    take(given, path)
+  }
+  function placeCarry(to) {
+    const held = carry
+    carry = null
+    if (!held || held.tree !== tree) return
+    if (siblings(held.path, to)) { reorder(held.path, to); focusChosen() }
+    else if (swappable(held.path, to)) { exchange(held.path, to); focusChosen() }
+  }
+
+  let touch = null, ghost = $state(null), swallowed = false
+  function touchDown(event) {
+    if (event.pointerType !== 'touch' || disabled) return
+    const box = event.target.closest?.('[data-hover-path]')
+    if (!box || !treeEl?.contains(box)) return
+    const path = parsePath(box.getAttribute('data-hover-path') ?? '')
+    if (!path.length) return
+    touch = { path, pointer: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
+  }
+  function touchMove(event) {
+    if (!touch || event.pointerId !== touch.pointer) return
+    if (!touch.moved) {
+      if (Math.hypot(event.clientX - touch.x, event.clientY - touch.y) < 8) return
+      touch.moved = true; swallowed = true
+      dragging = { path: touch.path, tree }
+      ghost = { text: text(partAt(tree, touch.path)) || EMPTY, x: event.clientX, y: event.clientY }
+    } else if (ghost) ghost = { ...ghost, x: event.clientX, y: event.clientY }
+    const under = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-hover-path]')
+    const written = under && treeEl?.contains(under) ? under.getAttribute('data-hover-path') : null
+    if (written == null) { overPath = null; overSwap = false; return }
+    const path = parsePath(written)
+    const move = siblings(touch.path, path), isSwap = !move && swappable(touch.path, path)
+    if (!move && !isSwap) { overPath = null; overSwap = false; return }
+    overPath = pathKey(path); overSwap = isSwap
+  }
+  function touchUp(event) {
+    if (!touch || event.pointerId !== touch.pointer) return
+    const from = touch.path, moved = touch.moved, landed = overPath
+    touch = null
+    if (!moved) return
+    dragging = null; overPath = null; overSwap = false; ghost = null
+    if (landed != null) {
+      const to = parsePath(landed)
+      if (siblings(from, to)) reorder(from, to)
+      else if (swappable(from, to)) exchange(from, to)
+    }
+    setTimeout(() => { swallowed = false }, 400)
+  }
+  function touchCancel() {
+    if (!touch) return
+    touch = null; dragging = null; overPath = null; overSwap = false; ghost = null
+    setTimeout(() => { swallowed = false }, 400)
+  }
+
+  // Part context menu (right click, ContextMenu or Shift+F10), promoted to the top layer via
+  // popover="auto" so it clears the enclosing <dialog> without clipping.
+  let menu = $state(null), menuEl = $state(null)
+  const menuPart = $derived(menu ? partAt(tree, menu.path) : undefined)
+  async function openMenu(path, x, y) {
+    if (disabled) return
+    const W = 240, H = 260
+    menu = { path, x: Math.max(8, Math.min(x, innerWidth - W - 8)), y: Math.max(8, Math.min(y, innerHeight - H - 8)) }
+    choose(path, { toggle: false })
+    await tick()
+    if (menuEl && !menuEl.matches(':popover-open')) menuEl.showPopover()
+    menuEl?.querySelector('[role="menuitem"]:not([disabled])')?.focus()
+  }
+  function closeMenu({ refocus = true } = {}) {
+    if (!menu) return
+    if (menuEl?.matches(':popover-open')) menuEl.hidePopover()
+    menu = null
+    if (refocus) focusChosen()
+  }
+  function runMenu(act) { act(); closeMenu() }
+  function menuKey(event) {
+    const items = [...(menuEl?.querySelectorAll('[role="menuitem"]:not([disabled])') ?? [])]
+    const at = items.indexOf(document.activeElement)
+    const dir = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key]
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMenu() }
+    else if (event.key === 'Tab') closeMenu({ refocus: false })
+    else if (dir) { event.preventDefault(); items[(at + dir + items.length) % items.length]?.focus() }
+    else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); items[event.key === 'Home' ? 0 : items.length - 1]?.focus() }
+  }
+  function partKey(event, path) {
+    if (event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.isComposing) {
+      event.preventDefault()
+      if (!path.length || disabled) return
+      if (carry && samePath(carry.path, path)) { carry = null; return }
+      if (carry) { placeCarry(path); return }
+      carry = { path, tree }
+      choose(path, { toggle: false })
+      return
+    }
+    if (event.key === 'Escape' && carry) { event.preventDefault(); event.stopPropagation(); carry = null; return }
+    if (event.key === 'Escape' && !event.isComposing && !disabled && chosen !== null) { event.preventDefault(); event.stopPropagation(); choose(null); return }
+    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.isComposing && ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+      const next = neighbor(tree, path, ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1)
+      if (path.length && !disabled) { event.preventDefault(); if (next) { reorder(path, next); focusChosen() } }
+      return
+    }
+    if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+      event.preventDefault()
+      const r = event.currentTarget.getBoundingClientRect()
+      openMenu(path, r.left + 8, r.bottom)
+    }
+  }
+  function frameClick(event, path) {
+    if (disabled) return
+    const parts = event.currentTarget.querySelector(':scope > .ids-parts')
+    if (event.target.closest('button') || parts?.contains(event.target)) return
+    choose(path)
+  }
+
   // Keys while the editor has the focus outside a text field: an operator for each key of the number
   // row and the row under it, by where it sits so any layout has them, Tab through the parts,
   // Backspace to empty one, Ctrl+Z to undo. A key the editor takes is its own: it is marked taken, so
   // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-context-menu')) return
     // Undo and redo work from anywhere in the editor; the focus stays in a picker or start-from-character search that has it.
     const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel, .ids-start'))
     const after = () => { if (!inPicker) focusChosen() }
@@ -298,13 +492,25 @@
 
 {#snippet box(part, path, parent)}
   {@const selected = samePath(chosen, path)}
+  {@const dragged = dragging !== null && samePath(dragging.path, path)}
+  {@const carried = carry !== null && samePath(carry.path, path)}
   {#if isNode(part)}
     {@const what = parent ? t('form.ids.part', { part: name(part.op), n: parent.n, name: name(parent.op) }) : name(part.op)}
-    <div class="ids-node {layout(part.op)}" class:chosen={selected} data-op={part.op}>
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="ids-node {layout(part.op)}" class:chosen={selected} class:dragged class:carried
+      class:over={overKind(path) === 'move'} class:swap={overKind(path) === 'swap'}
+      data-op={part.op} data-hover-path={pathKey(path)} draggable={!disabled && path.length > 0}
+      title={path.length ? `${name(part.op)} · ${t('form.ids.dragSibling')}` : undefined}
+      onclick={event => frameClick(event, path)} ondragstart={event => startDrag(event, path)} ondragend={endDrag}
+      ondragover={event => dragover(event, path)} ondragleave={() => { overPath = null; overSwap = false }} ondrop={event => drop(event, path)}>
       <div class="ids-head">
-        <button type="button" class="ids-op" data-path={pathKey(path)} aria-pressed={selected} {disabled}
-          aria-label={t('form.ids.node', { name: name(part.op), sequence: write(part) })} title={`${part.op} ${name(part.op)}`}
-          onclick={() => choose(path)}><OperatorIcon op={part.op} size={14} /></button>
+        <button type="button" class="ids-op" data-path={pathKey(path)} aria-pressed={selected} aria-keyshortcuts="Space" {disabled}
+          class:dragged class:carried draggable={!disabled && path.length > 0}
+          aria-label={t('form.ids.node', { name: name(part.op), sequence: write(part) })}
+          title={`${part.op} ${name(part.op)}${path.length ? ` · ${t('form.ids.dragSibling')}` : ''}`}
+          onclick={() => choose(path)} oncontextmenu={event => { event.preventDefault(); openMenu(path, event.clientX, event.clientY) }}
+          onkeydown={event => partKey(event, path)} ondragstart={event => startDrag(event, path)} ondragend={endDrag}
+          ondragover={event => dragover(event, path)} ondragleave={() => { overPath = null; overSwap = false }} ondrop={event => drop(event, path)}><OperatorIcon op={part.op} size={14} /></button>
         <button type="button" class="ids-unwrap" tabindex="-1" {disabled} aria-label={t('form.ids.unwrapNode', { what })} title={t('form.ids.unwrap')}
           onclick={() => remove(path)}>×</button>
       </div>
@@ -316,10 +522,14 @@
     </div>
   {:else}
     {@const label = part === null ? t('form.ids.empty') : part}
-    <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} aria-pressed={selected}
-      data-path={pathKey(path)} {disabled} title={part === null ? label : t('form.ids.choose', { part })}
+    <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} class:dragged class:carried
+      class:over={overKind(path) === 'move'} class:swap={overKind(path) === 'swap'} aria-pressed={selected} aria-keyshortcuts="Space"
+      data-path={pathKey(path)} data-hover-path={pathKey(path)} draggable={!disabled && path.length > 0} {disabled}
+      title={`${part === null ? label : t('form.ids.choose', { part })}${path.length ? ` · ${t('form.ids.dragSibling')}` : ''}`}
       aria-label={parent ? t('form.ids.part', { part: label, n: parent.n, name: name(parent.op) }) : label}
-      onclick={() => choose(path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
+      onclick={() => choose(path)} oncontextmenu={event => { event.preventDefault(); openMenu(path, event.clientX, event.clientY) }}
+      onkeydown={event => partKey(event, path)} ondragstart={event => startDrag(event, path)} ondragend={endDrag}
+      ondragover={event => dragover(event, path)} ondragleave={() => { overPath = null; overSwap = false }} ondrop={event => drop(event, path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
   {/if}
 {/snippet}
 
@@ -357,7 +567,9 @@
     <label class="ids-title" for={`${uid}-field`}>{t('form.ids.label')}</label>
     <div class="ids-field-row">
       <input id={`${uid}-field`} bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off" enterkeyhint="done"
-        placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
+        placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()}
+        onselect={selectField} onkeyup={selectField} onclick={selectField}
+        onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
         onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); use() } }} />
       <button type="button" class="ids-use" disabled={disabled || !usable} onclick={use}>{t('form.ids.use')}</button>
     </div>
@@ -369,10 +581,38 @@
     {/each}
   </div>
   <div class="ids-view">
-    <div class="ids-tree" role="group" aria-label={t('form.ids.structure')}>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="ids-tree" role="group" aria-label={t('form.ids.structure')} bind:this={treeEl}
+      onpointerdown={touchDown} onpointermove={touchMove} onpointerup={touchUp} onpointercancel={touchCancel}
+      onclickcapture={event => { if (swallowed) { swallowed = false; event.stopImmediatePropagation(); event.preventDefault() } }}>
       {@render box(tree, [], null)}
+      {#if ghost}<div class="ids-touch-ghost" aria-hidden="true" style:left="{ghost.x}px" style:top="{ghost.y}px">{ghost.text}</div>{/if}
     </div>
     <IdsPreview {tree} sequence={whole} {chosen} />
+  </div>
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div class="ids-context-menu" popover="auto" role="menu" tabindex="-1" bind:this={menuEl}
+    aria-label={menu ? t('form.ids.menu.label', { part: text(menuPart) || EMPTY }) : ''}
+    style:left={menu ? `${menu.x}px` : undefined} style:top={menu ? `${menu.y}px` : undefined}
+    ontoggle={event => { if (event.newState === 'closed' && menu) menu = null }} onkeydown={menuKey}>
+    {#if menu}
+      {@const filled = menuPart !== null && menuPart !== undefined}
+      <p class="ids-menu-title">{isNode(menuPart) ? t('form.ids.menu.swap') : t('form.ids.menu.split')}</p>
+      <div class="ids-menu-ops">
+        {#each OPERATORS as [op] (op)}
+          <button type="button" role="menuitem" class="ids-menu-op" title={name(op)} aria-label={name(op)}
+            onclick={() => runMenu(() => operator(op, menu.path))}><OperatorIcon {op} size={18} /></button>
+        {/each}
+      </div>
+      <hr class="ids-menu-sep" />
+      <button type="button" role="menuitem" class="ids-menu-item" disabled={!filled} onclick={() => runMenu(() => empty(menu.path))}>
+        <span>{t('form.ids.clear')}</span></button>
+      <button type="button" role="menuitem" class="ids-menu-item" disabled={!isNode(menuPart)} onclick={() => runMenu(() => remove(menu.path))}>
+        <span>{t('form.ids.unwrap')}</span></button>
+      <button type="button" role="menuitem" class="ids-menu-item" disabled={!filled}
+        onclick={() => { const seq = text(menuPart); runMenu(() => { navigator.clipboard?.writeText(seq).catch(() => {}) }) }}>
+        <span>{t('form.ids.menu.copy')}</span><span class="ids-menu-seq" lang="ja">{text(menuPart)}</span></button>
+    {/if}
   </div>
   <div class="ids-tools">
     <div class="ids-slot">
@@ -463,10 +703,16 @@
   .ids-view > .ids-tree{flex:1;min-width:0}
   @media (max-width:520px){.ids-view{flex-direction:column-reverse;align-items:center}.ids-view > .ids-tree{align-self:stretch}}
   .ids-tree{display:grid;justify-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-subtle);min-height:72px}
+  .ids-tree [data-hover-path]{touch-action:none}
   .ids-node{position:relative;display:flex;flex-direction:column;min-width:0;padding:22px 6px 6px;
-    border:1.5px dashed var(--line-strong);border-radius:8px}
+    border:1.5px dashed var(--line-strong);border-radius:8px;cursor:pointer}
+  .ids-node[draggable="true"],.ids-op[draggable="true"],.ids-part[draggable="true"]{cursor:grab}
+  .ids-node[draggable="true"]:active,.ids-op[draggable="true"]:active,.ids-part[draggable="true"]:active{cursor:grabbing}
   .ids-tree > .ids-node,.ids-tree > .ids-part{width:min(100%,360px)}
-  .ids-node.chosen{border-style:solid;border-color:var(--accent);background:var(--accent-light)}
+  .ids-node.chosen,.ids-node.swap{border-style:solid;border-color:var(--accent);background:var(--accent-light)}
+  .ids-node.over{border-style:solid;border-color:var(--accent)}
+  .ids-node.dragged,.ids-op.dragged,.ids-part.dragged{opacity:.45}
+  .ids-node.carried,.ids-part.carried{outline:2px dashed var(--accent);outline-offset:2px}
   .ids-head{position:absolute;top:2px;left:4px;right:4px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
   .ids-head button{pointer-events:auto}
   .ids-op{display:grid;place-items:center;padding:1px 3px;border-color:transparent;background:none}
@@ -507,8 +753,25 @@
     font-family:var(--ids-font);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px}
   .ids-part:not(:disabled):hover{border-color:var(--line-strong)}
   .ids-part.empty{font-size:18px;color:var(--muted);border-style:dashed;border-color:var(--line-strong);background:transparent}
-  .ids-part.chosen{border:2px solid var(--accent);padding:1px 5px;background:var(--accent-light)}
+  .ids-part.chosen,.ids-part.swap{border:2px solid var(--accent);padding:1px 5px;background:var(--accent-light)}
+  .ids-part.over{border:2px solid var(--accent);padding:1px 5px}
   .ids-op:focus-visible,.ids-part:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+  .ids-touch-ghost{position:fixed;z-index:60;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;
+    padding:4px 10px;border:1px solid var(--accent);border-radius:10px;background:var(--surface);color:var(--ink);
+    font-family:var(--ids-font);font-size:20px;line-height:1.3;box-shadow:0 8px 20px var(--shadow);transform:translate(-50%,-50%)}
+
+  .ids-context-menu{position:fixed;inset:auto;margin:0;padding:6px;width:max-content;max-width:260px;
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px var(--shadow-menu)}
+  .ids-context-menu:popover-open{display:flex;flex-direction:column;gap:2px}
+  .ids-menu-title{margin:2px 6px 4px;font-size:11px;color:var(--muted)}
+  .ids-menu-ops{display:grid;grid-template-columns:repeat(6,32px);gap:2px}
+  .ids-menu-op{display:grid;place-items:center;height:30px;padding:0;border-color:transparent;background:none}
+  .ids-menu-op:hover,.ids-menu-op:focus-visible{background:var(--accent-light);border-color:transparent}
+  .ids-menu-sep{border:0;height:1px;margin:4px 2px;background:var(--line)}
+  .ids-menu-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 8px;font-size:13px;text-align:left;
+    border-color:transparent;background:none}
+  .ids-menu-item:not(:disabled):hover,.ids-menu-item:focus-visible{background:var(--surface-selected);border-color:transparent}
+  .ids-menu-seq{font-family:var(--ids-font);font-size:14px;color:var(--muted)}
 
   .ids-tools{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px}
   .ids-slot{flex:1 1 160px;min-width:0}

@@ -439,7 +439,7 @@
   "menu.typeface": "書體",
   "menu.typeface.sans": "黑體",
   "menu.typeface.serif": "宋體",
-"nav.design": "設計系統",
+  "nav.design": "設計系統",
   "nav.explore": "譜",
   "nav.flagged": "誤",
   "nav.forms": "體",
@@ -1340,5 +1340,11 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "技藝格致之書",
-  "roadmap.stage.gazetteers": "方志"
+  "roadmap.stage.gazetteers": "方志",
+  "form.ids.dragSibling": "曳至他枝部件可互換，按Alt加方向鍵改同層之序",
+  "form.ids.menu.label": "{part}之操作",
+  "form.ids.menu.split": "分作",
+  "form.ids.menu.swap": "改作",
+  "form.ids.menu.copy": "錄",
+  "form.ids.problem.draft": "欄內所書未成記述。請先補全或清之。"
 }

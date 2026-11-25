@@ -432,7 +432,7 @@
   "menu.typeface": "書體",
   "menu.typeface.sans": "ごしっく體",
   "menu.typeface.serif": "明朝體",
-"nav.design": "デザインシステム",
+  "nav.design": "デザインシステム",
   "nav.explore": "涉獵",
   "nav.flagged": "正誤",
   "nav.forms": "字體",
@@ -1338,5 +1338,11 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "技術及ビ科學ノ書",
-  "roadmap.stage.gazetteers": "地方志"
+  "roadmap.stage.gazetteers": "地方志",
+  "form.ids.dragSibling": "他枝の部品へ曳きて入れ替へ、Alt+矢印鍵にて同層の順を改む",
+  "form.ids.menu.label": "{part}の操作",
+  "form.ids.menu.split": "分かつ",
+  "form.ids.menu.swap": "改む",
+  "form.ids.menu.copy": "寫す",
+  "form.ids.problem.draft": "入力欄の文字は未だ記述を成さず。先づ整ふるか消すべし。"
 }

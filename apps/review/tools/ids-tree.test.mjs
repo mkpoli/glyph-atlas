@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { ALIASES, CODES, KEYS, isComponent, isLetter, namingOperator, OPERATORS, clear, leaves, nextEmpty, parse, partAt, paths, swapOp, unalias, unwrap, wrap, write } from '../src/lib/ids.js'
+import { tokens } from 'han-compose/tokens'
+import { ALIASES, CODES, KEYS, isComponent, isLetter, namingOperator, OPERATORS, clear, leaves, neighbor, nextEmpty, parse, partAt, paths, rangeToken, reorderSiblings, siblings, swapOp, swapParts, swappable, unalias, unwrap, wrap, write } from '../src/lib/ids.js'
 
 const tree = text => parse(text, { open: true }).tree
 
@@ -78,9 +79,36 @@ describe('the editor verbs', () => {
     expect(write(swapOp(t, [], '⿲').tree)).toBe('⿲亻⿱七木⬚')
     expect(write(swapOp(tree('⿲亻木⬚'), [], '⿰').tree)).toBe('⿰亻木')
   })
-  it('refuse a swap that would drop a filled part', () => {
+  it('refuse a swap that would drop a filled part unless drop is enabled', () => {
     expect(swapOp(tree('⿲亻木口'), [], '⿰')).toEqual({ problem: 'drop' })
     expect(swapOp(t, [1], '⿾')).toEqual({ problem: 'drop' })
+    expect(write(swapOp(tree('⿲亻木口'), [], '⿰', { drop: true }).tree)).toBe('⿰亻木')
+    expect(write(swapOp(tree('⿲亻⬚口'), [], '⿰', { drop: true }).tree)).toBe('⿰亻口')
+  })
+  it('reorder siblings and swap parts across branches', () => {
+    expect(siblings([0], [1])).toBe(true)
+    expect(siblings([0], [1, 0])).toBe(false)
+    expect(swappable([0], [1, 0])).toBe(true)
+    expect(swappable([1], [1, 0])).toBe(false)
+    expect(swappable([], [0])).toBe(false)
+    expect(neighbor(t, [1, 0], 1)).toEqual([1, 1])
+    expect(neighbor(t, [1, 0], -1)).toBeNull()
+    expect(write(reorderSiblings(t, [0], [1]))).toBe('⿰⿱七木亻')
+    expect(write(reorderSiblings(tree('⿲亻木口'), [2], [0]))).toBe('⿲口亻木')
+    expect(write(swapParts(t, [0], [1, 1]))).toBe('⿰木⿱七亻')
+    expect(swapParts(t, [1], [1, 0])).toBe(t)
+  })
+  it('map a sequence field selection to its smallest covering tree part', () => {
+    const seq = '⿰𠤕⿱龴疋'
+    const spans = tokens(seq)
+    // ⿰ (0..1), 𠤕 (1..3, surrogate pair), ⿱ (3..4), 龴 (4..5), 疋 (5..6)
+    expect(rangeToken(spans, 1, 3)?.path).toEqual([0])
+    expect(rangeToken(spans, 5, 6)?.path).toEqual([1, 1])
+    expect(rangeToken(spans, 3, 6)?.path).toEqual([1])
+    expect(rangeToken(spans, 3, 4)?.path).toEqual([1])
+    expect(rangeToken(spans, 2, 2)).toBeNull()
+    const ivs = '⿺辶\u{E0101}禺\u{E0101}'
+    expect(rangeToken(tokens(ivs), 1, 4)?.path).toEqual([0])
   })
   it('remove one level, keeping the first part that is filled', () => {
     expect(write(unwrap(t, [1]))).toBe('⿰亻七')

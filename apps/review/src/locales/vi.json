@@ -448,7 +448,7 @@
   "menu.typeface": "Kiểu chữ",
   "menu.typeface.sans": "Không chân",
   "menu.typeface.serif": "Có chân",
-"nav.design": "Hệ thống thiết kế",
+  "nav.design": "Hệ thống thiết kế",
   "nav.explore": "Khám phá",
   "nav.flagged": "Cần sửa",
   "nav.forms": "Tự dạng",
@@ -1334,5 +1334,11 @@
   "roadmap.stage.collections": "Văn tập",
   "roadmap.stage.miscellanies": "Tạp trứ",
   "roadmap.stage.technical": "Sách kỹ thuật và khoa học",
-  "roadmap.stage.gazetteers": "Địa phương chí"
+  "roadmap.stage.gazetteers": "Địa phương chí",
+  "form.ids.dragSibling": "Kéo sang phần chữ khác để đổi vị trí, hoặc dùng phím mũi tên để đổi thứ tự cùng tầng",
+  "form.ids.menu.label": "Chọn cho {part}",
+  "form.ids.menu.split": "Tách thành",
+  "form.ids.menu.swap": "Đổi thành",
+  "form.ids.menu.copy": "Sao chép",
+  "form.ids.problem.draft": "Ô nhập chưa phải dãy ghi chữ. Hãy viết xong hoặc xóa trước."
 }

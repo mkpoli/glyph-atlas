@@ -462,7 +462,7 @@
   "menu.typeface": "字體",
   "menu.typeface.sans": "黑體",
   "menu.typeface.serif": "明體",
-"nav.design": "設計系統",
+  "nav.design": "設計系統",
   "nav.explore": "探索",
   "nav.flagged": "待修正",
   "nav.forms": "字樣",
@@ -1348,5 +1348,11 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "科技典籍",
-  "roadmap.stage.gazetteers": "地方志"
+  "roadmap.stage.gazetteers": "地方志",
+  "form.ids.dragSibling": "拖動到其他分支的部件可互換，Alt+方向鍵調整同層順序",
+  "form.ids.menu.label": "{part}的操作",
+  "form.ids.menu.split": "拆分為",
+  "form.ids.menu.swap": "改為",
+  "form.ids.menu.copy": "複製",
+  "form.ids.problem.draft": "輸入框中的文字還不是描述序列。請先補全或清除。"
 }
