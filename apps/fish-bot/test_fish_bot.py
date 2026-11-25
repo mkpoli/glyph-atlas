@@ -2798,9 +2798,13 @@ def test_every_tool_call_gets_a_result_past_the_limit(monkeypatch):
 
     class Lookup:
         ran = 0
+        offer_compendium = False
 
         def specs(self):
             return []
+
+        def rounds(self):
+            return fish_bot.LOOKUP_ROUNDS
 
         def run(self, name, arguments):
             Lookup.ran += 1
@@ -3756,3 +3760,248 @@ def test_the_newest_characters_can_be_remembered_and_found():
     for char in ("\U000323b0", "\U00031350", "\U00018e00", "\U0003d000"):
         terms = fish_bot.memory_terms(char * 2, 10)
         assert terms and all(char in term for term in terms)
+
+
+COMPENDIUM_TOOLS = [
+    {"name": "search_records", "description": "Search records", "annotations": {"readOnlyHint": True},
+     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}}},
+    {"name": "get_record", "description": "Read a record", "annotations": {"readOnlyHint": True},
+     "inputSchema": {"type": "object", "required": ["record"], "properties": {"record": {"type": "string"}}}},
+    {"name": "add_sighting", "description": "Add evidence to a record", "annotations": {"readOnlyHint": False},
+     "inputSchema": {"type": "object", "required": ["record"], "properties": {
+         "record": {"type": "string"},
+         "vias": {"type": "array", "maxItems": 4, "items": {"type": "object", "properties": {"author": {"type": "string"}}}},
+         "style": {"type": ["string", "null"], "enum": ["regular", "cursive"]}}}},
+]
+
+
+class FakeCompendium:
+    """珍字集覽's MCP endpoint as urlopen sees it: the requests it got, and answers by method."""
+
+    def __init__(self):
+        self.requests = []
+        self.refuse = None
+
+    def __call__(self, request, timeout=None):
+        body = json.loads(request.data)
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.requests.append((body["method"], body.get("params"), headers))
+        if body["method"] == "initialize":
+            result, handed = {"protocolVersion": "2025-11-25", "instructions": "Search before you add."}, "a" * 64
+        elif body["method"] == "tools/list":
+            result, handed = {"tools": COMPENDIUM_TOOLS}, None
+        else:
+            name = body["params"]["name"]
+            text = self.refuse or json.dumps({"record": "R+06C2", "called": name})
+            result, handed = {"content": [{"type": "text", "text": text}], "isError": bool(self.refuse)}, None
+        return FakeResponse(json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": result}).encode(),
+                            {"Mcp-Session-Id": handed} if handed else {})
+
+
+class FakeResponse:
+    def __init__(self, data, headers):
+        self.data, self.headers, self.status = data, headers, 200
+
+    def read(self):
+        return self.data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+def compendium_lookup(tmp_path, monkeypatch, *, may_write=True, writes=(10, 4)):
+    server = FakeCompendium()
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", server)
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                             compendium=fish_bot.Compendium("https://rare.example/mcp", store), compendium_writes=writes)
+    lookup.offer_compendium, lookup.may_write, lookup.caller, lookup.here = True, may_write, "@asker:example", ROOM
+    return lookup, server, store
+
+
+def test_the_compendium_tools_are_offered_with_a_schema_gemini_takes(tmp_path, monkeypatch):
+    lookup, _, _ = compendium_lookup(tmp_path, monkeypatch)
+    tools = {tool["name"]: tool for tool in lookup.specs() if tool["name"].startswith("rare_")}
+    assert set(tools) == {"rare_search_records", "rare_get_record", "rare_add_sighting"}
+    parameters = tools["rare_add_sighting"]["parameters"]
+    assert parameters["required"] == ["record"]
+    assert parameters["properties"]["style"] == {"type": "string", "enum": ["regular", "cursive"]}
+    assert parameters["properties"]["vias"] == {"type": "array", "items": {"type": "object", "properties": {"author": {"type": "string"}}}}
+    assert "default" not in json.dumps(parameters) and "maxItems" not in json.dumps(parameters)
+    lookup.may_write = False
+    assert {tool["name"] for tool in lookup.specs() if tool["name"].startswith("rare_")} == {"rare_search_records", "rare_get_record"}
+    lookup.offer_compendium = False
+    assert not [tool for tool in lookup.specs() if tool["name"].startswith("rare_")]
+
+
+def test_every_addition_carries_one_kept_name(tmp_path, monkeypatch):
+    lookup, server, store = compendium_lookup(tmp_path, monkeypatch)
+    first = lookup.run("rare_add_sighting", {"record": "R+06C2", "vias": [{"author": "你家胡妹"}]})
+    assert first["instructions"] == "Search before you add." and first["result"]["called"] == "add_sighting"
+    assert "instructions" not in lookup.run("rare_get_record", {"record": "R+06C2"})
+    again = fish_bot.Compendium("https://rare.example/mcp", store)
+    again.call("get_record", {"record": "1"})
+    calls = [headers for method, _, headers in server.requests if method == "tools/call"]
+    assert {headers.get("mcp-session-id") for headers in calls} == {"a" * 64}
+    row = store.db.execute("SELECT room_id, caller, tool, arguments FROM compendium_writes").fetchone()
+    assert (row["room_id"], row["caller"], row["tool"]) == (ROOM, "@asker:example", "add_sighting")
+    assert "你家胡妹" in row["arguments"]
+
+
+def test_nothing_is_added_unasked_or_past_the_limits(tmp_path, monkeypatch):
+    lookup, server, store = compendium_lookup(tmp_path, monkeypatch, may_write=False)
+    assert "only when someone asks" in lookup.run("rare_add_sighting", {"record": "1"})["error"]
+    lookup.may_write = True
+    lookup.compendium_writes = (3, 2)
+    for number in range(2):
+        assert "result" in lookup.run("rare_add_sighting", {"record": str(number)})
+    assert "this hour" in lookup.run("rare_add_sighting", {"record": "9"})["error"]
+    lookup.caller = "@other:example"
+    assert "result" in lookup.run("rare_add_sighting", {"record": "3"})
+    assert "this hour" in lookup.run("rare_add_sighting", {"record": "4"})["error"]
+    assert [method for method, *_ in server.requests].count("tools/call") == 3
+    assert store.compendium_writes(0) == 3
+    lookup.offer_compendium = False
+    assert "error" in lookup.run("rare_get_record", {"record": "1"})
+
+
+def test_the_same_addition_is_made_once_whatever_retries_it(tmp_path, monkeypatch):
+    lookup, server, _ = compendium_lookup(tmp_path, monkeypatch)
+    first = lookup.run("rare_add_sighting", {"record": "R+06C2", "url": "https://x.com/a/status/1"})
+    again = lookup.run("rare_add_sighting", {"url": "https://x.com/a/status/1", "record": "R+06C2"})
+    assert "add_sighting" in again["answer"] and "already_added" in again and "result" in first
+    assert [method for method, *_ in server.requests].count("tools/call") == 1
+    server.refuse = "A sighting needs a picture or a link."
+    lookup.run("rare_add_sighting", {"record": "R+0001"})
+    server.refuse = None
+    assert "result" in lookup.run("rare_add_sighting", {"record": "R+0001"})
+
+
+def test_an_addition_whose_answer_is_lost_still_counts(tmp_path, monkeypatch):
+    lookup, server, store = compendium_lookup(tmp_path, monkeypatch, writes=(1, 1))
+    lookup.compendium.tools()
+
+    def lost(request, timeout=None):
+        if json.loads(request.data)["method"] == "tools/call":
+            raise TimeoutError("timed out")
+        return server(request, timeout)
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", lost)
+    assert "could not be reached" in lookup.run("rare_add_sighting", {"record": "1"})["error"]
+    assert "this hour" in lookup.run("rare_add_sighting", {"record": "2"})["error"]
+    assert store.db.execute("SELECT outcome FROM compendium_writes").fetchone()["outcome"].startswith("lost")
+    lookup.compendium_writes = (5, 5)
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", server)
+    assert "result" in lookup.run("rare_add_sighting", {"record": "1"})
+
+
+def test_a_tool_call_where_no_tool_was_offered_is_not_run(tmp_path, monkeypatch):
+    lookup, server, _ = compendium_lookup(tmp_path, monkeypatch)
+    model = paid_gemini("key")
+    sent = []
+    call = {"type": "function_call", "id": "c1", "name": "rare_add_sighting", "arguments": {"record": "1"}}
+
+    def send(body, **_):
+        sent.append(body)
+        if len(sent) == 1:
+            return answer("not json at all")
+        return {"id": "v1_r", "status": "requires_action", "steps": [call]}
+
+    monkeypatch.setattr(model, "_send", send)
+    with pytest.raises(fish_bot.ModelError):
+        model.act("Room", "", [message_row("珍字集覽")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert "tools" not in sent[1]
+    assert [method for method, *_ in server.requests].count("tools/call") == 0
+
+
+def test_a_refusal_of_the_compendium_reaches_her_as_an_error(tmp_path, monkeypatch):
+    lookup, server, store = compendium_lookup(tmp_path, monkeypatch)
+    server.refuse = "A sighting needs a picture or a link."
+    answer = lookup.run("rare_add_sighting", {"record": "1"})
+    assert answer["error"] == "A sighting needs a picture or a link."
+    assert "picture" in store.db.execute("SELECT outcome FROM compendium_writes").fetchone()["outcome"]
+
+
+def test_an_unreachable_compendium_leaves_the_other_tools(tmp_path, monkeypatch):
+    lookup, _, _ = compendium_lookup(tmp_path, monkeypatch)
+
+    def down(*_, **__):
+        raise fish_bot.urllib.error.URLError("refused")
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", down)
+    assert [tool["name"] for tool in lookup.specs()][:2] == ["web_search", "read_page"]
+    assert "could not be reached" in lookup.run("rare_get_record", {"record": "1"})["error"]
+
+
+@pytest.mark.parametrize(("lines", "offered", "adds"), [
+    (["大肥魚，把這個加進珍字集覽"], True, True), (["大肥魚 這個 via 也加上 https://x.com/a/status/1"], True, True),
+    (["大肥魚 R+06C2 是什麼字"], True, False), (["大肥魚 早安"], False, False),
+    (["今天收錄了好多", "大肥魚 你覺得呢"], True, True), (["大肥魚 珍字集覽裡有沒有這個字"], True, False),
+    (["大肥魚 不要加進珍字集覽"], True, False), (["大肥魚 這個要不要收錄到珍字集覽"], True, False),
+    (["大肥魚 看看珍字集覽 R+06C2", "把這個 via 加上"], True, True), (["Fish, how is this record in the compendium?"], True, False),
+    (["Fish, add this to the compendium please"], True, True), (["Fish, don't add this to the compendium"], True, False),
+])
+def test_the_compendium_opens_when_asked_about_and_takes_additions_when_asked_for(tmp_path, lines, offered, adds):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    start = fish_bot.now_ms() - 60_000
+    for number, line in enumerate(lines):
+        store.add_event(f"$l{number}", ROOM, "@asker:example", start + number, line, "m.text", backfilled=False)
+    bot.turn(ROOM, f"$l{len(lines) - 1}", task="called")
+    assert (bot.lookup.offer_compendium, bot.lookup.may_write, bot.lookup.caller) == (offered, adds, "@asker:example")
+    bot.turn(ROOM, f"$l{len(lines) - 1}", task="visit")
+    assert not bot.lookup.may_write and bot.lookup.caller == ""
+
+
+def test_a_quoted_request_is_not_the_repliers(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    start = fish_bot.now_ms() - 60_000
+    store.add_event("$ask", ROOM, "@asker:example", start, "把這個加進珍字集覽", "m.text", backfilled=False)
+    store.add_event("$what", ROOM, "@other:example", start + 1, "大肥魚 這是什麼意思？", "m.text", backfilled=False, reply_to="$ask")
+    bot.turn(ROOM, "$what", task="called")
+    assert bot.lookup.offer_compendium and not bot.lookup.may_write and bot.lookup.caller == "@other:example"
+
+
+def test_a_catch_up_asks_on_behalf_of_who_asked_for_the_addition(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    call_her(bot, "$add", "大肥魚 把這個加進珍字集覽 https://x.com/a/status/1", sender="@asker:example")
+    call_her(bot, "$hi", "大肥魚 早安", sender="@other:example")
+    wake()
+    bot.catch_up()
+    assert (bot.lookup.offer_compendium, bot.lookup.may_write, bot.lookup.caller) == (True, True, "@asker:example")
+
+
+def test_a_model_that_refuses_the_compendiums_tools_answers_without_them(tmp_path, monkeypatch):
+    lookup, _, _ = compendium_lookup(tmp_path, monkeypatch)
+    model = paid_gemini("key")
+    sent = []
+
+    def send(body, **_):
+        sent.append([tool["name"] for tool in body.get("tools", [])])
+        if len(sent) == 1:
+            raise fish_bot.ModelError("Gemini answered 400: bad schema", status=400)
+        return answer('{"say": "ok"}')
+
+    monkeypatch.setattr(model, "_send", send)
+    act = model.act("Room", "", [message_row("珍字集覽")], {}, task="called", trigger=0, bot_user_id=USER, lookup=lookup)
+    assert act.say == ("ok",)
+    assert "rare_add_sighting" in sent[0] and not [name for name in sent[1] if name.startswith("rare_")]
+
+
+def test_the_compendium_is_configured_by_its_endpoint(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[compendium]\nendpoint = "https://rare.glyphatlas.org/mcp"\nwrites_per_hour = 5\n')
+    config = fish_bot.Config.load(path)
+    assert (config.compendium_endpoint, config.compendium_writes_per_hour, config.compendium_token_file) == (
+        "https://rare.glyphatlas.org/mcp", 5, None)
+    path.write_text('[compendium]\nendpoint = "http://rare.glyphatlas.org/mcp"\n')
+    with pytest.raises(ValueError):
+        fish_bot.Config.load(path)
