@@ -3113,7 +3113,7 @@ def test_a_call_is_read_even_when_many_lines_followed_it(tmp_path, monkeypatch):
     monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
     start = fish_bot.now_ms() - 600_000
     store.add_event("$call", ROOM, "@reader:example", start, "大肥魚, what is 𠀋?", "m.text", backfilled=False)
-    for number in range(20):
+    for number in range(fish_bot.CHAT_CONTEXT + 10):
         store.add_event(f"$l{number}", ROOM, "@other:example", start + 1 + number, f"line {number}", "m.text", backfilled=False)
     bot.turn(ROOM, "$call", task="called")
     _, trigger, read = bot.gemini.turns[-1]

@@ -89,7 +89,9 @@ ISSUE_THINKING = "medium"
 MEMORY_THINKING = "low"
 DIGEST_THINKING = "low"
 LOOKUP_THINKING = "low"
-CHAT_CONTEXT = 40
+# The lines a turn reads. A line it answers that lies further back is looked for among CALL_CONTEXT.
+CHAT_CONTEXT = 25
+CALL_CONTEXT = 60
 MAX_BUBBLES = 3
 # A call older than this gets no chat answer: the moment has passed.
 CHAT_WINDOW_SECONDS = 600
@@ -4793,9 +4795,9 @@ class Bot:
         lines = THRIFT_CONTEXT if short else VISIT_CONTEXT if task == "visit" else CHAT_CONTEXT
         events = self.store.context(room_id, now_ms() + 60_000, lines)
         trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
-        if trigger is None and task != "visit" and lines < CHAT_CONTEXT:
+        if trigger is None and task not in ("visit", "welcome"):
             # The line she answers is read even when many have followed it.
-            events = self.store.context(room_id, now_ms() + 60_000, CHAT_CONTEXT)
+            events = self.store.context(room_id, now_ms() + 60_000, CALL_CONTEXT)
             trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)
         if trigger is None and task == "visit":
             trigger = 0
