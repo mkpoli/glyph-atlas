@@ -1,12 +1,12 @@
 // The claim ledger's routes on glyph-atlas-v3 (decision record 0006): claims and actions, a crop's
 // form and reading as the pickers set them, the ledger's reads and export, and a book's dates with the
 // claims they rest on. Crops are named by public id at this boundary and by integer id inside.
-import { bundle, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
+import { bundle, cropOf, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
 import { aliasCrop } from '../atlas3Aliases';
 import { characterIds, structureSource } from '../atlas3Reference';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
-import { cropGraphemes, cropStructures, structureLabelsQuery } from '../cropPanels';
+import { cropGraphemes, cropStructures, structureLabelsQuery, cropWords } from '../cropPanels';
 import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
@@ -47,7 +47,7 @@ export async function cropNow(env: Env, id: number): Promise<CropNow | null> {
   const values = box == null ? null : ['x', 'y', 'w', 'h'].map(key => box[key]);
   const version = typeof pixels !== 'string' ? null : values === null ? `${publicId(id)}@${pixels}@`
     : values.every(Number.isSafeInteger) ? `${publicId(id)}@${pixels}@${values.join(',')}` : null;
-  return { id, cut: row.cut + (row.x !== null ? 1 : 0), version, text: entry.id, kind: row.kind };
+  return { id, cut: row.cut + (row.x !== null ? 1 : 0), version, text: entry.id, kind: row.kind, line: record.text ?? null };
 }
 
 const NOT_HERE = 'This character is not in the published collection.';
@@ -860,13 +860,29 @@ async function cropShaped(env: Env, subject: string) {
   return !subject.includes(':') || !await env.ATLAS.prepare(bookKeyQuery()).bind(subject).first();
 }
 
-/** A read of the ledger: a subject's claims, or the export a page at a time. `null` for another path. */
+// At most this many crops in one reading of them.
+export const READ_MAX = 48;
+/** How each of some crops is read now: its version, the line its source gives, and its reading and word. A
+ *  crop that is not published is left out. Each crop is a few key lookups, as a claim on it is, and the
+ *  readings of them all are one query more. */
+export async function readingsOf(env: Env, named: string[]): Promise<Json[]> {
+  const ids = [...new Set(named.flatMap(name => cropOf(name) ?? []))];
+  const [crops, readings, words] = await Promise.all([Promise.all(ids.map(id => cropNow(env, id))), cropReadings(env, ids), cropWords(env, ids)]);
+  return crops.flatMap(crop => crop ? [{ id: publicId(crop.id), crop_version: crop.version, text: crop.line ?? null, reading: readings.get(crop.id) ?? null, word: words.get(crop.id) ?? null }] : []);
+}
+
+/** A read of the ledger: a subject's claims, crops' readings, or the export a page at a time. `null` for another path. */
 export async function claimRead(env: Env, url: URL, tools: ClaimTools, ctx?: ExecutionContext): Promise<Json | Response | null> {
   const path = url.pathname, q = url.searchParams;
   if (path === '/atlas/ledger' || path === '/atlas/ledger.json') {
     const page = await ledgerPage(env, q, tools.integer);
     return Response.json(page, { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
       ...(path.endsWith('.json') ? { 'content-disposition': 'attachment; filename="atlas-ledger.json"' } : {}) } });
+  }
+  if (path === '/atlas/readings') {
+    const named = (q.get('crops') ?? '').split(',').filter(Boolean);
+    if (!named.length || named.length > READ_MAX) tools.fail(422, `Name 1–${READ_MAX} crops.`);
+    return { items: await readingsOf(env, named) };
   }
   if (path !== '/atlas/claims') return null;
   const subject = tools.text(q.get('subject'), 512, 'subject', true)!;

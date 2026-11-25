@@ -11,7 +11,9 @@
   import { t } from '../lib/i18n.svelte.js'
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
+  import ReadingPlaces from './ReadingPlaces.svelte'
   import ReadingRuby from './ReadingRuby.svelte'
+  import { placesText, runPlaces } from '../lib/readingPlaces.js'
   import ScriptText from './ScriptText.svelte'
 
   let { item, disabled = false, working = null, saved = null } = $props()
@@ -34,6 +36,9 @@
 
   const chips = $derived(readingChips(item.reading))
   const words = $derived(item.word?.values ?? [])
+  // The reading that stands alone, whose run the other places of can be read alike; how many there are is asked after a save.
+  const standing = $derived(chips.length === 1 && item.reading.status !== 'disputed' ? chips[0].reading : null)
+  let placed = $state(null), showing = $state(false)
   // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
   const known = $derived(Object.hasOwn(item, 'reading'))
   const mine = slot => Boolean(signedInUser()?.id && slot?.by?.includes(signedInUser().id))
@@ -179,8 +184,15 @@
       saved?.(await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
         left: leftText(), method, word: wordText(), crops: others }))
       leave()
+      count({ run })
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
+  }
+  // The first places of the run just saved, for the button that shows them.
+  async function count(value) {
+    placed = null
+    if (item.origin === 'corpus' || !placesText(value)) return
+    try { placed = await runPlaces(placesText(value)) } catch { /* The button stays without its count. */ }
   }
   async function clear() {
     if (busy) return
@@ -218,7 +230,8 @@
         {#if value.form === 'probable'}<span class="reading-badge">{t('word.probable')}</span>{/if}</span>
     {/each}
     {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-badge disputed">{t('reading.disputed')}</span>{/if}
-    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>{/if}
+    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+      {#if standing && placesText(standing) && placed?.total !== 1}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if placed?.total > 1}<span class="reading-count">{placed.total - 1}</span>{/if}</button>{/if}{/if}
   </div>
   {#if editing && line}
     <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
@@ -285,6 +298,7 @@
       </div>
     </div>
   {:else if error}<span class="reading-error" role="alert">{error}</span>{/if}
+  {#if showing && standing}<ReadingPlaces {item} value={standing} word={held?.word ? held : null} first={placed} close={() => showing = false} />{/if}
 </div>
 
 <style>
@@ -302,6 +316,7 @@
   .reading-badge{font-size:11px;color:var(--muted)}
   .reading-badge.disputed{color:var(--wrong)}
   .reading-ruby{font-family:var(--char-font);font-size:15px}
+  .reading-count{margin-inline-start:6px;color:var(--accent);font-weight:600}
   .reading-clear{margin-inline-end:auto}
   .reading-editor{display:grid;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface);min-width:0}
   .reading-line{display:flex;flex-wrap:wrap;row-gap:4px;font-family:var(--char-font);font-size:19px;line-height:1}
