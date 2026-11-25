@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dealsFor, dealtRound, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress,
+  dealtRound, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress,
   QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
   normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
 } from '../src/lib/reviewRounds.js'
