@@ -1,77 +1,55 @@
-<script module>
-  // One submission id per crop, revision and style: the same choice made again (after a failure, or
-  // while an earlier one is kept on this device) is the same submission, which the site records once.
-  const submissions = new Map()
-  function submission(id, revision, style) {
-    const key = id + '\u0000' + revision + '\u0000' + style
-    if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
-    return submissions.get(key)
-  }
-</script>
-
 <script>
-  import { request } from '../lib/client.js'
+  // The style a crop is written in, as one button per style. The one it has itself is filled, the one it
+  // takes from its page or document is dashed, and pressing one is held until the dialog saves. Pressing
+  // the crop's own takes it back. `item` is the crop as the server reports it; a server that reports no
+  // style gets nothing here.
+  import { inheritedStyle, ownStyle, pressStyle, stylesOffered } from '../lib/cropStyle.js'
   import { t } from '../lib/i18n.svelte.js'
-  // The values of `data/vocab/style.yaml`, in the order a reviewer reaches for them.
-  const STYLES = ['regular', 'running', 'cursive', 'clerical', 'seal', 'ming', 'gothic', 'mixed']
-  // `item` is the crop as the server reports it, a collected crop or a corpus glyph; a server that reports
-  // no style gets nothing here. `saved` receives the crop as it is after an edit. `working` tells the dialog
-  // a save is under way, so its own save waits: both carry the crop's revision. In a review round
-  // (`editable` false) the style is only shown, since a change would move the revision the round
-  // was dealt at and the round's save would be refused.
-  let { item, editable = true, disabled = false, working = null, saved } = $props()
-  let error = $state('')
-  const own = $derived(item?.style_basis === 'unit' ? item.style : 'unassessed')
-  // A server that names the styles it can store (`style_choices`) offers only those.
-  const choices = $derived(item?.style_choices ? STYLES.filter(value => item.style_choices.includes(value)) : STYLES)
-  const kind = value => t(`style.kind.${STYLES.includes(value) ? value : 'unassessed'}`)
-  // The server names the basis `document-confirmed`; a catalogue key has no hyphen.
-  const basis = $derived((item?.style_basis ?? 'none').replaceAll('-', '_'))
+  let { item, chosen = null, onchoose, disabled = false } = $props()
+  let root = $state(null)
+  const styles = $derived(stylesOffered(item))
+  const inherited = $derived(inheritedStyle(item))
+  const shown = $derived(chosen ?? ownStyle(item))
+  const label = style => style === inherited && style !== shown ? t('style.inherit', { style: t(`style.kind.${style}`) }) : t(`style.kind.${style}`)
+  const press = style => onchoose(pressStyle(item, chosen, style))
 
-  async function choose(event) {
-    // The event's target is gone once the request is awaited, so the menu is kept here.
-    const menu = event.currentTarget, style = menu.value
-    working?.(true); error = ''
-    try {
-      const result = await request(`/atlas/characters/${encodeURIComponent(item.id)}/style`,
-        { id: submission(item.id, item.revision, style), revision: item.revision, style })
-      saved?.(result)
-    } catch (e) {
-      error = e.message
-      // A choice kept while writes are paused stays chosen; it is sent once they resume.
-      if (!e.kept) menu.value = own
-    } finally { working?.(false) }
+  // Shift and a digit press the buttons in order. On a layout whose digits need Shift the key is a digit
+  // of its own, which the form bar takes.
+  function keydown(event) {
+    if (disabled || event.defaultPrevented || event.isComposing || !event.shiftKey || event.metaKey || event.ctrlKey || event.altKey || /^\d$/.test(event.key)) return
+    const style = styles[Number(/^Digit([1-9])$/.exec(event.code)?.[1]) - 1]
+    if (!style || event.target.closest?.('input, textarea, select, [contenteditable="true"], .character-search, .ids-composer')) return
+    const dialog = [...document.querySelectorAll('dialog[open]')].at(-1)
+    if (dialog ? !dialog.contains(root) : root.closest('dialog')) return
+    event.preventDefault()
+    press(style)
   }
 </script>
 
-{#if item?.style}
-  <div class="style-field">
-    {#if item.style_editable && editable}
-      <label class="style-own">{t('style.label')}
-        <select value={own} {disabled} onchange={choose}>
-          <option value="unassessed">{t('style.inherit', { style: kind(item.style_inherited) })}</option>
-          {#each choices as value}<option {value}>{t(`style.kind.${value}`)}</option>{/each}
-        </select>
-      </label>
-      {#if own === 'unassessed' && basis !== 'none'}<span>{t(`style.basis.${basis}`)}</span>{/if}
-    {:else if item.style !== 'unassessed' && STYLES.includes(item.style)}
-      <!-- A style nobody assessed says nothing, nor one outside the vocabulary (older codes such as `printed`). -->
-      <span class="style-value">{t('style.label')}: <b>{kind(item.style)}</b>
-        {#if basis !== 'none'}<span class="style-basis">{t(`style.basis.${basis}`)}</span>{/if}</span>
-    {/if}
-    {#if error}<span class="style-error" role="alert">{error}</span>{/if}
+<svelte:window onkeydown={keydown} />
+
+{#if item?.style && item.style_editable}
+  <div class="style-field" role="group" aria-label={t('style.label')} bind:this={root}>
+    <span class="style-label" aria-hidden="true">{t('style.label')}</span>
+    <div class="style-options">
+      {#each styles as style, i (style)}
+        <button type="button" class="style-option" class:chosen={style === shown} class:held={style === chosen} class:inherited={style === inherited && style !== shown} {disabled}
+          aria-pressed={style === shown} aria-label={label(style)} aria-keyshortcuts={`Shift+${i + 1}`} title={`${label(style)} (⇧${i + 1})`} onclick={() => press(style)}>{t(`style.kind.${style}`)}</button>
+      {/each}
+    </div>
   </div>
 {/if}
 
 <style>
-  .style-field{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:12px;color:var(--muted)}
-  .style-value b{color:var(--ink);font-weight:600}
-  .style-basis{margin-left:6px}
-  .style-own{display:inline-flex;gap:8px;align-items:center}
-  .style-own select{appearance:none;font:inherit;font-size:12px;color:var(--ink);border:1px solid var(--line);border-radius:6px;height:32px;padding:0 24px 0 10px;cursor:pointer;
-    background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a93' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 8px center/9px 6px}
-  @media(max-width:700px){.style-own select{height:36px}}
-  .style-own select:hover:not(:disabled){border-color:var(--line-strong)}
-  .style-own select:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
-  .style-error{color:var(--wrong)}
+  .style-field{display:flex;gap:12px;align-items:baseline;margin:0 0 16px;font-size:12px}
+  .style-label{flex:none;color:var(--muted)}
+  .style-options{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+  .style-option{height:32px;padding:0 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;white-space:nowrap;cursor:pointer}
+  .style-option:hover:not(:disabled){border-color:var(--accent)}
+  .style-option.inherited{border-style:dashed;border-color:var(--line-strong);color:var(--accent)}
+  .style-option.chosen{border-color:var(--accent);background:var(--accent-light);color:var(--accent);font-weight:600}
+  .style-option.held{border-width:2px;padding:0 11px}
+  .style-option:disabled{opacity:.5;cursor:default}
+  .style-option:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
+  @media(max-width:700px){.style-option{height:36px}}
 </style>
