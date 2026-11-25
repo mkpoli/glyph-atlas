@@ -23,10 +23,10 @@
   import OperatorIcon from './OperatorIcon.svelte'
   import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, layout, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
-  import { lookupChar } from '../lib/decompose.js'
+  import { lookupChar, regionNames, startCharacter, variants } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
   import { figuresFor } from '../lib/partFigures.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { base, t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
   // The key that puts each operator, and its name.
@@ -66,18 +66,52 @@
     figuresFor(c).then(found => { figures = { ...figures, [c]: found } }, () => figuring.delete(c))
   }
 
-  // Each crop starts again: from a description the reader had typed into the search, or else from
-  // the character's own. What is typed into the search afterwards leaves the draft alone.
+  // Each crop starts again: from a description or single character the reader had typed into the
+  // search, or else from the character's own. What is typed into the search afterwards leaves the
+  // draft alone. Any existing character can also be loaded as the starting draft, with its regional
+  // or variant decompositions offered to pick from.
+  let source = $state(''), startQuery = $state(''), startPicked = $state(false), startSearch = $state(null), startSeq = 0, draftRev = 0
   $effect(() => {
     const of = char
     untrack(() => {
       const typed = isSequence(start) ? start : ''
+      const initial = !typed ? (startCharacter(start) || startCharacter(of)) : ''
       past = []; future = []; note = ''
+      source = initial; startQuery = ''; startPicked = false
+      const seq = ++startSeq
       reset(typed)
-      if (!typed && of) read(of).then(found => { if (!draft && found?.sequences?.length) reset(found.sequences[0]) })
+      const rev = draftRev
+      if (!typed && initial) {
+        read(initial).then(found => {
+          if (seq !== startSeq || rev !== draftRev || draft) return
+          const first = found?.sequences?.[0] ? parse(found.sequences[0], { open: true }) : null
+          const next = first && !first.problem && first.tree ? found.sequences[0] : variants(found).find(v => v.tree)?.text
+          if (next) reset(next)
+        })
+      }
     })
   })
+  const startCandidate = $derived(startCharacter(startQuery))
+  const startEntry = $derived(source ? known[source] : undefined)
+  const startVariants = $derived(variants(startEntry).filter(v => v.tree))
+  const startStatus = $derived(source ? startEntry?.status ?? null : null)
+  async function loadChar(raw, { again = false } = {}) {
+    if (disabled) return
+    const c = startCharacter(raw)
+    if (!c) return
+    startSearch?.close()
+    source = c
+    startQuery = c
+    startPicked = true
+    const seq = ++startSeq
+    const rev = draftRev
+    const found = await read(c, { again })
+    if (seq !== startSeq || rev !== draftRev || disabled) return
+    const list = variants(found).filter(v => v.tree)
+    if (list.length && (whole !== list[0].text || chosen !== null)) change(list[0].tree, null)
+  }
   function reset(text) {
+    draftRev += 1
     draft = text; chosen = null; piece = ''
     tree = parse(text, { open: true }).tree ?? null
   }
@@ -106,6 +140,7 @@
     commit(next, select)
   }
   function commit(next, select) {
+    draftRev += 1
     tree = next; chosen = select; note = ''
     if (!typing) draft = write(next)
     const part = select ? partAt(next, select) : undefined
@@ -212,8 +247,8 @@
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
-    // Undo and redo work from anywhere in the editor; the focus stays in a picker that has it.
-    const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel'))
+    // Undo and redo work from anywhere in the editor; the focus stays in a picker or start-from-character search that has it.
+    const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel, .ids-start'))
     const after = () => { if (!inPicker) focusChosen() }
     if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); after(); return }
     if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); after(); return }
@@ -288,6 +323,34 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="ids-composer" bind:this={root} onkeydown={keydown}>
+  <div class="ids-start">
+    <span class="ids-title">{t('form.ids.start')}</span>
+    <div class="ids-start-row">
+      <CharacterSearch bind:this={startSearch} compact codePoints bind:value={startQuery} label={t('form.ids.start')} placeholder={t('search.placeholder')}
+        onselect={item => loadChar(item.char)} onsubmit={text => loadChar(text)} />
+      <button type="button" class="ids-start-load" disabled={disabled || !startCandidate} onclick={() => loadChar(startCandidate)}>{t('form.ids.start.load')}</button>
+    </div>
+    {#if startStatus === 'loading' && startPicked}
+      <p class="ids-start-note">{t('form.ids.from.loading', { char: source })}</p>
+    {:else if startStatus === 'failed' && startPicked}
+      <p class="ids-start-note fault" role="status">
+        {t('form.ids.from.failed', { char: source })}
+        <button type="button" class="ids-start-retry" {disabled} onclick={() => loadChar(source, { again: true })}>{t('form.ids.from.retry')}</button>
+      </p>
+    {:else if startStatus === 'ready' && !startVariants.length && startPicked}
+      <p class="ids-start-note" role="status">{source}: {t('form.ids.from.atomic')}</p>
+    {:else if startVariants.length > 1}
+      <div class="ids-start-shapes" role="group" aria-label={t('form.ids.start.shapes', { char: source })}>
+        {#each startVariants as shape (shape.text)}
+          <button type="button" class="ids-shape" class:active={whole === shape.text} aria-pressed={whole === shape.text} {disabled}
+            title={shape.regions ? t('form.ids.from.regions', { regions: regionNames(shape.regions, base()) }) : shape.text}
+            onclick={() => { if (whole !== shape.text || chosen !== null) change(shape.tree, null) }}>
+            <span class="ids-shape-text" lang="ja">{shape.text}</span>{#if shape.regions}<span class="ids-shape-regions">{shape.regions}</span>{/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
   <label class="ids-field">
     <span class="ids-title">{t('form.ids.label')}</span>
     <input bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off"
@@ -364,6 +427,19 @@
 
 <style>
   .ids-composer{--ids-font:var(--char-font);display:flex;flex-direction:column;gap:10px}
+  .ids-start{display:flex;flex-direction:column;gap:4px}
+  .ids-start-row{display:flex;align-items:stretch;gap:6px}
+  .ids-start-row :global(.character-search){flex:1;min-width:0}
+  .ids-start-load{flex:none;padding:5px 12px;font-size:13px;white-space:nowrap}
+  .ids-start-note{margin:0;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ids-start-note.fault{color:var(--fault)}
+  .ids-start-retry{padding:2px 8px;font-size:12px}
+  .ids-start-shapes{display:flex;flex-wrap:wrap;gap:6px}
+  .ids-shape{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;font-size:15px;line-height:1.3}
+  .ids-shape-text{font-family:var(--ids-font)}
+  .ids-shape-regions{font-size:10px;letter-spacing:.08em;padding:1px 4px;border-radius:4px;background:var(--surface-selected);color:var(--muted);font-variant-numeric:tabular-nums}
+  .ids-shape:not(:disabled):hover,.ids-shape.active{border-color:var(--accent)}
+  .ids-shape.active{background:var(--accent-light)}
   .ids-field,.ids-slot{display:flex;flex-direction:column;gap:4px}
   .ids-title{font-size:11px;color:var(--muted)}
   .ids-field input{font-size:20px;padding:6px 8px;font-family:var(--ids-font)}

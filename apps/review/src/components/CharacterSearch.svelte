@@ -112,6 +112,7 @@
     generation += 1
     items = []; answer = null; active = -1; loading = false; failed = false; open = false
   }
+  export function close() { reset() }
 
   function seek(text) {
     clearTimeout(timer)
