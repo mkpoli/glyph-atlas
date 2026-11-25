@@ -3,7 +3,9 @@
 The table (`data/sources/longkan-shoujing.yaml`) has one row per entry: the headword, or several headwords
 that share a gloss, its gloss, its tone and section, and the half-leaf of each edition it stands on. A
 headword is blank in the table where no code point was found. The text was roughly proofread and the
-origin of its first transcription is untraced, as its repository says: labels are the table's.
+origin of its first transcription is untraced, as its repository says; every row's status in the file is a
+first proofreading by a language model (AI初校). Labels are the table's, and `unsettled` names the rows whose
+headword the table itself makes doubtful.
 """
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ _UNPRINTED = re.compile(r"[，。、；：？！《》「」『』〔〕（）()
 _IDS = re.compile(r"[⿰-⿻<]")
 #: Words printed small between the headwords of one field: 鈗俗鈂 is two headwords.
 _NOTES = set("俗正今古通或誤籀")
+#: How many rows before and after a headword a second one written with the same character makes it doubtful.
+NEAR = 2
 #: A section title 某部第幾 is printed at about this many gloss characters' length; a tone header in its own cartouche.
 TITLE, HEADER = 4, 0
 
@@ -34,6 +38,7 @@ class Entry:
     section: str
     tone: str
     page: int
+    note: str = ""
 
 
 def read(table: Path, edition: str) -> dict[int, list[Entry]]:
@@ -42,7 +47,7 @@ def read(table: Path, edition: str) -> dict[int, list[Entry]]:
     with table.open(encoding="utf-8-sig", newline="") as handle:
         for row, values in enumerate(csv.DictReader(handle), 1):
             if values[edition].isdigit():
-                entry = Entry(row, values["字头"].strip(), values["注文"], values["卷序"], values["部首"], values["四声"], int(values[edition]))
+                entry = Entry(row, values["字头"].strip(), values["注文"], values["卷序"], values["部首"], values["四声"], int(values[edition]), values["校勘记"])
                 pages.setdefault(entry.page, []).append(entry)
     return pages
 
@@ -78,4 +83,20 @@ def slots(entries: list[Entry]) -> list[Slot]:
         characters = fields(entry)
         for k, char in enumerate(characters):
             out.append(Slot(char, length(entry.gloss) if k == len(characters) - 1 else 0, entry.row, k))
+    return out
+
+
+def unsettled(pages: dict[int, list[Entry]]) -> set[int]:
+    """The rows whose headword is no reading of what the print shows.
+
+    The table writes 俗, 正 and 通 forms that stand side by side with one character, although the print shows a
+    different shape for each, and a note on a headword says it was blank and filled in, or is in doubt.
+    """
+    entries = {entry.row: entry for group in pages.values() for entry in group}
+    heads = {row: [c for c in fields(entry) if c] for row, entry in entries.items()}
+    out = set()
+    for row, entry in entries.items():
+        near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ())}
+        if len(set(heads[row])) < len(heads[row]) or near & set(heads[row]) or "字頭" in entry.note:
+            out.add(row)
     return out

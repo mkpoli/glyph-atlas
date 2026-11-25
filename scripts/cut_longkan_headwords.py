@@ -12,8 +12,8 @@ name, whose SHA-1 the source pins. Each half-leaf's boxes are placed along its c
 A headword is kept when its pair has a probability of `POSTERIOR` over all order-preserving pairings and is the
 most likely pairing's, its crop is at least `ALIKE` like the character drawn in a font, and its half-leaf is borne
 out: the page costs `COST` a headword or less and beats the next page by `MARGIN`, and the pages of the volume
-run in order. The label is the table's headword, a character the table's editor wrote; the print may show a
-variant of it. A headword the table leaves blank is placed with the rest and not kept.
+run in order. The label is the table's headword; the print may show a variant of it. A headword the table leaves
+blank is placed with the rest and not kept, and so is one whose row `longkan.unsettled` names.
 
 `OUTPUT` becomes a dataset: one document per volume, a page per scan page with a kept headword, a line and a unit
 per headword. `--report` says why each half-leaf was kept or not; `--leaves` bounds a run to these PDF pages.
@@ -188,6 +188,7 @@ def main() -> int:
         raise SystemExit("the classifier export has no features")
     anchors = tape.Anchors(args.fonts.split(","), classifier.features)
     slots_of = {page: longkan.slots(rows) for page, rows in entries.items()}
+    unsettled = longkan.unsettled(entries)
 
     found, last = [], None  # `last`: the half-leaf last borne out, as its index in the book (two to a scan page), and its table page
     for leaf, url, image in leaves(copy, args.pdf, only):
@@ -252,13 +253,16 @@ def main() -> int:
             slots = slots_of[f["table_page"]]
             chance = tape.posterior(slots, f["page"], f["alike"], f["head"] * f["page"].pitch, f["row"] * f["page"].pitch)
             best = tape.solve(slots, f["page"], f["alike"], f["head"] * f["page"].pitch, f["row"] * f["page"].pitch)[0]
-            kept = 0
+            kept = doubtful = 0
             for n, slot in enumerate(slots):
                 j = best.get(n)
                 char = slot.char
                 if j is None or slot.entry < 0 or char is None or np.isnan(f["alike"][n, j]):
                     continue
                 if chance[n, j] < POSTERIOR or f["alike"][n, j] < ALIKE:
+                    continue
+                if slot.entry in unsettled:
+                    doubtful += 1
                     continue
                 entry = next(e for e in entries[f["table_page"]] if e.row == slot.entry)
                 box = native(f["page"].candidates[j][2], copy["enlarge"])
@@ -284,7 +288,7 @@ def main() -> int:
                                   meta={"segmentation": SEGMENTATION, "posterior": round(float(chance[n, j]), 4), "similarity": round(float(f["alike"][n, j]), 3),
                                         "page_cost": round(float(f["cost"]), 3), "label": "table headword"}))
                 kept += 1
-            row["kept"] = kept
+            row["kept"], row["unsettled"] = kept, doubtful
         else:
             row.setdefault("skipped", "page not borne out" if not f.get("good") else "out of order")
         report.append(row)
@@ -296,7 +300,7 @@ def main() -> int:
     tables.write(args.output / "pages.parquet", [pages[leaf] for leaf in sorted(pages)], Page)
     tables.write(args.output / "lines.parquet", lines, Line)
     tables.write(args.output / "units.parquet", units, Unit, command=command)
-    totals = {"half_leaves": len(found), "used": len(in_order), "kept": len(units),
+    totals = {"half_leaves": len(found), "used": len(in_order), "kept": len(units), "unsettled": sum(r.get("unsettled", 0) for r in report),
               "headwords": sum(1 for k in in_order for s in slots_of[found[k]["table_page"]] if s.entry >= 0),
               "skipped": dict(Counter(r["skipped"] for r in report if "skipped" in r))}
     if args.report:

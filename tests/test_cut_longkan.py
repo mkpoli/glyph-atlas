@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from glyph_atlas import longkan
 from glyph_atlas.schema import Box
 
 
@@ -28,3 +29,12 @@ def test_the_half_leaves_kept_run_in_the_books_order(cut):
     assert cut.ordered(found) == {0, 1, 3, 5}, "a page far out of order is left out, and one not borne out is none"
     assert cut.ordered([]) == set()
     assert cut.ordered([(0, 9, True), (1, 9, True)]) in ({0}, {1}), "two half-leaves do not show one table page"
+
+
+def test_a_headword_the_table_makes_doubtful_is_named():
+    def entry(row, field, note=""):
+        return longkan.Entry(row, field, "", "1", "車", "去聲", 1, note)
+
+    pages = {1: [entry(1, "轎"), entry(2, "𨏥"), entry(3, "𨏥"), entry(5, "軌"), entry(6, "菕菕"), entry(9, "軌"),
+                 entry(12, "惘", "①〔Kimi〕字頭原空，據參考本《龍龕手鏡》補「惘」。"), entry(15, "鏒", "①〔Kimi〕「令」為孤立")]}
+    assert longkan.unsettled(pages) == {2, 3, 6, 12}, "a repeat within two rows or one field, and a filled headword"
