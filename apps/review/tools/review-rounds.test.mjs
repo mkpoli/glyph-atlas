@@ -70,6 +70,8 @@ test('a round is addressed by its grapheme as the site writes one, and its mater
   assert.equal(roundAddress('U+304B U+309A', 'handwritten'), '/review/U+304B-U+309A?production=handwritten')
   assert.equal(roundAddress('', 'inscribed'), '/review?production=inscribed')
   assert.equal(roundAddress('U+3042'), '/review/U+3042')
+  assert.equal(roundAddress('U+3042', '', true), '/review/U+3042?suspects=only')
+  assert.equal(roundAddress('U+3042', 'handwritten', true), '/review/U+3042?production=handwritten&suspects=only')
 })
 
 test('a first batch of only kept crops reads on, and a grapheme with nothing past them gives way', async () => {

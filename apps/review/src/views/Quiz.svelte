@@ -85,8 +85,7 @@
   $effect(() => {
     // Never while an error is showing: a failed batch would otherwise be retried at once, forever,
     // and an error from another action would be cleared before anyone could read it.
-    // Showing only suspects, a round may show nothing for many batches, so more crops wait to be asked for.
-    if (nearEnd && hasMore && !onlySuspects && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
+    if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
   // The scopes a round can be dealt from, in the order the material menu lists them.
@@ -109,14 +108,17 @@
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
-  // The crops the classifier doubts (`suspect`), shown alone when the reader asks. The rest of the round
-  // stays dealt but off screen: a crop never shown is not recorded as seen, and a later round shows it
-  // again. A crop the reader skipped while it was shown stays skipped.
-  let onlySuspects = $state(stored('atlas.quiz.suspects-only', false) === true)
-  const shown = $derived(onlySuspects ? items.filter(i => i.suspect) : items)
-  function toggleSuspects() {
+  // The crops the classifier doubts (`suspect`), dealt alone when the reader asks. Each round keeps which way
+  // it was dealt, since its cursor goes on in the same list. A visit that names no round takes the last choice.
+  let onlySuspects = $state(false)
+  const suspectsParam = only => only ? { suspects: 'only' } : {}
+  // Turning the choice leaves the round as any way out does, its crops recorded; Back returns to it.
+  async function toggleSuspects() {
     if (saving || loading || selection.length || step !== 'select') return
-    onlySuspects = !onlySuspects; remember('atlas.quiz.suspects-only', onlySuspects)
+    if (!(await record())) return
+    const only = !onlySuspects
+    await load({ target: grapheme || null, only })
+    if (onlySuspects === only) remember('atlas.quiz.suspects-only', only)
   }
   const selection = $derived(Object.keys(selected).filter(id => selected[id]))
   // A crop skipped in the review step stays selected so the reader can go back to it, but it is no
@@ -138,10 +140,10 @@
   // A selected crop still needs an explicit issue before it can be saved.
   const undecided = $derived(remaining.filter(i => selected[i.id] && !choices[i.id] && !skipped[i.id]).length)
   // Unavailable and skipped images cannot carry a decision.
-  const remaining = $derived(shown.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && !decidedHere(i.id)))
-  const settled = $derived(shown.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
-  const ready = $derived(shown.length > 0 && settled && remaining.length > 0)
-  const exhausted = $derived(shown.length > 0 && settled && !remaining.length)
+  const remaining = $derived(items.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && !decidedHere(i.id)))
+  const settled = $derived(items.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
+  const ready = $derived(items.length > 0 && settled && remaining.length > 0)
+  const exhausted = $derived(items.length > 0 && settled && !remaining.length)
   const rounds = $derived(roundGraphemes(data?.categories ?? []))
   const categories = $derived(rounds.filter(c => c.pending > 0 && (!search || c.members.some(m => m.label.includes(search)))))
 
@@ -153,7 +155,7 @@
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
     return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, markedAs, suggestions, contextSuggestions,
-      roundId, roundSeed, hasMore, nextCursor, production, summary: data, entry })
+      roundId, roundSeed, hasMore, nextCursor, onlySuspects, production, summary: data, entry })
   }
   function checkpoint() {
     if (historyIndex >= 0) history[historyIndex] = snapshot()
@@ -162,7 +164,7 @@
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; markedAs = round.markedAs ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
-    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null
+    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null; onlySuspects = round.onlySuspects ?? false
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
     anchor = null; formDone = null; formError = ''
@@ -185,9 +187,9 @@
   function address(how) {
     // Back or Forward came while this round was being dealt or saved: the page follows that entry instead.
     if (page.state !== followedState) return
-    const state = { round: { entry, grapheme, production } }
+    const state = { round: { entry, grapheme, production, suspects: onlySuspects } }
     followedState = state
-    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production)), state)
+    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production, onlySuspects)), state)
     addressed = true
   }
   // Back and Forward bring the entry's round back, once nothing is being dealt or saved: from this page's
@@ -201,34 +203,38 @@
   })
   function locationRound() {
     const { path } = delocalize(location.pathname), key = path.startsWith('/review/') ? unslug(path.slice(8)) : null
-    return { entry: null, grapheme: key ?? '', production: new URLSearchParams(location.search).get('production') ?? '' }
+    const query = new URLSearchParams(location.search)
+    return { entry: null, grapheme: key ?? '', production: query.get('production') ?? '',
+      suspects: query.get('suspects') === 'only' || !key && stored('atlas.quiz.suspects-only', false) === true }
   }
   function follow(round) {
     if (round.entry && round.entry === entry) return
     const index = round.entry ? history.findIndex(each => each.entry === round.entry)
-      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production))
+      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production)
+        && each.onlySuspects === Boolean(round.suspects))
     if (index >= 0 && index === historyIndex) address('replace')
     else if (index >= 0) visit(index, { followed: true })
-    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' })
+    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) })
   }
   async function chooseCategory(target) {
     categoryOpen = false
     if (target === grapheme || saving) return
     if (!(await record())) return
-    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production)
+    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production && round.onlySuspects === onlySuspects)
     if (previous >= 0) visit(previous)
     else load({ target })
   }
-  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push' } = {}) {
+  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push', only = onlySuspects } = {}) {
     checkpoint()
     // A round dealt again in place keeps its history entry.
     const kept = replace ? entry : null
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending' })
+      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending', ...suspectsParam(only) })
       if (closed || id !== requestId) return
-      data = summary
+      // A summary of suspects alone counts for a round it deals, and not for the one on screen.
+      if (!only || !grapheme) data = summary
       const epochKey = 'atlas.review-epoch'
       if (stored(epochKey, null) !== (summary.review_epoch ?? null)) {
         last = null; completed = 0; history = []; historyIndex = -1
@@ -244,22 +250,24 @@
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
         result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
-          ...(cursor ? { cursor } : {}) }), away)
+          ...suspectsParam(only), ...(cursor ? { cursor } : {}) }), away)
         if (closed || id !== requestId) return
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
         chosen = null
       }
+      // Opened on suspects alone, or taken to a material, with none to deal, a round deals the rest.
+      if (!chosen && only && (!grapheme || scope !== production)) return await load({ target, replace, scope, seed: dealt, how, only: false })
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ grapheme: '', members: [], items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
             contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: randomSeed(), hasMore: false,
-            production: scope, summary })
+            onlySuspects: only, production: scope, summary })
           historyIndex = -1
           address(how)
         } else {
           if (!grapheme) items = []
-          else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
+          else { error = t(only ? 'quiz.suspect.none' : 'quiz.noOtherCharacters'); errorStatus = 0 }
           // Asked for by an address, the address now names the round still on screen.
           if (how === 'replace') address('replace')
         }
@@ -267,7 +275,7 @@
       }
       restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: Boolean(result.next), nextCursor: result.next ?? null,
+        hasMore: Boolean(result.next), nextCursor: result.next ?? null, onlySuspects: only,
         production: scope, summary })
       entry = kept ?? crypto.randomUUID()
       address(how)
@@ -294,7 +302,7 @@
       // A page asks for no more than the batch has room for, since the cursor moves past every crop dealt.
       while (additions.length < batchLimit && cursor) {
         const room = batchLimit - additions.length
-        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed, ...suspectsParam(onlySuspects) })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = unique(result.items).filter(item => !seen.has(item.id))
         additions.push(...fresh)
@@ -335,10 +343,10 @@
   const selectable = id => loaded[id] && !failed[id] && !decidedHere(id) && !skipped[id]
   function toggle(id, event) {
     if (saving || loading || !loaded[id] || failed[id] || decidedHere(id)) return
-    const index = shown.findIndex(i => i.id === id)
+    const index = items.findIndex(i => i.id === id)
     if (event?.shiftKey && anchor !== null && index >= 0) {
       const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
-      const range = shown.slice(from, to + 1).map(i => i.id).filter(selectable)
+      const range = items.slice(from, to + 1).map(i => i.id).filter(selectable)
       selected = { ...selected, ...Object.fromEntries(range.map(each => [each, true])) }
       anchor = index; at = 0; return
     }
@@ -618,7 +626,7 @@
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
   function inspectChoice(item, opening = null) {
-    inspect(item.id, shown, inspected, opening)
+    inspect(item.id, items, inspected, opening)
   }
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
@@ -717,7 +725,7 @@
   const CARRIED = 'atlas.quiz.carried'
   function reloadKeepingRound() {
     try {
-      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, seed: roundSeed,
+      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, suspects: onlySuspects, seed: roundSeed,
         ...$state.snapshot({ choices, selected, skipped }) }))
     } catch { /* The page reloads without the choices. */ }
     location.reload()
@@ -729,7 +737,7 @@
     catch { return null }
   }
   async function resume(round) {
-    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace' })
+    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace', only: Boolean(round.suspects) })
     if (grapheme !== round.grapheme) return
     // Only the crops dealt again: a crop decided elsewhere meanwhile has left the round.
     const dealt = new Set(items.map(item => item.id))
@@ -765,7 +773,7 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
-      last = { id: roundId, count: answers.length, grapheme, production }
+      last = { id: roundId, count: answers.length, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last); completed += answers.length
       if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeName)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
@@ -787,7 +795,7 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
-      last = { id: roundId, count: 0, grapheme, production }
+      last = { id: roundId, count: 0, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last)
       if (!kept) announceSaved(seen.length + passed.length, graphemeName)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
@@ -810,9 +818,9 @@
       // Crops a publication changed since stay as published; the round keeps its count for them.
       const { refused } = kept ? { refused: 0 } : undoOutcome(await sent)
       // A round stored by an older version may name a scope the menu no longer offers.
-      const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
+      const target = last.grapheme, only = Boolean(last.suspects), scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - Math.max(0, last.count - refused)); last = null
-      remember('atlas.last-round', null); await load({ target, scope })
+      remember('atlas.last-round', null); await load({ target, scope, only })
       if (refused) error = t('review.undoRefused', { count: refused })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
@@ -828,7 +836,7 @@
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())
-      if (index >= 0 && shown[index] && !control) { e.preventDefault(); toggle(shown[index].id) }
+      if (index >= 0 && items[index] && !control) { e.preventDefault(); toggle(items[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
       const form = members['1234567890'.indexOf(e.key)]
       if (/^[0-9]$/.test(e.key) && form && openSelection.length) { e.preventDefault(); markSelection(form) }
@@ -858,7 +866,8 @@
     last = stored('atlas.last-round', null)
     const kept = carried(), round = page.state.round
     if (kept) resume(kept)
-    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' } : { target: initialGrapheme || null, how: 'replace' })
+    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
+      : { target: initialGrapheme || null, how: 'replace', only: locationRound().suspects })
     return () => { closed = true }
   })
 </script>
@@ -888,7 +897,7 @@
     <div class="stage-toolbar"><strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
     {#key roundId}<div class="quiz-grid" aria-label={t('quiz.grid.label')} aria-busy={loading}>
       {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
-      {:else}{#each shown as item, i (item.id)}
+      {:else}{#each items as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
@@ -897,7 +906,6 @@
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
     {/key}
-    {#if !loading && items.length && !shown.length}<p class="no-suspects" role="status">{t('quiz.suspect.none', { count: items.length })}</p>{/if}
     <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
          A button remains for the case scrolling cannot trigger (a failed batch waits for a retry). -->
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
@@ -1001,7 +1009,6 @@
   .recorded-badge.refused { color:var(--wrong); }
   .suspect-badge { font-size:9px; color:var(--wrong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .suspect-toggle[aria-pressed="true"] { color:var(--wrong); }
-  .no-suspects { margin:18px 0 0; font-size:13px; color:var(--muted); text-align:center; }
   .quiz-tile.recorded .quiz-choice { opacity:.72; }
   .quiz-tile.assigned { border-color:var(--good); }
   /* The form bar sits over the actions, on a row of its own. */

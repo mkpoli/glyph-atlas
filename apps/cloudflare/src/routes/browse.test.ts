@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:
 import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
-import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
+import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, doubtedQuery, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
   catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
 import worker from '../index';
@@ -615,6 +615,52 @@ describe('rounds by priority', () => {
   });
 });
 
+describe('rounds of doubted crops', () => {
+  // は: a1 and b0 doubted, a0 marked under a label it no longer holds, the corpus glyph c1 doubted.
+  const marked = async () => {
+    const found = await setup(), { db, a, b, c, crop } = found;
+    const text = (id: number) => (db.query('SELECT g.text FROM crops k JOIN graphemes g ON g.id=k.char WHERE k.id=?').get(id) as { text: string }).text;
+    for (const id of [crop(a, 1), crop(b, 0), crop(c, 1)]) db.query('INSERT INTO suspects VALUES(?,0.01,NULL,?,NULL)').run(id, text(id));
+    db.query('INSERT INTO suspects VALUES(?,0.01,NULL,?,NULL)').run(crop(a, 0), '別');
+    // A doubted crop nobody may be dealt: one flagged, one withheld.
+    for (const id of [crop(a, 6), crop(a, 10)]) db.query('INSERT INTO suspects VALUES(?,0.01,NULL,?,NULL)').run(id, text(id));
+    return found;
+  };
+  const path = '/atlas?purpose=review&grapheme=U%2B306F&state=pending';
+  it('deal them before the rest of the collected crops and of the corpus glyphs, each crop once', async () => {
+    const { env, a, b, c, crop } = await marked();
+    for (const seed of [11, 12, 13, 14]) for (const limit of [1, 2, 20]) {
+      const { seen } = await every(env, `${path}&seed=${seed}`, limit);
+      expect(seen.slice(0, 2).sort()).toEqual([crop(a, 1), crop(b, 0)].map(publicId).sort());
+      expect(seen.slice(2, 4)).toEqual([crop(a, 0), crop(c, 1)].map(publicId));
+      expect(new Set(seen).size).toBe(seen.length);
+      expect(seen.length).toBe(8);
+    }
+    // The fifth seed deals the collected crops together, doubted or not.
+    const together = await every(env, `${path}&seed=10`, 3);
+    expect(new Set(together.seen).size).toBe(8);
+    // The marks change no count: one of the nine is a corpus glyph whose image may not be shown.
+    expect((await every(env, `${path}&seed=11`, 20)).body.total).toBe(9);
+  });
+  it('deal them alone when asked, uncounted, under the marks their characters hold', async () => {
+    const { env, a, b, c, crop } = await marked();
+    for (const seed of [10, 11]) {
+      const { seen, body } = await every(env, `${path}&seed=${seed}&suspects=only`, 1);
+      expect(seen.slice(0, 2).sort()).toEqual([crop(a, 1), crop(b, 0)].map(publicId).sort());
+      expect(seen.slice(2)).toEqual([publicId(crop(c, 1))]);
+      expect(body.total).toBeNull();
+    }
+    const summary = await get(env, '/atlas?purpose=review&limit=0&state=pending&suspects=only&production=all');
+    expect(summary.categories.map((x: any) => [x.label, x.pending])).toEqual([['は', 3]]);
+    // A material narrows them, and other states are not narrowed.
+    expect((await get(env, '/atlas?purpose=review&limit=0&state=pending&suspects=only&production=handwritten')).categories.map((x: any) => x.pending)).toEqual([1]);
+    const states = async (more: string) => (await get(env, `/atlas?purpose=review&grapheme=U%2B306F&state=checked&limit=5&seed=1${more}`)).items.map((x: any) => x.id);
+    expect(await states('&suspects=only')).toEqual(await states(''));
+    // Browsing is not narrowed by the marks.
+    expect((await get(env, '/atlas?suspects=only&limit=1')).total).toBeGreaterThan(3);
+  });
+});
+
 describe('a listing ends where the index does', () => {
   it('when D1 holds more crops than the answer counts, or fewer', async () => {
     const { env, db, a, b, c, crop } = await setup();
@@ -670,7 +716,9 @@ describe('the queries', () => {
       [{ ...base, state: 1, named: true }, 0, 'crop_listing', false], [{ ...base, chars: new Set([1, 2]) }, 0, 'crop_deal', false],
       [{ ...base, chars: new Set([1]), state: 0, named: true }, 1, 'crop_deal', true], [{ ...base, book: 1 }, 0, 'crop_book', false],
       [{ ...base, book: 3 }, 0, 'crop_book', false]] as [Filter, 0 | 1, string, boolean][]) {
-      for (const range of ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier, filter.book === 3)) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
+      const texts = new Map([[1, 'は']]);
+      for (const range of [...ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier, filter.book === 3),
+        ...(filter.chars ? [true, false].flatMap(marked => ranges(filter, kind, [2, 3, 5], [0, 1, 2], tier, false, { marked, texts })) : [])]) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
         const detail = plan(sideQuery(range, side, after), [...range.values, 0, ...(after ? [5, 9] : []), 10]);
         expect(detail).toContain(`USING ${index === 'crop_book' ? 'INDEX' : 'COVERING INDEX'} ${index}`);
         expect(detail).not.toContain('TEMP B-TREE');
@@ -692,6 +740,7 @@ describe('the queries', () => {
       [booksQuery(), ['[1]'], 'SEARCH books USING INTEGER PRIMARY KEY'], [graphemeQuery(), ['は'], 'USING INDEX sqlite_autoindex_graphemes_1'],
       [membersQuery(), [1], 'grapheme_head'], [datingQuery(), ['["hk:a"]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
       [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'], [corpusFormsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'],
+      [doubtedQuery(), [], 'SEARCH c USING INTEGER PRIMARY KEY'],
       [marksQuery(), ['[1]'], 'SEARCH s USING INTEGER PRIMARY KEY'], [reviewedQuery(), ['[1]'], 'SEARCH e USING INDEX event_crop (crop=?)'],
       [reviewedQuery(), ['[1]'], 'SEARCH r USING INTEGER PRIMARY KEY']] as [string, unknown[], string][]) {
       const detail = plan(sql, values);
