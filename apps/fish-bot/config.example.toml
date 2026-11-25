@@ -77,7 +77,8 @@ enabled = true
 per_hour = 120
 
 [budget]
-# What model calls may cost in one day (JST), in dollars at list price. Past it no call is sent.
+# What model calls may cost a day (JST) on average, in dollars at list price. A day may also spend what
+# the days before saved, up to one day's worth, and borrow one day's worth from the next ones.
 daily_usd = 0.75
 
 [limits]

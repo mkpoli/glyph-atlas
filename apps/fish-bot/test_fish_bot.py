@@ -2475,7 +2475,7 @@ def test_a_client_without_a_purse_sends_nothing(monkeypatch):
 
 def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    purse = fish_bot.Purse(store, 0.10)
+    purse = fish_bot.Purse(store, 0.05)
     model = paid_gemini("key", purse=purse)
     sent = []
     # 0.04 a call: 10,000 tokens in and 3,333 out.
@@ -2498,8 +2498,8 @@ def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
 
 
 def test_two_processes_share_the_days_money(tmp_path):
-    first = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 4.5 * fish_bot.CALL_RESERVE)
-    second = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 4.5 * fish_bot.CALL_RESERVE)
+    first = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 2.25 * fish_bot.CALL_RESERVE)
+    second = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 2.25 * fish_bot.CALL_RESERVE)
     for purse in (first, second, first, second):
         purse.reserve("chat")
     for purse in (first, second):
@@ -2529,12 +2529,75 @@ def test_a_refused_call_is_free_and_a_lost_one_is_not(tmp_path, monkeypatch):
 
 def test_the_day_is_read_under_the_lock(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    store.count_usage("chat", cost=0.10)
     start = fish_bot.now_ms()
-    clock = iter([start + 86_400_000])
-    monkeypatch.setattr(fish_bot, "now_ms", lambda: next(clock, start + 86_400_000))
-    purse = fish_bot.Purse(store, 0.10)
-    assert purse.reserve("chat") == fish_bot.local_day(start + 86_400_000)
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: start + 86_400_000 if store.db.in_transaction else start)
+    assert fish_bot.Purse(store, 1.0).reserve("chat") == fish_bot.local_day(start + 86_400_000)
+
+
+def spent_days(store, now, past, usd=1.0):
+    """Days that each had a budget and cost this much, ending yesterday."""
+    for number, cost in enumerate(past):
+        day = fish_bot.local_day(now - (len(past) - number) * 86_400_000)
+        store.db.execute("INSERT INTO budget(day, usd) VALUES(?,?)", (day, usd))
+        store.count_usage("chat", cost=cost, day=day)
+
+
+@pytest.mark.parametrize(("past", "allowed"), [
+    ([], 2.0),                      # its own dollar and one borrowed
+    ([0.2], 2.8),                   # a quiet day leaves 0.8
+    ([0.0, 0.0, 0.0], 3.0),         # no more than one day is saved
+    ([1.6], 1.4),                   # a busy day took 0.6 ahead
+    ([2.0, 1.0, 1.0], 1.0),         # fully borrowed, every day still has its own
+    ([2.1, 1.0], 0.9),              # what a last call cost beyond the limit is owed too
+    ([2.0, 0.4], 1.6),              # a quiet day pays the loan back
+])
+def test_a_day_may_use_what_was_saved_and_borrow_a_day(tmp_path, past, allowed):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now, past)
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(allowed)
+
+
+def test_days_before_there_was_a_budget_are_neither_saved_nor_owed(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    for number, cost in ((3, 0.0), (2, 9.0)):
+        store.count_usage("chat", cost=cost, day=fish_bot.local_day(now - number * 86_400_000))
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0)
+
+
+def test_a_day_without_calls_saves_too(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now - 86_400_000, [2.0])
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0)
+
+
+def test_a_day_keeps_the_money_it_had_when_the_budget_changes(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now, [0.25, 0.25, 0.0], usd=0.25)
+    assert fish_bot.Purse(store, 2.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0 + 0.25 + 2.0)
+    assert fish_bot.Purse(store, 0.1).allowance(fish_bot.local_day(now)) == pytest.approx(0.1 + 0.25 + 0.1)
+
+
+def test_the_spending_averages_the_daily_amount_however_calls_overshoot(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    start = fish_bot.now_ms()
+    clock = {"now": start}
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: clock["now"])
+    total = 0.0
+    for day in range(200):
+        clock["now"] = start + day * 86_400_000
+        for _ in range(100):
+            try:
+                booked = purse.reserve("chat")
+            except fish_bot.SpendError:
+                break
+            purse.settle("chat", booked, cost=0.14)
+            total += 0.14
+    assert 198 < total <= 200 + fish_bot.BORROW_DAYS + 0.14
 
 
 def test_unreadable_spending_counts_as_all_spent(tmp_path, monkeypatch):
