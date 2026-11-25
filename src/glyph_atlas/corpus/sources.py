@@ -215,7 +215,8 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "guangyun-photographs",
         "note": "澤存堂本廣韻 headwords on nk2028's photographs of the printing, labelled from nk2028's 廣韻 tables "
-                "(scripts/cut_guangyun_headwords.py). The photographs name no holder, so nothing of it is published.",
+                "(scripts/cut_guangyun_headwords.py). The photographs name 韻典網 as their source and no holder; the pages are flat reproductions "
+                "of a pre-1900 print, recorded as public domain.",
     },
     {
         "name": "guangyun-ioc",
