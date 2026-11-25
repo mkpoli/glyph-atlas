@@ -1,4 +1,4 @@
-# Pairs of a standard form (简体字 or 新字体) and a full form ruled on by hand, which
+# Pairs of a standard form (简体字 or 新字体) and a full form, or of two full forms of one, ruled on by hand, which
 # scripts/build_character_table.py reads before the rules of src/glyph_atlas/shape_families.py decide them.
 # ruling: `one` character, joined, or `two`, kept apart; by and date: who ruled, and when; note: why, or the source.
 form	full	ruling	by	date	note

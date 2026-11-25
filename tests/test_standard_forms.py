@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -134,15 +137,115 @@ def test_a_form_stays_apart(variants, standard, words, reason):
     assert not any(form in members and one.full & set(members) for members in found.values() for one in [standard[form]])
 
 
-def test_a_further_form_of_the_same_character_is_no_further_character():
-    """啟 is the 异体字 the table prints of 启（啓）, and 葯 a variant of 藥; 閒 is a headword apart from 閑."""
-    rows = [edge("啓", "启"), edge("啟", "启"), edge("启", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
-    assert decided(rows, forms(启=[("啓", "啓"), ("啓", "啟")]))[1] == {"启": []}
-    assert decided(rows, forms(启=[("啓", "啓")]))[1] == {"启": ["a further character: 啟"]}
-    assert decided([*rows, edge("啓", "啟", "variant", "wikidata")], forms(启=[("啓", "啓")]))[1].get("启", []) == []
-    words = headwords(*((book, f"{book}{n}", char, reading) for book in ("shuowen", "guangyun")
-                        for n, (char, reading) in enumerate((("啓", "a"), ("啟", "b")))))
-    assert decided(rows, forms(启=[("啓", "啓"), ("啓", "啟")]), words=words)[1] == {"启": ["a further character: 啟"]}
+#: 骂 is for 駡, 罵 is printed beside it, and other tables relate 骂 to 甲.
+MA = [edge("駡", "骂"), edge("罵", "骂"), edge("骂", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
+MA_TABLE = [("駡", "駡"), ("駡", "罵")]
+#: Two sources that call the full forms variants, which other passes take for variants of 丙 and 丁 too.
+SAME = [edge("駡", "罵", "variant", "wikidata"), edge("駡", "罵", "semantic"), edge("駡", "丙", "variant", "wikidata"),
+        edge("罵", "丁", "variant", "wikidata"), edge("丙", "戊", "variant", "wikidata"), edge("丁", "己", "variant", "wikidata")]
+
+
+def apart_in_both(*chars: str) -> list[tuple[str, str, str, str]]:
+    return [(book, f"{book}{char}", char, char) for book in ("shuowen", "guangyun") for char in chars]
+
+
+def test_the_full_forms_of_one_form_join_where_they_are_one_character():
+    found, reasons = decided([*MA, *SAME], forms(骂=MA_TABLE), familiar="罵")
+    assert found["罵"] == "罵駡骂" and reasons == {"骂": []}
+
+
+@pytest.mark.parametrize(("rows", "standard", "words"), [
+    (SAME[1:], forms(骂=MA_TABLE), None),  # one source alone calls them variants
+    ([*SAME, edge("駡", "罵", "substitute", "cjkvi-variants", "駡→罵 jp/borrowed")], forms(骂=MA_TABLE), None),
+    ([*SAME, edge("駡", "罵", "non-cognate", "cjkvi-variants", "駡→罵 cjkvi/non-cognate")], forms(骂=MA_TABLE), None),
+    (SAME, forms(骂=MA_TABLE), apart_in_both("駡", "罵")),
+    (SAME, forms(骂=MA_TABLE, 傌=[("罵", "罵")]), None),  # 罵 has a standard form of its own
+    (SAME, forms(骂=MA_TABLE, 罵=[]), None),
+])
+def test_a_form_stays_apart_from_the_full_forms_that_are_two(rows, standard, words):
+    found, reasons = decided([*MA, *rows], standard, words=headwords(*words) if words else None)
+    assert "a further character: 罵" in reasons["骂"]
+    assert not any({"駡", "罵"} <= set(members) or {"骂", "駡"} <= set(members) for members in found.values())
+
+
+def test_a_form_the_table_gives_for_two_characters_joins_neither_to_the_other():
+    """鍾 and 鐘 are both printed full forms of 钟, whatever calls them variants; 鈡 is a variant of either."""
+    rows = [edge("鍾", "钟"), edge("鐘", "钟"), edge("鈡", "钟", "simplified", "opencc", "STCharacters"),
+            edge("鍾", "鐘", "variant", "wikidata"), edge("鍾", "鐘", "semantic"), edge("鍾", "鈡", "variant", "wikidata"),
+            edge("鍾", "鈡", "equivalent", "yitizi"), edge("鈡", "鐘", "variant", "cjkvi-variants", "鈡→鐘 cjkvi/variant")]
+    found, reasons = decided(rows, forms(钟=[("鍾", "鍾"), ("鐘", "鐘")]))
+    assert found == {} and reasons["钟"][0] == "several characters: 鍾鐘"
+
+
+def test_full_forms_do_not_join_over_a_member_held_apart():
+    """The members each full form brings are compared, not the two alone."""
+    rows = [*MA, *SAME, edge("駡", "庚", "z"), edge("罵", "辛", "z")]
+    assert "庚" in next(members for members in decided(rows, forms(骂=MA_TABLE), familiar="罵")[0].values() if "罵" in members)
+    found, reasons = decided(rows, forms(骂=MA_TABLE), words=headwords(*apart_in_both("庚", "辛")))
+    assert not any({"駡", "罵"} <= set(members) for members in found.values()) and reasons["骂"] == ["a further character: 罵"]
+
+
+def test_a_ruling_on_two_full_forms_settles_whether_they_join():
+    rows = [*MA, *SAME]
+    assert decided(rows, forms(骂=MA_TABLE), hand=ruled(("罵", "駡", "two")))[1]["骂"] == ["a further character: 罵"]
+    found, reasons = decided([*MA, *SAME[2:]], forms(骂=MA_TABLE), hand=ruled(("駡", "罵", "one")))
+    assert any({"骂", "駡", "罵"} <= set(members) for members in found.values()) and reasons["骂"] == []
+
+
+def test_a_further_form_the_table_does_not_print_is_none_where_a_source_calls_it_a_variant():
+    """Unihan gives 葯 for 药, which the table prints for 藥 alone; 閒 is a headword apart from 閑."""
+    rows = [edge("藥", "药"), edge("葯", "药"), edge("药", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
+    assert decided(rows, forms(药=[("藥", "藥")]))[1] == {"药": ["a further character: 葯"]}
+    rows.append(edge("藥", "葯", "variant", "wikidata"))
+    assert decided(rows, forms(药=[("藥", "藥")]))[1].get("药", []) == []
+    assert decided(rows, forms(药=[("藥", "藥")]), words=headwords(*apart_in_both("藥", "葯")))[1] == {"药": ["a further character: 葯"]}
+
+
+def test_a_reading_of_a_third_character_carries_no_join():
+    """The 廣韻 reads 岭 來青平 and 嶺 來清上, and 阾, a variant of 嶺, both ways."""
+    rows = [edge("嶺", "岭"), edge("嶺", "阾", "z"), edge("岭", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
+    read = [("guangyun", "1", "岭", "來青平"), ("guangyun", "2", "嶺", "來清上"), ("guangyun", "3", "阾", "來青平"), ("guangyun", "4", "阾", "來清上")]
+    assert decided(rows, forms(岭=[("嶺", "嶺")]), words=headwords(*read))[1] == {"岭": ["a headword of the guangyun with another reading"]}
+    # Where the dictionary does not read the full form, the rest of its family speaks for it; where it reads none, nothing does.
+    assert decided(rows, forms(岭=[("嶺", "嶺")]), words=headwords(read[0], *read[2:]))[1] == {"岭": []}
+    assert decided(rows, forms(岭=[("嶺", "嶺")]), words=headwords(read[0], read[3]))[1] == {"岭": ["a headword of the guangyun with another reading"]}
+    assert decided(rows, forms(岭=[("嶺", "嶺")]), words=headwords(read[0]))[1] == {"岭": []}
+
+
+def test_a_fanqie_is_compared_whatever_form_it_is_spelled_in():
+    rows = [{"dictionary": "shuowen", "entry": char, "char": char, "role": "head", "reading": reading} for char, reading in (("启", "康禮"), ("啟", "康礼"))]
+    assert Headwords(rows).compared("启", "啟") == {"shuowen": False}
+    assert Headwords(rows, {"禮": "礼", "礼": "礼"}).compared("启", "啟") == {"shuowen": True}
+
+
+def test_what_the_dictionaries_hold_apart_stays_behind():
+    """𦬕, a variant of 茧 in one table, is read otherwise than 繭 in both dictionaries; 𽆢 hangs on it alone."""
+    rows = [edge("繭", "茧"), edge("茧", "𦬕", "z"), edge("𦬕", "𽆢", "z"), edge("茧", "𮈀", "z"), edge("茧", "甲", "variant", "wikidata"),
+            edge("甲", "乙", "variant", "wikidata"), edge("繭", "丙", "variant", "wikidata"), edge("丙", "丁", "variant", "wikidata")]
+    for familiar in ("", "茧", "繭", "𦬕"):
+        found, reasons = decided(rows, forms(茧=[("繭", "繭")]), words=headwords(*apart_in_both("繭", "𦬕")), familiar=familiar)
+        assert {frozenset(members) for members in found.values()} >= {frozenset("繭茧𮈀"), frozenset("𦬕𽆢")} and reasons == {"茧": []}
+    assert frozenset("繭茧𮈀𦬕𽆢") in {frozenset(members) for members in decided(rows, forms(茧=[("繭", "繭")]))[0].values()}
+
+
+def test_the_same_tables_always_give_the_same_families():
+    """The families of characters in no other table are told apart, and no set order reaches the result."""
+    table = forms(发=[("發", "發"), ("髮", "髮")])
+    assert {tuple(decided([], table)[1]["发"]) for _ in range(50)} == {("several characters: 發髮",)}
+    script = (
+        "import csv, hashlib, pathlib\n"
+        "from glyph_atlas.shape_families import Headwords, families, standard_forms\n"
+        f"vocab = pathlib.Path({str(VOCAB)!r})\n"
+        "def table(name):\n"
+        "    return list(csv.DictReader([l for l in (vocab / name).open(encoding='utf-8') if l[0] != '#'], delimiter='\\t', quoting=csv.QUOTE_NONE))\n"
+        "rows = table('kanji-variants.tsv'); chars = {c for r in rows for c in (r['a'], r['b'])}; found = []\n"
+        "standard = standard_forms(table('tongyong-guifan-forms.tsv'), {r['char']: int(r['position']) for r in table('tongyong-guifan.tsv')})\n"
+        "made = families(rows, table('kanji-equivalents.tsv'), chars, {}, set(), standard=standard, headwords=Headwords(table('headword-readings.tsv')), decisions=found)\n"
+        "text = repr([(f.head, sorted(f.members), f.edges, sorted(f.writers.items())) for f in made]) + repr([(d.form, d.reasons, d.edges) for d in found])\n"
+        "print(len(made), hashlib.sha256(text.encode()).hexdigest())\n")
+    made = {subprocess.run([sys.executable, "-c", script], env={**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": str(ROOT / "src")},
+                           check=True, capture_output=True, text=True).stdout for seed in ("1", "2", "3")}
+    assert len(made) == 1 and int(made.pop().split()[0]) > 10000
 
 
 def test_a_form_the_shuowen_gives_under_the_full_form_is_that_character():
@@ -161,11 +264,21 @@ def test_a_form_the_shuowen_gives_under_another_character_and_the_guangyun_reads
     assert decided(rows, forms(箓=[("籙", "籙")]), words=Headwords(made))[1] == {"箓": ["a 重文 of another character: 簏"]}
 
 
-def test_a_non_cognate_tag_its_own_database_contradicts_keeps_nothing_apart():
-    for tag in ("ucs-scs/variant", "joyo/variant", "hydzd/variant", "cjkvi/simplified"):
-        rows = [edge("溫", "温"), edge("温", "溫", "non-cognate", "cjkvi-variants", "温→溫 cjkvi/non-cognate"),
-                edge("温", "溫", "variant", "cjkvi-variants", f"温→溫 {tag}")]
+@pytest.mark.parametrize(("relation", "claim"), [("non-cognate", "cjkvi/non-cognate"), ("borrowed", "hydcd/borrowed"), ("substitute", "jp/borrowed")])
+def test_a_tag_its_own_database_contradicts_keeps_nothing_apart(relation, claim):
+    said = edge("温", "溫", relation, "cjkvi-variants", f"温→溫 {claim}")
+    others = [edge("温", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
+    why = "a non-cognate homograph" if relation == "non-cognate" else "a loan or a substitute"
+    assert decided([edge("溫", "温"), said, *others], forms(温=[]))[1]["温"] == [why]
+    for tag in ("ucs-scs/variant", "joyo/variant", "hydzd/variant", "cjkvi/simplified", "cjkvi/variant"):
+        rows = [edge("溫", "温"), said, edge("温", "溫", "variant", "cjkvi-variants", f"温→溫 {tag}"), *others]
         assert decided(rows, forms(温=[]))[1]["温"] == [], tag
+        # Where the 說文解字 heads an entry with each, it stands, but for a pair the 常用漢字表 gives.
+        entries = headwords(("shuowen", "1", "温", "a"), ("shuowen", "2", "溫", "a"))
+        assert decided(rows, forms(温=[]), words=entries)[1]["温"] == ([] if tag == "joyo/variant" else [why]), tag
+    # Another database's word is its own.
+    assert decided([edge("溫", "温"), {**said, "source": "wikidata"}, edge("温", "溫", "variant", "cjkvi-variants", "温→溫 hydzd/variant"), *others],
+                   forms(温=[]))[1]["温"] == [why]
 
 
 def test_a_pair_of_the_jouyou_table_is_one_character_though_the_new_form_is_a_headword():
@@ -226,11 +339,10 @@ def test_the_collation_of_a_headword_is_read():
 def test_the_forms_joined_and_the_forms_apart_are_pinned():
     apart = table("grapheme-apart.tsv")
     joined = {row["b"] for row in table("grapheme-families.tsv") if row["source"] == "tongyong-guifan"}
-    assert (len(joined), len(apart)) == (362, 179)
+    assert (len(joined), len(apart)) == (357, 183)
     assert Counter(reason.partition(":")[0].partition(" of ")[0] for row in apart for reason in row["reasons"].split(" | ")) == {
-        "a headword": 113, "OpenCC gives it for itself too": 96, "the table gives it for itself too": 71, "several characters": 29,
-        "a loan or a substitute": 25, "the table lists the full form too": 14, "a further character": 14, "its full form is": 6,
-        "a non-cognate homograph": 1, "a 重文": 5}
+        "a headword": 114, "OpenCC gives it for itself too": 96, "the table gives it for itself too": 71, "several characters": 29,
+        "a loan or a substitute": 11, "the table lists the full form too": 14, "a further character": 27, "its full form is": 6, "a 重文": 5}
 
 
 def test_every_form_the_rule_names_stays_apart():
@@ -248,6 +360,23 @@ def test_the_forms_that_write_one_character_join():
     pairs = ("对對 对対 动動 备備 实實 实実 还還 这這 无無 网網 个個 开開 电電 风風 门門 内內 没沒 黄黃 温溫 虚虛 状狀 涙淚 即卽 併倂 戻戾 概槪 錬鍊 餅餠 "
              "达達 壳殼 启啓 净淨 艺藝 滨濱 归歸 阁閣 场場 识識")
     assert [pair for pair in pairs.split() if not same(*pair)] == []
+
+
+def test_the_full_forms_of_one_form_are_one_grapheme_or_the_form_is_in_neither():
+    one = ("骂駡 骂罵 钩鈎 钩鉤 绣綉 绣繡 蕴藴 蕴蘊 赃贜 赃贓 奖奬 奖獎 鉴鑒 鉴鑑 镰鐮 镰鎌 鳄鰐 鳄鱷 启啓 启啟 酝醖 酝醞")
+    assert [pair for pair in one.split() if not same(*pair)] == []
+    two = "叹嘆 叹歎 嘆歎 夹夾 夹袷 夾袷 赞贊 赞讚 枪槍 枪鎗 炼煉 炼鍊 鍾鐘 曆歷 當噹 壇罎"
+    assert [pair for pair in two.split() if same(*pair)] == []
+    assert refs.grapheme("U+9A82") == refs.to_code_point("罵")
+
+
+def test_a_join_holds_for_what_it_brings():
+    assert not same("岭", "嶺") and same("茧", "繭") and not same("𦬕", "繭") and not same("𦬕", "茧")
+
+
+def test_one_rule_for_loans_and_non_cognates():
+    assert [pair for pair in "涩澀 衅釁 糁糝 凭憑 檩檁 廪廩".split() if not same(*pair)] == []
+    assert not same("离", "離")
 
 
 def test_a_form_leaves_what_it_was_filed_under():

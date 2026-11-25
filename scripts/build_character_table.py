@@ -686,7 +686,8 @@ def _add_shape_families(
         shape_families.standard_forms(
             read_table(vocab / TONGYONG_FORMS_NAME),
             {row["char"]: int(row["position"]) for row in read_table(vocab / TONGYONG_NAME)}),
-        shape_families.Headwords(read_table(vocab / HEADWORDS_NAME)), decisions,
+        shape_families.Headwords(read_table(vocab / HEADWORDS_NAME),
+                                 {member: head for head, members in curated.items() for member in members}), decisions,
         shape_families.rulings(read_table(vocab / RULINGS_NAME)))
     for family in families:
         head = code_point(ord(family.head))

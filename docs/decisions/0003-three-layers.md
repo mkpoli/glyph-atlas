@@ -76,16 +76,16 @@ policies remain separate from browsing families.
 
 ### 简体字 and 新字体 (2026-11-25)
 
-A 简体字 of the 通用规范汉字表 (2013) or a 新字体 of the 常用漢字表 (2010) is of the grapheme of its full form when it
-writes that one character: 对對, 动動, 实實, 黄黃, 状狀. Before, a form joined only when every variant relation it had led
-to one family, so a form in wide use stayed apart for its other relations (动 also relates to 働), and 609 forms of
-the two tables were outside their full form's grapheme. What a form is for is now read from the standards' own
-tables, with Unihan and OpenCC, and 430 of them join it. 179 stay apart
-(`data/vocab/grapheme-apart.tsv`, each with its reasons): the form is also itself (后, 价, 谷), writes several
-characters (发, 历, 弁), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its full
-form (着, 了), or is a loan for it. `glyph_atlas.shape_families` states each rule with its sources, and
-`data/vocab/grapheme-rulings.tsv` the pairs ruled on by hand. The joined
-grapheme keeps the key of the full form's, unless the form is better known in Japan (没 over 沒, 黄 over 黃).
+A 简体字 of the 通用规范汉字表 (2013) or a 新字体 of the 常用漢字表 (2010) is of the grapheme of its full form when it writes that one
+character: 对對, 动動, 实實, 黄黃, 状狀. Before, a form joined only when every variant relation it had led to one family, so a
+form in wide use stayed apart for its other relations (动 also relates to 働). What a form is for is now read from the
+standards' own tables, with Unihan and OpenCC, and 425 of the 608 forms outside their full form's grapheme join it.
+183 stay apart (`data/vocab/grapheme-apart.tsv`, each with its reasons): the form is also itself (后, 价, 谷), writes
+several characters (发, 历, 弁, 枪), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its
+full form (着, 了), or is a loan for it. Two full forms of one form that two sources call variants, and nothing holds
+apart, are one character too and join with it (駡 and 罵 with 骂). `glyph_atlas.shape_families` states each rule with its
+sources, and `data/vocab/grapheme-rulings.tsv` the pairs ruled on by hand. The joined grapheme keeps the key of the
+full form's, unless the form is better known in Japan (没 over 沒, 黄 over 黃).
 
 - 教育部・国家语言文字工作委员会『通用规范汉字表』附件1 规范字与繁体字、异体字对照表, 国发〔2013〕23号, as transcribed by
   Wikisource and mandel59 (`data/sources/tongyong-guifan.yaml`); nos. 1151–1508 compared with the official scan.
