@@ -1,12 +1,8 @@
 /** A crop's style: the values it may be given, what choosing one does, and saving it. */
 import { request } from './client.js'
 
-/**
- * The values of `data/vocab/style.yaml` a reader may give a single crop, in the order they are reached for. A
- * page or document can be in mixed styles, and a print face (`ming`, `gothic`) is not told apart from regular
- * script on one crop.
- */
-export const CROP_STYLES = ['regular', 'running', 'cursive', 'clerical', 'seal']
+/** The values of `data/vocab/style.yaml` a single crop may be written in, in the order a reader reaches for them. */
+export const CROP_STYLES = ['regular', 'running', 'cursive', 'clerical', 'seal', 'ming', 'gothic']
 
 /** The style a reader gave the crop itself, or null while it takes its page's or document's. */
 export const ownStyle = item => item?.style_basis === 'unit' ? item.style : null
