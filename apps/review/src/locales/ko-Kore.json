@@ -64,7 +64,7 @@
   "reading.places.none": "다른 곳 없음",
   "reading.letters": "이 가나의 字體",
   "reading.jibo": "由來 漢字 {char}",
-  "reading.needed": "읽기를 入力하세요.",
+  "reading.needed": "후리가나나 읽기를 入力하세요.",
   "reading.save": "읽기 貯藏",
   "word.label": "單語",
   "reading.method": "根據",

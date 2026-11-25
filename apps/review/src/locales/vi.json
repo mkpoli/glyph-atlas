@@ -751,7 +751,7 @@
   "reading.places.none": "Không có nơi khác",
   "reading.letters": "Các dạng của chữ này",
   "reading.jibo": "Chữ gốc {char}",
-  "reading.needed": "Hãy ghi cách đọc.",
+  "reading.needed": "Hãy ghi chữ ghi cách đọc hoặc cách đọc.",
   "reading.save": "Lưu cách đọc",
   "word.label": "Từ ngữ",
   "reading.method": "Căn cứ",

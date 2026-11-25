@@ -162,6 +162,17 @@ describe('the word of a run', () => {
     expect([await wordOfCrop(env, local), await wordOfCrop(env, corpus)]).toEqual([null, null]);
   });
 
+  it('is saved with the page\'s letters and no note, or alone', async () => {
+    const { env, tools, local, corpus, version, input } = setup();
+    const word = { id: W, form: 'certain', method: 'context' }, others = [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }];
+    const save = (value: object) => setReading(env, { ...input(), run: ['村', '落'], reading: null, others, word, ...value }, publicId(local), 'reader', tools);
+    expect(await save({ ruby: ['ざい', 'ご'] })).toMatchObject({ word: { values: [{ word: W }] }, reading: { values: [], ruby: { values: [{ ruby: ['ざい', 'ご'] }] } } });
+    expect(await save({})).toMatchObject({ word: { values: [{ word: W }] }, reading: null });
+    expect((await wordOfCrop(env, corpus))?.values).toMatchObject([{ word: W }]);
+    for (const none of [null, undefined]) await expect(save({ word: none })).rejects.toThrow('422');
+    await expect(save({ run: [] })).rejects.toThrow('422');
+  });
+
   it('recognises an earlier actor key belonging to the same reader', async () => {
     const { save } = setup();
     await save({}, 'old-reader');
@@ -744,6 +755,18 @@ describe('a crop read in a run', () => {
     // Standing alone, a value still names everyone who holds it.
     await set({ run: null }, 'third');
     expect(await held()).toEqual([['しょき', ['other', 'reader'], ['ruby']]]);
+  });
+
+  it('is its ruby as the page writes it, whether or not a reader says how it is read', async () => {
+    const { corpus, set, of } = read();
+    const written = await set({ reading: null, method: undefined });
+    expect(written.reading).toMatchObject({ status: null, values: [], ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }] } });
+    expect((await of(corpus))?.ruby.values).toMatchObject([{ at: 0 }]);
+    // A note joins it, and goes without it.
+    expect((await set()).reading).toMatchObject({ values: [{ reading: ['しょ', 'き'] }], ruby: { values: [{ ruby: ['𛁈よ', 'き'] }] } });
+    expect((await set({ reading: null })).reading).toMatchObject({ values: [], ruby: { status: 'asserted' } });
+    expect((await set({ reading: null, ruby: null, left: ['うつわ'] })).reading).toMatchObject({ values: [], ruby: null, left: { status: 'asserted' } });
+    await expect(set({ reading: null, ruby: null })).rejects.toThrow('422');
   });
 
   it('keeps a 左訓 beside the ruby, split its own way, and drops either the save leaves out', async () => {

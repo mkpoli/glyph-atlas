@@ -5,7 +5,7 @@
   // dictionary that the characters write can be named with it.
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
-  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingChips, setReading, stretch } from '../lib/cropReadings.js'
+  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingEntries, setReading, stretch } from '../lib/cropReadings.js'
   import { toSource } from '../lib/cropBox.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
@@ -13,7 +13,7 @@
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
   import ReadingPlaces from './ReadingPlaces.svelte'
-  import ReadingRuby from './ReadingRuby.svelte'
+  import ReadingEntry from './ReadingEntry.svelte'
   import { otherPlaces, placesText, runPlaces } from '../lib/readingPlaces.js'
   import ScriptText from './ScriptText.svelte'
 
@@ -35,10 +35,10 @@
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
   let chosen = $state(undefined), probable = $state(false), changed = false
 
-  const chips = $derived(readingChips(item.reading))
+  const entries = $derived(readingEntries(item.reading))
   const words = $derived(item.word?.values ?? [])
   // The reading that stands alone, whose run the other places of can be read alike; how many there are is asked after a save.
-  const standing = $derived(chips.length === 1 && item.reading.status !== 'disputed' ? chips[0].reading : null)
+  const standing = $derived(entries.length === 1 && entries[0].notes.length === 1 && item.reading.status !== 'disputed' ? entries[0].notes[0] : null)
   let placed = $state.raw(null), showing = $state(false)
   const counted = $derived(placed && standing && placed.text === placesText(standing) ? placed : null)
   // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
@@ -62,7 +62,9 @@
   const run = $derived(places.map(place => line.parts[place]))
   const joined = $derived(whole && places.length > 1)
   const shown = $derived(line ? { from: Math.max(0, Math.min(line.at - AROUND, from - 2)), to: Math.min(line.parts.length - 1, Math.max(line.at + AROUND, to + 2)) } : null)
-  const reading = $derived(joined ? [wholeReading.trim()] : places.map(place => (readings[place] ?? '').trim()))
+  // The note of the reading: what is typed, the kana of the run reading themselves beside it. It is empty until something is typed.
+  const noted = $derived(places.some(place => (readings[place] ?? '').trim()))
+  const reading = $derived(joined ? [wholeReading.trim()] : places.map(place => (readings[place] ?? '').trim() || (noted && kana(line.parts[place]) ? plainKana(line.parts[place]) : '')))
   const ruby = $derived(joined ? [wholeRuby.trim()] : places.map(place => (rubies[place] ?? '').trim()))
   const reads = $derived(reading.join(''))
   const kana = part => /^[\p{Script=Hiragana}\p{Script=Katakana}\p{M}ー]+$/u.test(part)
@@ -74,10 +76,6 @@
     untrack(() => outlined?.(boxes))
     return () => outlined?.([])
   })
-  // What an earlier reading, or the kana of a run, already gives each place.
-  function fill() {
-    for (const place of places) if (readings[place] === undefined && kana(line.parts[place])) readings[place] = plainKana(line.parts[place])
-  }
   async function open() {
     // Whose reading it opens with waits until the page knows who reads.
     await sessionStarted()
@@ -106,14 +104,12 @@
       if (whole) { wholeReading = over.join(''); wholeRuby = beside.join('') }
       else value.run.forEach((_, i) => { readings[from + i] = over[i] ?? ''; if (beside.length === value.run.length) rubies[from + i] = beside[i] })
     }
-    fill()
   }
   function press(at) {
     touched = true; error = ''; letters = null
     // Another place of the same character, apart from the run, is where the crop stands instead.
     if (line.also.includes(at) && (at < from - 1 || at > to + 1 || at < within.from || at > within.to)) { line = { ...line, at, also: [...line.also.filter(each => each !== at), line.at] }; from = to = at }
     else ({ from, to } = pressed({ from, to }, line.at, at))
-    fill()
   }
   // The arrows move along the line, and leave the list of crops where it is.
   function along(event) {
@@ -123,15 +119,11 @@
     const buttons = [...event.currentTarget.querySelectorAll('button')]
     buttons[buttons.indexOf(document.activeElement) + step]?.focus()
   }
-  // The ruby gives the reading its kana until the reader writes another, and says what the reading rests on.
+  // The ruby is the page's own letters. It says what a reading rests on, and is no reading itself.
   function wroteRuby(at, text) {
     touched = true; error = ''
-    // The 左訓 is often a gloss in other words, and leaves the reading as it is.
-    if (at === 'left') { left = text; return }
-    const before = at === null ? wholeRuby : rubies[at] ?? '', now = at === null ? wholeReading : readings[at] ?? ''
-    if (now === '' || now === plainKana(before)) { if (at === null) wholeReading = plainKana(text); else readings[at] = plainKana(text) }
-    if (at === null) wholeRuby = text; else rubies[at] = text
-    if (text.trim()) method = 'ruby'
+    if (at === 'left') left = text
+    else { if (at === null) wholeRuby = text; else rubies[at] = text; if (text.trim()) method = 'ruby' }
   }
   // The letters the kana before the caret of a ruby may be written with. They stay until a reading is written or
   // the run changes, so the buttons below them never move under a press.
@@ -160,15 +152,12 @@
     return !text ? null : text === leftWas.join('') && (leftWas.length === 1 || leftWas.length === run.length) ? leftWas : [text]
   }
   function openLeft() { leftOpen = true; tick().then(() => root?.querySelector('.reading-left')?.focus({ preventScroll: true })) }
-  function pick(choice) {
-    touched = true
-    chosen = picked === choice.id ? null : choice.id
-    if (chosen && !reads) { whole = places.length > 1; if (whole) wholeReading = choice.reading; else readings[from] = choice.reading }
-  }
+  // A word is a claim of its own: it writes no note of the reading, and leaves the page's letters as they are split.
+  function pick(choice) { touched = true; error = ''; chosen = picked === choice.id ? null : choice.id }
 
   $effect(() => {
     if (!editing) return
-    const crop = item, q = reads
+    const crop = item, q = reads || plainKana(ruby.join(''))
     let active = true
     const timer = setTimeout(async () => {
       try { const found = await wordChoices(crop, q); if (active) choices = found } catch { /* No word is offered. */ }
@@ -184,13 +173,13 @@
   }
   async function save() {
     if (busy) return
-    if (!reads) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
+    if (!reads && !ruby.some(Boolean) && !left.trim() && !picked) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
     pending = true; working?.(true); error = ''
     try {
       await arriving
       const others = new Map(places.flatMap((place, i) => place !== line.at && crops.has(place) ? [[i, crops.get(place)]] : []))
-      // The reading is written in ordinary kana; a hentaigana typed there is the page's, kept in the ruby.
-      saved?.(await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
+      // A note is written in ordinary kana; the page's own letters are the ruby's.
+      saved?.(await setReading(item, { run, at: line.at - from, reading: reads ? reading.map(plainKana) : null, ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
         left: leftText(), method, word: wordText(), crops: others }))
       leave()
       count({ run })
@@ -227,19 +216,12 @@
 <div class="reading-field" class:editing bind:this={root}>
   <div class="reading-slot">
     <div class="reading-entries">
-      {#each chips as chip}
-        <div class="reading-entry">
-          {#if chip.reading}<ReadingRuby value={chip.reading} />{:else}<bdi class="reading-bare">{chip.run.run.join('')}</bdi>{/if}
-          {#each chip.ruby as text}<bdi class="reading-ruby" title={t('reading.ruby')}>{text}</bdi>{/each}
-          {#each chip.left as text}<span>{t('reading.left')} <bdi class="reading-ruby">{text}</bdi></span>{/each}
-          {#if chip.reading?.methods?.[0]}<span title={t('reading.method')}>{t(`reading.methods.${chip.reading.methods[0]}`)}</span>{/if}
-        </div>
-      {:else}<div class="reading-entry">{t('reading.label')}</div>{/each}
+      {#each entries as entry}<ReadingEntry {entry} />{:else}<div class="reading-entry">{t('reading.label')}</div>{/each}
       {#each words as value}<div class="reading-entry"><span>{t('word.label')} <b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b></span>{#if value.form === 'probable'}<span>{t('word.probable')}</span>{/if}</div>{/each}
     </div>
     {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-disputed">{t('reading.disputed')}</span>{/if}
     {#if !editing}<div class="reading-acts">
-      <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+      <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{entries.length || words.length ? t('reading.edit') : t('reading.add')}</button>
       {#if standing && placesText(standing) && counted?.others !== 0}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if counted?.others}{' '}{counted.others}{/if}</button>{/if}
     </div>{/if}
   </div>
@@ -260,24 +242,25 @@
         {#if shown.to < line.parts.length - 1}<span class="reading-more">…</span>{/if}
       </div>
       <div class="reading-grid" style:--places={places.length}>
-        <span class="reading-row" id="{uid}-reading">{t('reading.label')}</span>
-        {#if joined}<span class="reading-over whole"><input type="text" lang="ja" value={wholeReading} disabled={busy} aria-label={t('reading.of', { char: run.join('') })} oninput={e => wroteReading(null, e.currentTarget.value)} onfocus={() => letters = null} /></span>
-        {:else}{#each places as place (place)}<span class="reading-over"><input type="text" lang="ja" value={readings[place] ?? ''} disabled={busy} aria-label={t('reading.of', { char: line.parts[place] })} oninput={e => wroteReading(place, e.currentTarget.value)} onfocus={() => letters = null} /></span>{/each}{/if}
-        <span class="reading-row">{#if places.length > 1}<button type="button" class="reading-whole" role="switch" aria-checked={whole} disabled={busy} onclick={toggleWhole}>{t('reading.whole')}</button>{/if}</span>
-        {#each places as place (place)}
-          {@const crop = place === line.at ? item : crops.get(place)}
-          <span class="reading-char" class:here={place === line.at}>{#if crop?.image}<Glyph item={crop} alt="" class="reading-crop" />{:else}<span class="reading-crop absent"></span>{/if}<ScriptText text={line.parts[place]} titled={false} /></span>
-        {/each}
         <span class="reading-row">{t('reading.ruby')}</span>
         {#if joined}<span class="reading-over whole"><input type="text" lang="ja" value={wholeRuby} disabled={busy} aria-label={t('reading.rubyOf', { char: run.join('') })} oninput={e => { wroteRuby(null, e.currentTarget.value); seek(null, e.currentTarget) }}
           onfocus={e => seek(null, e.currentTarget)} onclick={e => seek(null, e.currentTarget)} onkeyup={e => seek(null, e.currentTarget)} /></span>
         {:else}{#each places as place (place)}<span class="reading-over"><input type="text" lang="ja" value={rubies[place] ?? ''} disabled={busy} aria-label={t('reading.rubyOf', { char: line.parts[place] })} oninput={e => { wroteRuby(place, e.currentTarget.value); seek(place, e.currentTarget) }}
           onfocus={e => seek(place, e.currentTarget)} onclick={e => seek(place, e.currentTarget)} onkeyup={e => seek(place, e.currentTarget)} /></span>{/each}{/if}
+        <span class="reading-row">{#if places.length > 1}<button type="button" class="reading-whole" role="switch" aria-checked={whole} disabled={busy} onclick={toggleWhole}>{t('reading.whole')}</button>{/if}</span>
+        {#each places as place (place)}
+          {@const crop = place === line.at ? item : crops.get(place)}
+          <span class="reading-char" class:here={place === line.at}>{#if crop?.image}<Glyph item={crop} alt="" class="reading-crop" />{:else}<span class="reading-crop absent"></span>{/if}<ScriptText text={line.parts[place]} titled={false} /></span>
+        {/each}
         {#if leftOpen}
           <span class="reading-row">{t('reading.left')}</span>
           <span class="reading-over whole"><input class="reading-left" type="text" lang="ja" value={left} disabled={busy} aria-label={t('reading.leftOf', { char: run.join('') })} oninput={e => { wroteRuby('left', e.currentTarget.value); seek('left', e.currentTarget) }}
             onfocus={e => seek('left', e.currentTarget)} onclick={e => seek('left', e.currentTarget)} onkeyup={e => seek('left', e.currentTarget)} /></span>
         {:else}<span class="reading-row"><button type="button" class="reading-whole" disabled={busy} onclick={openLeft}>+{t('reading.left')}</button></span>{/if}
+        <span class="reading-rule"></span>
+        <span class="reading-row">{t('reading.label')}</span>
+        {#if joined}<span class="reading-over note whole"><input type="text" lang="ja" value={wholeReading} disabled={busy} aria-label={t('reading.of', { char: run.join('') })} oninput={e => wroteReading(null, e.currentTarget.value)} onfocus={() => letters = null} /></span>
+        {:else}{#each places as place (place)}<span class="reading-over note"><input type="text" lang="ja" value={readings[place] ?? ''} placeholder={(noted && kana(line.parts[place]) ? plainKana(line.parts[place]) : '')} disabled={busy} aria-label={t('reading.of', { char: line.parts[place] })} oninput={e => wroteReading(place, e.currentTarget.value)} onfocus={() => letters = null} /></span>{/each}{/if}
       </div>
       {#if letters}
         <div class="reading-letters" role="group" aria-label={t('reading.letters')}>
@@ -328,8 +311,6 @@
   .reading-acts button{min-height:32px;padding:0;border:0;background:none;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
   .reading-acts button:not(:disabled):hover{color:var(--ink)}
   @media(max-width:700px){.reading-slot,.reading-acts button{min-height:36px}}
-  .reading-entry :global(.reading-run),.reading-bare{font-family:var(--char-font);font-size:28px;line-height:1.3;color:var(--ink)}
-  .reading-ruby{font-family:var(--char-font);font-size:15px;color:var(--ink)}
   .reading-disputed{color:var(--wrong)}
   .reading-clear{margin-inline-end:auto}
   .reading-editor{display:grid;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface);min-width:0}
@@ -347,6 +328,8 @@
   .reading-row{white-space:nowrap;padding-inline-end:4px}
   .reading-over.whole{grid-column:span var(--places)}
   .reading-over input{width:100%;min-width:0;font:inherit;font-family:var(--char-font);font-size:15px;text-align:center;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:6px 4px}
+  .reading-over.note input{font-size:13px;background:none;border-style:dashed}
+  .reading-rule{grid-column:1/-1;border-top:1px solid var(--line);margin:4px 0}
   .reading-over input:hover{border-color:var(--line-strong)}
   .reading-char{display:grid;justify-items:center;gap:2px;font-size:24px;line-height:1.1;border:1px solid transparent;border-radius:6px;padding:4px}
   .reading-char.here{border-color:var(--accent);background:var(--accent-light)}

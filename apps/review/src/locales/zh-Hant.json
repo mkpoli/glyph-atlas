@@ -757,7 +757,7 @@
   "reading.places.none": "沒有其他各處",
   "reading.letters": "此假名的字體",
   "reading.jibo": "字母「{char}」",
-  "reading.needed": "請填寫讀音。",
+  "reading.needed": "請填寫旁註或讀音。",
   "reading.save": "儲存讀音",
   "word.label": "詞",
   "reading.method": "依據",
