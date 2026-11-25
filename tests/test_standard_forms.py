@@ -370,6 +370,26 @@ def test_what_an_earlier_pass_joined_is_held_to_the_rules_of_the_table():
     assert decided([edge("動", "动")], forms(动=[("動", "動")]), hand=ruled(("动", "動", "two"))) == ({}, {"动": ["ruled two characters: 動, owner 2026-11-25"]})
 
 
+def test_a_form_an_earlier_pass_joined_to_one_of_its_full_forms_is_parted_from_it():
+    """The 異寫字 pass joins 发 to 發, and 髮, its other full form, is a family of its own."""
+    rows, table = [edge("發", "发"), edge("發", "𤼲", "z"), edge("髮", "𩬊", "z")], forms(发=[("發", "發"), ("髮", "髮")])
+    assert any({"发", "發"} <= one.members and "髮" not in one.members for one in families(rows, (), set("发發髮𤼲𩬊"), {}, set()))
+    found, reasons = decided(rows, table)
+    assert {frozenset(members) for members in found.values()} == {frozenset("發𤼲"), frozenset("髮𩬊")}
+    assert reasons["发"] == ["several characters: 發髮"]
+    # Stated one, or ruled one, the two stay.
+    assert any({"发", "發"} <= set(members) for members in decided(rows, table, curated={"發": ["發", "发"]})[0].values())
+    found, reasons = decided(rows, table, hand=ruled(("发", "發", "one")))
+    assert any({"发", "發"} <= set(members) for members in found.values()) and not any({"发", "髮"} <= set(members) for members in found.values())
+
+
+def test_what_stays_behind_keeps_the_ties_it_had():
+    """后 and 𠂡 are stated one, and leave 後, which 𢔏 hangs on."""
+    rows = [edge("後", "后"), edge("後", "𢔏", "z")]
+    found, _ = decided(rows, forms(后=[("后", "后"), ("後", "後")]), curated={"后": ["后", "𠂡"]})
+    assert {frozenset(members) for members in found.values()} == {frozenset("后𠂡"), frozenset("後𢔏")}
+
+
 def test_what_hangs_on_a_form_parts_with_it():
     """𠂡 hangs on 后, and 𢔏 on 後."""
     rows = [edge("後", "后"), edge("后", "𠂡", "z"), edge("後", "𢔏", "z")]

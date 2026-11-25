@@ -828,18 +828,21 @@ def _join_standard_forms(
         return found
 
     def part_with(form: str, full: set[str]) -> set[str]:
-        """What goes with a form out of the family it shares with its full form: what is tied to that without it stays."""
+        """What goes with a form out of the family it shares with `full`: what is tied to one of those without it stays."""
         family = unit(form)
-        return set(family.members) - _reached(min(full), _ties(family, family.members - {form}))
+        ties = _ties(family, family.members - {form})
+        return family.members.difference(*(_reached(char, ties) for char in full))
 
     def separate(form: str, full: set[str], further: set[str], table: StandardForm | None) -> None:
-        """Part a form from its full form where an earlier pass joined them and the table would not (rules 1 to 6)."""
+        """Part a form from its full forms, or from the one it was joined to, where an earlier pass joined them and the
+        table would not (rules 1 to 6)."""
         family = unit(form)
+        here = full & family.members
         ruled = {char: rulings[form, char] for char in (full | further) & family.members if (form, char) in rulings}
-        if {id(unit(char)) for char in full} != {id(family)} or {form, *full} <= family.stated:
+        if not here or {form, *here} <= family.stated:
             return
         settled.update((form, char) for char in ruled)
-        own = part_with(form, full)
+        own = part_with(form, here)
         if any(ruling.one for ruling in ruled.values()) or own & family.stated and family.stated - own:
             return
         if ruled or against(form, full, further, table, own):
@@ -948,13 +951,12 @@ def _ties(family: Family, among: set[str]) -> list[tuple[str, str]]:
 def _leave(family: Family, gone: set[str], group: dict[str, Family]) -> None:
     """Part `gone` from a family: each side is as many families as its ties hold together, a curated one the family it was."""
     edges, kept_head = family.edges, family.kept_head
-    for side in (gone, family.members - gone):
-        for part in _parts(side, _ties(family, side)):
-            kept = family if part & family.stated else Family(min(part), part)
-            kept.members, kept.edges = part, [edge for edge in edges if edge.a in part and edge.b in part]
-            kept.kept_head = kept_head if kept_head in part else None
-            for char in part:
-                group[char] = kept
+    for part in [part for side in (gone, family.members - gone) for part in _parts(side, _ties(family, side))]:
+        kept = family if part & family.stated else Family(min(part), part)
+        kept.members, kept.edges = part, [edge for edge in edges if edge.a in part and edge.b in part]
+        kept.kept_head = kept_head if kept_head in part else None
+        for char in part:
+            group[char] = kept
 
 
 def _parts(members: set[str], pairs: Iterable[tuple[str, str]]) -> list[set[str]]:
