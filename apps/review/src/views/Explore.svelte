@@ -565,6 +565,14 @@
         // The rows of a page the server rendered without them are its first screen.
         { signal: catalogueRequest.signal, priority: data ? 'low' : 'high' })
       if (closed || id !== requestId) return
+      // A key of a grapheme's member, in an address or a view kept from before a table joined the two, lists the
+      // grapheme, which takes its place; a further page of the member's own crops is dealt again from the start.
+      const named = grapheme && result.head
+      if (named && named !== grapheme) {
+        grapheme = named
+        if (append) { load(); return }
+        showInAddress()
+      }
       if (!append && (openEmptyGrapheme(result) || openSplit(result))) return
       // A further page keeps the counts by character and work it came with: they answer the same filters,
       // and replacing them redraws the work menu and regathers thousands of graphemes for every page.
