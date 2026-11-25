@@ -76,6 +76,8 @@ A seal character's key was a grapheme's, and is a member's:
   to a script deals the corpus glyphs of that script's members.
 - A listing under a seal character's key (`/?grapheme=U+3D307`) holds that character alone. Under any other
   member's it is the grapheme's, and the address becomes the head's.
+  A listing reads the family from `graphemes`, so it is the one the load left at once; the grapheme browser and the
+  rounds' list count by the last publication's graphemes until `answers.py` runs.
 - A new `has_grapheme` or `written_for` claim, one kept on a device among them, is recorded under the head.
   A `written_for` claim is taken back by the key it was recorded under, or by a member's.
 

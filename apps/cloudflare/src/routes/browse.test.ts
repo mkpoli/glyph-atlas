@@ -4,7 +4,7 @@ import { bundle, bundleKey, cropId, cropOf, publicId } from '../atlas3';
 import { charsQuery, tallyDeltas, tallyDeltasQuery } from '../atlas3Answers';
 import { corpusFormsQuery, datingQuery, marksQuery, reviewedQuery } from '../atlas3Listing';
 import { REVIEWED_IN_INSPECTOR, bookDatesQuery, booksQuery, cursorOf, cursorText, dateStats, doubtedQuery, flaggedQuery, byCodePoint, gallery, graphemeCounts, groupStats, page, type Stage,
-  catalogue, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
+  catalogue, familyQuery, graphemeQuery, health, keptFor, membersQuery, othersSkipsQuery, ownSkipsQuery, publishedAt, ranges, sideQuery, siteValue, type Filter, bookGlyphsQuery, BOOK_ROWS } from './browse';
 import { Timing } from '../timing';
 import worker from '../index';
 import { ctx, databases, every, get, gz, setup } from './browse.fixture.test';
@@ -331,6 +331,24 @@ describe('the browse page', () => {
     const ids = async (key: string, more: string) => (await get(env, `/atlas?grapheme=${key}&seed=3&limit=40&${more}`)).items.map((i: any) => i.id);
     for (const more of ['document=hk:a', 'character=ハ']) expect(await ids('U%2B30CF', more)).toEqual(await ids('U%2B306F', more));
     expect((await ids('U%2B30CF', 'document=hk:a')).length).toBeGreaterThan(0);
+  });
+
+  it('lists a family as a load left it, before the publication that counts it so', async () => {
+    const { env, db } = await setup();
+    const of = async (key: string, more = '') => { const body = await get(env, `/atlas?grapheme=${key}&seed=3&limit=40${more}`);
+      return [body.head, body.total, body.items.map((i: any) => i.id).sort(), [...new Set(body.items.map((i: any) => i.label))].sort()] as const; };
+    const [ha, sho] = [await of('U%2B306F'), await of('U%2B6240')];
+    const katakana = (await get(env, '/atlas?character=ハ&seed=3&limit=40')).items.map((i: any) => i.id);
+    expect(katakana.length).toBeGreaterThan(0);
+    // The load files ハ under 所; the counts file it under は until they are published again.
+    db.exec(`UPDATE graphemes SET head=(SELECT id FROM graphemes WHERE text='所') WHERE text='ハ'; INSERT INTO imports(stamp, at) VALUES('reference-5-x.rows', 1)`);
+    const now = await of('U%2B6240');
+    expect(now).toEqual(['U+6240', sho[1] + katakana.length, [...sho[2], ...katakana].sort(), [...sho[3], 'ハ'].sort()]);
+    expect(await of('U%2B30CF')).toEqual(now);
+    expect(await of('U%2B306F')).toEqual(['U+306F', ha[1] - katakana.length, ha[2].filter((id: string) => !katakana.includes(id)), ha[3].filter((label: any) => label !== 'ハ')]);
+    expect((await every(env, '/atlas?seed=7&grapheme=U%2B6240', 2)).seen.sort()).toEqual(now[2]);
+    // The grapheme browser's counts are the publication's.
+    expect((await get(env, '/atlas?limit=0')).categories.find((c: any) => c.label === 'ハ').grapheme).toBe('U+306F');
   });
 
   it('goes on under the key of a member where a page of its own listing left off', async () => {
@@ -758,7 +776,7 @@ describe('the queries', () => {
       [tallyDeltasQuery(), [3], 'USING PRIMARY KEY (gen>?)'],
       [charsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'], [bookDatesQuery(), ['[1]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
       [booksQuery(), ['[1]'], 'SEARCH books USING INTEGER PRIMARY KEY'], [graphemeQuery(), ['は'], 'USING INDEX sqlite_autoindex_graphemes_1'],
-      [membersQuery(), [1], 'grapheme_head'], [datingQuery(), ['["hk:a"]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
+      [membersQuery(), [1], 'grapheme_head'], [familyQuery(), ['は'], 'grapheme_head'], [familyQuery(), ['は'], 'USING INDEX sqlite_autoindex_graphemes_1'], [datingQuery(), ['["hk:a"]'], 'SEARCH d USING PRIMARY KEY (book=?)'],
       [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'], [corpusFormsQuery(), ['[1]'], 'SEARCH g USING INTEGER PRIMARY KEY'],
       [doubtedQuery(), [], 'SEARCH c USING INTEGER PRIMARY KEY'],
       [marksQuery(), ['[1]'], 'SEARCH s USING INTEGER PRIMARY KEY'], [reviewedQuery(), ['[1]'], 'SEARCH e USING INDEX event_crop (crop=?)'],
