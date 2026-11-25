@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -130,14 +131,15 @@ def test_catalogue_files_labels_under_graphemes_and_filters_by_one(dataset):
 
 def test_character_group_follows_the_script_of_the_first_character():
     groups = {char: atlas_module.character_group(Unit(id=char, text_source=char))
-              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', '𗀀', '𘬀', 'A')}
+              for char in ('あ', 'ア', '𛀁', '仮', 'ㅿ', 'ᄫ', '한', '㉠', '', '𗀀', '𘬀', '\U0003D000', 'A')}
     assert groups == {'あ': 'kana', 'ア': 'kana', '𛀁': 'kana', '仮': 'kanji', 'ㅿ': 'hangul', 'ᄫ': 'hangul',
                       '한': 'hangul', '㉠': 'hangul', '': 'gugyeol', '𗀀': 'tangut', '𘬀': 'other',
-                      'A': 'other'}
+                      '\U0003D000': 'seal', 'A': 'other'}
 
 
 def test_an_unread_unit_is_grouped_by_the_script_it_was_filed_under():
     assert atlas_module.character_group(Unit(id='box', script='tangut')) == 'tangut'
+    assert atlas_module.character_group(Unit(id='box', script='seal')) == 'seal'
     assert atlas_module.character_group(Unit(id='box', script='han')) == 'kanji'
     assert atlas_module.character_group(Unit(id='box')) == 'other'
 
@@ -361,19 +363,41 @@ def test_a_stale_undo_does_not_withdraw_other_answers(dataset):
 
 def test_a_round_is_dealt_for_a_grapheme_and_its_members(dataset):
     """A round names its family's head and lists the characters it deals: あ's family holds ア and its
-    hentaigana. A key that names a member is refused, as it names no round of its own."""
+    hentaigana. A key that names a member deals that member alone."""
     client = TestClient(create_app(dataset))
     data = client.get('/atlas', params={"purpose": "review", "grapheme": "U+3042", "state": "pending"}).json()
     assert data["grapheme"]["code_point"] == "U+3042" and data["grapheme"]["char"] == "あ"
     assert data["grapheme"]["members"][0] == "あ" and "ア" in data["grapheme"]["members"]
     assert data["items"] and {item["label"] for item in data["items"]} <= set(data["grapheme"]["members"])
     assert "grapheme" not in client.get('/atlas', params={"grapheme": "U+3042"}).json(), "browsing names no round"
-    assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).status_code == 422
-    for key in ("invalid", "U+110000"):
-        assert client.get('/atlas', params={"purpose": "review", "grapheme": key}).status_code == 422
+    # シ is filed under し, whose family's round deals it too.
+    family, member = (client.get('/atlas', params={"purpose": "review", "grapheme": key, "state": "pending"}).json() for key in ("U+3057", "U+30B7"))
+    assert "シ" in family["grapheme"]["members"] and family["total"] == 4
+    assert member["grapheme"] == {"code_point": "U+30B7", "char": "シ", "members": ["シ"]} and member["total"] == 4
+    # A listing under シ's key is し's, and says so.
+    listed = [client.get('/atlas', params={"grapheme": key}).json() for key in ("U+3057", "U+30B7")]
+    assert [(answer["head"], answer["total"]) for answer in listed] == [("U+3057", 4)] * 2
+    assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).json()["total"] == 0
+    for key in ("invalid", "U+110000", "あ", "U+3042 あ", "U+D800"):
+        for purpose in ("review", "browse"):
+            refused = client.get('/atlas', params={"purpose": purpose, "grapheme": key})
+            assert (refused.status_code, refused.json()["detail"]) == (422, "Invalid grapheme."), (key, purpose)
+    assert client.get('/atlas', params={"grapheme": " u+3057 "}).json()["head"] == "U+3057"
     payload = round_payload(client)
     payload['grapheme'] = "U+110000"
     assert client.post('/atlas/rounds', json=payload).status_code == 422
+    # A round of ア holds no あ, and one of シ is saved as し's.
+    payload['grapheme'] = "U+30A2"
+    assert client.post('/atlas/rounds', json=payload).status_code == 409
+    saved = {**payload, "grapheme": "U+30B7", "answers": [
+        {"id": item["id"], "revision": item["revision"], "image_sha256": item["image_sha256"], "verdict": "match"} for item in member["items"]]}
+    assert client.post('/atlas/rounds', json=saved).status_code == 200
+    assert client.post('/atlas/rounds', json=saved).status_code == 200
+    assert {json.loads(event.evidence)["grapheme"] for event in Store(dataset).events()} == {"U+3057"}
+    # A round saved before its key was filed under し names that key in its evidence, and is the same round sent again.
+    with sqlite3.connect(Store(dataset).path) as conn:
+        assert conn.execute("UPDATE events SET evidence=replace(evidence,'U+3057','U+30B7')").rowcount == 4
+    assert client.post('/atlas/rounds', json=saved).status_code == 200
 
 
 def test_round_rejects_other_category_or_repeated_character(dataset):
@@ -2009,6 +2033,7 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     saved = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body)
     assert saved.status_code == 200, saved.text
     assert (saved.json()["style"], saved.json()["style_basis"]) == ("regular", "unit")
+    assert (detail["style_inherited"], saved.json()["style_inherited"]) == ("cursive", "cursive")
     assert saved.json()["revision"] == detail["revision"] + 1
     assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body).json()["style"] == "regular"
     replayed = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json={**body, "style": "running"})
@@ -2052,9 +2077,6 @@ def test_a_form_is_a_claim_that_leaves_the_character_and_the_review_alone(datase
     assert client.post(path, json=body).json() == saved.json()
     assert client.post(path, json={**body, "form": "𮟃"}).status_code == 409
     assert client.post(path, json={**body, "id": str(uuid4()), "form": "⿺辶"}).status_code == 422
-    # A form chosen as another member of the grapheme names the review that renamed the crop.
-    assert client.post(path, json={**body, "id": str(uuid4()), "review": str(uuid4())}).status_code == 200
-    assert client.post(path, json={**body, "id": str(uuid4()), "review": "not-a-review"}).status_code == 422
     assert client.post(path, json={**body, "id": str(uuid4()), "crop_version": unit + "@0@1,2,3,4"}).status_code == 409
     # The crop's own character is a confirmation, and clearing retracts it: the crop is unsorted again.
     confirmed = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
@@ -2121,23 +2143,22 @@ def test_a_correction_gives_crops_one_character_with_the_sites_rules(dataset):
 
 def test_a_voiced_sequence_is_filed_under_its_grapheme():
     """𛂞 + U+3099 is a form of ば; ツ + U+309A, which no precomposed kana voices, files under itself."""
-    from glyph_atlas.review.atlas import BadRequest, grapheme_members
+    from glyph_atlas.review.atlas import grapheme_members
 
     assert grapheme_of("\U0001B09E゙") == grapheme_of("バ") == "U+3070"
     assert grapheme_of("ツ゚") == "U+30C4 U+309A"
     members = grapheme_members("U+3070")
     assert members[:2] == ["ば", "バ"] and "\U0001B09E゙" in members
     assert len(members) == len(set(members)) == 13
-    with pytest.raises(BadRequest):
-        grapheme_members("U+1B09E U+3099")
+    assert grapheme_members("U+1B09E U+3099") == ["\U0001B09E゙"]
 
 
 def test_group_stats_count_each_script_group_and_review_state(dataset):
     client = TestClient(create_app(dataset))
     body = client.get('/atlas/groups/stats').json()
     by_group = {entry['group']: entry for entry in body['groups']}
-    assert list(by_group) == ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other']
-    total = sum(by_group[g]['total'] for g in ('kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'))
+    assert list(by_group) == ['all', 'kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other']
+    total = sum(by_group[g]['total'] for g in ('kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other'))
     assert by_group['all']['total'] == total > 0
     assert by_group['all']['reviewed'] == by_group['all']['checked'] + by_group['all']['need_fixing']
     item = client.get('/atlas?limit=1').json()['items'][0]

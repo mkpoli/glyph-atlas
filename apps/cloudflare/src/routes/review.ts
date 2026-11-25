@@ -4,15 +4,15 @@
 // the `reviews` overlay, seen marks and skips, and the reviewer's totals.
 import { Problem } from '../busy';
 import { captureReviews, priorBaselines, type ReviewedInput } from '../reviewCapture';
-import { cropEntries, cropItems, publicId } from '../atlas3';
+import { cropEntries, publicId } from '../atlas3';
 import { STALE_CODE, StaleCrop, cropParam, writtenCropField } from '../atlas3Crops';
 import { undoCountQuery } from '../atlas3Stamps';
 import { categoryOf } from '../category';
-import { drawnHeads } from '../forms';
+import { drawnHeads, formed } from '../forms';
 import { drawnForm } from '../representation';
-import { formOfCrop } from './claims';
+import { planFormUndo, planReviewForm } from './claims';
 import { inspected } from './crop';
-import { STYLE_KIND, STYLE_TARGET, foundCrop } from '../cropRecords';
+import { FORM_COLUMNS, FORM_JOINS, STYLE_KIND, STYLE_TARGET, codePoints, foundCrop, formRow, redrawLimits, type FormColumns } from '../cropRecords';
 import { body, canonical, compose, graphemeKey, graphemeText, text, unified, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -32,7 +32,6 @@ const issueCode = (issue: string | null | undefined) => issue == null ? null : I
 const issueName = (code: number | null) => code == null ? null : code === 6 ? 'character' : ISSUES[code] ?? null;
 // A crop's state as the old site named it: a mark (seen, hard) is a pending crop that rounds made something of.
 const stateName = (code: number) => code === STATE.checked ? 'checked' : code === STATE.flagged ? 'flagged' : 'pending';
-const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const markable = (code: number) => code === STATE.pending || code === STATE.seen || code === STATE.hard;
 
 // --- The crops a review reads ---
@@ -80,12 +79,12 @@ export const reviewCropsQuery = () => `SELECT c.id,c.kind,c.char,g.text AS label
   (SELECT count(*) FROM events e WHERE e.crop=c.id AND ${MARKED('e')} AND e.revision>coalesce((SELECT max(f.revision) FROM events f
     WHERE f.crop=c.id AND NOT ${MARKED('f')} AND f.revision>coalesce(${BOUNDARY('c')},-1)),${BOUNDARY('c')},-1)) AS marks,
   ${BOUNDARY('c')} AS boundary,
-  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored
+  ${LOGICAL('c')} AS logical,(SELECT revision FROM review_revisions WHERE crop=c.id) AS anchored,${FORM_COLUMNS}
   FROM json_each(?) j JOIN crops c ON c.id=j.value JOIN pages pg ON pg.id=c.id>>24
-  LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id`;
+  LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN reviews r ON r.crop=c.id ${FORM_JOINS}`;
 type CropRow = { id: number; kind: number; char: number | null; label: string | null; state: number; revision: number; cut: number; quiz: number;
   rev: number; x: number | null; y: number | null; w: number | null; h: number | null; issue: number | null; named: string | null;
-  reviewed: number | null; marks: number; logical: number; anchored: number | null; boundary: number | null; page_key: string };
+  reviewed: number | null; marks: number; logical: number; anchored: number | null; boundary: number | null; page_key: string } & FormColumns;
 
 // A crop's page id as its record names it; a crop with none sits on its book's page (`book:<document>`).
 export const pageId = (key: string): { page_id?: string } => key.startsWith('book:') ? {} : { page_id: key };
@@ -109,7 +108,9 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     const entry = entries.get(row.id);
     const record = entry?.record_place ? records.get(recordKey(pointer(entry))) : entry;
     if (!record || entry?.retired || row.kind === 2) continue;
-    const { slot: _slot, record_place: _place, ...stored } = record;
+    const { slot: _slot, record_place: _place, ...published } = record;
+    // A corpus glyph is judged as its inspector shows it: with the character the forms tool gave it.
+    const stored = row.kind === 1 ? formed(published, formRow(row), { codePoints }) : published;
     const label = row.label ?? '';
     const box = row.x == null ? null : { x: row.x, y: row.y, w: row.w, h: row.h };
     const data: Json = { ...stored, id: publicId(row.id), ...pageId(row.page_key), label, state: stateName(row.state), revision: row.revision,
@@ -124,7 +125,7 @@ export async function reviewCrops(env: Env, ids: number[], explained: number[] =
     const settled = base + row.marks === row.revision ? base : row.revision;
     found.set(row.id, { id: row.id, kind: row.kind, char: row.char, label, state: row.state, revision: row.revision, cut: row.cut, quiz: row.quiz, data,
       cutBox: stored.box ?? null, settled, logicalRevision: row.logical, anchored: row.anchored, boundary: row.boundary, sourceId: entry!.id,
-      pageRevision: row.rev, record: stored });
+      pageRevision: row.rev, record: published });
   }
   const gone = ids.filter(id => !found.has(id)), told = new Set(explained);
   const answers = await Promise.all(gone.map(id => told.has(id) ? missing(env, id) : new Problem(404, 'This character is not in the published collection.')));
@@ -148,13 +149,6 @@ async function cropNamed(env: Env, value: unknown, name: string): Promise<number
 const blank = (data: Json) => Array.isArray(data.geometry?.flags) && data.geometry.flags.includes('sparse-ink')
   && ['x', 'y', 'w', 'h'].every(k => data.geometry.box?.[k] === data.box?.[k]);
 export const dealable = (origin: string, data: Json) => origin === 'corpus' ? Boolean(data.proxyable && data.written_character) : data.repair?.quiz !== false && !blank(data);
-// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
-// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
-export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
-  const c = data?.context_box, s = data?.source_scale;
-  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
-  return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
-}
 // A redrawn box as the inspector sends it: whole page pixels, at least two each way, inside the page view.
 export function redrawnBox(value: Json, data: Json): { x: number; y: number; w: number; h: number } {
   const limits = redrawLimits(data);
@@ -240,6 +234,8 @@ export function judgeBatch(batch: { character: string | null; line: boolean }, a
   }
   return { chosen, refused, unchanged };
 }
+// One written character as a review names it, or false for anything `writtenCharacter` refuses.
+const single = (value: string) => { try { writtenCharacter(value); return true } catch { return false } };
 function validateAnswer(answer: Json, row: Current, round: boolean, corpus = false, batch = false, line = false) {
   const current = row.data;
   if (!standing(row, answer.revision)) throw new Problem(409, 'This character changed. Reload it.');
@@ -257,12 +253,23 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
   if (answer.correction && answer.issue !== 'merged') throw new Problem(422, 'Typed characters belong to a joined-character issue.');
   text(answer.note, 2000, 'note');
   if (answer.character) writtenCharacter(answer.character);
+  // A form is claimed by the one review that names its character, on the pixels that review names.
+  if (answer.form !== undefined) {
+    if (round || batch) throw new Problem(422, 'A form is claimed with the review of one crop.');
+    text(answer.form, 256, 'form', true);
+    text(answer.crop_version, 1024, 'crop version', true);
+    if (!answer.character) throw new Problem(422, 'A form is claimed with the character it is a form of.');
+  }
+  // The character a corpus glyph's inspector showed: a match from a view the forms tool has since changed is stale.
+  text(answer.shown, 32, 'shown');
+  if (corpus && answer.verdict === 'match' && answer.shown != null && answer.shown !== current.written_character)
+    throw new Problem(409, 'This character changed. Reload it.');
   if (answer.verdict === 'wrong' && answer.character && unified(answer.character) === current.written_character)
     throw new Problem(422, 'Choose a different character or a different issue.');
   if (answer.box !== undefined) {
     // A redrawn box is the crop's fix: saved as a match on the pixels it names, or beside a wrong or
     // joined character, never in a round. A line's crop may also be relabelled in the same save.
-    if (round || corpus || (batch && !line)) throw new Problem(422, 'This crop cannot be redrawn here.');
+    if (round || (batch && !line)) throw new Problem(422, 'This crop cannot be redrawn here.');
     const fixed = answer.verdict === 'match' && answer.issue == null && !answer.character && !answer.correction;
     const beside = answer.verdict === 'wrong' && (line ? answer.issue === 'character' && answer.character && !answer.correction : BESIDE_A_BAD_CROP.includes(answer.issue));
     if (!fixed && !beside) throw new Problem(422, 'A redrawn crop is saved as fixed.');
@@ -272,14 +279,11 @@ function validateAnswer(answer: Json, row: Current, round: boolean, corpus = fal
 
 // The characters a grapheme is written as, by the grapheme table: は's family is は, ハ and its
 // hentaigana. A key that names no family (ツ + U+309A, or a character the table lacks) is its own text
-// alone; a key that names a family's member rather than the family is refused. Two index seeks.
-export const roundMembersQuery = () => `SELECT g.id,g.head,h.text AS head_text,
-  (SELECT json_group_array(m.text) FROM graphemes m WHERE m.head=g.id) AS members
-  FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?`;
+// alone, and so is a member of another's family: its round holds that member's crops. Two index seeks.
+export const roundMembersQuery = () => `SELECT (SELECT json_group_array(m.text) FROM graphemes m WHERE m.head=g.id) AS members FROM graphemes g WHERE g.text=?`;
 export async function roundMembers(env: Env, key: string): Promise<string[]> {
   const own = compose(graphemeText(key));
-  const row = await env.ATLAS.prepare(roundMembersQuery()).bind(own).first<{ id: number; head: number | null; head_text: string | null; members: string }>();
-  if (row && row.head != null && row.head !== row.id) throw new Problem(422, `${graphemeText(key)} is filed under ${row.head_text}.`);
+  const row = await env.ATLAS.prepare(roundMembersQuery()).bind(own).first<{ members: string }>();
   const members = row ? JSON.parse(row.members) as string[] : [];
   return members.length ? members : [own];
 }
@@ -513,8 +517,8 @@ async function marksOnly(env: Env, changes: CropChange[]): Promise<boolean> {
 
 // --- Submitting ---
 
-/** Save a review: a round (no target), a batch correction (`@batch`), a corpus glyph's review
- *  (`@corpus`) or one crop's review (its id as written in the path). */
+/** Save a review: a round (no target), a batch correction (`@batch`) or one crop's review (its id
+ *  as written in the path). */
 export async function submit(env: Env, request: Request, user: string, target?: string) {
   const sent = await body(request);
   return await save(env, sent, request.headers.get('cf-connecting-ip'), user, target, true);
@@ -523,8 +527,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   // The checks below normalise what they read in place; a second attempt starts from what was sent.
   const input = structuredClone(sent);
   const mode = target;
-  const corpus = target === '@corpus', batch = target === '@batch';
-  if (corpus) target = text(input.identity, 512, 'corpus identity', true)!;
+  const batch = target === '@batch';
   if (batch) target = undefined;
   const id = text(input.id, 64, 'submission id', true)!;
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Problem(422, 'Invalid submission id.');
@@ -534,10 +537,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   const signature = canonical({ target: batch ? '@batch' : target || null, input: signed });
   const key = user + ':' + id;
   const previous = () => env.ATLAS.prepare('SELECT request,response FROM submissions WHERE key=?').bind(key).first<{ request: string; response: string }>();
-  // A corpus glyph's inspector shows the glyph it gets back, with the form its ledger holds now.
-  const answered = async (stored: Json) => corpus ? await corpusAnswer(env, stored) : stored;
   const before = await previous();
-  if (before) { if (before.request !== signature) throw new Problem(409, 'This submission was already saved with different answers.'); return answered(JSON.parse(before.response)) }
+  if (before) { if (before.request !== signature) throw new Problem(409, 'This submission was already saved with different answers.'); return JSON.parse(before.response) }
   const round = !target && !batch;
   // A round names its grapheme; each crop it answers or saw is one of the grapheme's characters.
   const grapheme = round ? graphemeKey(input.grapheme) : null;
@@ -550,6 +551,11 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   if (again && !batch && answers.some(answer => answer.box !== undefined)) {
     const { success } = await env.CORRECTIONS.limit({ key: addressKey(address) });
     if (!success) throw new Problem(429, 'Too many corrections at once. Wait a minute and try again.');
+  }
+  // A form is a claim, and claims are held to their own rate.
+  if (again && answers.some(answer => answer.form !== undefined)) {
+    const { success } = await env.CLAIMS.limit({ key: addressKey(address) });
+    if (!success) throw new Problem(429, 'Too many claims at once. Wait a minute and try again.');
   }
   // Every crop the request names, by its public id or an old text id.
   const listed = [...answers, ...seen, ...skipped].map(crop => crop?.id);
@@ -575,6 +581,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
   const at = Date.now();
   const changes: CropChange[] = [], results: Json[] = [], captured: ReviewedInput[] = [];
   const first: number[] = [];
+  let claimed: D1PreparedStatement[] = [];
   for (const answer of answers) {
     const found = rows.get(answer.id)!;
     if (found instanceof Problem) throw found;
@@ -583,7 +590,11 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     if (glyph && (!current.proxyable || (current.identity_status === 'unassigned' && answer.verdict === 'match')))
       throw new Problem(422, 'Choose a written character or report an issue.');
     if (round && (!row.quiz || !members!.includes(current.label))) throw new Problem(409, 'This round changed. Reload it.');
-    const written = answer.character ? unified(answer.character) : null;
+    // A match on a corpus glyph the forms tool named confirms the character its inspector showed (`shown`),
+    // so the crop keeps it if the cluster is decided again. A view from before a re-decision was refused above.
+    const formedMatch = glyph && answer.verdict === 'match' && !answer.character && answer.shown && current.form_decision
+      && current.identity_status === 'assigned' && current.identity_basis !== 'human_review' && single(answer.shown) ? answer.shown : null;
+    const written = answer.character ? unified(answer.character) : formedMatch ? unified(formedMatch) : null;
     // A bad crop reported beside a wrong character leaves the crop reported for its box, even with the
     // character named. A batch names the character only: a crop reported for its box, a blank or a merge
     // stays reported.
@@ -595,6 +606,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
       named: written, ...(written ? { category: categoryOf(written) } : {}), ...(answer.box ? { box: answer.box } : {}) });
     results.push({ target_id: publicId(row.id), revision: row.revision + 1, state: resolved ? 'checked' : 'flagged' });
     first.push(row.id);
+    if (answer.form !== undefined) claimed = await planReviewForm(env, { key, actor: user, signature, at: new Date(at).toISOString(), id: row.id,
+      character: written!, form: answer.form, seen: answer.crop_version, cut: row.cut, box: answer.box }, (status, message) => { throw new Problem(status, message); });
     captured.push({ row, change: changes[changes.length - 1], answer, kept });
   }
   // A crop that left the queue, changed its pixels or moved to another character since the round
@@ -642,7 +655,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     ON CONFLICT(crop,actor) DO UPDATE SET cut=excluded.cut,at=excluded.at,submission=excluded.submission`).bind(actor, at, key, passedRows));
   statements.push(...corpusRows(env, [...first, ...shown, ...passed], first, key));
   if (shown.length || passed.length) statements.push(markStatement(env, actor, key, at, [...shown, ...passed], false));
-  statements.push(...applyStatements(env, key, at, [...VERDICTS, KIND.seen, KIND.hard], changes));
+  statements.push(...applyStatements(env, key, at, [...VERDICTS, KIND.seen, KIND.hard], changes), ...claimed);
   statements.push(actorStats(env, actor, changes.length, 1, at));
   if (shown.length || passed.length) statements.push(env.ATLAS.prepare(`UPDATE submissions SET response=json_set(response,'$.results',json((
     SELECT json_group_array(json(value)) FROM (
@@ -662,28 +675,12 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     saved = JSON.parse(out[out.length - 1].results[0].response);
   } catch (error) {
     const repeat = await previous();
-    if (repeat?.request === signature) return answered(JSON.parse(repeat.response));
+    if (repeat?.request === signature) return JSON.parse(repeat.response);
     if (conflict(error) && again && await marksOnly(env, changes)) return await save(env, sent, address, user, mode, false);
     if (conflict(error)) throw await conflictProblem(env, changes);
     throw error;
   }
-  return answered(saved);
-}
-// A corpus glyph's review answers with the glyph as listings now show it, its form, and its event.
-async function corpusAnswer(env: Env, stored: Json): Promise<Json> {
-  const saved = stored.results[0];
-  const crop = await writtenCropField(env, saved.target_id);
-  const [current] = crop === null ? [] : [(await reviewCrops(env, [crop])).get(crop)];
-  const [item] = crop === null ? [] : await cropItems(env, [crop]);
-  if (!item || !current || current instanceof Problem) throw new Problem(404, 'This character is not in the published collection.');
-  // A glyph a review named is filed under the named character's family, and leaves its visual group.
-  const named = current.data.identity_basis === 'human_review' ? current.label : null;
-  const head = named ? await env.ATLAS.prepare('SELECT h.text FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text=?')
-    .bind(named).first<{ text: string | null }>() : null;
-  const formed = { ...item, form: await formOfCrop(env, crop!), issue: current.data.issue, written_character: current.data.written_character,
-    ...(current.data.identity_status ? { identity_status: current.data.identity_status } : {}),
-    ...(named ? { grapheme: codePoints(head?.text ?? named), visual_group: null } : {}) };
-  return { ...formed, origin: 'corpus', event: { id: saved.id, revision: saved.revision, state: saved.state } };
+  return saved;
 }
 
 // --- Undoing ---
@@ -699,14 +696,15 @@ export async function undo(env: Env, request: Request, user: string, id: string)
   if (JSON.parse(found.request).target === '@flags') throw new Problem(409, 'A flag is not a review, so it cannot be undone.');
   if (JSON.parse(found.request).target === STYLE_TARGET) throw new Problem(409, 'A style is not a review, so it cannot be undone. Choose another style instead.');
   const { request: _, ...submission } = found;
-  return { id, ...await revert(env, submission, await actorFor(env, user), undefined) };
+  const { queries: _queries, ...undone } = await revert(env, submission, await actorFor(env, user), user);
+  return { id, ...undone };
 }
 type Reviewed = { id: number; crop: number; revision: number; cut: number; label: number | null; shown: number | null; shown_text: string | null;
   was_state: number | null; was_issue: number | null; was_x: number | null; was_y: number | null; was_w: number | null; was_h: number | null;
   x: number | null; reversed: number };
 // What a publication event set (events.published; publish.py SET_BITS); one without the column set all.
 const SET = { char: 1, state: 2, quiz: 4, cut: 8, kind: 16, flags: 32, all: 63 } as const;
-/** Undo a submission as `actor`: each crop its reviews changed goes back to what it was before, unless
+/** Undo a submission as `actor`, whose id is `by`: each crop its reviews changed goes back to what it was before, unless
  *  a later review has changed it since; the crops its round showed or skipped take their marks without
  *  it once every review is undone. A rejection is the same undo made by an admin, recorded with its
  *  reason; passing `reviewer` (every actor of the reviewer) also passes over that reviewer's own later
@@ -717,8 +715,8 @@ const SET = { char: 1, state: 2, quiz: 4, cut: 8, kind: 16, flags: 32, all: 63 }
  *  the review set (its character, its state, the cut its box was drawn on), or where the crop moved on
  *  with no event, as older publications did; those crops are reported and stay undoable by an admin. The
  *  submission counts as undone only once every review in it is, and the reviewer's totals lose only the
- *  reviews undone. */
-export async function revert(env: Env, submission: Submission, actor: number, rejection?: { by: string; reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true }> {
+ *  reviews undone. Answers with the `queries` its forms took beside those of its crops. */
+export async function revert(env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true; queries?: number }> {
   if (submission.undone) return { results: [], duplicate: true };
   const reviewed = (await env.ATLAS.prepare(`SELECT e.id,e.crop,e.revision,e.cut,e.label,e.shown,g.text AS shown_text,e.was_state,e.was_issue,e.was_x,e.was_y,e.was_w,e.was_h,
     e.x,EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id) AS reversed
@@ -774,6 +772,7 @@ export async function revert(env: Env, submission: Submission, actor: number, re
   const shownOrSkipped = complete ? (await env.ATLAS.prepare(`SELECT crop FROM seen WHERE submission=?1
     UNION SELECT crop FROM skips WHERE submission=?1`).bind(submission.id).all<{ crop: number }>()).results
     .map(row => row.crop).filter(crop => !reviewed.some(r => r.crop === crop)) : [];
+  const forms = changes.length ? await planFormUndo(env, { key: submission.key, by, crops: changes.map(c => c.crop), at: new Date(at).toISOString() }) : [];
   // Undone in full, the NOT NULL guard claims it atomically, and a second claimant rolls back its batch; in
   // part, each crop's own revision guard does. The undo is counted beside the claim, which moves the
   // catalogue stamps when it changes no crop.
@@ -782,9 +781,11 @@ export async function revert(env: Env, submission: Submission, actor: number, re
     ...eventStatements(env, actor, submission.key, at, changes),
     ...(shownOrSkipped.length ? [markStatement(env, actor, submission.key, at, shownOrSkipped, true)] : []),
     ...applyStatements(env, submission.key, at, [KIND.undo], changes),
+    // The form a review claimed goes with it, and the reader's own it replaced comes back.
+    ...forms,
     env.ATLAS.prepare('UPDATE actor_stats SET reviews=coalesce(reviews,0)-?,rounds=coalesce(rounds,0)-? WHERE actor=?')
       .bind(changes.length, complete ? 1 : 0, submission.actor),
-    ...(rejection ? [env.ATLAS.prepare('INSERT INTO rejections(submission,by,reason,at) VALUES(?,?,?,?)').bind(submission.id, rejection.by, rejection.reason, at)] : []),
+    ...(rejection ? [env.ATLAS.prepare('INSERT INTO rejections(submission,by,reason,at) VALUES(?,?,?,?)').bind(submission.id, by, rejection.reason, at)] : []),
     env.ATLAS.prepare('SELECT id,crop FROM events WHERE submission=? AND at=? AND kind=? AND reverses IS NOT NULL').bind(submission.id, at, KIND.undo)];
   let ids: Map<number, number>;
   try {
@@ -793,11 +794,11 @@ export async function revert(env: Env, submission: Submission, actor: number, re
   } catch (error) {
     if (await env.ATLAS.prepare('SELECT 1 FROM submissions WHERE id=? AND undone=1').bind(submission.id).first())
       return { results: [], duplicate: true };
-    if (conflict(error) && again && await marksOnly(env, changes)) return await revert(env, submission, actor, rejection, false);
+    if (conflict(error) && again && await marksOnly(env, changes)) return await revert(env, submission, actor, by, rejection, false);
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
   }
-  return { results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
+  return { queries: forms.length, results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
     : { id: ids.get(r.crop) ?? null, target_id: publicId(r.crop), revision: r.revision,
       review: { id: ids.get(r.crop) ?? null, kind: 'undo', reverses: r.reverses, at: new Date(at).toISOString() } }) };
 }
@@ -808,7 +809,6 @@ const json = (value: unknown, status = 200) => Response.json(value, { status, he
 /** The review writes, for a signed-in user; null for a path that is none of them. */
 export async function reviewRoute(env: Env, request: Request, path: string, user: string): Promise<Response | null> {
   try {
-    if (path === '/atlas/corpus/reviews') return json(await submit(env, request, user, '@corpus'));
     if (path === '/atlas/rounds') return json(await submit(env, request, user));
     if (path === '/atlas/corrections') {
       // A batch changes many crops at once, so each address is held to a rate.

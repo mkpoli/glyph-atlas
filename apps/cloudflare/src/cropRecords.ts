@@ -5,17 +5,18 @@
 import { bundle, publicId, pageOf, slotOf, type Entry } from './atlas3';
 import { readRecords, recordKey } from './records';
 import { formed, type UnitForm } from './forms';
-import { categoryOf, isGugyeol } from './category';
+import { categoryOf, isGugyeol, isSeal } from './category';
 import { drawnForm } from './representation';
 
 type Json = Record<string, any>;
 export const codePoints = (value: string) => [...value].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 
-// The page rectangle a reviewer may redraw a local crop's box in, in page pixels: the context the
-// inspector shows, which lies inside the page. A corpus glyph's box belongs to its source, so it has none.
+// The source pixels a reviewer may redraw a crop's box in, in page/source pixels: the context
+// rectangle around the crop, when a context image and source coordinates are published.
 export function redrawLimits(data: Json): { x: number; y: number; w: number; h: number } | null {
-  const c = data?.context_box, s = data?.source_scale;
-  if (!data?.context || !c || !data.crop_box || !Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
+  const c = data?.context_box, s = data?.source_scale ?? [1, 1];
+  if (data?.context === false || data?.proxyable === false || !c || !data?.crop_box || !data?.context_image) return null;
+  if (!Array.isArray(s) || !(s[0] > 0) || !(s[1] > 0)) return null;
   return { x: Math.floor(c.x / s[0]), y: Math.floor(c.y / s[1]), w: Math.ceil((c.x + c.w) / s[0]) - Math.floor(c.x / s[0]), h: Math.ceil((c.y + c.h) / s[1]) - Math.floor(c.y / s[1]) };
 }
 // A crop's evidence version: its id, its image checksum and its box in whole pixels; a box of anything
@@ -45,7 +46,7 @@ export type RecordRow = { id: number; kind: number; book: number; state: string 
   category: string | null; char: string | null; head: string | null; production: string | null; rev: number; page_key: string;
   document: string; x: number | null; y: number | null; w: number | null; h: number | null; issue: string | null;
   reviewed: number; written: number; settled: number; redrawn_at: number | null; cluster_key: string | null; form_row: number; glyph_set: number; form: string | null; form_issue: string | null;
-  form_character: string | null; written_family: string | null; style: string | null; own_style: number | null };
+  form_character: string | null; written_family: string | null; style: string | null; own_style: number | null; base_style: string | null };
 // The event of a style a reviewer gave one crop (`style` set) or took back to its publication's (`style` null),
 // and its submission's target: no review, so the export, a rejection and the counts leave it out.
 export const STYLE_KIND = 9, STYLE_TARGET = '@style';
@@ -70,6 +71,12 @@ export const WRITTEN = (crop: string) => `EXISTS(SELECT 1 FROM events e WHERE e.
 // version's first record; the same box drawn on an earlier cut was another version. A verdict (kind below 3: match, wrong, unsure, 0003) that no undo
 // reverses gives the record its category; the latest such event that named a character (`named`) makes the
 // crop's label its written character.
+// A corpus glyph's forms tool decision, as `formRow` reads it: its own `form_glyphs` row (fg), else its cluster's (fc).
+export const FORM_COLUMNS = `fc.key AS cluster_key,fg.crop IS NOT NULL AS form_row,fg.decision IS NOT fg.carried AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
+  iif(fg.crop IS NULL,nullif(fc.issue,'mixed'),fg.issue) AS form_issue,iif(fg.crop IS NULL,fc.character,fg.character) AS form_character,
+  iif(fg.crop IS NULL,fc.written_family,fg.written_family) AS written_family`;
+export const FORM_JOINS = 'LEFT JOIN form_glyphs fg ON fg.crop=c.id LEFT JOIN form_clusters fc ON fc.id=coalesce(fg.cluster,c.cluster)';
+export type FormColumns = Pick<RecordRow, 'id' | 'cluster_key' | 'form_row' | 'glyph_set' | 'form' | 'form_issue' | 'form_character' | 'written_family'>;
 export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.revision,c.cut,k.key AS category,g.text AS char,
   h.text AS head,p.key AS production,pg.rev,pg.key AS page_key,b.key AS document,r.x,r.y,r.w,r.h,
   CASE WHEN s.key='flagged' THEN (SELECT i.key FROM events e LEFT JOIN codes i ON i.field='issue' AND i.code=coalesce(e.kept_issue,e.issue)
@@ -79,20 +86,19 @@ export const recordQuery = () => `SELECT c.id,c.kind,c.book,s.key AS state,c.rev
   EXISTS(SELECT 1 FROM events e WHERE e.crop=c.id AND e.kind<3 AND NOT EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id)) AS reviewed,
   ${WRITTEN('c.id')} AS written,
   c.revision-${MARKS('c')} AS settled,
-  fc.key AS cluster_key,fg.crop IS NOT NULL AS form_row,fg.decision IS NOT fg.carried AS glyph_set,iif(fg.crop IS NULL,fc.form,fg.form) AS form,
-  iif(fg.crop IS NULL,nullif(fc.issue,'mixed'),fg.issue) AS form_issue,iif(fg.crop IS NULL,fc.character,fg.character) AS form_character,
-  iif(fg.crop IS NULL,fc.written_family,fg.written_family) AS written_family,st.key AS style,
-  (SELECT e.style IS NOT NULL FROM events e WHERE e.crop=c.id AND e.kind=${STYLE_KIND} ORDER BY e.revision DESC LIMIT 1) AS own_style
+  ${FORM_COLUMNS},st.key AS style,
+  (SELECT e.style IS NOT NULL FROM events e WHERE e.crop=c.id AND e.kind=${STYLE_KIND} ORDER BY e.revision DESC LIMIT 1) AS own_style,
+  (SELECT b.key FROM codes b WHERE b.field='style' AND b.code=r.base_style) AS base_style
   FROM crops c JOIN pages pg ON pg.id=c.id>>24 JOIN books b ON b.id=c.book
   LEFT JOIN codes s ON s.field='state' AND s.code=c.state LEFT JOIN codes k ON k.field='category' AND k.code=c.category
   LEFT JOIN codes st ON st.field='style' AND st.code=c.style
   LEFT JOIN graphemes g ON g.id=c.char LEFT JOIN graphemes h ON h.id=g.head LEFT JOIN productions p ON p.id=c.production
-  LEFT JOIN reviews r ON r.crop=c.id LEFT JOIN form_glyphs fg ON fg.crop=c.id LEFT JOIN form_clusters fc ON fc.id=coalesce(fg.cluster,c.cluster)
+  LEFT JOIN reviews r ON r.crop=c.id ${FORM_JOINS}
   WHERE c.id=?1 AND c.kind<2`;
 
 // A corpus glyph's forms tool row, in the shape `formed` reads: its `form_glyphs` row (its own glyph
 // decision, or a cluster decision of an earlier clustering it carries), else its cluster's.
-function formRow(row: RecordRow): UnitForm | null {
+export function formRow(row: FormColumns): UnitForm | null {
   if (row.cluster_key === null && !row.form_row) return null;
   return { id: publicId(row.id), cluster: row.cluster_key ?? '', clustered: row.cluster_key === null ? 0 : 1, form: row.form,
     glyph_set: row.glyph_set ? 1 : 0, cluster_form: null, issue: row.form_issue, issue_character: row.form_character,
@@ -101,7 +107,7 @@ function formRow(row: RecordRow): UnitForm | null {
 
 const scriptOf = (written: string): string => drawnForm(written) ? drawnForm(written)!.script : /\p{Script=Katakana}/u.test(written) ? 'katakana' : /\p{Script=Hiragana}/u.test(written) ? 'hiragana'
   : /\p{Script=Han}/u.test(written) ? 'han' : /\p{Script=Hangul}/u.test(written) ? 'hangul' : /\p{Script=Tangut}/u.test(written) ? 'tangut'
-  : isGugyeol(written) ? 'gugyeol' : 'symbol';
+  : isSeal(written) ? 'seal' : isGugyeol(written) ? 'gugyeol' : 'symbol';
 
 /** A human reading takes precedence over an older forms-tool decision. */
 export function writtenRecord(record: Json, written: string, head: string | null): Json {
@@ -121,14 +127,16 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   if (!corpus) Object.assign(record, { label: row.char ?? record.label, production: row.production ?? 'unknown', page_id: row.page_key });
   Object.assign(record, { state: recordState(row.state), revision: row.settled });
   // The style the crop is listed under: its publication's, or one a reviewer gave it (`unit`), which they may change.
-  Object.assign(record, { style: recordStyle(row.style), style_basis: row.own_style ? 'unit' : 'none', style_editable: true });
+  // `style_inherited` is its publication's, the one it goes back to; an overlay keeps it while a reviewer's style stands.
+  Object.assign(record, { style: recordStyle(row.style), style_basis: row.own_style ? 'unit' : 'none', style_editable: true,
+    style_inherited: recordStyle(row.own_style ? row.base_style : row.style) });
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);
   if (row.written && row.char) record = writtenRecord(record, row.char, row.head);
   // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
   if (row.x !== null) Object.assign(record, { box: { x: row.x, y: row.y, w: row.w, h: row.h }, box_pending: true });
-  return { ...record, crop_version: cropVersion(record.id, record), crop_editable: !corpus && Boolean(redrawLimits(record)) };
+  return { ...record, crop_version: cropVersion(record.id, record), crop_editable: Boolean(redrawLimits(record)) };
 }
 
 /** The cut a crop's claims name: its `crops.cut`, or the one the next publish gives it while a redrawn box

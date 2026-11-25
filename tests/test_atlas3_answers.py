@@ -248,6 +248,8 @@ def test_browse_corpus_and_book_counts_name_characters_by_grapheme(corpus_layout
                                       [char["か"], production["unknown"], pending, 1, 1],
                                       [char["한"], production["printed"], pending, 1, 1]])
     assert glyphs["chars"][str(char["한"])] == ["한", "U+D55C"]
+    # The crops with no character by family are stated even where there are none: a missing list is no empty one.
+    assert glyphs["filed"] == []
     assert answer(root, "books.json.gz")["books"] == {str(book["book:a"]): [2, 0], str(book["book:b"]): [1, 0],
                                                     str(book["codh:b"]): [0, 3], str(book["kor:b"]): [0, 1]}
 
@@ -276,7 +278,7 @@ def test_the_homepage_sample_copies_each_record_once_and_shards_it_by_shuffle(co
     assert found[glyph["codh:k1"]][1] == {"id": "codh:k1", "label": "か", "image": "/atlas/media/0.webp", "proxyable": True}
     assert [e[0] for e in answer(root, "gallery/hangul/0.json.gz")["entries"]] == [glyph["kor:h1"]]
     gallery = [names for prefix, names in uploaded if "/gallery/" in prefix]
-    assert sum(len(n) for n in gallery) == 128 + 3 + 1
+    assert sum(len(n) for n in gallery) == 128 + 4 + 1
     assert uploaded[-1] == ("v3/", ["pointer.json"])
     # A second publication reads nothing again: a record's place names it for good.
     reads.clear()
@@ -347,6 +349,10 @@ def test_crops_with_no_character_are_counted_under_the_family_they_are_filed_und
     body = shard_of(root, family)
     assert [cell[0] for cell in body["families"][str(family)]] == [1] and body["families"][str(family)][0][-1] == 1
     assert str(family) not in body["chars"]
+    # The grapheme totals read them from one answer, with the family's own text and key.
+    glyphs = answer(root, "corpus.json.gz")
+    assert glyphs["filed"] == [[family, 1, 1]]
+    assert glyphs["chars"][str(family)] == ["も", "U+3082"]
 
 
 # --- The crops the site changed ---

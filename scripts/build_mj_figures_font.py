@@ -11,9 +11,11 @@ the way back to the original font (apps/review/static/fonts/README.md).
   uv run scripts/build_mj_figures_font.py
 
 Writes apps/review/static/fonts/mj/: the fonts, beside each font a JSON of its code points'
-sequences with their MJ figure names (the default figure marked), `figures.json` with each file's
+sequences with their MJ figure names, the default figure marked and each figure's IDS where the IVD
+descriptions give one, `figures.json` with each file's
 first and last code point, and the licence.
 """
+import gzip
 import hashlib
 import io
 import json
@@ -36,15 +38,28 @@ FAMILY = 'MJ Figures'
 SOURCE = {'url': 'https://dforest.watch.impress.co.jp/library/i/ipamjfont/10750/ipamjm00601.zip',
           'sha256': '35494e0f2896f38b3f7369a8421a895cea6440a42c0a66ac95eab47d6ed25b68',
           'font': 'ipamjm.ttf', 'licence': 'IPA_Font_License_Agreement_v1.0.txt'}
+# Each sequence's IDS, read from GlyphWiki, Noto Sans CJK and IPAmj明朝 (ids-input's open data, CC0).
+DESCRIPTIONS = {'url': 'https://raw.githubusercontent.com/mkpoli/ids-input/1e5dd49caecd5ba4461b7ccf84e236ef6e666000/data/open-data/ivd/sequences.tsv.gz',
+                'sha256': 'a236925162a70751987bb3ee86d5e3c0ee25a275109202b91b44f1d9a30c6930'}
+
+
+def download(source, name):
+    path = CACHE / name
+    if not (path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == source['sha256']):
+        data = urllib.request.urlopen(source['url'], timeout=300).read()
+        assert hashlib.sha256(data).hexdigest() == source['sha256'], f'{name} does not match its pinned hash'
+        CACHE.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
+    return path
 
 
 def fetch():
-    path = CACHE / SOURCE['url'].rsplit('/', 1)[1]
-    if not (path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == SOURCE['sha256']):
-        data = urllib.request.urlopen(SOURCE['url'], timeout=300).read()
-        assert hashlib.sha256(data).hexdigest() == SOURCE['sha256'], 'the IPAmj明朝 archive does not match its pinned hash'
-        CACHE.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
-    return zipfile.ZipFile(path)
+    return zipfile.ZipFile(download(SOURCE, SOURCE['url'].rsplit('/', 1)[1]))
+
+
+def descriptions():
+    """Each sequence's IDS where the IVD descriptions give one (agreed or single), by its text."""
+    rows = gzip.decompress(download(DESCRIPTIONS, 'ivd-sequences.tsv.gz').read_bytes()).decode('utf-8').splitlines()[1:]
+    return {fields[1]: fields[3] for fields in (row.split('\t') for row in rows) if fields[3]}
 
 
 def figures():
@@ -77,7 +92,7 @@ def rename(font):
 
 
 def main():
-    archive, wanted = fetch(), figures()
+    archive, wanted, described = fetch(), figures(), descriptions()
     source = io.BytesIO(archive.read(SOURCE['font']))
     OUT.mkdir(parents=True, exist_ok=True)
     for old in [*OUT.glob('*.woff2'), *OUT.glob('*.json')]:
@@ -97,7 +112,7 @@ def main():
         name = f'mj-figures-{i // CHUNK:02d}.woff2'
         font.save(OUT / name)
         (OUT / name.replace('.woff2', '.json')).write_text(json.dumps(
-            {chr(code): [[text, mj, default] for text, mj, default in wanted[code]] for code in part},
+            {chr(code): [[text, mj, default, described.get(text, '')] for text, mj, default in wanted[code]] for code in part},
             ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
         files.append([name.removesuffix('.woff2'), part[0], part[-1]])
     (OUT / 'figures.json').write_text(json.dumps({

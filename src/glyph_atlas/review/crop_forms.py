@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -21,7 +22,7 @@ from . import ledger
 from .ledger import Claim, LedgerError
 
 METHOD = "form-picker"
-#: The statuses of a form's `written_for` slot that file it on a grapheme's card.
+#: The statuses of a slot whose claim holds.
 FILED = ("asserted", "accepted", "adjudicated")
 #: The values `has_form` takes when the reader looked and cannot name the shape. `unresolved` is the
 #: form unknown; `unreadable` is the ink itself.
@@ -109,15 +110,76 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
     return response
 
 
-def _head_of(grapheme: str) -> str:
-    """`grapheme` when it heads its family; the head's text when it is a member, and no such character otherwise."""
+def set_crop_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], crop: str, crop_version: str,
+                       char: str | None = None, of: str | None = None, head: bool = False, structure: str | None = None,
+                       at: str | None = None, prefix: str = "lc", mint: Callable[[], str] | None = None) -> dict:
+    """Say what structure one crop is built as where no recorded form names its shape, or with none named
+    take back the reader's own claim. The reader's own form on the crop is taken back by the same save,
+    and a form chosen later leaves the structure. The Worker's `setCropStructure` does the same."""
+    signature = ledger.canonical(request)
+    saved = ledger.previous(conn, key, signature)
+    if saved is not None:
+        return saved
+    at = at or ledger.now()
+
+    def own_of(predicate: str) -> list[sqlite3.Row]:
+        return conn.execute(
+            "SELECT a.id,a.object,r.value AS text FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
+            "WHERE a.subject=? AND a.predicate=? AND a.scope='' AND a.slot='' AND a.asserted_by=? "
+            "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+            "ORDER BY a.rowid DESC", (crop, predicate, actor)).fetchall()
+
+    def take_back(target: str, part: str, reason: str) -> None:
+        ledger.act(conn, key=f"{key}/{part}", actor=actor, request={"target": target, "action": "retract"}, target=target, action="retract",
+                   reason=reason, version_of=lambda unit: crop_version if unit == crop else None, prefix=prefix, at=at, mint=mint)
+
+    own, forms = next(iter(own_of("built_as")), None), own_of("has_form")
+    clear = char is None and structure is None
+    if clear:
+        if own is None:
+            raise LedgerError(409, "You have no structure on this crop to clear.")
+        take_back(own["id"], "retract", "cleared")
+    else:
+        named, derived = _named_structure(conn, {"char": char, "of": of, "head": head, "structure": structure}, known=True)
+        if derived is not None:
+            ensure_structure(conn, derived, actor=actor, at=at)
+        ledger.write_claims(conn, key=f"{key}/claim", actor=actor, request=request, subject=crop, predicate="built_as",
+                            claims=[Claim(object=named)], objects={named: "structure"}, crop_version=crop_version, method=METHOD,
+                            prefix=prefix, at=at, mint=mint)
+        for i, form in enumerate(forms):
+            take_back(form["id"], f"form/{i}", "replaced")
+    response = {"submission": key, "subject": crop, "replaced": own["object"] if own else None,
+                "form": forms[0]["text"] if forms and not clear else None}
+    conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
+                 (key, actor, signature, ledger.canonical(response), at))
+    return response
+
+
+def built_as(conn: sqlite3.Connection, crop: str, version: str | None) -> dict | None:
+    """The structures a crop is said to be built as on this version, each with its label and who says so;
+    each competing one's while people disagree."""
+    found = conn.execute(f"SELECT {','.join(ledger.COLUMNS)} FROM current_claims WHERE subject=? AND predicate='built_as' AND scope='' AND slot=''",
+                         (crop,)).fetchone()
+    row = ledger.current_row(found) if found is not None else None
+    if row is None or row["crop_version"] != version:
+        return None
+    standing = [claim for claim in row["claims"] if (claim["standing"] if row["status"] == "disputed"
+                else any(member["assertion"] in row["supporting"] for member in claim["members"]))]
+    ids = list(dict.fromkeys(value["object"] for value in _values(row) if value.get("object")))
+    labels = dict(conn.execute("SELECT id,label FROM structures WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(ids),)).fetchall())
+    return {"status": row["status"], "by": list(dict.fromkeys(claim["asserted_by"] for claim in standing)),
+            "values": [{"structure": one, "label": labels.get(one, ""),
+                        "by": list(dict.fromkeys(claim["asserted_by"] for claim in standing
+                                                 if any(member.get("object") == one for member in claim["members"])))} for one in ids]}
+
+
+def head_of(grapheme: str) -> str:
+    """The grapheme a new claim names: the head its key is filed under, so a claim kept under a key that
+    has joined another family is the head's. No such character where the site does not hold it."""
     head = refs.grapheme(grapheme)
     if head is None and grapheme not in refs.graphemes():
         raise LedgerError(422, "No such character.")
-    head = head or grapheme
-    if head != grapheme:
-        raise LedgerError(422, f"This character is filed under {refs.from_code_points(head.split())}.")
-    return head
+    return head or grapheme
 
 
 def written_for(conn: sqlite3.Connection, form: str) -> list[dict]:
@@ -135,20 +197,25 @@ def written_for(conn: sqlite3.Connection, form: str) -> list[dict]:
     return found
 
 
-def written_forms(conn: sqlite3.Connection, grapheme: str) -> list[dict]:
-    """The described forms a grapheme's card carries from reviewers' claims, by their value.
+def carried_forms(conn: sqlite3.Connection, boxes: Mapping[str, str | None]) -> list[dict]:
+    """The described forms and registered figures these crops are claimed to have, the most used first.
 
     A form a reviewer writes as an IDS, or a registered figure written as a variation sequence (突󠄃),
-    has no character of its own, so no card row holds it; the claim
-    that it is written for the grapheme is how it joins the grapheme's 字体. The Worker counts its crops;
-    the review service leaves the count at zero rather than walking every unit."""
+    has no character of its own, so no card row holds it; it is one of the 字体 of the grapheme whose
+    crops carry it. `boxes` gives each crop's box as its evidence version writes it (`evidence.box_text`):
+    a claim made on another box does not hold."""
     rows = conn.execute(
-        "SELECT c.subject AS form,r.scheme,r.value FROM current_claims c "
-        "JOIN forms f ON f.id=c.subject JOIN representations r ON r.id=f.anchor "
-        "WHERE c.predicate='written_for' AND c.object=? AND c.scope='' AND r.scheme IN ('ids','ivs') "
-        "AND c.status IN ('asserted','accepted','adjudicated') ORDER BY r.value", (grapheme,)).fetchall()
-    return [{"char": row["value"], "code_point": None, "form": row["form"], "scheme": row["scheme"],
-             "count": 0, "corpus_count": 0} for row in rows]
+        "SELECT c.subject,c.crop_version,c.object AS form,r.scheme,r.value FROM current_claims c "
+        "JOIN forms f ON f.id=c.object JOIN representations r ON r.id=f.anchor "
+        "WHERE c.subject IN (SELECT value FROM json_each(?)) AND c.predicate='has_form' AND c.scope='' AND c.slot='' "
+        "AND r.scheme IN ('ids','ivs') AND c.status IN ('asserted','accepted','adjudicated')",
+        (json.dumps(list(boxes)),)).fetchall()
+    held = [row for row in rows if (box := boxes[row["subject"]]) is not None
+            and (row["crop_version"] or "").endswith("@" + box)]
+    counts = Counter(row["form"] for row in held)
+    found = {row["form"]: {"char": row["value"], "code_point": None, "form": row["form"], "scheme": row["scheme"],
+                           "count": counts[row["form"]], "corpus_count": 0} for row in held}
+    return sorted(found.values(), key=lambda form: (-form["count"], form["char"]))
 
 
 def set_written_for(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str, grapheme: str,
@@ -167,11 +234,19 @@ def set_written_for(conn: sqlite3.Connection, *, key: str, actor: str, request: 
     at = at or ledger.now()
     if conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is None:
         raise LedgerError(404, "No such form.")
-    _head_of(grapheme)
-    own = conn.execute(
-        "SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='written_for' AND a.scope='' AND a.slot=? "
-        "AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
-        "ORDER BY a.rowid DESC LIMIT 1", (form, grapheme, actor)).fetchone()
+
+    def own_of(key: str) -> sqlite3.Row | None:
+        return conn.execute(
+            "SELECT a.id FROM assertions a WHERE a.subject=? AND a.predicate='written_for' AND a.scope='' AND a.slot=? "
+            "AND a.asserted_by=? AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
+            "ORDER BY a.rowid DESC LIMIT 1", (form, key, actor)).fetchone()
+
+    if remove:
+        # A claim is taken back by the key it was recorded under, or by one that key heads.
+        grapheme = grapheme if own_of(grapheme) else refs.grapheme(grapheme) or grapheme
+    else:
+        grapheme = head_of(grapheme)
+    own = own_of(grapheme)
     linked = any(value["grapheme"] == grapheme for value in written_for(conn, form))
     if remove and own is None:
         raise LedgerError(409, f"You have not said this form writes {refs.from_code_points(grapheme.split())}.")
@@ -222,9 +297,11 @@ def claimed_structures(conn: sqlite3.Connection, names: Iterable[str]) -> dict[s
 
 
 def _named_structure(conn: sqlite3.Connection, named: Mapping[str, Any], *, known: bool) -> tuple[str, Structure | None]:
-    """The structure a write names, by `char` (a character or description, derived here) or by
-    `structure`, the id of one a claim has named before, which `known` requires to have its row.
-    Answers its id, and the structure itself when it was derived."""
+    """The structure a write names, by `char` (a character or description, derived here; with `of`, a
+    regional shape of that character, which has its structure; with `head`, the structure that one
+    stands under as a layout of it) or by `structure`, the id of one a
+    claim has named before, which `known` requires to have its row. Answers its id, and the structure
+    itself when it was derived."""
     from .. import structures
 
     if named.get("structure") is not None:
@@ -234,14 +311,22 @@ def _named_structure(conn: sqlite3.Connection, named: Mapping[str, Any], *, know
     char = named.get("char")
     if not char or representation.written(char) != [char]:
         raise LedgerError(422, "Name one character or description.")
-    derived = structures.for_name(char)
+    try:
+        derived = structures.for_shape(char, named["of"]) if named.get("of") else structures.for_name(char)
+    except ValueError as error:
+        raise LedgerError(422, str(error)) from error
     if derived is None:
         raise LedgerError(422, f"No structure is known for {char}.")
+    if named.get("head"):
+        derived = structures.whole(derived)
+        if derived is None:
+            raise LedgerError(422, f"{char} is no layout of another structure.")
     return derived.id, derived
 
 
 def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], form: str,
-                  char: str | None = None, structure: str | None = None, remove: bool = False, replace: bool = False,
+                  char: str | None = None, of: str | None = None, head: bool = False, structure: str | None = None, remove: bool = False,
+                  replace: bool = False,
                   at: str | None = None, prefix: str = "lc", mint: Callable[[], str] | None = None) -> dict:
     """File a form under the structure of a character or a description, or take back the reader's own claim.
 
@@ -266,7 +351,7 @@ def set_structure(conn: sqlite3.Connection, *, key: str, actor: str, request: Ma
     exists = conn.execute("SELECT 1 FROM forms WHERE id=?", (form,)).fetchone() is not None
     if not exists and named is None:
         raise LedgerError(404, "No such form.")
-    structure, derived = _named_structure(conn, {"char": char, "structure": structure}, known=not remove)
+    structure, derived = _named_structure(conn, {"char": char, "of": of, "head": head, "structure": structure}, known=not remove)
     mine = conn.execute(
         "SELECT a.id,a.slot FROM assertions a WHERE a.subject=? AND a.predicate='has_structure' AND a.scope='' AND a.asserted_by=? "
         "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "

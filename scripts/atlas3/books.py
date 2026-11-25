@@ -2,6 +2,8 @@
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py          # translate and write the parts
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --send   # and load them
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --documents KEY... --send   # the dates of these books alone
+    ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/books.py --titles --send   # the titles books lack, and nothing else
 
 The book facts input (`glyph_atlas.book_facts_input`: the dates export's claims and dating, and the
 characters another site lists per book) and the copies `source-corpus_documents` and `source-metadata`
@@ -131,6 +133,11 @@ def titles(atlas, corpus):
 
 def translate(atlas, mirror):
     """out/books.sqlite from the copies, and how many rows were left out, by reason."""
+    # A missing input stops the run before the last translation is replaced.
+    for table in ("document_dating", "document_characters"):
+        given(table)
+    for table in SOURCES:
+        source(table)
     path = OUT / "books.sqlite"
     path.unlink(missing_ok=True)
     out = sqlite3.connect(path)
@@ -195,10 +202,42 @@ def remove(table, cols, key, r):
     return f'DELETE FROM "{table}" WHERE {" AND ".join(f'"{c}" = {lit(r[cols.index(c)])}' for c in key)};'
 
 
-def statements(books, atlas):
+def dates_of(atlas, documents):
+    """The translation of the dating of `documents` alone, in memory, with each one's book id."""
+    known = dict(atlas.execute("SELECT key, id FROM books"))
+    if missing := sorted(set(documents) - set(known)):
+        sys.exit(f"not books of the site: {', '.join(missing)}")
+    # An input made for other books would otherwise clear a book's dates and leave its claims standing.
+    stated = {r[0] for r in given("date_claims").execute("SELECT DISTINCT subject FROM date_claims")}
+    if silent := sorted(set(documents) - stated):
+        sys.exit(f"the book facts input claims no date of {', '.join(silent)}; nothing sent")
+    out = sqlite3.connect(":memory:")
+    out.executescript("CREATE TABLE books(id INTEGER PRIMARY KEY, title TEXT NOT NULL, origin TEXT NOT NULL);\n"
+                      + "\n".join(f"CREATE TABLE {t}({','.join(cols)}, PRIMARY KEY({','.join(key)})) WITHOUT ROWID;"
+                                  for t, (cols, key, _) in TABLES.items()))
+    for r in given("document_dating").execute(f"SELECT document,{','.join(DATE_COLS[1:])} FROM document_dating"):
+        if r[0] in documents:
+            out.execute(f"INSERT INTO book_dates VALUES({','.join('?' * len(DATE_COLS))})", (known[r[0]], *r[1:6], r[6], int(bool(r[7])), *r[8:]))
+    return out, {known[d] for d in documents}
+
+
+def dates_of_books(books, atlas, only, add):
+    """The statements for the `book_dates` rows of the books `only`, given to `add`."""
+    cols, key, _ = TABLES["book_dates"]
+    names, k = ",".join(f'"{c}"' for c in cols), [cols.index(c) for c in key]
+    held = {tuple(r[i] for i in k): r for r in atlas.execute(f"SELECT {names} FROM book_dates") if r[0] in only}
+    new = {tuple(r[i] for i in k): r for r in books.execute(f"SELECT {names} FROM book_dates")}
+    rows = [[remove("book_dates", cols, key, r)] for kk, r in sorted(held.items()) if kk not in new]
+    removed = len(rows)
+    rows += [[remove("book_dates", cols, key, r), *row_statements("book_dates", list(cols), list(key), r)]
+             for kk, r in sorted(new.items()) if held.get(kk) != r]
+    add("book_dates", rows, removed, sum(kk not in held for kk in new))
+
+
+def statements(books, atlas, only=None):
     """Groups of statements that turn the local copy's book facts into the translation's; a row's
-    statements stay in one group. Also, per table, the rows removed, added and changed, and the rows
-    written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
+    statements stay in one group. With `only`, book ids, the dates of those books and nothing else.
+    Also, per table, the rows removed, added and changed, and the rows written: one per statement that finds its row, so the DELETE ahead of a new row counts nothing."""
     groups, changes = [], {}
 
     def add(table, rows, removed=0, added=0):
@@ -207,12 +246,16 @@ def statements(books, atlas):
         changes[table] = {"removed": removed, "added": added, "changed": len(rows) - removed - added,
                           "written": sum(len(r) for r in rows) - added}
 
+    if only is not None:
+        dates_of_books(books, atlas, only, add)
+        return groups, changes
     columns = {r[1] for r in atlas.execute("PRAGMA table_info(books)")}
     now = dict(atlas.execute("SELECT id, title FROM books")) if "title" in columns else \
         {r[0]: None for r in atlas.execute("SELECT id FROM books")}
     wanted = dict(books.execute("SELECT id, title FROM books"))
-    add("books", [[f"UPDATE books SET title = {lit(wanted.get(b))} WHERE id = {b};"]
-                  for b in sorted(now) if now[b] != wanted.get(b)])
+    # A book the translation gives no title keeps the one it has: its publication may have written it.
+    add("books", [[f"UPDATE books SET title = {lit(wanted[b])} WHERE id = {b};"]
+                  for b in sorted(now) if b in wanted and now[b] != wanted[b]])
     # A book whose document the input does not list keeps its characters: the input may hold only some.
     listed = {r[0] for r in books.execute("SELECT book FROM character_books")}
     for table, (cols, key, owned) in TABLES.items():
@@ -229,6 +272,17 @@ def statements(books, atlas):
                  for kk, r in sorted(new.items()) if held.get(kk) != r]
         add(table, rows, removed, sum(kk not in held for kk, r in new.items()))
     return groups, changes
+
+
+def missing_titles(atlas):
+    """The statements that give each book the site holds with no title the one its first page bundle
+    states, and what they change. A title already there is kept, and a crop's source, which may be a file
+    name, names no book here."""
+    found = {book: title for book, (origin, title) in titles(atlas, {}).items() if origin == "pages"}
+    rows = [[f"UPDATE books SET title = {lit(found[b])} WHERE id = {b} AND title IS NULL;"]
+            for b, in atlas.execute("SELECT id FROM books WHERE title IS NULL ORDER BY id") if b in found]
+    return ([[s for r in rows[i:i + GROUP] for s in r] for i in range(0, len(rows), GROUP)],
+            {"books": {"removed": 0, "added": 0, "changed": len(rows), "written": len(rows)}})
 
 
 def ignored(table, row):
@@ -284,18 +338,23 @@ def resolve_statements(slots):
     return out
 
 
-def date_ledger(atlas):
-    """The ledger rows the dates export adds to the local copy's, and the resolution of each slot they
+def date_ledger(atlas, documents=None):
+    """With `documents`, the claims about those alone: no other document's claim is asserted or retracted.
+
+    The ledger rows the dates export adds to the local copy's, and the resolution of each slot they
     change, as groups of statements; also the rows each table gains or changes. None when the export
     states no claims."""
     claims = given("date_claims").execute(
         f"SELECT {','.join(book_facts_input.CLAIM_COLUMNS)} FROM date_claims ORDER BY id").fetchall()
+    if documents is not None:
+        claims = [c for c in claims if c[1] in documents]
     if not claims:
         return None
     stamp = given("date_claims").execute("SELECT at FROM written WHERE name='date_claims'").fetchone()[0]
     if not has(atlas, "assertions"):
         return "the local copy holds no ledger yet; load_history.py --send loads it"
-    held = {r[0]: r for r in atlas.execute(f"SELECT a.id, a.subject, a.predicate, a.scope, a.slot, a.asserted_by FROM assertions a WHERE {DATE}")}
+    held = {r[0]: r for r in atlas.execute(f"SELECT a.id, a.subject, a.predicate, a.scope, a.slot, a.asserted_by FROM assertions a WHERE {DATE}")
+            if documents is None or r[1] in documents}
     retracted = {r[0] for r in atlas.execute(
         f"SELECT x.assertion FROM assertion_actions x JOIN assertions a ON a.id = x.assertion WHERE x.action = 'retract' AND {DATE}")}
     standing = defaultdict(list)
@@ -399,10 +458,32 @@ def migrate(atlas):
     print("migration 0005 applied", flush=True)
 
 
+def finish(groups, atlas, sending):
+    """Write `groups` as a run's parts and, when `sending`, load them."""
+    if not groups:
+        print("the local copy already holds these facts; nothing to send", flush=True)
+        return
+    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
+    run = OUT / "books-load" / f"books-{digest}"
+    n = built(run, "rows", groups)
+    print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
+    if not sending:
+        print("dry run: nothing sent", flush=True)
+        return
+    deliver(run, atlas)
+    print("book facts loaded", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--send", action="store_true", help="load the parts into glyph-atlas-v3")
+    parser.add_argument("--documents", nargs="+", metavar="KEY", help="load the dates and date claims of these books alone, "
+                        "leaving every other book's facts and claims as they stand")
+    parser.add_argument("--titles", action="store_true", help="give the books the site holds with no title the one their page "
+                        "bundles state, and load nothing else; reads no input")
     args = parser.parse_args()
+    if args.titles and args.documents:
+        parser.error("--titles loads nothing of --documents; run them apart")
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -415,9 +496,21 @@ def main():
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
         migrate(atlas)
         catch_up(atlas)
-    books, left = translate(atlas, mirror)
-    groups, changes = statements(books, atlas)
-    claims = date_ledger(atlas)
+    if args.titles:
+        groups, changes = missing_titles(atlas)
+        print("".join(f"{table}: {held}\n" for table, held in changes.items()), end="", flush=True)
+        finish(groups, atlas, args.send)
+        # The same titles filled before are the same parts, whose stamps the site holds, so they are not sent again.
+        if args.send and (left := len([s for g in missing_titles(atlas)[0] for s in g])):
+            sys.exit(f"{left} titles are still missing: these parts were loaded before and are not sent twice")
+        return
+    named = set(args.documents) if args.documents else None
+    if named:
+        (books, only), left = dates_of(atlas, named), {}
+    else:
+        (books, left), only = translate(atlas, mirror), None
+    groups, changes = statements(books, atlas, only)
+    claims = date_ledger(atlas, named)
     if isinstance(claims, str):
         if args.send:
             sys.exit(f"the dates export states claims, but {claims}")
@@ -428,18 +521,7 @@ def main():
     report = figures(books, changes, left)
     (OUT / "books-report.txt").write_text(report)
     print(report, end="", flush=True)
-    if not groups:
-        print("the local copy already holds these facts; nothing to send", flush=True)
-        return
-    digest = hashlib.sha256("\n".join(s for g in groups for s in g).encode()).hexdigest()[:12]
-    run = OUT / "books-load" / f"books-{digest}"
-    n = built(run, "rows", groups)
-    print(f"{n if n is not None else 'existing'} parts -> {run}", flush=True)
-    if not args.send:
-        print("dry run: nothing sent", flush=True)
-        return
-    deliver(run, atlas)
-    print("book facts loaded", flush=True)
+    finish(groups, atlas, args.send)
 
 
 if __name__ == "__main__":

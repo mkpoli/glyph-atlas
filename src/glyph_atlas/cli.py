@@ -158,8 +158,9 @@ def structure(
             typer.echo(f"{value} is not in the character layer")
             continue
         found = structures.for_character(row.char)
-        typer.echo(f"{row.code_point} {row.char}  {found.label}  {found.id}" if found
-                   else f"{row.code_point} {row.char}  no description")
+        proposed = "  (proposed)" if ord(row.char[0]) in structures.SEAL else ""
+        typer.echo(f"{row.code_point} {row.char}  {found.label}  {found.id}{proposed}" if found
+                   else f"{row.code_point} {row.char}  no structure")
 
 
 @app.command()
@@ -567,6 +568,17 @@ def review_catalogue_suspects(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("rejudge-suspects")
+def review_rejudge_suspects(
+    source: Annotated[Path, typer.Argument(help="marks file")],
+    target: Annotated[Path, typer.Option(help="file the marks are written to")],
+) -> None:
+    """Write a marks file again under the current rule on expected readings, without the classifier."""
+    from .review import quiz_suspects
+
+    typer.echo(json.dumps(quiz_suspects.rejudge(source, target), ensure_ascii=False))
+
+
 @review_app.command("shift-repair")
 def review_shift_repair(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose blocks are checked")],
@@ -723,6 +735,59 @@ def review_consensus_relabel(
             result["measured"] = consensus_relabel.evaluate(result, site)
     consensus_relabel.write(result, out)
     typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
+@review_app.command("neighbour-agreement")
+def review_neighbour_agreement(
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops and pages")] = Path("work/atlas-v3/out/mirror.sqlite"),
+    atlas: Annotated[Path | None, typer.Option(help="local copy of the site's database, to measure the bar against its reviews")] = None,
+    k: Annotated[int, typer.Option(help="nearest crops a crop is judged by")] = 20,
+    out: Annotated[Path | None, typer.Option(help="report of the counts and the measurement")] = None,
+) -> None:
+    """Count, for every crop, how many of its nearest crops carry its label (needs CUDA at corpus size)."""
+    from .review import neighbour_agreement
+
+    result = neighbour_agreement.run(similar.resolve(), mirror=mirror, atlas=atlas, k=k)
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n")
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
+@review_app.command("written-forms")
+def review_written_forms(
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
+    atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for each crop's book and character")] = Path("work/atlas-v3/out/atlas.sqlite"),
+    pages: Annotated[Path, typer.Option(help="page bundles of the local copy of the site")] = Path("work/atlas-v3/out/pages"),
+    out: Annotated[Path | None, typer.Option(help="report of every pair")] = None,
+) -> None:
+    """Find crops filed under a character that are written as its variant."""
+    from .review import written_forms
+
+    result = written_forms.run(similar.resolve(), mirror=mirror, atlas=atlas, pages=pages)
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n")
+    typer.echo(json.dumps({k: v for k, v in result.items() if k != "items"}, ensure_ascii=False))
+
+
+@review_app.command("written-form-sheets")
+def review_written_form_sheets(
+    out: Annotated[Path, typer.Option(help="HTML page to write")],
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision holding written-forms.parquet")] = Path("work/similar/current"),
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
+    atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for book titles")] = Path("work/atlas-v3/out/atlas.sqlite"),
+    pages: Annotated[Path, typer.Option(help="page bundles of the local copy of the site")] = Path("work/atlas-v3/out/pages"),
+    media: Annotated[Path, typer.Option(help="cache of display crops fetched from the site")] = Path("work/similar/media"),
+    base: Annotated[str, typer.Option(help="site that serves the display crops the cache lacks")] = "https://glyphatlas.org",
+) -> None:
+    """Draw the crops `written-forms` found as rows, one row for each book."""
+    from .review import written_form_sheets
+
+    typer.echo(json.dumps(written_form_sheets.run(similar.resolve(), out, mirror=mirror, atlas=atlas, pages=pages,
+                                                  media=media, base=base)))
 
 
 @review_app.command("lookalikes")
@@ -1166,6 +1231,33 @@ def import_tangut_tongyin(
     typer.echo(f"units         {summary['units']:>10}")
     for quality, count in summary["left_out"].items():
         typer.echo(f"{quality:<13} {count:>10}")
+    typer.echo(f"-> {out}")
+
+
+@import_app.command("tensho")
+def import_tensho(
+    books: Annotated[list[str], typer.Argument(help="books of the dataset, such as TE00039 or TE00024")],
+    scans: Annotated[
+        Path | None, typer.Option(help="directory of the page images of a book whose pages are files (TE00039)")
+    ] = None,
+    out: Annotated[Path, typer.Option(help="directory for the tables")] = Path("work/codh-tensho"),
+    cache: Annotated[Path | None, typer.Option(help="image cache directory")] = None,
+) -> None:
+    """Import the seal forms of books of CODH's 篆書字体データセット, each box on its page."""
+    from .importers import tensho
+
+    try:
+        summary = tensho.collect(books, out, scans=scans, cache=cache)
+    except tensho.TenshoSourceError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"pages         {summary['pages']:>10}")
+    typer.echo(f"lines         {summary['lines']:>10}")
+    typer.echo(f"units         {summary['units']:>10}")
+    typer.echo(f"  seal        {summary['seal']:>10}")
+    typer.echo(f"  on the 親字 {summary['han']:>10}")
+    typer.echo(f"not placed    {summary['left_out']:>10}")
+    typer.echo(f"page replaced {summary['replaced']:>10}")
     typer.echo(f"-> {out}")
 
 

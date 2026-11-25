@@ -30,15 +30,16 @@ const FACETS = `SELECT coalesce(char, -1), book, coalesce(production, -1), coale
   FROM crops WHERE kind = 0 GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 1, 2, 3, 4, 5, 6, 7`;
 const CORPUS = `SELECT char, coalesce(production, -1), state, quiz, count(*) FROM crops WHERE kind = 1 AND char IS NOT NULL
   GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4`;
+const FILED = 'SELECT family, kind, count(*) FROM crops WHERE kind < 2 AND char IS NULL AND family IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2';
 const BOOKS = 'SELECT book, sum(kind = 0), sum(kind = 1) FROM crops WHERE kind < 2 GROUP BY book ORDER BY book';
 const key = (text: string) => [...text].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 export function publish(db: Database, objects: Map<string, Uint8Array>, pub: string, through: number) {
   const chars = (ids: number[]) => Object.fromEntries((db.query(`SELECT g.id, g.text, coalesce(h.text, g.text) AS head FROM graphemes g
     LEFT JOIN graphemes h ON h.id = g.head WHERE g.id IN (${ids.join(',') || 'NULL'})`).all() as { id: number; text: string; head: string }[])
     .map(r => [String(r.id), [r.text, key(r.head)]]));
-  const facets = db.query(FACETS).values() as number[][], corpus = db.query(CORPUS).values() as number[][];
+  const facets = db.query(FACETS).values() as number[][], corpus = db.query(CORPUS).values() as number[][], filed = db.query(FILED).values() as number[][];
   objects.set(`v3/pub/${pub}/facets.json.gz`, gz({ pub, cells: facets, chars: chars(facets.map(r => r[0]).filter(c => c !== -1)) }));
-  objects.set(`v3/pub/${pub}/corpus.json.gz`, gz({ pub, cells: corpus, chars: chars(corpus.map(r => r[0])) }));
+  objects.set(`v3/pub/${pub}/corpus.json.gz`, gz({ pub, cells: corpus, filed, chars: chars([...corpus, ...filed].map(r => r[0])) }));
   objects.set(`v3/pub/${pub}/books.json.gz`, gz({ pub, books: Object.fromEntries((db.query(BOOKS).values() as number[][]).map(([b, x, y]) => [String(b), [x, y]])) }));
   objects.set('v3/pointer.json', gz({ pub, through_gen: through }));
 }
@@ -48,7 +49,8 @@ export const PENDING = 0, CHECKED = 1, FLAGGED = 2, SEEN = 3, HARD = 4;
 export const KANJI = 2, KANA = 3, HANGUL = 5;
 // An isolate holds the pointer for a minute; each setup reads its own as if later than any other test.
 let later = 0;
-export async function setup() {
+/** The catalogue; `more` adds to it before its answers are published, given the corpus page's id. */
+export async function setup(more: (db: Database, page: number) => void = () => {}) {
   const db = new Database(':memory:'); databases.push(db);
   const migrations = new URL('../../migrations-atlas/', import.meta.url);
   for (const file of readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(file, migrations), 'utf8'));
@@ -85,6 +87,7 @@ export async function setup() {
   const corpus: [number, number | null, number, number][] = [[0, 1, PENDING, 2], [1, 1, PENDING, 2], [2, 1, PENDING, 2], [3, 1, PENDING, 2],
     [4, 3, PENDING, 4], [5, 3, PENDING, 4], [6, 3, CHECKED, 4], [7, 5, PENDING, 2], [8, 4, PENDING, 3], [9, null, PENDING, 2]];
   for (const [slot, char, state, production] of corpus) insert.run(cropId(c, slot), 1, 3, char, production, null, state, 1, shuffle(cropId(c, slot)));
+  more(db, c);
   const text = (char: number | null) => char === null ? '' : (db.query('SELECT text FROM graphemes WHERE id=?').get(char) as { text: string }).text;
   const records = corpus.map(([slot, char]) => new TextEncoder().encode(JSON.stringify({ id: `codh:${slot}`, label: text(char), proxyable: slot !== 2,
     image: `/atlas/media/c${slot}.webp`, text: 'line' })));

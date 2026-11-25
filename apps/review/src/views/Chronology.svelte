@@ -6,17 +6,22 @@
   // was composed, and can be narrowed to a script, a style group or a kind of production.
   import { untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
+  import Seo from '../components/Seo.svelte'
   import ScriptText from '../components/ScriptText.svelte'
   import Glyph from '../components/Glyph.svelte'
   import SiteLinks from '../components/SiteLinks.svelte'
   import { t, localize, formatNumber, formatYear } from '../lib/i18n.svelte.js'
-  import { chronology, chronologyAddress, PRODUCTIONS } from '../lib/chronology.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { chronology, chronologyAddress, chronologyName, PRODUCTIONS } from '../lib/chronology.js'
+  import { galleryAddress } from '../lib/addresses.js'
   import { STYLE_GROUPS } from '../lib/style.js'
   import { dateLabel, eventLabel, sourceName, HUTIME_FORM } from '../lib/dating.js'
 
   let { card, options, first, inspect } = $props()
   let chosen = $state(untrack(() => ({ ...options }))), axis = $state(untrack(() => first)), loading = $state(false), failed = $state(''), request = 0
+
+  // What the axis is of, as its scope stands: the grapheme, by its head, or the one character. A script
+  // the card states is its character's.
+  const named = $derived(chronologyName(card, chosen.scope))
 
   // One decade is this many pixels wide in the strip; a folded gap is GAP wide, and folds at least FOLD decades.
   const DECADE = 64, GAP = 40, FOLD = 5
@@ -66,7 +71,7 @@
     } catch (e) { if (id === request) failed = e.message }
     finally { if (id === request) loading = false }
   }
-  const open = item => inspect(item.id, queue, null, item.origin === 'corpus' ? 'corpus' : 'collection')
+  const open = item => inspect(item.id, queue)
   let track = $state(), overviewWidth = $state(1200)
   // The overview names every century it has room for, at least 44 pixels apart.
   const tickStep = $derived(Math.max(1, Math.ceil(centuries.length * 44 / Math.max(1, overviewWidth))))
@@ -78,9 +83,9 @@
   // by their copy's date and narrows by style alone, so with the text's date, a production or a script
   // chosen it would show other crops than the count, and the count links nowhere.
   const linkable = $derived(chosen.axis !== 'composed' && !chosen.production && !chosen.script)
-  const decadeGallery = decade => localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact',
-    style: chosen.style, order: 'year', years: `${decade}-${decade + 9}` }))
-  const undatedGallery = $derived(localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact', style: chosen.style, years: 'undated' })))
+  const gallery = shown => localize(galleryAddress(card, chosen.scope || 'none', shown))
+  const decadeGallery = decade => gallery({ style: chosen.style, order: 'year', years: `${decade}-${decade + 9}` })
+  const undatedGallery = $derived(gallery({ style: chosen.style, years: 'undated' }))
   const title = item => {
     const date = item.dating?.[chosen.axis === 'composed' ? 'composed' : 'witness']
     const work = typeof item.source === 'string' ? item.source : item.source?.title
@@ -105,11 +110,13 @@
   </button>
 {/snippet}
 
+<Seo title={`${named.label} · ${t('nav.chronology')}`} description={t('meta.chronology.description', { character: named.label, codePoint: named.code_point })} path={named.path} />
+
 <section class="explore chronology" aria-busy={loading}>
   <div class="page-status"><SiteLinks /></div>
   <header class="heading">
-    <a class="quiet-link" href={localize(characterAddress(card.code_point, { scope: chosen.scope === 'grapheme' ? 'family' : 'exact' }))}>← {t('chronology.gallery')}</a>
-    <h1><span class="glyph"><ScriptText text={card.char} script={card.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
+    <a class="quiet-link" href={gallery()}>← {t('chronology.gallery')}</a>
+    <h1><span class="glyph"><ScriptText {...named.parts} script={named.script} /></span><span class="name">{t('nav.chronology')}</span></h1>
     <p class="summary">{t('chronology.dated', { count: dated })}{#if undated}{' · '}{t('chronology.yearless', { count: undated })}{/if}{#if buckets.length}{' · '}{dateLabel({ start: buckets[0].decade, end: buckets.at(-1).decade + 9, precision: 'years' })}{/if}</p>
   </header>
 
@@ -126,7 +133,7 @@
         <button class:active={chosen.scope === 'grapheme'} aria-pressed={chosen.scope === 'grapheme'} onclick={() => set({ scope: 'grapheme' })}>{t('chronology.scope.grapheme')}</button>
       </div>
     {/if}
-    {#if chosen.scope === 'grapheme' && scripts.length > 1}{@render chips(t('chronology.filter.script'), scripts, chosen.script, script => t(`script.${script}`), 'script')}{/if}
+    {#if chosen.scope === 'grapheme' && scripts.length > 1}{@render chips(t('chronology.filter.script'), scripts, chosen.script, script => t(`script.${script === 'han' ? 'kanji' : script}`), 'script')}{/if}
     {@render chips(t('chronology.filter.style'), STYLE_GROUPS, chosen.style, group => group === 'unassessed' ? t('style.kind.unassessed') : t(`styleFilter.${group}`), 'style')}
     {@render chips(t('chronology.filter.production'), PRODUCTIONS, chosen.production, kind => t(`production.kind.${kind}`), 'production')}
   </div>

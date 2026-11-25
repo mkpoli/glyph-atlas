@@ -6,15 +6,16 @@
   import { licenceName, holderName, sourceLinks, pageLink } from '../lib/licence.js'
   import DateMark from './DateMark.svelte'
   // `omit` is a link the view offers on its own, which the line then leaves out.
-  let { item, corpus = false, omit = null } = $props()
+  let { item, omit = null } = $props()
   // A no-break space keeps each · with the part before it.
   const SEPARATOR = '\u00a0· '
-  const shown = $derived((corpus
-    ? [item.source?.title, holderName(item.attribution || item.source?.holder), licenceName(item.licence)]
-    : [item.source, holderName(item.attribution || item.holder), licenceName(item.licence)]).filter(Boolean))
-  const credit = $derived(corpus && item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
-  const linked = $derived(sourceLinks(item, corpus))
-  const page = $derived(pageLink(item, corpus))
+  const isCorpus = $derived(item?.origin === 'corpus')
+  const sourceObject = $derived(typeof item?.source === 'object' && item.source !== null ? item.source : null)
+  const shown = $derived([sourceObject ? sourceObject.title : item?.source,
+    holderName(item?.attribution || sourceObject?.holder || item?.holder), licenceName(item?.licence)].filter(Boolean))
+  const credit = $derived(item.text_attribution ? t('corpus.labelCredit', { credit: item.text_attribution }) : null)
+  const linked = $derived(sourceLinks(item, isCorpus))
+  const page = $derived(pageLink(item, isCorpus))
   const links = $derived([page, linked.record, linked.catalogue, linked.honkoku].filter(link => link && link.href !== omit))
 </script>
 

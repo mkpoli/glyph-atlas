@@ -19,7 +19,7 @@
 </script>
 
 <Seo title={source ? `${label} · ${source}` : label} {description} {image} type="article"
-     data={linkedData(cropEntry(record, 'collection'), page.url.origin, image)} />
+     data={linkedData(cropEntry(record), page.url.origin, image)} />
 
 <!-- The crop itself is drawn by the layout's inspector, over the collection. -->
 <Explore inspect={inspector.inspect.bind(inspector)} ink={session.state.ink} onink={value => session.setInk(value)} />

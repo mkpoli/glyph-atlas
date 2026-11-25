@@ -1,4 +1,4 @@
-import { isUnassigned } from './identity.js'
+import { isUnassigned, cropPixels } from './identity.js'
 
 // A batch correction marks many crops as one character, a request per batch, and is undone batch by
 // batch. Both are a run of saves made one after another.
@@ -77,7 +77,7 @@ export const confirmationBatches = (crops, size) => correctionBatches('\u0001con
 /** The correction a confirmation batch sends: each crop at its revision and pixels, as its own character. */
 export function confirmationBody(batch) {
   return { id: batch.id, line: true, crops: batch.crops.map(item => ({ id: item.id, revision: item.revision, character: confirmedCharacter(item),
-    ...(item.origin === 'corpus' ? { source_revision: item.source_revision } : { image_sha256: item.image_sha256 }) })) }
+    ...cropPixels(item) })) }
 }
 
 /**

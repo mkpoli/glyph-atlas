@@ -60,6 +60,10 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   (crops with no page, corpus glyphs) has no page view and is left out. A page whose neighbours change gets
   a new revision, so a page added between two published ones rewrites both of their bundles; the publish
   prints how many published pages it rewrites for their neighbours. Links a catalogue carries are dropped.
+- A page's `photo` is its hosted photograph, an image of the catalogue's `media` like a crop's
+  (`export_cloudflare.PagePhotos`), which the page view shows where no IIIF service serves the page. A page
+  with no live crop left, retired or withdrawn, loses the fact; an image a page stops naming leaves the
+  key map unless another page of the book shows it.
 - Review-owned columns (`char`, `state`, `style`, `quiz`, `kind`, `flags`) change only when the
   catalogue's revision is at least the published one, and in D1 only while the crop's revision is
   unchanged; the result is read back. A corpus glyph's come only from its review overlay
@@ -77,6 +81,10 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   (`refused-withdrawals.txt`); a fresh `withdraw.py` catalogue takes it at its new revision. A retired crop the new layout never had (the first
   build left out the 56 live ones, each kept for its history) gets a number and a retired bundle
   entry with its record, so its reviews, claims and links resolve.
+- A few crops go to another character without an export: `relabel.py <relabels.json> <catalogue.sqlite>`
+  writes a catalogue of them from their published records, under the new character and one revision on, with
+  the runs holding them. Nothing is cut or uploaded but the page bundles. The relabel is recorded in the crops'
+  store as well.
 - A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first text
   id on its `unit_redirects` chain that is a live crop after the publish, past retired crops and text
   ids with no crop, so a reader reaches a live crop in one step. A chain that loops, or ends with no
@@ -199,6 +207,10 @@ is never refused. Migrations 0015, 0016 and 0018 are applied to glyph-atlas-v3 b
 deploys (`publish.py --migrate`); `publish.py` applies each part where it is missing, on D1 and on the
 local copy.
 
+Migration 0020 (`carried_forms`, the described form each crop is claimed to have) is applied to glyph-atlas-v3
+before the Worker that reads it deploys: `wrangler d1 execute ATLAS --remote --file migrations-atlas/0020_carried_forms.sql`
+from `apps/cloudflare`. Run again, it changes nothing.
+
 The reviews moved from the old site are served from `v3/review-legacy/<page>.json.gz`, as the old export
 gave them. `review_archive.py --snapshots FILE` builds those archives from the frozen copies of `events`
 and `units` and the old site's publication record (`units.snapshot`) of each collected or retired crop
@@ -221,7 +233,7 @@ count. It bumps `generation` in `glyph-atlas-v3` from G to G + 1, writes from th
 - `corpus.json.gz`: the corpus glyphs per character, production, state and withheld flag;
 - `books.json.gz`: each book's collected crops and corpus glyphs (the statistics of the dates);
 - `gallery/`: the homepage sample, the corpus glyphs below 1 in 64 of the shuffle range and, for
-  Hangul, 구결 and Tangut, 32 glyphs of each character spread over the shuffle range, records copied
+  Hangul, 구결, Tangut and small seal, 32 glyphs of each character spread over the shuffle range, records copied
   in, in shards by shuffle;
 - the `site` values `collection` (the collection's status, as `publish_collection_status.py` also
   writes between publications) and `corpus_index` (work/corpus-index/index.json).
@@ -230,6 +242,10 @@ then moves `v3/pointer.json` to `{"pub", "through_gen": G}`. A sample glyph's re
 its pack through R2's S3 endpoint (the rclone remote's keys) and kept in `out/records.sqlite`.
 `publish.py` runs it under its lock after every publish that sent something, so the counts follow each
 publish. It refuses while a publish is unfinished.
+
+The answers, and every publish that writes them, come from a checkout at f69ab7a6 or later. `filed` in
+`corpus.json.gz` counts the crops with no character under their family; an older checkout publishes
+answers without it, and Explore then counts no such crop.
 
 The local copy takes the site's changes before the answers are written. The Worker lists every crop
 whose row it changes in `touched`, with the generation of the change (migration 0018). The bump is

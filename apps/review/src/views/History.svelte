@@ -10,7 +10,6 @@
   import ScriptLine from '../components/ScriptLine.svelte'
   import { t, withText, formatDateTime, localize } from '../lib/i18n.svelte.js'
   import { groupRuns } from '../lib/historyGroups.js'
-  import { cropOrigin } from '../lib/movedCrop.js'
   import { holdsLegacyReviewer, sessionStarted } from '../lib/session.svelte.js'
   let { inspect } = $props()
   let items = $state([]), loading = $state(true), loadingMore = $state(false), error = $state('')
@@ -133,7 +132,7 @@
               {@render reviewer(item)}
               <span class="history-label">{@render label(item.character ?? item.label)}</span>
               <span class="history-decision"><ScriptLine line={withText('history.batch', 'character', { count: row.items.length, character: item.character ?? item.label ?? '' })} />
-                <span class="history-batch-labels">{#each row.items.filter(entry => entry.label).slice(0, 12) as entry (entry.id)}<button class="history-batch-crop" onclick={() => inspect(entry.target, [], null, cropOrigin(entry))} aria-label={t('history.row.inspect', { label: entry.label })}><ScriptText text={entry.label} /></button>{/each}</span></span>
+                <span class="history-batch-labels">{#each row.items.filter(entry => entry.label).slice(0, 12) as entry (entry.id)}<button class="history-batch-crop" onclick={() => inspect(entry.target)} aria-label={t('history.row.inspect', { label: entry.label })}><ScriptText text={entry.label} /></button>{/each}</span></span>
               {#if item.reviewer?.mine}<button class="quiet-link" disabled={undoing === row.batch} onclick={() => undoBatch(row.batch)}>{t('history.batch.undo')}</button>{/if}
             </div>
           </li>
@@ -149,7 +148,7 @@
                   <span class="history-decision"><ScriptLine line={decisionText(item)} />{#if item.also && hasIssueTitle(item.also)} · {t(`issue.${item.also}.title`)}{/if}</span>
                 </div>
               {:else}
-                <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target, [], null, cropOrigin(item))}
+                <button class="history-row" class:undo={item.kind === 'undo'} onclick={() => inspect(item.target)}
                         aria-label={t('history.row.inspect', { label: item.label ?? item.target })}>
                   <span class="history-time">{when(item.at)}</span>
                   {@render reviewer(item)}

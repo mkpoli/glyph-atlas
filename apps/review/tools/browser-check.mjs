@@ -16,13 +16,13 @@ try {
   const errors = []
   browser.listeners.push(m => { if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text) })
   // Deterministic OCR suggestions for synthetic glyphs; real model smoke is a separate read-only check.
-  // The corpus counts as the site has them: thousands of graphemes, which the browse panel must not draw
+  // The crop counts as the site has them: thousands of graphemes, which the browse panel must not draw
   // all at once (the local review service serves none).
-  const corpusCharacters = { items: Array.from({ length: 15000 }, (_, i) => {
+  const graphemeCounts = { items: Array.from({ length: 15000 }, (_, i) => {
     const char = String.fromCodePoint(0x4E00 + i)
-    return [char, 'U+' + (0x4E00 + i).toString(16).toUpperCase(), 1]
+    return [char, 'U+' + (0x4E00 + i).toString(16).toUpperCase(), 0, 1]
   }) }
-  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*\/suggestions?*' }, { urlPattern: '*\/atlas\/corpus\/characters*' }] })
+  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*\/suggestions?*' }, { urlPattern: '*\/atlas\/graphemes\/counts*' }] })
   const suggested = { status: 'ready', candidates: [
     { text: 'シヨロ', engine: 'NDLkotenOCR', score: .9 },
     { text: 'カ', engine: 'fixture classifier', score: .7 },
@@ -31,7 +31,7 @@ try {
   browser.listeners.push(m => { if (m.method === 'Fetch.requestPaused') browser.send('Fetch.fulfillRequest', {
     requestId: m.params.requestId, responseCode: 200,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-    body: Buffer.from(JSON.stringify(m.params.request.url.includes('/atlas/corpus/characters') ? corpusCharacters : suggested)).toString('base64'),
+    body: Buffer.from(JSON.stringify(m.params.request.url.includes('/atlas/graphemes/counts') ? graphemeCounts : suggested)).toString('base64'),
   }) })
   async function click(selector) {
     await browser.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`)

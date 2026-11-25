@@ -8,9 +8,10 @@ Status: proposed
 A 字体 is named by a code point, a variation sequence of the IVD or an ideographic description
 sequence (decision 0013). A cursive form written in one stroke has none of the three. 事 is written
 in the corpus as a zigzag over a wide loop with a tail, close to る, in 4,203 of the 8,347 glyphs of
-its forms clustering (revision 582865e3b2b68c53), and in a shape close to 方 in 42 more.
-Neither has a code point or a registered figure, and neither is built from components a description
-could list. The Forms tool and the form bar could name neither.
+its forms clustering (revision 582865e3b2b68c53), and in a shape close to 方 in 42 more. A third
+cursive shape was supplied as a drawing on 2026-11-18 and has no cluster yet. None of the three has
+an encoded code point or a registered figure, and none is built from components a description could
+list. The Forms tool and the form bar could name none of them.
 
 ## The decision
 
@@ -19,7 +20,7 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
 
 | What | Where |
 | --- | --- |
-| The table: code point, the grapheme the form writes, its script, a description in words, the crops the form was found in and who drew it | `data/vocab/drawn-forms.yaml` |
+| The table: code point, the grapheme the form writes, its script, a description in words, the crops a form was found in, where it has any, and who drew it | `data/vocab/drawn-forms.yaml` |
 | The drawings, a sans and a serif one: each one filled path in a 1000-unit em | `data/vocab/drawn-forms/<code point>.sans.svg`, `.serif.svg` |
 | The picture the drawings were traced from | `data/vocab/drawn-forms/<code point>.source.png`, `scripts/trace_form.py` |
 | The fonts, the stylesheet and the Worker's table | `scripts/build_drawn_forms.py` |
@@ -49,9 +50,15 @@ A form of this kind is a **drawn form**: one code point of Supplementary Private
   row first made for one under that grapheme.
 
 A drawing is an editorial normalisation of the form, made by hand: it labels a group of crops and is
-never shown as an occurrence. The two forms of 事 were drawn by mkpoli and traced from the pictures
-kept beside them. Strokes built from knots, plain traces of a crop and a crop's centre lines drawn
-again were each tried first and set aside.
+never shown as an occurrence. A form supplied before its crops are grouped stays a name without a
+count until a clustering gives it one. The three forms of 事 were drawn by mkpoli and traced from the
+pictures kept beside them. For text sizes, the trace widens each figure by 30%. The two cuts share a scale
+fitted to an 880-unit box with a five-unit allowance on each edge. F0001 and F0002 use that allowance
+for ink. For the heavier る-shaped F0000, the serif outline expands by 1.16 units and the sans outline
+contracts by 2.32 before widening. These adjustments bring its effective stroke width in each cut to
+the mean of the other two forms. We estimate stroke width as twice the filled area divided by the
+total perimeter of the finished outline, including the inner edges of loops. Strokes built from knots, plain traces of a crop and a crop's centre lines
+drawn again were each tried first and set aside.
 
 ## Limits
 
@@ -70,8 +77,12 @@ again were each tried first and set aside.
 
 ## Sources
 
-- The two forms of 事: the clusters of forms revision 582865e3b2b68c53 on
-  https://glyphatlas.org/ja/forms/U+4E8B, read 2026-11-16, grouped into the two forms by mkpoli on the
-  same day. The cluster keys are in `data/vocab/drawn-forms.yaml`.
+- The three forms of 事: the clusters of forms revision 582865e3b2b68c53 on
+  https://glyphatlas.org/ja/forms/U+4E8B, read 2026-11-16, grouped into two forms by mkpoli on the
+  same day, and a third supplied as a drawing on 2026-11-18. The cluster keys and the third's
+  provenance are in `data/vocab/drawn-forms.yaml`.
+- The two cursive forms of 時 (U+F0003, U+F0004): the clusters of forms revision 582865e3b2b68c53 on
+  https://glyphatlas.org/ja/forms/U+6642, read and grouped by mkpoli on 2026-11-24. Cluster keys and
+  provenance are in `data/vocab/drawn-forms.yaml`.
 - `docs/decisions/0013-finer-forms.md`, `docs/design/form-model.md` (the `pua` scheme and its
   namespace and version).

@@ -25,7 +25,7 @@
     <ol class="form-crops">
       {#each form.items as item (item.id)}
         <li>
-          <a href={cropAddress(item.id, item.origin)} aria-label={t('chips.showCharacter', { char: item.label })}>
+          <a href={cropAddress(item.id)} aria-label={t('chips.showCharacter', { char: item.label })}>
             <Glyph {item} alt="" />
             <span class="crop-label"><ScriptText text={item.label} titled={false} /></span>
           </a>

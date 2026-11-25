@@ -151,19 +151,23 @@ def grapheme_of(text: str) -> str | None:
 GRAPHEME_KEY = r"^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$"
 
 
+def grapheme_key(value: str | None) -> str | None:
+    """A grapheme's key as a request names it, upper-cased with single spaces, or None when it names none."""
+    key = " ".join((value or "").upper().split())
+    if key and (not re.fullmatch(GRAPHEME_KEY, key)
+                or any(point > 0x10FFFF or 0xD800 <= point <= 0xDFFF for point in (int(one.removeprefix("U+"), 16) for one in key.split(" ")))):
+        raise BadRequest("Invalid grapheme.")
+    return key or None
+
+
 def grapheme_members(key: str) -> list[str]:
     """The characters a grapheme is written as, by the character table: は's family is は, ハ and its
-    hentaigana. A key that names no family is its own text alone; one that names a family's member
-    rather than the family is refused, as the hosted site refuses it."""
-    points = key.split(" ")
-    if not re.fullmatch(GRAPHEME_KEY, key) or any(int(point.removeprefix("U+"), 16) > 0x10FFFF for point in points):
-        raise BadRequest("Invalid grapheme.")
-    head = refs.grapheme(key)
-    if head and head != key:
-        raise BadRequest(f"{refs.from_code_points(points)} is filed under {refs.to_char(head)}.")
-    info = refs.grapheme_info(key) if head else None
+    hentaigana. A key that names no family is its own text alone, and so is one that names a family's
+    member: its round is that member's, as on the hosted site."""
+    key = grapheme_key(key) or ""
+    info = refs.grapheme_info(key) if refs.grapheme(key) == key else None
     # The family's head first, as the character table lists its members.
-    return [member["char"] for member in info["members"]] if info else [refs.from_code_points(points)]
+    return [member["char"] for member in info["members"]] if info else [refs.from_code_points(key.split(" "))]
 
 
 def single_character(text: str) -> bool:
@@ -184,7 +188,7 @@ def review_priority(unit: Unit) -> int:
 
 #: The gallery group of a unit no one has read yet, by the script it was filed under.
 SCRIPT_GROUPS = {Script.HIRAGANA: "kana", Script.HENTAIGANA: "kana", Script.KATAKANA: "kana", Script.HAN: "kanji",
-                 Script.HANGUL: "hangul", Script.GUGYEOL: "gugyeol", Script.TANGUT: "tangut"}
+                 Script.HANGUL: "hangul", Script.GUGYEOL: "gugyeol", Script.TANGUT: "tangut", Script.SEAL: "seal"}
 
 
 def unread(unit: Unit) -> bool:
@@ -209,6 +213,9 @@ def character_group(unit: Unit) -> str:
     # Python names no Tangut ideograph, so the Tangut blocks decide (Khitan lies between them).
     if char and (ord(char) == 0x16FE0 or 0x17000 <= ord(char) <= 0x18AFF or 0x18D00 <= ord(char) <= 0x18DFF):
         return "tangut"
+    # Small seal is one block, which Python may not name either.
+    if char and 0x3D000 <= ord(char) <= 0x3FC3F:
+        return "seal"
     return "kanji" if name.startswith("CJK") else "other"
 
 
@@ -695,8 +702,20 @@ class FormEdit(BaseModel):
     client_id: str = Field(min_length=1, max_length=128)
     crop_version: str = Field(min_length=1, max_length=1024)
     form: str | None = Field(default=None, max_length=256)
-    #: The submission id of the review that renamed the crop as this form, when it did.
-    review: UUID | None = None
+
+
+class CropStructureEdit(BaseModel):
+    """A reviewer's structure for one crop whose shape no form names, on the evidence version they saw; with
+    none named their own is cleared."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    client_id: str = Field(min_length=1, max_length=128)
+    crop_version: str = Field(min_length=1, max_length=1024)
+    char: str | None = Field(default=None, min_length=1, max_length=256)
+    of: str | None = Field(default=None, min_length=1, max_length=8)
+    head: bool = False
+    structure: str | None = Field(default=None, pattern=r"^st:[0-9a-f]{32}$")
 
 
 class WrittenForEdit(BaseModel):
@@ -717,6 +736,7 @@ class StructureEdit(BaseModel):
     client_id: str = Field(min_length=1, max_length=128)
     char: str | None = Field(default=None, min_length=1, max_length=256)
     of: str | None = Field(default=None, min_length=1, max_length=8)
+    head: bool = False
     structure: str | None = Field(default=None, pattern=r"^st:[0-9a-f]{32}$")
     remove: bool = False
     replace: bool = False
@@ -728,6 +748,7 @@ class StructureName(BaseModel):
     model_config = ConfigDict(extra="forbid")
     char: str | None = Field(default=None, min_length=1, max_length=256)
     of: str | None = Field(default=None, min_length=1, max_length=8)
+    head: bool = False
     structure: str | None = Field(default=None, pattern=r"^st:[0-9a-f]{32}$")
 
 
@@ -981,7 +1002,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
     def catalogue(
         character: str | None = None,
         q: str | None = None,
-        group: Literal["all", "kana", "kanji", "hangul", "gugyeol", "tangut"] = "all",
+        group: Literal["all", "kana", "kanji", "hangul", "gugyeol", "tangut", "seal"] = "all",
         state: Literal["all", "pending", "seen", "checked", "flagged", "hard", "skipped", "attention"] = "all",
         reviewer: str | None = Query(default=None, max_length=128),
         purpose: Literal["browse", "review"] = "browse",
@@ -1016,7 +1037,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
         document = document or None
-        grapheme = " ".join(grapheme.upper().split()) if grapheme else None
+        grapheme = grapheme_key(grapheme)
+        # A listing under a member's key is its grapheme's, and a small seal character's is its own, as on the hosted site.
+        if grapheme and purpose != "review" and not refs.is_small_seal(refs.from_code_points(grapheme.split(" "))):
+            grapheme = refs.grapheme(grapheme) or grapheme
         # A round names its grapheme, and deals every character the character table files under it.
         members = grapheme_members(grapheme) if purpose == "review" and grapheme else None
         records = [(u, rev) for u, rev in units
@@ -1043,8 +1067,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         families = {name: grapheme_of(name) for name in categories}
+        # A member's key, of a round or a small seal character, names that character alone.
+        alone = grapheme if grapheme and refs.grapheme(grapheme) not in (None, grapheme) else None
         selected = [(u, rev) for u, rev in searched if (character is None or shown(u) == character)
-                    and (grapheme is None or families.get(shown(u)) == grapheme)
+                    and (grapheme is None or (" ".join(refs.to_code_points(shown(u))) == alone if alone else families.get(shown(u)) == grapheme))
                     and (document is None or books[u.id] == document)
                     and (group == "all" or character_group(u) == group)
                     and (state == "all" or states[u.id] == state
@@ -1074,7 +1100,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
                 **({"grapheme": {"code_point": grapheme, "char": refs.from_code_points(grapheme.split(" ")),
-                                 "members": members}} if members is not None else {}),
+                                 "members": members}} if members is not None else {"head": grapheme} if grapheme else {}),
                 "categories": [{"label": name, "grapheme": families[name], **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
@@ -1086,11 +1112,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
 
     @api.get("/atlas/groups/stats")
     def group_stats() -> dict:
-        """Crop counts per script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`)."""
+        """Crop counts per script group (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `seal`, `other`)."""
         generation = (file_stamp(store.path), file_stamp(Path(str(store.path) + "-wal")),
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, *_ = catalogue_snapshot(generation)
-        order = ("all", "kana", "kanji", "hangul", "gugyeol", "tangut", "other")
+        order = ("all", "kana", "kanji", "hangul", "gugyeol", "tangut", "seal", "other")
         empty_scope = lambda: {"total": 0, "pending": 0, "seen": 0, "checked": 0, "flagged": 0, "hard": 0, "withheld": 0}
         buckets = {name: empty_scope() for name in order}
         for u, _ in units:
@@ -1127,8 +1153,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         page = store.page(unit.page_id) if unit.page_id else None
         document = store.document(unit.document_id or page.document_id) if (unit.document_id or page) else None
         value, basis = style_module.resolve(unit, page, document)
+        # The style the unit takes when it states none of its own.
+        inherited, _ = style_module.resolve_values(
+            None, page.style if page else None, document.id if document else None, document.style if document else None)
         result.update({"context_image": result["image"] + "&context=true",
-                       "style": value, "style_basis": basis, "style_editable": True,
+                       "style": value, "style_basis": basis, "style_editable": True, "style_inherited": inherited,
                        "text": line.text if line else "", "source": document.title if document else "",
                        "page_number": page.seq + 1 if page else None,
                        "line": line.model_dump(mode="json") if line else None})
@@ -1158,6 +1187,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         # The pixels a claim made in this inspector is about, named as the Worker names them.
         result["crop_version"] = evidence.record_version(result)
         result["form"] = store.forms_for({unit_id: result["crop_version"]}).get(unit_id)
+        result["structure"] = store.built_as(unit_id, result["crop_version"])
         return result
 
     def crop_now(subject: str) -> str | None:
@@ -1327,6 +1357,8 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
             raise BadRequest("A round needs at least one answer, one seen crop or one skipped crop.")
         if len(set(ids)) != len(ids):
             raise BadRequest("A character can appear only once in a round.")
+        # A round of one member is the family's, and holds that member's crops.
+        grapheme = refs.grapheme(round.grapheme) or round.grapheme
         prefix = f"quiz:{round.id}:"
         previous = store.submission_results(round.client_id, prefix)
         if previous:
@@ -1335,7 +1367,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 raise BadRequest("This round was already submitted with different characters.")
             for answer in round.answers:
                 old = json.loads(next(r for r in reviews if r["target_id"] == answer.id)["review"]["evidence"])
-                if (old.get("grapheme") != round.grapheme or old["verdict"] != answer.verdict
+                if ((refs.grapheme(old.get("grapheme") or "") or old.get("grapheme")) != grapheme or old["verdict"] != answer.verdict
                         or old.get("issue") != answer.issue
                         or old.get("suggested_text") != correction_text(answer.correction, answer.issue)
                         or old.get("suggested_character") != identity_correction(answer.character, answer.issue)
@@ -1363,7 +1395,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 raise BadRequest("Choose a different character or mark the character as matching.")
             written = bool(identity)
             base = answer.revision
-            evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id), "grapheme": round.grapheme,
+            evidence = json.dumps({"kind": "visual-quiz", "round": str(round.id), "grapheme": grapheme,
                                    "label": shown(unit), "verdict": answer.verdict, "issue": answer.issue,
                                    **({"kept_issue": "crop"} if answer.bad_crop else {}),
                                    "suggested_text": correction,
@@ -1403,7 +1435,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 target_type="unit", target_id=crop.id, field=SEEN, new=value, base_revision=None,
                 client_id=round.client_id, idempotency_key=prefix + crop.id + (":seen" if value is True else ":skip"),
                 evidence=json.dumps({"kind": "visual-quiz-seen" if value is True else "visual-quiz-skip",
-                                     "round": str(round.id), "grapheme": round.grapheme,
+                                     "round": str(round.id), "grapheme": grapheme,
                                      "label": shown(unit), "image_sha256": crop.image_sha256,
                                      "box": unit.box.model_dump() if unit.box else None},
                                     ensure_ascii=False),
@@ -1612,6 +1644,20 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         return ledger_call(store.set_form, key=key, actor=edit.client_id, request=request, crop=unit_id, crop_version=version,
                            form=identity_text(edit.form) if edit.form and edit.form.strip() else None)
 
+    @api.post("/atlas/characters/{unit_id:path}/structure")
+    def set_crop_structure(unit_id: str, edit: CropStructureEdit) -> dict:
+        """Say what structure a crop is built as where no recorded form names its shape, as the Worker does."""
+        key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
+        previous = ledger_call(store.claim_submission, key=key, request=request)
+        if previous is None:
+            version = crop_now(unit_id)
+            if version is None:
+                raise HTTPException(404, "This crop is not in the collection, or has no image to make a claim about.")
+            if edit.crop_version != version:
+                raise HTTPException(409, "This crop was cut again. Reload it.")
+        return ledger_call(store.set_crop_structure, key=key, actor=edit.client_id, request=request, crop=unit_id,
+                           crop_version=edit.crop_version, char=edit.char, of=edit.of, head=edit.head, structure=edit.structure)
+
     @api.post("/atlas/forms/{form}/written_for")
     def set_written_for(form: str, edit: WrittenForEdit) -> dict:
         """Say a form is written for a grapheme, or take back the reader's own claim, as the Worker does.
@@ -1622,7 +1668,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         key, request = f"{edit.client_id}:{edit.id}", edit.model_dump(mode="json")
         previous = ledger_call(store.claim_submission, key=key, request=request)
         if previous is not None:
-            return {"id": form, "written_for": store.written_for(form)}
+            return {"id": form, "grapheme": refs.grapheme(edit.grapheme) or edit.grapheme, "written_for": store.written_for(form)}
         return ledger_call(store.set_written_for, key=key, actor=edit.client_id, request=request, form=form,
                            grapheme=edit.grapheme, remove=edit.remove)
 
@@ -1631,12 +1677,12 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         """File a form under a 構形, or take back the reader's own claim, as the Worker does.
 
         The form is named by its id or by its written value, the structure by a character or
-        description that has it or by its id. A regional shape named with `of` is derived here like any
-        description. The answer names the structures the form stands under now.
+        description that has it, a regional shape of the character `of` (which has that character's),
+        with `head` the structure that one is a layout of, or by its id. The answer names the structures the form stands under now.
         """
         key, request = f"{edit.client_id}:{edit.id}", {"form": form, "structure": edit.model_dump(mode="json")}
         return ledger_call(store.set_structure, key=key, actor=edit.client_id, request=request, form=form,
-                           char=edit.char, structure=edit.structure, remove=edit.remove, replace=edit.replace)
+                           char=edit.char, of=edit.of, head=edit.head, structure=edit.structure, remove=edit.remove, replace=edit.replace)
 
     @api.post("/atlas/structures/folds")
     def set_fold(edit: FoldEdit) -> dict:

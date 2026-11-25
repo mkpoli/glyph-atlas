@@ -48,6 +48,10 @@ def code_point(char: str) -> str:
 
 
 def family(cp: str) -> str:
+    """The class CODH trained a character's forms as: the head of a merged 新字/旧字 family, else itself. A
+    small seal character is a member of such a family and no form of its class."""
+    if refs.is_small_seal(refs.to_char(cp)):
+        return cp
     info = refs.grapheme_info(cp)
     return info["code_point"] if info and info["relation"] == "shinjitai-kyujitai" else cp
 

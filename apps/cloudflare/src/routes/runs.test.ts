@@ -59,8 +59,8 @@ function fixture() {
     context_image: `/atlas/media/ctx${c.page}.webp`, context_box: { x: 0, y: 0, w: 100, h: 200 }, page_number: 4,
     ...(c.kind === 1 ? { source: { document_id: 'ndl:book', corpus: 'codh', page_id: pageKey(c) } }
       : { source: source(c), context: true, source_scale: [1, 1] }) });
-  // The export writes whether a reviewer may redraw a collected crop's box, by the Worker's rule.
-  const withEditable = (c: typeof at[number], r: Json) => c.kind === 1 ? r : { ...r, crop_editable: Boolean(redrawLimits(r)) };
+  // The export writes whether a reviewer may redraw any crop's box, by the Worker's rule.
+  const withEditable = (_c: typeof at[number], r: Json) => ({ ...r, crop_editable: Boolean(redrawLimits(r)) });
   const packed = at.filter(c => c.kind === 1).map(c => new TextEncoder().encode(JSON.stringify(record(c))));
   const pack = new Uint8Array(packed.reduce((n, b) => n + b.length, 0));
   const places: [number, number][] = [];

@@ -20,7 +20,8 @@
   import { number } from '../lib/client.js'
   import { suggest } from '../lib/layers.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { graphemeAddress } from '../lib/addresses.js'
+  import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import { originTitle } from '../lib/origin.js'
 
   // The family the address names; none, the first of the list. `onshow` is told each family shown.
@@ -196,7 +197,7 @@
     if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return
     event?.preventDefault(); clearContext()
     const shown = splitK ? groups.flatMap(group => group.items) : glyphs
-    inspector.inspect(id, shown.map(glyph => ({ id: glyph.id, origin: 'corpus' })), () => { edited = true }, 'corpus')
+    inspector.inspect(id, shown, () => { edited = true })
   }
   $effect(() => {
     if (page.state.inspect || !edited) return
@@ -369,7 +370,7 @@
     if (key === 'z' || key === 'y') { event.preventDefault(); takeBack(key === 'y' || event.shiftKey); return true }
     return false
   }
-  const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: current.char })
+  const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: graphemeLabel(current.char) })
   function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
     // The inspector's keys are its own while it is open over the page.
@@ -437,7 +438,7 @@
       {:else if glyph.basis === 'form_glyph'}<span class="member-form">{glyph.form ?? '×'}</span>{/if}
       {#if dated && tileDate(glyph)}<span class="member-year">{tileDate(glyph)}</span>{/if}
     </button>
-    <a class="member-open" href={cropAddress(glyph.id, 'corpus')} aria-label={t('forms.member.open', { id: glyph.id })} title={t('forms.member.open', { id: glyph.id })} onclick={event => openCrop(glyph.id, event)}>↗</a>
+    <a class="member-open" href={cropAddress(glyph.id)} aria-label={t('forms.member.open', { id: glyph.id })} title={t('forms.member.open', { id: glyph.id })} onclick={event => openCrop(glyph.id, event)}>↗</a>
   </div>
 {/snippet}
 
@@ -452,7 +453,7 @@
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
         {#if compact}{#if unnamed(c)}<span class="cluster-open">{t('forms.unnamed', { count: number(unnamed(c)) })}</span>{/if}
-        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} inline /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
         {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
       </span>
       <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
@@ -476,7 +477,7 @@
     <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)}>
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(stray.count)}</span>
-        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} /></span></span>
+        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} inline /></span></span>
       </span>
       <span class="cluster-samples">{#each stray.glyphs as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
     </button>
@@ -502,7 +503,7 @@
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
         {#each rows.items as f, k (f.code_point)}
           <li aria-posinset={rows.from + k + 1} aria-setsize={shown.length}><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
-            <span class="family-char"><ScriptText text={f.char} /></span>
+            <span class="family-char" class:pair={labelSize(f.char) === 2} class:trio={labelSize(f.char) === 3}><ScriptText {...labelParts(f.char)} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
@@ -522,7 +523,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}><ScriptText text={current.char} /></a></h2>
+          <h2><a class="family-link" href={localize(graphemeAddress(current.code_point, current.char))} aria-label={t('chips.showCharacter', { char: graphemeLabel(current.char) })}><ScriptText {...labelParts(current.char)} /></a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>
@@ -586,7 +587,7 @@
                     <input bind:value={correction} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />
                     <button disabled={busy}>{t('forms.report')}</button>
                   </form>
-                {:else}<button disabled={busy || !cluster} onclick={() => correcting = true}>{t('forms.cluster.character', { char: current.char })}…</button>{/if}
+                {:else}<button disabled={busy || !cluster} onclick={() => correcting = true}>{t('forms.cluster.character', { char: graphemeLabel(current.char) })}…</button>{/if}
                 <button disabled={busy || !(cluster?.form || cluster?.issue)} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
               {/if}
             </div>
@@ -687,13 +688,15 @@
   .family-list li:not(.family-skeleton){height:50px}
   .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;align-content:center;gap:4px 10px;width:100%;height:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
   .family-list button.current{background:var(--accent-light)}
-  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
+  .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:var(--char-font)}
+  .family-char.pair{font-size:19px;line-height:1.65;white-space:nowrap}
+  .family-char.trio{font-size:13px;line-height:2.4;white-space:nowrap}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}
   .family-title{display:flex;align-items:baseline;gap:18px;border-bottom:1px solid var(--line);padding-bottom:12px}
   .family-link{color:inherit;text-decoration:none}.family-link:hover{color:var(--accent)}
-  .family-title h2{font-size:48px;font-weight:500;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
+  .family-title h2{font-size:48px;font-weight:500;font-family:var(--char-font)}
   .family-title p{font-size:12px;color:var(--muted)}
   .history-actions{margin-left:auto;display:flex;gap:4px}.history-actions button{font-size:11px;padding:6px 10px}.family-title strong{color:var(--ink);font-weight:500}
   .form-palette{position:sticky;top:0;z-index:3;background:var(--overlay-page);padding:14px 0;border-bottom:1px solid var(--line)}
@@ -701,10 +704,10 @@
   .palette-forms{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
   .form-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:66px;padding:8px 8px 6px;background:var(--surface)}
   .form-choice:not(:disabled):hover{border-color:var(--accent);background:var(--accent-hover)}
-  .form-source{font-size:12px;min-height:16px;font-family:"Noto Sans CJK JP","Yu Gothic","GenZui Sans","Noto Serif Tangut",sans-serif}
+  .form-source{font-size:12px;min-height:16px;font-family:var(--char-font)}
   .form-choice small{font-size:8px;color:var(--muted);font-family:"GenZui Sans",ui-monospace,monospace}
   .form-choice kbd{position:absolute;top:4px;right:5px;font-size:8px;color:var(--faint);font-family:"GenZui Sans",ui-monospace,monospace}
-  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:"Kureedo Kata","Klee One","LXGW WenKai TC","LXGW WenKai","GenZui Sans","Noto Serif Tangut",serif}
+  .form-choice.described{justify-content:center;font-size:22px;line-height:1.2;padding:8px 12px;font-family:var(--char-font)}
   .form-choice.form-compose{justify-content:center;font-size:12px;color:var(--muted);border-style:dashed}
   .form-choice.form-compose[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .palette-composer{margin-top:12px;max-width:560px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
@@ -716,12 +719,12 @@
   .form-cluster.picked{border-color:var(--accent);background:light-dark(#f3f1ff, rgb(156 146 255 / 10%))}
   .form-usage{list-style:none;margin:0;padding:12px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 28px}
   .form-usage li{display:grid;grid-template-columns:30px minmax(0,1fr) auto 3.2em;align-items:center;gap:10px;font-size:12px;font-variant-numeric:tabular-nums}
-  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans","Noto Serif Tangut",sans-serif}
+  .usage-form{font-size:20px;line-height:1.2;text-align:center;font-family:var(--char-font)}
   .usage-bar{height:8px;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
   .usage-count{color:var(--ink)}.usage-share{color:var(--muted);text-align:right}
   .form-group{margin-top:22px}
   .form-group header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:"Kureedo Kata","Noto Sans CJK JP","GenZui Sans","Noto Serif Tangut",sans-serif}
+  .group-form{font-size:26px;line-height:1.2;color:var(--accent);font-family:var(--char-font)}
   .group-source{font-size:13px;color:var(--muted)}.group-meta{font-size:11px;color:var(--muted);margin-left:auto}
   .form-group .cluster-issue{margin-left:0}
   .cluster-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:0;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden}
@@ -770,7 +773,7 @@
   .member-flag{position:absolute;top:3px;right:5px;font-size:12px;color:var(--wrong)}
   .correct-char{display:flex;gap:4px}.correct-char input{width:64px;padding:6px 8px;font-size:14px}.correct-char button{font-size:11px;padding:6px 9px}
   .member-year{position:absolute;bottom:3px;left:5px;font-size:9px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
-  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:var(--drawn-sans),"Kureedo Kata","GenZui Sans","Noto Serif Tangut",system-ui,sans-serif}
+  .member-form{position:absolute;top:3px;right:5px;font-size:14px;color:var(--accent);font-family:var(--char-font)}
   @media(max-width:900px){.forms-layout{grid-template-columns:1fr}.family-list{position:static;max-height:260px}.cluster-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.forms{padding:16px 16px 40px}.form-choice{min-width:54px}.palette-other{flex-direction:row;margin-left:0;width:100%}}
 </style>

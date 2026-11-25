@@ -16,7 +16,7 @@
   // each component; `lookup(char)` asks for one; `ontake(text)` takes a part or a node, as written.
   import { untrack } from 'svelte'
   import { isNode, leaves, write } from '../lib/ids.js'
-  import { DEPTH, ROOTS, decomposable, lookupChar, namedParts, roots, searchParts, tokens, treeKey, unencoded, variants } from '../lib/decompose.js'
+  import { DEPTH, ROOTS, decomposable, lookupChar, namedParts, regionNames, roots, searchParts, tokens, treeKey, unencoded, variants } from '../lib/decompose.js'
   import { suggest } from '../lib/layers.js'
   import { base, t } from '../lib/i18n.svelte.js'
   let { known = {}, swaps = {}, lookup, disabled = false, ontake } = $props()
@@ -25,14 +25,6 @@
   const SWAPS_SHOWN = 8
   // A character the search found by its components is ranked 7, by the site and the local service alike.
   const COMPONENT_RANK = 7
-  // The IRG source letters BabelStone tags a regional shape with (`refs.SOURCE_REGIONS`), each with the
-  // region its kIRG_*Source field of UAX #38, Unicode Han Database (Unihan), names
-  // (https://www.unicode.org/reports/tr38/): G China, H Hong Kong, M Macao, T Taiwan, J Japan, K the
-  // Republic of Korea, P the Democratic People's Republic of Korea, V Vietnam, B the United Kingdom,
-  // named in the reader's language by the browser's region names. U (the UTC) and S (the SAT
-  // Daizōkyō Text Database) are no regions and keep their own names.
-  const REGIONS = { G: 'CN', H: 'HK', M: 'MO', T: 'TW', J: 'JP', K: 'KR', P: 'KP', V: 'VN', B: 'GB', U: 'UTC', S: 'SAT' }
-  const displayNames = $derived.by(() => { try { return new Intl.DisplayNames([base()], { type: 'region' }) } catch { return null } })
 
   let text = $state(''), extra = $state([]), toggled = $state(new Set())
   let focusKey = $state(null), swapAt = $state(null), live = $state('')
@@ -185,9 +177,7 @@
   // The row that takes the Tab stop: the one last focused while it is shown, else the first.
   const tabStop = $derived(rows.some(row => row.key === focusKey) ? focusKey : rows[0]?.key)
 
-  const regionName = letter => REGIONS[letter].length === 2 ? displayNames?.of(REGIONS[letter]) ?? REGIONS[letter] : REGIONS[letter]
-  const regionNames = regions => [...regions].filter(r => r in REGIONS).map(r => `${r} ${regionName(r)}`).join(' · ')
-  const regionsTitle = regions => t('form.ids.from.regions', { regions: regionNames(regions) })
+  const regionsTitle = regions => t('form.ids.from.regions', { regions: regionNames(regions, base()) })
   // What a row is read out as: what taking it puts in the slot, its regions, and its note.
   const rowLabel = row => [
     row.kind === 'status' ? statusText(row)

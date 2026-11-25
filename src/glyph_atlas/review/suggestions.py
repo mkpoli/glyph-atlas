@@ -89,7 +89,8 @@ def _class_family(name: str) -> tuple[str, tuple[str, ...]]:
     info = refs.grapheme_info(name)
     if info is None or info["relation"] not in MERGED_RELATIONS:
         return name, (refs.to_char(name),)
-    return info["code_point"], tuple(member["char"] for member in info["members"])
+    # The classes were trained on no small seal form, so a vote is for none.
+    return info["code_point"], tuple(member["char"] for member in refs.transcribed(info["members"]))
 
 
 def classifier_results(classes, probabilities) -> tuple[list[dict], dict]:

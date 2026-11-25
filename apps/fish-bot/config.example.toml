@@ -5,9 +5,13 @@
 homeserver = "http://127.0.0.1:6167"
 token_file = "/etc/fish-bot/matrix-token"
 
+[gemini]
+api_key_file = "/etc/fish-bot/gemini-key"
+model = "gemini-4-hydrogen"
+
 [deepseek]
+# Work nobody hears, at about a tenth of the price. Without this table Gemini does it.
 api_key_file = "/etc/fish-bot/deepseek-key"
-model = "deepseek-flash"
 
 [github]
 # A fine-grained token with Issues read/write on this repository only, and Metadata read-only.
@@ -16,7 +20,11 @@ repo = "mkpoli/glyph-atlas"
 
 [bot]
 user_id = "@bigfatfish:glyphatlas.org"
-display_name = "Big Fat Fish"
+display_name = "大肥魚"
+# Names that call the bot besides its mention and `!fish`.
+aliases = ["大肥魚", "大肥鱼", "肥魚", "肥鱼", "Big Fat Fish"]
+# Rooms where `!fish 自我介紹` gets an introduction; elsewhere it points here.
+intro_rooms = ["#welcome:glyphatlas.org", "#chatting:glyphatlas.org"]
 # Empty means every room in the server's public directory. A list limits the bot to those rooms.
 rooms = []
 # The homeserver's bridge and bot accounts, which never call the bot.
@@ -26,7 +34,52 @@ ignored_senders = [
   "@telegrambot:glyphatlas.org",
   "@heisenbridge:glyphatlas.org",
   "@qqbot:glyphatlas.org",
+  "@telegram_8954644733:glyphatlas.org",
+  "@irc_libera_chanserv:glyphatlas.org",
 ]
+
+[chat]
+# Reading along. She opens a room with unread lines at random times, on average this many minutes
+# after the first of them (longer after she lately spoke there), and decides whether to join in. At
+# most visits_per_hour of these across the rooms.
+visit_minutes = 25
+visits_per_hour = 8
+# Greet a person once, when they first join or first speak in any public room.
+welcome = true
+
+[digest]
+# From this hour (JST) each day, one digest per room below, written wholly in the language named
+# there (with its script where that matters): what the repositories merged and released in the
+# last day, and what the other rooms talked about. A quiet day gets none.
+hour = 21
+repos = [
+  "mkpoli/glyph-atlas", "mkpoli/han-compose", "mkpoli/ids-input", "mkpoli/unencoded-db",
+  "mkpoli/han-input", "mkpoli/tangut-input", "mkpoli/khitan-input", "mkpoli/jurchen-input",
+  "mkpoli/glyph-cutter", "mkpoli/han-decompose", "mkpoli/han2ids", "mkpoli/moji",
+]
+
+[digest.rooms]
+"#en:glyphatlas.org" = "English"
+"#zh:glyphatlas.org" = "Chinese in traditional characters"
+"#ja:glyphatlas.org" = "Japanese"
+"#ko:glyphatlas.org" = "Korean"
+"#vi:glyphatlas.org" = "Vietnamese"
+
+[memory]
+# Episodes and notes about people, the community and the bot, kept this many days after they last
+# came up. `!fish forget me` deletes a person's.
+enabled = true
+days = 365
+
+[lookup]
+# Web search, page reading and GitHub reads in answers to a call, at most this many an hour.
+enabled = true
+per_hour = 120
+
+[budget]
+# What model calls may cost a day (JST) on average, in dollars at list price. A day may also spend what
+# the days before saved, up to one day's worth, and borrow one day's worth from the next ones.
+daily_usd = 0.75
 
 [limits]
 context_messages = 120
@@ -38,4 +91,6 @@ call_window_seconds = 86400
 max_rooms = 200
 max_calls_per_hour = 60
 max_calls_per_user_per_hour = 5
+max_chats_per_hour = 120
+max_chats_per_user_per_hour = 20
 retention_days = 180

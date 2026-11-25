@@ -57,7 +57,7 @@ describe('a crop’s citation', () => {
     expect(record).toContain('Source: A\\_B \\& 50\\%, p. 100');
   });
   it('is a Hayagriva entry of the site, with the document it was cut from as its original', () => {
-    const glyph = cropEntry({ ...crop, source: { title: '源氏物語 "桐壺"', holder: '国文学研究資料館', shelfmark: '9-1' } }, 'corpus');
+    const glyph = cropEntry({ ...crop, source: { title: '源氏物語 "桐壺"', holder: '国文学研究資料館', shelfmark: '9-1' } });
     expect(hayagriva(glyph, 'https://glyphatlas.org', [2026, 10, 5])).toBe(`glyphatlas-敢-${token}:
   type: "entry"
   title:
@@ -66,7 +66,7 @@ describe('a crop’s citation', () => {
   genre: "Crop"
   serial-number: "ex:1"
   url:
-    value: "https://glyphatlas.org/corpus/ex:1?v=${token}"
+    value: "https://glyphatlas.org/crop/ex:1?v=${token}"
     date: "2026-10-05"
   parent:
     - type: "reference"
@@ -87,13 +87,13 @@ describe('a crop’s citation', () => {
 `);
   });
   it('cites an earlier cut without the label the crop has now', () => {
-    const older = cropEntry(crop, 'collection', `ex:1@${pixels}@1,2,3,4`);
+    const older = cropEntry(crop, `ex:1@${pixels}@1,2,3,4`);
     expect([older.label, older.token, citationKey(older)]).toEqual([null, versionToken('ex:1', `ex:1@${pixels}@1,2,3,4`), `glyphatlas-crop-${older.token}`]);
   });
   it('names a corpus glyph’s holder, shelfmark and transcription, and leaves out an unassigned label', () => {
     const glyph = cropEntry({ id: 'codh:1', label: '〓', identity_status: 'unassigned', licence: 'unknown',
       source: { title: '源氏物語', holder: '国文学研究資料館', shelfmark: '9-1' }, text_attribution: 'CODH 日本古典籍くずし字データセット' }, 'corpus');
-    expect(glyph.path).toBe('/corpus/codh:1');
+    expect(glyph.path).toBe('/crop/codh:1');
     expect(glyph.label).toBeNull();
     const item = csl(glyph, 'https://glyphatlas.org', [2026, 1, 2]);
     expect([item.title, item.archive, item.archive_location, item.license]).toEqual(['codh:1', '国文学研究資料館', '9-1', undefined]);
@@ -115,10 +115,10 @@ describe('a crop’s citation', () => {
 
 describe('a character’s citation', () => {
   const card = { code_point: 'U+1B002', char: '𛀂', grapheme: { code_point: 'U+3042', char: 'あ' } };
-  it('names the grapheme family or the form alone, each with a scope its page keeps', () => {
-    expect(characterEntry('grapheme', card)).toEqual({ kind: 'grapheme', id: 'U+3042', label: 'あ', codePoint: 'U+3042', path: '/character/U+3042?scope=family' });
-    expect(characterEntry('form', card).path).toBe('/character/U+1B002?scope=exact');
-    expect(characterEntry('form', { code_point: 'U+304B U+309A', char: 'か゚' }).path).toBe('/character/U+304B-U+309A?scope=exact');
+  it('names the grapheme or the form alone, each at its own page', () => {
+    expect(characterEntry('grapheme', card)).toEqual({ kind: 'grapheme', id: 'U+3042', label: 'あ', codePoint: 'U+3042', path: '/grapheme/U+3042' });
+    expect(characterEntry('form', card).path).toBe('/character/U+1B002');
+    expect(characterEntry('form', { code_point: 'U+304B U+309A', char: 'か゚' }).path).toBe('/character/U+304B-U+309A');
   });
 });
 
@@ -148,7 +148,7 @@ describe('GET /atlas/cite/grapheme and /atlas/cite/form', () => {
   });
   it('serves a grapheme and a form, and refuses another kind or a character not in the table', async () => {
     const { db, get } = setup();
-    expect((await (await get('/atlas/cite/grapheme/U%2B1B002')).json() as any[])[0].URL).toBe('https://glyphatlas.org/character/U+3042?scope=family');
+    expect((await (await get('/atlas/cite/grapheme/U%2B1B002')).json() as any[])[0].URL).toBe('https://glyphatlas.org/grapheme/U+3042');
     expect((await (await get('/atlas/cite/form/U+1B002')).json() as any[])[0].title).toBe('𛀂');
     expect((await get('/atlas/cite/page/U%2B1B002')).status).toBe(404);
     expect((await get('/atlas/cite/form/U%2B1B003')).status).toBe(404);

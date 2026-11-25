@@ -9,7 +9,7 @@
   // by that group or by work, and the sequences near it are one link away. The search box above it
   // goes on to the next search: a run found on a line opens its own page, anything else the collection's search.
   import { tick, untrack } from 'svelte'
-  import { goto, replaceState } from '$app/navigation'
+  import { beforeNavigate, goto, replaceState } from '$app/navigation'
   import CharacterSearch from './CharacterSearch.svelte'
   import RunCandidate from './RunCandidate.svelte'
   import RunImage from './RunImage.svelte'
@@ -19,25 +19,50 @@
   import HandFilter from './HandFilter.svelte'
   import FormFilter from './FormFilter.svelte'
   import WorkFilter from './WorkFilter.svelte'
-  import { RUN_FIRST, runAddress, runOccurrences } from '../lib/ngrams.js'
+  import { RUN_FIRST, runAddress, runOccurrences, runRelated } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
-  import { characterAddress, collectionAddress } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress } from '../lib/addresses.js'
+  import { codesOf } from '../lib/graphemeGroups.js'
+  import { SearchGroups } from '../lib/searchGroups.svelte.js'
   import { runText } from '../lib/runs.js'
-  import { number } from '../lib/client.js'
+  import { mergeCropPatch, occurrenceState, occurrenceWritten, resolveInspectedCrop } from '../lib/sequenceReview.js'
+  import { character, number } from '../lib/client.js'
   import { sourceTitle } from '../lib/seo.js'
   import { t, localize } from '../lib/i18n.svelte.js'
 
-  let { text, work: given = '', form: written = '', hand: handed = '', sort: ordered = '', first = null, related = null, inspect } = $props()
-  const opened = untrack(() => first)
+  let { text, work: given = '', form: written = '', hand: handed = '', sort: ordered = '', inspect } = $props()
   let work = $state(untrack(() => given)), form = $state(untrack(() => written)), hand = $state(untrack(() => handed)), sort = $state(untrack(() => ordered))
-  let hands = $state(opened?.hands ?? null), works = $state(opened?.works ?? []), forms = $state(opened?.forms ?? null)
-  let items = $state(opened?.items ?? []), total = $state(opened?.total ?? null), more = $state(opened?.more ?? false)
-  let offset = $state(opened?.next_offset ?? 0), vertical = $state(opened?.vertical ?? true), size = $state(opened?.size ?? 2)
-  let loading = $state(!opened), error = $state(''), ended = $state(false), requestId = 0
+  let hands = $state(null), works = $state([]), forms = $state(null)
+  let items = $state([]), total = $state(null), more = $state(false)
+  let offset = $state(0), vertical = $state(true), size = $state(2)
+  let loading = $state(true), error = $state(''), ended = $state(false), requestId = 0
+  // The runs near this one; a reading that fails leaves their links out.
+  let related = $state(null)
   // The occurrence open in its dialog, and the card it was opened from, which takes the focus back.
-  let detail = $state(null), opener = null
+  let detailIndex = $state(null), opener = null
+  const detail = $derived(detailIndex !== null ? items[detailIndex] ?? null : null)
+  const previousDetail = $derived(detailIndex !== null && detailIndex > 0 ? () => { detailIndex -= 1 } : null)
+  const nextDetail = $derived(detailIndex !== null && detailIndex + 1 < shown.length ? () => { detailIndex += 1 } : null)
+  const detailPosition = $derived(detailIndex !== null ? `${number(detailIndex + 1)} / ${number(total ?? items.length)}` : '')
   // The page behind an open modal is inert, so the card takes the focus once the dialog has gone.
-  async function closeDetail() { const card = opener; detail = null; opener = null; await tick(); card?.focus() }
+  async function closeDetail() {
+    const at = detailIndex, card = (at !== null ? grid?.querySelectorAll('.run-open')[at] : null) ?? opener
+    detailIndex = null; opener = null
+    await tick()
+    card?.focus()
+  }
+
+  function patchRunCrop(id, delta) {
+    items = items.map(occ => occ.crops.some(crop => crop.id === id)
+      ? { ...occ, crops: occ.crops.map(crop => crop.id === id ? mergeCropPatch(crop, delta) : crop) }
+      : occ)
+  }
+
+  async function cropInspected(id, result, how) {
+    const existing = items.flatMap(o => o.crops).find(c => c.id === id)
+    const updated = await resolveInspectedCrop(existing, id, result, how, character)
+    if (updated) patchRunCrop(id, updated)
+  }
 
   async function load(append = false) {
     const id = ++requestId
@@ -54,19 +79,26 @@
     } catch (e) { if (id === requestId) error = e.message }
     finally { if (id === requestId) loading = false }
   }
-  $effect(() => { if (!opened) untrack(() => load()) })
+  $effect(() => {
+    const leaving = new AbortController()
+    untrack(() => load())
+    runRelated(untrack(() => text), { signal: leaving.signal }).then(found => { related = found }).catch(() => {})
+    return () => leaving.abort()
+  })
   // A choice reloads the page from its start and is kept in the address, so a copy of it shows the same.
   function choose(change) {
-    work = change.work ?? work; form = change.form ?? form; hand = change.hand ?? hand; sort = change.sort ?? sort; detail = null
+    work = change.work ?? work; form = change.form ?? form; hand = change.hand ?? hand; sort = change.sort ?? sort; detailIndex = null
     replaceState(localize(runAddress(text, { work, form, hand, sort })), {})
     load()
   }
+  const searchGroups = new SearchGroups()
   let query = $state(''), searchRound = $state(0)
   const run = $derived(runText(query))
   // A run the site holds no occurrence of goes to the collection's search, which still has its characters.
   // A count that answers after the reader has chosen something else, or left the page, is dropped.
   let searchId = 0
   $effect(() => () => { searchId += 1 })
+  beforeNavigate(() => { searchId += 1 })
   async function search(value) {
     const term = value.trim(), id = ++searchId
     if (!term) return
@@ -76,7 +108,7 @@
     if (id !== searchId) return
     goto(localize(found?.total ? runAddress(term) : collectionAddress({ q: term })))
   }
-  function openCharacter(item) { searchId += 1; goto(localize(characterAddress(item.code_point))) }
+  function openCharacter(item) { goto(localize(characterAddress(item.code_point))) }
   const near = $derived([
     [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
     [() => t('run.near.longer'), related?.longer ?? []],
@@ -85,8 +117,6 @@
 
   // An occurrence whose record cannot be read is left off its page, so the pages run on by the rows read.
   const hasMore = $derived(total !== null && offset < total && !ended)
-  // The crops the inspector steps through, in the order they are shown.
-  const crops = $derived(items.flatMap(o => o.crops))
 
   let grid = $state(), sentinel = $state(), columns = $state(0), nearEnd = $state(false)
   const shown = $derived(hasMore && columns && items.length >= columns ? items.slice(0, Math.floor(items.length / columns) * columns) : items)
@@ -101,7 +131,7 @@
   })
   $effect(() => {
     if (!sentinel) return
-    const observer = new IntersectionObserver(([entry]) => { nearEnd = entry.isIntersecting }, { rootMargin: '0px 0px 1200px 0px' })
+    const observer = new IntersectionObserver(entries => { nearEnd = entries.at(-1).isIntersecting }, { rootMargin: '0px 0px 1200px 0px' })
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
@@ -115,10 +145,11 @@
     <SiteLinks />
   </div>
   <header class="run-heading">
-    <div class="run-top">
+    <div class="run-top" onfocusin={e => { if (e.target.matches('.character-search input')) searchGroups.read() }}>
       <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
       {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs lead={run ? runLead : null} />{/key}
+      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs groupOf={searchGroups.groupOf} countOf={searchGroups.countOf}
+        onform={form => openCharacter({ code_point: codesOf(form) })} lead={run ? runLead : null} />{/key}
     </div>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
@@ -147,19 +178,26 @@
   {#if error}<div class="error-message" role="alert">{error}<button onclick={() => load(items.length > 0)}>{t('common.tryAgain')}</button></div>{/if}
   <div class="run-grid" bind:this={grid} aria-busy={loading} style:--run-size={size}>
     {#if loading && !items.length}{#each Array(12) as _}<div class="glyph-skeleton"></div>{/each}{/if}
-    {#each shown as occurrence (occurrence.crops[0].id)}
-      <article class="run-occurrence">
-        <button class="run-open" onclick={event => { opener = event.currentTarget; detail = occurrence }} aria-label={[t('run.detail.open', { run: occurrence.crops.map(c => c.label).join('') }), where(occurrence.crops[0])].filter(Boolean).join(' · ')}>
+    {#each shown as occurrence, i (occurrence.crops[0].id)}
+      {@const occState = occurrenceState(occurrence.crops)}
+      {@const occWritten = occurrenceWritten(occurrence.crops, text)}
+      <article class="run-occurrence" class:decided-checked={occState === 'checked'} class:decided-flagged={occState === 'flagged'}>
+        <button class="run-open" onclick={event => { opener = event.currentTarget; detailIndex = i }} aria-label={[t('run.detail.open', { run: occWritten?.written ?? text }), where(occurrence.crops[0])].filter(Boolean).join(' · ')}>
           <span class="run-page"><RunImage crops={occurrence.crops} page={occurrence.page} vertical={occurrence.vertical} /></span>
-          <span class="run-where">{where(occurrence.crops[0])}</span>
+          <span class="run-meta">
+            {#if occWritten}
+              <span class="run-forms">{#each occWritten.forms as form, j (j)}<span class:transcribed={form.transcribed}><ScriptText text={form.text} titled={false} /></span>{/each}{#if occState === 'checked' || occState === 'flagged'}<span class="run-verdict" aria-hidden="true">{occState === 'checked' ? '✓' : '!'}</span>{/if}</span>
+            {/if}
+            <span class="run-where">{where(occurrence.crops[0])}</span>
+          </span>
         </button>
       </article>
     {/each}
   </div>
   {#if !loading && !error && total === 0}<p class="run-empty">{t('run.empty')}</p>{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && items.length}…{/if}</div>
-  {#if detail}<RunOccurrence occurrence={detail} {text} close={closeDetail}
-    inspect={(id, origin) => inspect(id, crops, null, origin)} />{/if}
+  {#if detail}<RunOccurrence occurrence={detail} {text} more={work || form || hand ? localize(runAddress(text)) : null} onmore={() => choose({ work: '', form: '', hand: '' })} previous={previousDetail} next={nextDetail} position={detailPosition} close={closeDetail}
+    onupdated={patchRunCrop} inspect={id => inspect(id, detail.crops, cropInspected)} />{/if}
 </section>
 
 <style>
@@ -185,11 +223,20 @@
   .near-row a:hover,.near-row a:focus-visible{background:var(--surface-selected)}
   .near-row small{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   .run-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
-  .run-occurrence{display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
+  .run-occurrence{position:relative;display:flex;flex-direction:column;background:var(--surface-tile);min-width:0}
+  .run-occurrence.decided-checked{background:var(--good-light)}
+  .run-occurrence.decided-flagged{background:var(--wrong-light)}
+  .run-occurrence.decided-checked::after,.run-occurrence.decided-flagged::after{content:'';position:absolute;inset:0;border:2px solid var(--good);pointer-events:none}
+  .run-occurrence.decided-flagged::after{border-color:var(--wrong)}
   .run-open{display:flex;flex-direction:column;flex:1;width:100%;border:0;border-radius:0;padding:0;background:transparent;color:inherit;text-align:start;cursor:pointer}
   .run-open:hover,.run-open:focus-visible{background:var(--surface-selected)}
   .run-page{display:block;height:calc(clamp(190px,15vw,270px) + max(0,var(--run-size) - 3) * 36px);padding:12px}
-  .run-where{display:block;margin:0;padding:8px 12px 10px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .run-meta{display:flex;flex-direction:column;gap:2px;padding:0 12px 10px;min-width:0}
+  .run-forms{display:flex;align-items:baseline;gap:6px;font-size:15px;line-height:1.2;min-width:0;overflow:hidden;white-space:nowrap}
+  .run-forms .transcribed{opacity:.5}
+  .run-verdict{margin-left:auto;font:700 12px/1 var(--ga-font-ui);color:var(--good)}
+  .decided-flagged .run-verdict{color:var(--wrong)}
+  .run-where{display:block;margin:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .run-empty{color:var(--muted);padding:30px 0}
   @media(min-width:1700px){.run-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
   @media(max-width:1100px){.run-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}

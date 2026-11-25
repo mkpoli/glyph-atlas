@@ -8,7 +8,8 @@
   import { pageRecord, drawBox } from '../lib/pages.js'
   import { t, localize } from '../lib/i18n.svelte.js'
   // A page with every box drawn over its photo: on the site, the published page and its crops, the
-  // photo from the holder's IIIF image service; on the local review service, every page of the
+  // photo from the holder's IIIF image service or, for a page no service serves, the site's own
+  // copy; on the local review service, every page of the
   // dataset, where with Draw on a drag on the photo records a new box in page pixels that then asks
   // for its character. `focus` is a crop the page opens on, marked and centred. `initial` is the page
   // as the server rendered it, shown at once.
@@ -182,8 +183,6 @@
       {#if data.drawable}
         <button class="draw-toggle" class:active={drawing} aria-pressed={drawing} onclick={() => drawing = !drawing}
                 title={t('pages.draw.hint')}>{drawing ? t('pages.draw.on') : t('pages.draw.off')} <kbd>D</kbd></button>
-      {:else}
-        <span class="page-note">{t('pages.draw.unavailable')}</span>
       {/if}
       <div class="zoom-controls">
         <button aria-label={t('pages.zoom.out')} onclick={() => zoomCentre(0.8)}>−</button>

@@ -26,7 +26,7 @@
   {#if item}
     <div class="focus-images">
       <div class="focus-figure" data-unit={item.id}>
-        {#key item.id + ':' + item.revision + ':' + item.image_sha256}<CropContext {item} {disabled} />{/key}
+        {#key item.id + ':' + item.revision + ':' + (item.source_revision ?? item.image_sha256 ?? '')}<CropContext {item} {disabled} />{/key}
       </div>
       <div class="focus-image-meta"><ProductionBadge {item} /><ZiLink character={item.written_character ?? item.label} /></div>
       {#if details.length}<p class="focus-details">{#each details as line, i (i)}{#if i}{' · '}{/if}<ScriptLine {line} />{/each}</p>{/if}

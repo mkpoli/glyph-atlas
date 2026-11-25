@@ -5,6 +5,9 @@ describe('categoryOf', () => {
   it('files Tangut as its own script and leaves Khitan, which Unicode places between its blocks, out', () => {
     expect(['𗀀', '𘴀', '\u{16FE0}', '\u{18B00}'].map(categoryOf)).toEqual(['tangut', 'tangut', 'tangut', 'other']);
   });
+  it('files small seal as its own script, apart from the Han characters', () => {
+    expect(['\u{3D000}', '\u{3FC3F}', '\u{3FC40}', '\u{3347F}', '說'].map(categoryOf)).toEqual(['seal', 'seal', 'other', 'other', 'kanji']);
+  });
 });
 
 describe('refiled', () => {

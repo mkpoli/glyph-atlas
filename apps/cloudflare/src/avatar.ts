@@ -9,6 +9,7 @@ const UPLOAD_MAX = 256 * 1024;
 // Connected accounts whose picture is the one read from the provider when the account was connected.
 const PICTURED = new Set(['google', 'discord', 'line', 'kakao']);
 export const AVATAR_PATH = /^\/api\/avatars\/([0-9a-f-]{36})\/([0-9a-f]{16})\.webp$/;
+export const PICTURE_PATH = /^\/api\/avatars\/([0-9a-f-]{36})$/;
 
 const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
 // A WebP file opens with `RIFF`, its length, then `WEBP`.
@@ -70,4 +71,13 @@ export async function avatar(env: Env, user: string, name: string): Promise<Resp
   if (!object) return new Response('Not found', { status: 404 });
   return new Response(object.body, { headers: { 'content-type': 'image/webp', 'cache-control': 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff' } });
+}
+
+/** Where a user's picture is now, for a sister site to show beside their name. An anonymous or banned user,
+ *  one who chose the initial and one who is gone have none. */
+export async function picture(env: Env, user: string): Promise<Response> {
+  const row = await env.ACCOUNTS.prepare('SELECT image FROM "user" WHERE id=? AND image IS NOT NULL AND isAnonymous IS NOT 1 AND banned IS NOT 1')
+    .bind(user).first<{ image: string }>();
+  const headers = { 'cache-control': 'public, max-age=300', 'x-content-type-options': 'nosniff' };
+  return row?.image ? new Response(null, { status: 302, headers: { ...headers, location: row.image } }) : new Response('Not found', { status: 404, headers });
 }

@@ -2,8 +2,8 @@ import { afterAll, describe, expect, mock, test } from 'bun:test'
 
 // The helpers are pure once the form lists are mocked: they only read the `form` slot of a record.
 mock.module('../src/lib/client.js', () => ({ request: async () => ({}), character: async () => ({}), corpusCharacter: async () => ({}) }))
-mock.module('../src/lib/layers.js', () => ({ character: async () => null, ids: async () => ({}) }))
-mock.module('../src/lib/mjFigures.js', () => ({ drawFigure: async () => {}, figuresOf: async () => [] }))
+mock.module('../src/lib/layers.js', () => ({ character: async () => null, ids: async () => ({}), graphemeForms: async () => ({ members: [], variants: [], related: [], derived: [], forms: [] }) }))
+mock.module('../src/lib/mjFigures.js', () => ({ FAMILY: 'MJ Figures', isFigure: () => false, drawFigure: async () => {}, figuresOf: async () => [] }))
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: key => key === 'written.unknownVariant' ? 'Unknown variant' : key,
   withText: (key, name, params) => ({ before: '', text: params[name], after: '' }) }))
 mock.module('../src/lib/dating.js', () => ({ datingLine: () => null }))

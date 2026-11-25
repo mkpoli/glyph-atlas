@@ -1,0 +1,55 @@
+import { isSeal } from './cardTiers.js'
+import { keyText } from './codePoints.js'
+import { hasCharacterPage } from './issues.js'
+
+// The addresses of the collection, of a character (字体) and of a grapheme (字種). A page is of one of the
+// three, and its address says which.
+
+/** A code point or a sequence (`U+304B U+309A`) as it reads in an address: `U+304B-U+309A`. */
+export const slug = codePoint => codePoint.trim().split(/\s+/).join('-')
+/** An address's code points, or null when the address names none. */
+export const unslug = value => /^U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*$/.test(value) && keyText(value.split('-').join(' ')) !== null
+  ? value.split('-').join(' ') : null
+
+/** The widening a page is shown with: a grapheme's page gathers every form of it, and a character's shows
+ *  the character alone, or with its 異体字 (`scope=variants`). */
+export const expandFor = (of, scope = null) => of === 'grapheme' ? 'grapheme' : scope === 'variants' ? 'variants' : 'none'
+const pageAddress = (of, codePoint, { scope = null, visual = '', style = '', order = '', years = '' } = {}) => {
+  const query = new URLSearchParams(Object.entries({ scope, visual, style, order, years }).filter(([, value]) => value))
+  return `/${of}/${slug(codePoint)}` + (query.size ? '?' + query : '')
+}
+/** The page of one character, with the scope (`variants`), style group, order and years it is shown with. */
+export const characterAddress = (codePoint, shown = {}) => pageAddress('character', codePoint, shown)
+
+/** The page of a grapheme, by its key and the text it is shown as, with the visual group, style group,
+ * order and years it is shown with; a member's key leads to its grapheme's page. A grapheme of more than
+ * one character has no page of its own, so its address narrows the collection to it. */
+export const graphemeAddress = (key, text, shown = {}) => hasCharacterPage(text) ? pageAddress('grapheme', key, shown) : collectionAddress({ grapheme: key })
+
+/** The grapheme a card's character is a form of: a card that names none is its own. */
+export const graphemeOf = card => card.grapheme ?? card
+/** The grapheme key an address leads to when it names a card's character, for a round or a listing: its
+ *  grapheme's, which a key that was a head's before a table filed it under another leads to as well. A small
+ *  seal character's is its own (docs/decisions/0015-small-seal-forms.md). */
+export const ledTo = card => isSeal(card.char) ? card.code_point : graphemeOf(card).code_point
+/** The page a card's gallery is on, as it is widened. */
+export const galleryAddress = (card, expand, shown = {}) => expand === 'grapheme' ? graphemeAddress(graphemeOf(card).code_point, graphemeOf(card).char, shown)
+  : characterAddress(card.code_point, { ...shown, scope: expand === 'variants' ? 'variants' : null })
+/** The page a path names, `{ of: 'character' | 'grapheme', codePoint }`, or null. */
+export function galleryPage(path) {
+  const [, of, value] = /^\/(character|grapheme)\/([^/]+)$/.exec(path) ?? [], codePoint = of ? unslug(value) : null
+  return codePoint ? { of, codePoint } : null
+}
+
+/** The address search engines keep for a page, without its language: a page whose gallery is another
+ *  page's names that one, so a grapheme whose crops are all one form's (`sole`) is indexed at the form's. */
+export function canonicalAddress(card, expand) {
+  const { sole } = expand === 'grapheme' ? graphemeOf(card) : {}
+  return sole ? characterAddress(sole) : galleryAddress(card, expand === 'variants' ? 'none' : expand)
+}
+
+/** The collection with a search and filters: a grapheme key, a work's document id and a script group. */
+export function collectionAddress({ q = '', grapheme = '', work = '', group = 'all' } = {}) {
+  const query = new URLSearchParams(Object.entries({ q, grapheme, work, group: group === 'all' ? '' : group }).filter(([, value]) => value))
+  return '/' + (query.size ? '?' + query : '')
+}

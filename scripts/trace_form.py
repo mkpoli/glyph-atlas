@@ -2,8 +2,8 @@
 
 A drawn form (data/vocab/drawn-forms.yaml) is cut in two styles, serif and sans. Where its drawings
 were made by hand, the picture is kept as `data/vocab/drawn-forms/<code point>.source.png`, dark figures
-on a light ground, one figure for each style from left to right in the order given. Every figure is
-set at one scale, the tallest filling the em's height less its margins, and centred.
+on a light ground, one figure for each style from left to right in the order given. The two cuts share
+a scale and are centred in the em. The trace widens and thickens fine strokes for text sizes.
 
     uv run scripts/trace_form.py U+F0000 serif sans
 
@@ -21,7 +21,12 @@ from scipy.ndimage import gaussian_filter1d
 
 ROOT = Path(__file__).resolve().parents[1]
 DRAWINGS = ROOT / "data" / "vocab" / "drawn-forms"
-EM, HEIGHT = 1000, 880
+EM, INK_BOX = 1000, 880
+WIDTH_FACTOR = 1.30  # widen the narrow handwritten figures at chip sizes
+OUTSET = 5           # default edge expansion and shared fitting margin, in em units
+# The looped 事 starts with heavier strokes. These signed outsets match the mean effective stroke
+# width (2 × ink area / perimeter) of F0001 and F0002 in the finished font, separately for each cut.
+EDGE_ADJUSTMENTS = {("F0000", "serif"): 1.16, ("F0000", "sans"): -2.32}
 ENLARGED = 4   # the picture is enlarged before its edge is read, so the edge falls between its pixels
 STEP = 6       # units between the outline's points
 SMOOTH = 1.2   # units of smoothing along the outline, which rounds the pixel steps and keeps a corner
@@ -52,11 +57,12 @@ def _closed(points: np.ndarray) -> str:
 def outline(figure: np.ndarray, scale: float) -> str:
     """One figure's outline as path data in the em: outer contours one way and counters the other."""
     height, width = figure.shape
-    left, top = (EM - width * scale) / 2, (EM - height * scale) / 2
+    x_scale = scale * WIDTH_FACTOR
+    left, top = (EM - width * x_scale) / 2, (EM - height * scale) / 2
     contours, hierarchy = cv2.findContours(figure, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     parts = []
     for contour, (_next, _previous, _child, parent) in zip(contours, hierarchy[0]):
-        points = contour[:, 0, :].astype(float) * scale + (left, top)
+        points = contour[:, 0, :].astype(float) * (x_scale, scale) + (left, top)
         if len(points) < 16:
             continue
         ring = np.vstack([points, points[:1]])
@@ -82,8 +88,16 @@ def main() -> int:
     cut = figures(cv2.imread(str(DRAWINGS / f"{name}.source.png"), cv2.IMREAD_GRAYSCALE))
     if len(cut) != len(args.styles):
         raise SystemExit(f"the picture has {len(cut)} figures, not {len(args.styles)}")
-    scale = HEIGHT / max(figure.shape[0] for figure in cut)
+    # Fit the pair after widening, including the ink added on both sides of each figure.
+    height_scale = (INK_BOX - 2 * OUTSET) / max(figure.shape[0] for figure in cut)
+    width_scale = (INK_BOX / WIDTH_FACTOR - 2 * OUTSET) / max(figure.shape[1] for figure in cut)
+    scale = min(height_scale, width_scale)
     for style, figure in zip(args.styles, cut):
+        radius = round(EDGE_ADJUSTMENTS.get((name, style), OUTSET) / scale)
+        diameter = 2 * abs(radius) + 1
+        brush = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (diameter, diameter))
+        adjust = cv2.erode if radius < 0 else cv2.dilate
+        figure = adjust(np.pad(figure, abs(radius)), brush)
         path = outline(figure, scale)
         (DRAWINGS / f"{name}.{style}.svg").write_text(
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {EM} {EM}">\n  <path d="{path}"/>\n</svg>\n', encoding="utf-8")

@@ -48,8 +48,8 @@ const EVIDENCE_KINDS = new Set(['page', 'source']), EVIDENCE_MAX = 8, GLOSS_MAX 
 export type Evidence = { kind: string; ref: string; locator: string | null };
 
 /** A crop as a claim on it rests on: its cut now, its evidence version as its record shows it (null
- *  for a crop with no image), its text id (the ledger's subject) and its kind. */
-export type CropNow = { id: number; cut: number; version: string | null; text: string; kind: number };
+ *  for a crop with no image), its text id (the ledger's subject), its kind and the line its source gives. */
+export type CropNow = { id: number; cut: number; version: string | null; text: string; kind: number; line?: string | null };
 export type LedgerTools = {
   fail: (status: number, message: string, extra?: Json) => never;
   text: (value: unknown, max: number, name: string, required?: boolean) => string | null;
@@ -69,12 +69,27 @@ export type Member = { object: string | null; value: unknown; confidence: number
 /** The actor keys a user holds in glyph-atlas-v3, as SQL; `actor_user` finds them. */
 export const ownedActors = (user: string) => `(SELECT key FROM actors WHERE user='${user.replaceAll("'", "''")}')`;
 
-// A value a predicate takes besides its listed ones: a `gloss` is {gloss: text}, the sense in words where no word
-// row fits yet, with no space around it and at most GLOSS_MAX code points, as the review service counts them.
+// A value a predicate takes besides its listed ones. A `gloss` is {gloss: text}, the sense in words where no word
+// row fits yet, with no space around it and at most GLOSS_MAX code points. A `reading` is {run, at, reading} and a
+// `ruby` {run, at, ruby}: the characters read together, which of them the crop is, and the text over each of them or
+// one text over them all. The review service checks the same shapes.
+const isGloss = (value: Json) => Object.keys(value).join() === 'gloss' && typeof value.gloss === 'string' && value.gloss === value.gloss.trim()
+  && value.gloss.length > 0 && [...value.gloss].length <= GLOSS_MAX;
+export const RUN_MAX = 12, RUN_PART_MAX = 8, OVER_MAX = 32;
+const runPart = (part: unknown) => typeof part === 'string' && part.length > 0 && [...part].length <= RUN_PART_MAX && part === part.normalize('NFC')
+  && !/[\p{Z}\p{Cc}\p{Cf}\p{Cs}]/u.test(part);
+// Letters and marks alone, so a reading never holds a space or punctuation; the hentaigana are letters as the page writes them.
+const over = (text: unknown) => typeof text === 'string' && [...text].length <= OVER_MAX && text === text.normalize('NFC') && /^[\p{L}\p{M}\p{Sk}]*$/u.test(text);
+const HENTAIGANA = /[\u{1B002}-\u{1B11E}]/u;
+const isRun = (value: Json, field: 'reading' | 'ruby') => {
+  const { run, at, [field]: texts } = value;
+  return Object.keys(value).sort().join() === ['at', field, 'run'].sort().join() && Array.isArray(run) && run.length >= 1 && run.length <= RUN_MAX && run.every(runPart)
+    && Number.isSafeInteger(at) && at >= 0 && at < run.length && Array.isArray(texts) && (texts.length === run.length || texts.length === 1)
+    && texts.every(over) && texts.some(text => text !== '') && (field === 'ruby' || !texts.some(text => HENTAIGANA.test(text)));
+};
 const shaped = (shape: string | undefined, value: unknown) => {
-  if (shape !== 'gloss' || typeof value !== 'object' || value === null || Array.isArray(value) || Object.keys(value).join() !== 'gloss') return false;
-  const gloss = (value as Json).gloss;
-  return typeof gloss === 'string' && gloss === gloss.trim() && gloss.length > 0 && [...gloss].length <= GLOSS_MAX;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return shape === 'gloss' ? isGloss(value) : shape === 'reading' || shape === 'ruby' ? isRun(value, shape) : false;
 };
 
 /** Refuse members the catalogue does not allow; `kinds` gives the kind of each named entity. A predicate
@@ -156,7 +171,7 @@ export async function withCrop(env: Env, saved: Json, alias: (text: string) => P
 }
 
 // A random id in the shape of a UUID, made in SQL for rows a batch writes by selecting them.
-const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
+export const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
 /** The statement that retracts `actor`'s earlier live claims in a single-valued slot, run in the same
  *  batch after their new claim (`by`), so a concurrent claim of theirs is retracted too. */
 export function retractOwn(env: Env, own: { key: string; actor: string; subject: string; predicate: string; scope: string; at: string; by: string; owned: string }) {
@@ -320,7 +335,10 @@ export async function writeClaim(env: Env, input: Json, actor: string, tools: Le
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > MEMBERS_MAX) tools.fail(422, `A claim names 1–${MEMBERS_MAX} values.`);
   const members: Member[] = raw.map((m: Json) => ({ object: m?.object == null ? null : tools.text(m.object, 128, 'object', true),
     value: m?.value ?? null, confidence: m?.confidence ?? null, confidence_scheme: m?.confidence_scheme == null ? null : tools.text(m.confidence_scheme, 64, 'confidence scheme', true) }));
-  // An object this route can name is a form or a word the site holds, or a grapheme that heads its family.
+  // An object this route can name is a form or a word the site holds, or a grapheme: the head of the family
+  // its key is filed under now, so a claim kept under a key that has joined another family is the head's.
+  const heads = await keyHeads(env, members.flatMap(m => m.object === null ? [] : [m.object]));
+  for (const m of members) if (m.object !== null) m.object = heads.get(m.object)!;
   const named = members.flatMap(m => m.object === null ? [] : [m.object]);
   const kinds: Record<string, string> = named.length ? Object.fromEntries((await env.ATLAS.prepare(`SELECT id,'form' AS kind FROM forms WHERE id IN (SELECT value FROM json_each(?1))
     UNION ALL SELECT id,'word' FROM words WHERE id IN (SELECT value FROM json_each(?1))`).bind(JSON.stringify(named)).all<{ id: string; kind: string }>()).results.map(r => [r.id, r.kind])) : {};

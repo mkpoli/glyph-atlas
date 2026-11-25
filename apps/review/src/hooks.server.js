@@ -4,6 +4,7 @@ import { viewer } from '../../cloudflare/src/auth.ts'
 import { PASS_HEADER } from '../../cloudflare/src/rateLimit.ts'
 import { LOCALES, LOCALE_COOKIE, isLocale, localize, negotiate } from '$lib/i18n.svelte.js'
 import { THEME_COOKIE, colorScheme, isTheme, themeColorMedia } from '$lib/theme.js'
+import { TYPEFACE_COOKIE, isTypeface, typefaceSheet } from '$lib/typeface.js'
 
 /** Headers that describe one connection, not the request, and are not passed on. */
 const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']
@@ -82,7 +83,9 @@ export async function handle({ event, resolve }) {
   if (isLocale(first)) {
     event.locals.locale = first
     const theme = isTheme(event.cookies.get(THEME_COOKIE)) ? event.cookies.get(THEME_COOKIE) : 'system'
+    const typeface = isTypeface(event.cookies.get(TYPEFACE_COOKIE)) ? event.cookies.get(TYPEFACE_COOKIE) : 'sans'
     const response = await resolve(event, { transformPageChunk: ({ html }) => html.replace('%lang%', first).replace('%theme%', theme)
+      .replace('%typeface%', typeface).replace('%typeface-sheet%', typefaceSheet(typeface))
       .replace('%color-scheme%', colorScheme(theme))
       .replace('%theme-color-light%', themeColorMedia(theme, 'light')).replace('%theme-color-dark%', themeColorMedia(theme, 'dark')) })
     // A page carries who is signed in, so no shared cache may keep one reader's copy for another.

@@ -41,6 +41,7 @@ lines and the next corpus all arrive the same way.
 from __future__ import annotations
 
 import json
+import unicodedata
 from functools import lru_cache
 from threading import RLock
 from typing import Annotated, Any, Literal
@@ -50,7 +51,16 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import evidence, han_components, images, refs, visual_families, written_with
+from .. import (
+    evidence,
+    han_components,
+    images,
+    refs,
+    representation,
+    structures,
+    visual_families,
+    written_with,
+)
 from ..production import production_info
 from ..representation import written
 from ..schema import Box, Character, Document, Page, Unit
@@ -65,6 +75,7 @@ from .atlas import (
     transcription,
     written_identity,
 )
+from .ledger import LedgerError
 from .request_cache import file_stamp, lookup_scope, memoize
 from .store import BadRequest, ReviewRequest, Store, StoreError
 
@@ -134,6 +145,27 @@ class LayerEdit(BaseModel):
     issue: Literal["character", "crop", "merged", "blank", "unclear", "other"] = "character"
     #: The box is wrong too, beside a wrong or joined character: the crop stays reported for it.
     bad_crop: bool = False
+    #: A form claimed with the character it is a form of, on the evidence version the reviewer saw.
+    form: str | None = Field(default=None, min_length=1, max_length=256)
+    crop_version: str | None = Field(default=None, min_length=1, max_length=1024)
+
+
+def _form_of(edit: LayerEdit) -> str | None:
+    """The form a correction claims, checked against the character it names, as the Worker checks it."""
+    if edit.form is None:
+        return None
+    if edit.character is None or edit.crop_version is None:
+        raise BadRequest("A form is claimed with the character it is a form of, on the crop it was seen on.")
+    form = identity_text(edit.form)
+    try:
+        named = representation.typed(form)
+    except ValueError as error:
+        raise BadRequest(str(error)) from error
+    character = identity_text(canonical_identity(edit.character))
+    written = {"ids": character, "ivs": named.value[0]}.get(named.scheme, named.value)
+    if written != character:
+        raise BadRequest("This form is another character's.")
+    return form
 
 
 def _source_digest(store: Store, unit: Unit) -> str | None:
@@ -209,7 +241,7 @@ def kind_of(character: Character) -> str:
     if character.ligature:
         return "ligature"
     script = str(character.script)
-    return script if script in ("han", "hangul", "gugyeol", "tangut") else "kana"
+    return script if script in ("han", "hangul", "gugyeol", "tangut", "seal") else "kana"
 
 
 def _row(character: Character, counts: dict[str, int], *, reason: str | None = None) -> dict[str, Any]:
@@ -232,8 +264,9 @@ def _row(character: Character, counts: dict[str, int], *, reason: str | None = N
         "occurrence_count": counts.get(character.code_point, 0),
         "url": f"/layers/characters/{character.code_point}",
         "grapheme": _grapheme_head(character, counts),
-        "default_scope": ("grapheme" if _family(character)["relation"]
-                          == "shinjitai-kyujitai" else "character"),
+        # A small seal character's crops are never the normalised ones the family scope is for.
+        "default_scope": ("grapheme" if _family(character)["relation"] == "shinjitai-kyujitai"
+                          and not refs.is_small_seal(character.char) else "character"),
     }
     if reason:
         row["reason"] = reason
@@ -249,11 +282,12 @@ def form_row(character: Character, counts: dict[str, int]) -> dict[str, Any]:
 
 
 def _forms(code_point: str) -> list[str]:
-    """Every code point that is a form of the same grapheme, the character itself first."""
+    """Every code point that is a form of the same grapheme, the character itself first and the small
+    seal characters last."""
     grapheme = refs.grapheme(code_point)
     if grapheme is None:
         return [code_point]
-    forms = refs.graphemes().get(grapheme, [])
+    forms = sorted(refs.graphemes().get(grapheme, []), key=lambda point: refs.is_small_seal(refs.to_char(point)))
     return [code_point] + [other for other in forms if other != code_point]
 
 
@@ -600,6 +634,57 @@ def _widened_corpus(chars: list[str], limit: int, offset: int, visual_group: str
         items += sorted(payload.get("items", []), key=lambda item: str(item.get("id", "")))
         total += int(payload.get("total") or 0)
     return {"items": items[offset:offset + limit], "total": min(total, WIDENED_CAP)}, fault
+
+
+def grapheme_forms(point: str) -> dict[str, Any]:
+    """The forms a crop of a grapheme with no character of its own may be, as the Worker's
+    `/layers/graphemes/{head}/forms` answers: every member with its regional shapes, and the characters
+    attested as variants of any member, related otherwise or derived, with the members they are one of."""
+    info = refs.grapheme_info(point) or {}
+    head = refs.to_char(info.get("code_point") or point)
+    members = [m for m in info.get("members") or [{"code_point": point, "char": head}]
+               if unicodedata.normalize("NFC", m["char"]) == m["char"]]
+    family = {m["char"] for m in members}
+    shapes = {m["char"]: structures.encoded_shapes(m["char"], refs.regional_shapes(m["char"])) for m in members}
+    described = {char: {*refs.ids_sequences(char), *(shape["text"] for shape in shapes[char])} for char in shapes}
+
+    def base(char: str, shape: dict[str, Any]) -> str | None:
+        # A member of one shape has no regional shapes, and its descriptions alone say it is written so.
+        shared = any(other != char and (shape["text"] in described[other] or other in shape.get("chars", ())) for other in described)
+        return None if shared else char
+
+    lent = [writer.char for writer in written_with.writers(head)]
+    variants: dict[str, dict[str, Any]] = {}
+    related: dict[str, dict[str, Any]] = {}
+    derived: dict[str, dict[str, Any]] = {}
+
+    def join(rows: dict[str, dict[str, Any]], char: str, via: str, **extra: Any) -> None:
+        if char not in family and unicodedata.normalize("NFC", char) == char:
+            found = rows.setdefault(char, {"char": char, "via": [], "code_point": refs.to_code_point(char) if len(char) == 1 else None, **extra})
+            if via not in found["via"]:
+                found["via"].append(via)
+
+    for member in members:
+        char, code_point = member["char"], member["code_point"]
+        widening, other = variant_pairs(char)
+        writers = {*lent, *(w["char"] for w in (refs.grapheme_info(code_point) or {}).get("writers", []))}
+        lends = written_with.writes(char)
+        writes = {*map(refs.to_char, refs.also_writes(code_point)), *([lends.grapheme] if lends else [])}
+        rows = [*widening[:VARIANTS_SHOWN], *other[:VARIANTS_SHOWN], *({"char": c, "widens": False, "written": True} for c in lent)]
+        for row in sorted(rows, key=lambda row: row["char"] not in writers):
+            if (row["widens"] or row["written"] or row["char"] in writers) and row["char"] not in writes:
+                join(variants, row["char"], char)
+        for row in rows:
+            if not (row["widens"] or row["written"] or row["char"] in writers) or row["char"] in writes:
+                join(related, row["char"], char)
+        for row in refs.derived_variants(char):
+            join(derived, row["char"], char, encoded=row["encoded"], route=[[step["was"], step["became"]] for step in row["routes"][0]])
+    related = {char: row for char, row in related.items() if char not in variants}
+    derived = {char: row for char, row in derived.items() if char not in variants and char not in related}
+    return {"head": head, "variants": [*variants.values()], "related": [*related.values()], "derived": [*derived.values()],
+            "members": [{"char": m["char"], "code_point": m["code_point"], "script": m.get("script") or "",
+                         "shapes": [{**shape, "base": base(m["char"], shape)} for shape in shapes[m["char"]]]}
+                        for m in members]}
 
 
 def _write_families(point: str, counts: dict[str, int], extra: tuple[str, ...] = ()) -> list[dict[str, Any]]:
@@ -1043,11 +1128,12 @@ def router(store: Store) -> APIRouter:
 
     @api.get("/layers/structures")
     def structures(c: str = "", of: str = "") -> dict[str, Any]:
-        """The 構形 groups of the characters named, as the Worker answers it. A regional shape named
-        with `of` is derived here like any description."""
+        """The 構形 groups of the characters named, as the Worker answers it. A regional shape of `of`
+        has that character's 構形."""
         if not written(c):
             raise HTTPException(422, "Name a character.")
-        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]), store.folds_of)
+        return refs.structure_groups(c, store.claimed_structures(list(dict.fromkeys(written(c)))[:refs.STRUCTURE_CHARS]), store.folds_of,
+                                     of=of)
 
     @api.get("/layers/ids")
     def ids(c: str = "") -> dict[str, Any]:
@@ -1068,16 +1154,28 @@ def router(store: Store) -> APIRouter:
         """One character: its layers, the forms of its grapheme, and the ink that carries it."""
         row = known(code_point)
         view = character_view(row, layer(), expand=expand, state=state, limit=limit, offset=offset)
-        # A described form a reviewer said is written for this grapheme joins its 字体 row, as on the
-        # Worker's card. A form the card already lists as a member or a variant is not listed twice.
+        # A described form a crop of this grapheme carries joins its 字体 row and is derived no more, as
+        # on the Worker's card. A form the card already lists as a member or a variant is not listed twice.
         grapheme = (view.get("grapheme") or {}).get("code_point")
         if grapheme:
             listed = {member["char"] for member in (view.get("grapheme") or {}).get("members", [])}
-            for group in ("items", "related", "derived"):
+            for group in ("items", "related"):
                 listed |= {entry["char"] for entry in view["variants"].get(group, []) if entry.get("char")}
-            view["variants"] = {**view["variants"],
-                                "forms": [form for form in store.written_forms(grapheme) if form["char"] not in listed]}
+            boxes = {unit.id: evidence.box_text(unit.box) for unit, *_ in layer().rows(row.code_point, expand="grapheme")}
+            forms = [form for form in store.carried_forms(boxes) if form["char"] not in listed]
+            carried = {form["char"] for form in forms}
+            view["variants"] = {**view["variants"], "forms": forms,
+                                "derived": [entry for entry in view["variants"]["derived"] if entry["char"] not in carried]}
         return {"query": row.code_point, "expand": expand, **view}
+
+    @api.get("/layers/graphemes/{code_point}/forms")
+    def forms_of_grapheme(code_point: str) -> dict[str, Any]:
+        """The forms a crop of a grapheme may be (`grapheme_forms`), with those its crops carry."""
+        row = known(code_point)
+        found = grapheme_forms(row.code_point)
+        boxes = {unit.id: evidence.box_text(unit.box) for unit, *_ in layer().rows(row.code_point, expand="grapheme")}
+        listed = {item["char"] for item in [*found["members"], *found["variants"]]}
+        return {**found, "forms": [form for form in store.carried_forms(boxes) if form["char"] not in listed]}
 
     @api.get("/layers/occurrences")
     def occurrences(
@@ -1258,6 +1356,21 @@ def router(store: Store) -> APIRouter:
                 "total_kind": payload["total_kind"], "available": len(items),
                 "items": items}
 
+    def claim_form(edit: LayerEdit, unit_id: str, *, check: bool = False) -> None:
+        """Claim a correction's form on the crop as the correction leaves it, with the box it redraws; a
+        repeat claims nothing more. With `check`, refuse what the claim would refuse and write nothing."""
+        if (form := _form_of(edit)) is None:
+            return
+        submission = {"key": f"{edit.client_id}:{edit.id}", "request": {"layer": edit.model_dump(mode="json")}}
+        try:
+            if check:
+                store.claim_submission(**submission)
+                return
+            version = evidence.crop_version(unit_id, edit.image_sha256, edit.box) if edit.box else edit.crop_version
+            store.set_form(**submission, actor=edit.client_id, crop=unit_id, crop_version=version, form=form)
+        except LedgerError as error:
+            raise HTTPException(error.status, str(error)) from error
+
     @api.post("/layers/units/{unit_id}")
     def correct(unit_id: str, edit: LayerEdit) -> dict[str, Any]:
         """Correct the character or the crop of one occurrence — each in its own layer.
@@ -1284,12 +1397,13 @@ def router(store: Store) -> APIRouter:
         if any(row["review"]["target_id"] != unit_id for row in previous):
             raise HTTPException(409, "This submission id was already used for another occurrence.")
         if previous:
-            evidence = next((json.loads(row["review"]["evidence"]) for row in previous
+            recorded = next((json.loads(row["review"]["evidence"]) for row in previous
                              if row["field"] == "review" and row["review"]["evidence"]), {})
-            if evidence.get("request") != edit.model_dump(mode="json"):
+            if recorded.get("request") != edit.model_dump(mode="json"):
                 raise StoreError("This submission id was already used for a different correction.")
-            correction = evidence.get("layer_correction", {})
-            return {"results": previous, "duplicate": True, "resolved": bool(evidence.get("resolved")),
+            claim_form(edit, unit_id)
+            correction = recorded.get("layer_correction", {})
+            return {"results": previous, "duplicate": True, "resolved": bool(recorded.get("resolved")),
                     "changed": correction.get("changed", []),
                     "layers": {key: value for key, value in correction.items() if key != "changed"}}
 
@@ -1300,6 +1414,8 @@ def router(store: Store) -> APIRouter:
         digest = _source_digest(store, unit)
         if edit.image_sha256 != digest:
             raise HTTPException(409, "The source image changed. Reload this occurrence.")
+        if _form_of(edit) is not None and edit.crop_version != evidence.crop_version(unit.id, digest, unit.box):
+            raise HTTPException(409, "This crop was cut again. Reload it.")
 
         if edit.box is not None:
             page = _page(store, unit.page_id) if unit.page_id else None
@@ -1389,7 +1505,10 @@ def router(store: Store) -> APIRouter:
                                  "layer_correction": {"changed": changed, **correction}},
                                 ensure_ascii=False),
         ))
+        # A review and its claim are written apart, so the claim is checked before the review is.
+        claim_form(edit, unit_id, check=True)
         results = store.record_batch(requests)
+        claim_form(edit, unit_id)
         # The counts a reader sees next must be the counts after this correction, which the journal
         # stamp already says: nothing else to invalidate.
 

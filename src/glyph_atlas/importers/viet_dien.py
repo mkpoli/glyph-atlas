@@ -28,7 +28,7 @@ from ..schema import PUBLIC_DOMAIN_UNTIL, Document, Licence, Page, PageText, Rig
 SOURCE = "viet-dien"
 BASE = "https://viet-dien.com"
 TERMS = f"{BASE}/data"
-ATTRIBUTION = "Việt Điển, Albert Errickson; source collections: Digitizing Vietnam and holding libraries"
+ATTRIBUTION = "Việt Điển, Albert Errickson; Digitizing Vietnam"
 REUSE = "The OCR text and the catalogue compilation are offered for research use with attribution."
 
 

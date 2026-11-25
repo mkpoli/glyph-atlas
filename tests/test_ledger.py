@@ -308,6 +308,24 @@ def test_an_attestation_without_a_word_row_names_a_gloss(conn):
     attest(conn, "ann", Claim(value={"gloss": "𠀀" * 200}, confidence=1, confidence_scheme="form"), method="gloss")
 
 
+def test_a_reading_names_its_run_and_the_crops_place_in_it(conn):
+    run = {"run": ["諸", "器"], "at": 1}
+
+    def refused(predicate, value, method=None):
+        with pytest.raises(LedgerError, match="is not a value"):
+            ledger.check(predicate, [Claim(value=value)], method=method)
+
+    ledger.check("read_as", [Claim(value={**run, "reading": ["しょ", "き"]})], method="ruby")
+    ledger.check("read_as", [Claim(value={**run, "reading": ["しょき"]})], method="context")
+    ledger.check("bears_ruby", [Claim(value={**run, "ruby": ["𛁈よ", "き"]})])
+    ledger.check("bears_left_ruby", [Claim(value={**run, "ruby": ["もろもろのうつわ"]})])
+    for reading in ([], ["", ""], ["し", "よ", "き"], ["し よ", "き"], ["𛁈よ", "き"]):
+        refused("read_as", {**run, "reading": reading}, "ruby")
+    refused("read_as", {"run": ["諸", "器"], "at": 2, "reading": ["き"]}, "ruby")
+    refused("read_as", {"run": ["諸", "器 "], "at": 1, "reading": ["き"]}, "ruby")
+    refused("bears_ruby", {**run, "reading": ["き"]})
+
+
 @pytest.mark.parametrize("members, method, evidence, message", [
     ([Claim(object=WORD, confidence=1, confidence_scheme="form")], None, (), "names how it is known"),
     ([Claim(object=WORD, confidence=1, confidence_scheme="form")], "guess", (), "names how it is known"),

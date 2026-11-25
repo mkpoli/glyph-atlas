@@ -74,7 +74,7 @@ try {
   const mouse = (type, at, held = true) => browser.send('Input.dispatchMouseEvent', { type, x: Math.round(at.x), y: Math.round(at.y), button: type === 'mouseMoved' && !held ? 'none' : 'left', buttons: held && type !== 'mouseReleased' ? 1 : 0, clickCount: 1 })
   const open = async () => {
     // A real click: Chrome gives a dialog opened without one the same Escape as the dialog beneath it.
-    await browser.evaluate('document.querySelector("dialog[open] .form-arrange").scrollIntoView({ block: "center" })')
+    await browser.evaluate('document.querySelector("dialog[open] .form-arrange").scrollIntoView({ block: "center", behavior: "instant" })')
     const at = await browser.centre('dialog[open] .form-arrange')
     await browser.click(at.x, at.y)
     await browser.waitFor(`!!${board} && ${trays}.length > 1`, 20000)
@@ -305,6 +305,7 @@ try {
   await browser.goto(`${service.base}/en/character/U+6240`, { waitFor: `!!document.querySelector('.character-layers .arrange')`, timeout: 90000 })
   await browser.evaluate(`document.querySelector('.character-layers .arrange').click()`)
   await browser.waitFor(`!!${board} && ${trays}.length > 0 && !!${chip(own)}`, 20000)
+  assert(await browser.evaluate(`!!${chip('数')}`), 'the character page board lacks related 数')
   await shoot('structure-board-character')
   await browser.key('Escape')
   await browser.waitFor(`!document.querySelector('.structure-dialog')`)

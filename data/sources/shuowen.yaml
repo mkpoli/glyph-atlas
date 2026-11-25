@@ -1,0 +1,17 @@
+id: shuowen
+name: 說文解字（shuowen.org 網站數據）
+publisher: shuowen.org
+kind: reference-table
+url: https://github.com/shuowenjiezi/shuowen
+revision: 6553a350763ce4feca2c5d1cc2cad7e594dc2975
+licence: Apache-2.0
+licence_evidence: https://github.com/shuowenjiezi/shuowen/blob/6553a350763ce4feca2c5d1cc2cad7e594dc2975/LICENSE
+attribution: shuowen.org 說文解字網站數據, Apache License 2.0
+access:
+  archive: https://github.com/shuowenjiezi/shuowen/archive/{revision}.zip
+format:
+  entries: "data/<id>.json, one per entry of the 說文解字; read: id, wordhead (親字), pronunciation (徐鉉's 反切), variants[].wordhead (重文)"
+notes:
+  - scripts/build_headword_readings.py reads the 親字, their 反切 and their 重文 into data/vocab/headword-readings.tsv.
+  - The text is the received 大徐本 in modern encoding, kept by volunteers; it has not been collated here against a printing. A 重文 the edition prints can be missing from `variants`, and the spelling of a 反切 can differ from other copies (礼 and 禮).
+  - The `indexes` field also names simplified characters for the site's search, and is not read.

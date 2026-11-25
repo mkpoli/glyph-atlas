@@ -279,7 +279,7 @@ async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Js
       page_id: whole.page_id ?? shown.page_id,
       ...(review && review.x !== null ? { box: { x: review.x, y: review.y, w: review.w, h: review.h }, box_pending: true } : {}),
       ...(item.state === 'flagged' ? { issue: issueName(review?.issue ?? null) } : {}),
-      ...(item.origin === 'local' ? { crop_editable: Boolean(redrawLimits(whole)) } : {}) } });
+      crop_editable: Boolean(redrawLimits(whole)) } });
   }
   return found;
 }

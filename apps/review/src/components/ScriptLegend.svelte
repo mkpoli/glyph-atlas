@@ -2,8 +2,8 @@
   import ScriptText from './ScriptText.svelte'
   import { t } from '../lib/i18n.svelte.js'
   // A 구결자 has no glyph in the reader's fonts, so its sample is 口, the form of 古 that 구결 writes
-  // for 고, coloured by the script stated beside it.
-  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['한', 'hangul'], ['口', 'gugyeol'], ['𗀀', 'tangut'], ['※', 'symbol'] ]
+  // for 고, coloured by the script stated beside it. The small seal sample is the seal form of 篆.
+  const types = [ ['あ', 'hiragana'], ['ア', 'katakana'], ['字', 'kanji'], ['한', 'hangul'], ['口', 'gugyeol'], ['𗀀', 'tangut'], ['\u{3DD16}', 'seal'], ['※', 'symbol'] ]
 </script>
 
 <div class="script-legend" role="note" aria-label={t('script.legend.label')}>

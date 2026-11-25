@@ -18,9 +18,12 @@ characters and occurrence counts remain separate. The 271 one-to-one Japanese
 old/new pairs are cited in `graphemes.yaml`. `glyph_atlas.shape_families` adds the
 rest from `kanji-variants.tsv`: characters a source defines as one character in
 another shape, then the 異寫字, a simplified, 新字体 or other variant form that
-writes one character only (时 for 時). A form that writes two characters (寸 for 時
+writes one character only (时 for 時), then the forms the 通用规范汉字表 and the 常用漢字表
+prescribe for one character (动 for 動, 状 for 狀). A form that writes two characters (寸 for 時
 and 算, 后 for 後 and 后) stays a character of its own, and shared pronunciations
-do not create browsing families.
+do not create browsing families. A small seal character is a form of the grapheme of
+its Han character, Unicode's `kSEAL_MCJK`: 𽌇 belongs to 春 with 萅
+([0015](decisions/0015-small-seal-forms.md)).
 
 Kana retain their curated families. For example, ね, ネ and 𛄧 share `U+306D`.
 The kanji 子 remains a separate character and family, while `Character.jibo` records
@@ -50,7 +53,8 @@ left as it was, since retirement says nothing about whether its labels were wron
 ### sources
 
 One row per upstream, from `data/sources/*.yaml`: `id`, `name`, `publisher`, `kind`, `url`, `licence`,
-`attribution`, `version`, `doi`, `released`.
+`attribution`, `version`, `doi`, `released`, and `hosted_pages`: the ids of its documents whose page
+images the site serves from its own copy (docs/licensing.md, Hosted page photographs).
 
 ### documents
 
@@ -168,7 +172,7 @@ from one Unicode release's `UnicodeData.txt`, `Blocks.txt`, `Scripts.txt`, `Deri
 | `category`, `age`, `block` | the general category, the release that assigned the code point, the block |
 | `jibo` | 字母: the kanji the form derives from; empty for a kanji, and for a kana or 구결자 whose derivation no source states |
 | `readings` | what the character reads as, historical spelling kept; empty when it is not a kana or a 구결자; a Hangul compatibility jamo reads as itself, a syllable or conjoining jamo has none |
-| `grapheme` | the representative of its curated family; its own code point when no family is stated |
+| `grapheme` | the representative of its family: a curated one, a kanji family of `grapheme-families.tsv`, or, for a small seal character, its Han character's; its own code point when no family is stated |
 | `confusables` | the characters Unicode's confusables table pairs with this one, both directions |
 | `variants` | list of `{scheme, id, version}` with scheme `mj`, `ivs`, `glyphwiki` or `local`, when a shape registry has an id for the character |
 

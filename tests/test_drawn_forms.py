@@ -12,7 +12,8 @@ import pytest
 from glyph_atlas import drawn_forms, form_clusters, forms, refs, representation
 
 ROOT = Path(__file__).resolve().parents[1]
-RU, FANG = "\U000f0000", "\U000f0001"
+RU, FANG, HOOK = "\U000f0000", "\U000f0001", "\U000f0002"
+TOKI_TRAD, TOKI_SIMP = "\U000f0003", "\U000f0004"
 
 
 def _build():
@@ -25,9 +26,10 @@ def _build():
 def test_the_table_names_each_form_its_grapheme_and_its_drawing():
     table = drawn_forms.table()
     assert (table.namespace, table.version) == ("glyph-atlas", "1")
-    assert [form.code_point for form in drawn_forms.written_for("事")] == ["U+F0000", "U+F0001"]
+    assert [form.code_point for form in drawn_forms.written_for("事")] == ["U+F0000", "U+F0001", "U+F0002"]
+    assert [form.code_point for form in drawn_forms.written_for("時")] == ["U+F0003", "U+F0004"]
     assert drawn_forms.written_for("也") == []
-    assert drawn_forms.drawn(RU).written_for == "事" and drawn_forms.drawn("\U000f0100") is None
+    assert drawn_forms.drawn(RU).written_for == "事" and drawn_forms.drawn(TOKI_TRAD).written_for == "時" and drawn_forms.drawn("\U000f0100") is None
     for form in table.forms.values():
         assert drawn_forms.AREA[0] <= ord(form.char) <= drawn_forms.AREA[1]
         # One filled path in the em the fonts are built on, in each style.
@@ -47,10 +49,13 @@ def test_a_drawn_form_is_a_private_use_representation_in_the_tables_namespace():
 
 def test_a_drawn_form_is_a_character_of_the_family_it_writes():
     info = refs.grapheme_info("U+4E8B")
-    assert [member["code_point"] for member in info["members"]][-2:] == ["U+F0000", "U+F0001"]
+    assert [member["code_point"] for member in info["members"]][-4:] == ["U+F0000", "U+F0001", "U+F0002", "U+3D8B7"]
     row = refs.character("U+F0000")
     assert (row.char, row.grapheme, str(row.script), row.name) == (RU, "U+4E8B", "han", None)
     assert refs.grapheme_info("U+F0000")["code_point"] == "U+4E8B"
+    toki_members = [member["code_point"] for member in refs.grapheme_info("U+6642")["members"]]
+    assert "U+F0003" in toki_members and "U+F0004" in toki_members
+    assert refs.grapheme_info("U+F0003")["code_point"] == "U+6642" and refs.grapheme_info("U+F0004")["code_point"] == "U+6642"
     # No other family holds one.
     assert all(ord(member["char"]) < 0xF0000 for member in refs.grapheme_info("U+4E5F")["members"])
 
@@ -62,15 +67,15 @@ def test_a_drawn_form_is_filed_as_the_grapheme_it_writes_is():
     assert [schema.category_of(label) for label in (RU, "事", "\U000f0100")] == ["kanji", "kanji", "other"]
     # A kanji with other characters keeps its family in a clustering, its drawn forms among them.
     family = form_clusters.family_of("U+4E8B")
-    assert [member["code_point"] for member in family["members"]][-2:] == ["U+F0000", "U+F0001"] and family["relation"] != "kanji-variants"
+    assert [member["code_point"] for member in family["members"]][-3:] == ["U+F0000", "U+F0001", "U+F0002"] and family["relation"] != "kanji-variants"
 
 
 def test_a_clustering_made_before_the_table_still_offers_the_familys_drawn_forms(monkeypatch):
     monkeypatch.setattr(forms, "family_members", lambda family: ["事", "亊"] if family == "U+4E8B" else ["也"])
-    assert forms.drawn_members("U+4E8B") == [RU, FANG]
+    assert forms.drawn_members("U+4E8B") == [RU, FANG, HOOK]
     assert forms.drawn_members("U+4E5F") == []
     # One made after it publishes them itself.
-    monkeypatch.setattr(forms, "family_members", lambda family: ["事", "亊", RU, FANG])
+    monkeypatch.setattr(forms, "family_members", lambda family: ["事", "亊", RU, FANG, HOOK])
     assert forms.drawn_members("U+4E8B") == []
 
 
@@ -106,3 +111,22 @@ def test_the_fonts_the_stylesheet_and_the_workers_table_are_those_of_the_table()
     assert build.CSS.read_text(encoding="utf-8") == build.css(names)
     # The two cuts differ.
     assert _outlines(build.font("sans")) != _outlines(build.font("serif"))
+
+
+@pytest.mark.parametrize("style", drawn_forms.STYLES)
+def test_looped_shi_matches_its_neighbors_stroke_width(style):
+    from fontTools.pens.areaPen import AreaPen
+    from fontTools.pens.perimeterPen import PerimeterPen
+    from fontTools.pens.recordingPen import replayRecording
+
+    outlines = _outlines(_build().font(style))
+
+    def stroke_width(char):
+        area, perimeter = AreaPen(), PerimeterPen()
+        replayRecording(outlines[ord(char)], area)
+        replayRecording(outlines[ord(char)], perimeter)
+        return 2 * abs(area.value) / perimeter.value
+
+    target = (stroke_width(FANG) + stroke_width(HOOK)) / 2
+    # Allow a font unit for rounding when sampling and compiling the contours.
+    assert stroke_width(RU) == pytest.approx(target, abs=1)

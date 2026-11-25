@@ -3,13 +3,11 @@ import { pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { localize } from './i18n.svelte.js'
 import { showing } from './inspectQueue.js'
-import { cropOrigin } from './movedCrop.js'
 
 const KEY = Symbol('inspector')
 
 /** A crop's own page, which draws it over the collection when it is loaded directly. */
-export const cropAddress = (id, origin = 'collection') =>
-  localize((origin === 'corpus' ? '/corpus/' : '/crop/') + encodeURIComponent(id))
+export const cropAddress = id => localize('/crop/' + encodeURIComponent(id))
 
 /**
  * The crop inspector every view opens: which crop is shown, the collection it steps through, and who
@@ -27,15 +25,15 @@ export function createInspector() {
   // What this page saved for each crop, so stepping back to one shows the decision it was given.
   const decisions = {}
   const current = () => page.state.inspect?.key === state.key
-  function show(id, origin, push) {
+  function show(id, push) {
     closing = false
-    const entry = { ...page.state, inspect: { id, origin, key: state.key } }
-    if (push) pushState(cropAddress(id, origin), entry)
-    else replaceState(cropAddress(id, origin), entry)
+    const entry = { ...page.state, inspect: { id, key: state.key } }
+    if (push) pushState(cropAddress(id), entry)
+    else replaceState(cropAddress(id), entry)
   }
   return {
     state,
-    /** The crop on show, as `{ id, origin }`, or null. */
+    /** The crop on show, as `{ id }`, or null. */
     get shown() { return page.state.inspect ?? null },
     get queue() { return current() ? state.queue : [] },
     get index() { return current() ? state.queue.findIndex(item => showing(item, page.state.inspect)) : -1 },
@@ -44,21 +42,21 @@ export function createInspector() {
     get update() { return current() || !page.state.inspect ? updateItem : null },
     /** The problem the crop was opened to fix, for the crop it was opened on. */
     get opening() { return current() && page.state.inspect?.id === state.opened ? state.opening : null },
-    /** `update(id, record, how)` hears what happened to a crop: `saved` when a write decided it (a review, or
+    /** `update(id, record, how, was)` hears what happened to a crop, and the record it was saved from: `saved` when a write decided it (a review, or
      *  a line correction that moved its label), `changed` for a field (style, reading, word) that leaves the
      *  decision as it was, and `skipped`, with no record, when the reader declined to judge it. `opening` opens it with those problems
      *  chosen, as a round's Bad crop opens the box editor. */
-    inspect(id, collection = [], update = null, origin = 'collection', opening = null) {
+    inspect(id, collection = [], update = null, opening = null) {
       // A crop opened from inside the inspector takes the open one's entry rather than stacking another.
       const open = Boolean(page.state.inspect)
       if (!open) lastFocus = document.activeElement
       Object.assign(state, { queue: [...collection], key: state.key + 1, opening, opened: id })
       updateItem = update
-      show(id, origin, !open)
+      show(id, !open)
     },
     step(direction) {
       const item = state.queue[this.index + direction]
-      if (item) show(item.id, cropOrigin(item), false)
+      if (item) show(item.id, false)
     },
     /** Back to the list's entry; the layout returns the focus once the dialog has gone. */
     close() {
@@ -69,12 +67,11 @@ export function createInspector() {
     },
     /** The crop on show opened as another id (an old one, or a retired crop's replacement); the entry names
      *  the one on screen, `source` its source id, and keeps the id the list asked for. */
-    replaced(id, source = null, origin = null) {
+    replaced(id, source = null) {
       const inspect = page.state.inspect
       if (inspect) {
-        const nextOrigin = origin ?? inspect.origin
-        replaceState(cropAddress(id, nextOrigin), { ...page.state, inspect: { ...inspect, id, origin: nextOrigin, was: inspect.was ?? inspect.id, source } })
-      } else replaceState(cropAddress(id, origin ?? 'collection'), page.state)
+        replaceState(cropAddress(id), { ...page.state, inspect: { ...inspect, id, was: inspect.was ?? inspect.id, source } })
+      } else replaceState(cropAddress(id), page.state)
     },
     /** A new page has nothing of the last one's to step through. */
     forget() { Object.assign(state, { queue: [], key: state.key + 1, opening: null, opened: null }); updateItem = null; lastFocus = null },

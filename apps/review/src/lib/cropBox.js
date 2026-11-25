@@ -43,5 +43,7 @@ export function currentBox(data, box = null) {
   return b ? { x: Math.round(b.x / sx), y: Math.round(b.y / sy), w: Math.round(b.w / sx), h: Math.round(b.h / sy) } : null
 }
 
+const validScale = s => !s || (Array.isArray(s) && s[0] > 0 && s[1] > 0)
+
 /** Whether a record's box can be redrawn here. */
-export const redrawable = data => Boolean(data?.context && data.context_box && data.crop_box && data.crop_editable !== false)
+export const redrawable = data => Boolean(data?.context !== false && data?.proxyable !== false && data?.context_image && data.context_box && data.crop_box && data.crop_editable !== false && validScale(data?.source_scale))

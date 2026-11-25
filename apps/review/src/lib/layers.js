@@ -25,12 +25,15 @@ export const search = (q, expand = 'none') => get('/layers/search', { q, expand 
 /** What the IDS editor starts from: a character's descriptions and the substitutes of their components. */
 export const ids = char => get('/layers/ids', { c: char })
 /** The 構形 groups of these characters: `{ items: [{ id, label, chars, claimed, folded }], filed }`,
- *  `claimed` naming who filed a form there, `folded` the 構形 a reader folded into the group's and
- *  `filed` the other 構形 readers filed a form under. `of` is the character whose regional shapes are
+ *  `claimed` naming who filed a form there, `folded` the 構形 that stand under the group's, folded by a
+ *  reader (`by`) or as a layout of it (⿰辵禺 of ⿺辶禺, nobody named), and `filed` the other 構形 readers filed a form under. `of` are the characters whose regional shapes are
  *  among the names. */
 export const structures = (chars, of = '') => get('/layers/structures', { c: chars, of })
 export const character = (codePoint, expand = 'none', options) => get('/layers/characters/' + encodeURIComponent(codePoint), { expand }, options)
 export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)
+/** What a crop of a grapheme with no character of its own may be: `{ head, members, variants, related, derived, forms }`
+ *  (`graphemeBar.js`). */
+export const graphemeForms = codePoint => get('/layers/graphemes/' + encodeURIComponent(codePoint) + '/forms')
 export const graphemes = (params = {}) => get('/layers/graphemes', params)
 export const ligatures = () => get('/layers/ligatures')
 /** Copies of corpus glyphs from a seed's point of their shuffle, of one script group or of every one ('all'). */
@@ -38,13 +41,13 @@ export const gallery = (limit = 24, seed = 0, group = 'all', options) => get('/l
 /** A page of a character's corpus glyphs, from the cursor the page before named (`next`), or the first. */
 export const candidates = (codePoint, limit = 24, after = null, params = {}, options) => get('/layers/candidates', { code_point: codePoint, limit, after, ...params }, options)
 export const decades = (codePoint, params = {}, options) => get('/layers/decades', { code_point: codePoint, ...params }, options)
+/** A page of the books a character's crops come from, each with its first crops; with `document`, more of that book's. */
+export const bookGallery = (codePoint, params = {}, options) => get('/layers/books', { code_point: codePoint, ...params }, options)
 export const layerSummary = () => get('/layers/summary')
 
 /** `2 crops · 212 line matches` — the two evidence kinds, never added into one number. */
 export function countsLabel(counts) {
   if (!counts) return ''
-  if (counts.requires_family_scope) return counts.family_glyphs != null
-    ? t('layers.familySamples.count', { count: counts.family_glyphs }) : t('layers.familySamples')
   const parts = []
   if (counts.glyphs != null) parts.push(t('layers.crops.count', { count: counts.glyphs }))
   if (counts.lines) parts.push(t('layers.lineMatches.count', { count: counts.lines }))
@@ -52,6 +55,10 @@ export function countsLabel(counts) {
   if (!parts.length && counts.imported) parts.push(t('layers.inCollection.count', { count: counts.imported }))
   return parts.join(' · ')
 }
+
+/** The evidence of a character that is no crop of it: the lines and pages it is transcribed on. */
+export const matchesLabel = counts => [counts?.lines && t('layers.lineMatches.count', { count: counts.lines }), counts?.pages && t('layers.pageMatches.count', { count: counts.pages })]
+  .filter(Boolean).join(' · ')
 
 /** What a row's own collection holds, when the corpus knows nothing about the character. */
 export function ownLabel(row) {

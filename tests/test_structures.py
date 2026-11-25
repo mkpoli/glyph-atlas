@@ -5,13 +5,14 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 import pytest
 import yaml
 from typer.testing import CliRunner
 
-from glyph_atlas import han_component_variants, han_components, representation, structures
+from glyph_atlas import han_component_variants, han_components, refs, representation, structures
 from glyph_atlas.cli import app
 from glyph_atlas.review import crop_forms, ledger
 from glyph_atlas.review.ledger import Claim
@@ -172,6 +173,76 @@ def test_a_description_that_is_a_characters_own_structure_names_it():
     # 黒 has 黑's structure, and ⿱里火 is 𭴬's own.
     assert structures.for_character("黒") == structures.for_character("黑")
     assert structures.for_ids("⿱里火") == structures.for_character("𭴬")
+
+
+def test_a_character_encoded_twice_joins_the_one_whose_regional_shape_it_is():
+    # 𦤀 ⿱自大 is 臭's J shape, and Unihan and CJKVI give the two as one character.
+    assert structures.for_character("𦤀") == structures.for_character("臭")
+    assert structures.for_character("臭").label == "⿱自犬"
+    assert structures.for_ids("⿱自大") == structures.for_character("臭")
+    assert structures.for_character("𠾖") == structures.for_character("器")
+    # 柿 ⿰木市 is 杮's K shape, and CJKVI gives the two as characters that only look alike.
+    assert structures.for_character("柿") != structures.for_character("杮")
+    assert structures.for_ids("⿰木市") == structures.for_character("柿")
+    assert structures.for_character("𠮟") != structures.for_character("叱")
+    # ⿱梄灬, 槱's J and K shape, is the own description of 𤍕 and of 𪳝; only 𪳝 is 槱 encoded twice.
+    assert structures.for_character("𪳝") == structures.for_character("槱") != structures.for_character("𤍕")
+    # A stated equivalence alone joins nothing: 樣 and 様 keep their structures.
+    assert structures.for_character("樣") != structures.for_character("様")
+
+
+def test_the_characters_encoded_twice_are_these():
+    """The joins follow the 異体字 graph, which the policy does not pin: a rebuilt graph that changes
+    one fails here."""
+    groups: dict[str, set[str]] = {}
+    for char, head in structures._joined().items():
+        groups.setdefault(head, set()).add(char)
+    assert {head: "".join(sorted(chars - {head})) for head, chars in groups.items()} == {
+        "臭": "𦤀", "器": "𠾖", "巽": "𢁉", "槱": "𪳝", "欄": "𣟬", "獡": "𤡯", "琢": "𤥨", "疉": "𤴁",
+        "眔": "𥄳", "稽": "𥡴", "篹": "𥲻", "簆": "𥲃", "逸": "𨓜", "隆": "𨺓", "類": "𩔖"}
+
+
+def test_a_seal_character_has_its_han_equivalents_structure():
+    # SealSources.txt gives 𾲟 臭 and 𽌇 萅: the seal form of 春 is built as 萅.
+    assert structures.for_character("𾲟") == structures.for_character("臭")
+    assert structures.for_character("𽌇") == structures.for_character("萅") != structures.for_character("春")
+    # Unicode states one equivalent for each seal character. One that several share names none of them.
+    stated = [row for row in refs.variant_edges() if row["relation"] == "small-seal" and row["source"] == "unicode-ucd"]
+    assert len(stated) == len({row["b"] for row in stated}) == 11328
+    shared = [han for han, count in Counter(row["a"] for row in stated).items() if count > 1]
+    assert len(shared) == 94 and "折" in shared
+    assert not set(shared) & set(structures.seal_equivalents().values())
+    equivalents = structures.seal_equivalents()
+    held = {row["b"] for row in stated if row["a"] in shared}
+    assert held.isdisjoint(equivalents) and len(equivalents) == 11328 - len(held) - 3 == 11133
+    # The seal form of 書 is 聿 over 者.
+    assert structures.for_character("𽣆") is None
+    assert structures.for_character("𽋎") is None and structures.for_character("𽋏") is None
+    assert all(structures.for_character(seal) for seal in structures.seal_equivalents())
+
+
+def test_a_seal_character_writes_辵_beside_the_rest():
+    meet, beside = structures.for_character("遇"), structures.for_character("𽓻")
+    assert (meet.label, beside.label) == ("⿺辶禺", "⿰辵禺") and structures.head(beside.label) == (meet.id, meet.label)
+    assert structures.head(meet.label) is None and structures.head(structures.for_character("辵").label) is None
+    # 辵 written whole under the rest is another layout too: 𨑡 of 𨑒.
+    assert structures.head(structures.for_character("𨑡").label)[0] == structures.for_character("𨑒").id
+    # Every seal character whose equivalent has 之繞 is built so, and stands under its equivalent's.
+    written = {seal: han for seal, han in structures.seal_equivalents().items() if structures.for_character(han).label[:2] in {"⿺辶", "⿺辵"}}
+    assert len(written) == 153
+    for seal, han in written.items():
+        own, whole = structures.for_character(seal), structures.for_character(han)
+        assert own == structures.from_tree(("⿰", ("辵", whole.tree[1][1])))
+        assert structures.head(own.label) == (structures.head(whole.label) or (whole.id, whole.label))
+    # The seal forms of 邃 and 𨘈 are built otherwise.
+    assert not {"邃", "𨘈"} & set(structures.seal_equivalents().values())
+
+
+def test_a_shape_names_the_character_that_encodes_it_again():
+    assert refs.ids_of("稽")["shapes"] == [{"text": "⿰禾⿱尤旨", "regions": "GHTJPV"},
+                                          {"text": "⿰禾⿱尤㫖", "regions": "K", "chars": ["𥡴"]}]
+    # 𤴁, which is 疉 encoded again, has regional shapes of its own, and 疉 is none of them.
+    assert all("chars" not in shape for shape in refs.ids_of("𤴁")["shapes"])
 
 
 def test_the_policy_names_the_tables_it_reads():

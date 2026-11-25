@@ -5,7 +5,6 @@
   import ScriptText from '../components/ScriptText.svelte'
   import { useSession } from '../lib/session.svelte.js'
   import { useInspector } from '../lib/inspector.svelte.js'
-  import { cropOrigin } from '../lib/movedCrop.js'
   import { t, formatDateTime, localize, formatNumber } from '../lib/i18n.svelte.js'
   const session = useSession(), inspector = useInspector()
   const KINDS = ['active', 'accounts', 'anonymous', 'banned', 'admins', 'unclaimed']
@@ -134,7 +133,7 @@
               <span class="admin-time">{when(item.at)}</span>
               <span class="admin-label">{#if item.label ?? item.targets[0]?.label}<ScriptText text={item.label ?? item.targets[0].label} />{:else}—{/if}</span>
               <span class="admin-what">{t(`admin.submission.${item.kind}`, { count: item.crops })}<small>{verdicts(item)}</small>
-                {#if item.targets.length}<span class="admin-crops">{#each item.targets as crop (crop.id)}<button class="admin-crop" onclick={() => inspector.inspect(crop.id, [], null, cropOrigin(crop))} aria-label={t('history.row.inspect', { label: crop.label ?? crop.id })}>{#if crop.label}<ScriptText text={crop.label} />{:else}·{/if}</button>{/each}{#if item.crops > item.targets.length}<small>+{item.crops - item.targets.length}</small>{/if}</span>{/if}</span>
+                {#if item.targets.length}<span class="admin-crops">{#each item.targets as crop (crop.id)}<button class="admin-crop" onclick={() => inspector.inspect(crop.id)} aria-label={t('history.row.inspect', { label: crop.label ?? crop.id })}>{#if crop.label}<ScriptText text={crop.label} />{:else}·{/if}</button>{/each}{#if item.crops > item.targets.length}<small>+{item.crops - item.targets.length}</small>{/if}</span>{/if}</span>
               {#if item.state === 'standing'}<button class="quiet-link" disabled={Boolean(busy)} onclick={() => { confirming = item.id; reason = '' }}>{t('admin.reject')}</button>
               {:else}<span class="admin-pill" class:danger={item.state === 'rejected'} title={item.rejection ? `${item.rejection.by}${item.rejection.reason ? ': ' + item.rejection.reason : ''}` : ''}>{t(`admin.state.${item.state}`)}</span>{/if}
             </li>

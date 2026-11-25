@@ -1,0 +1,48 @@
+id: longkan-shoujing
+name: 龍龕手鏡字頭表（青雀古籍）
+publisher: 青雀古籍（YingdaZhao）
+kind: transcription-corpus
+url: https://github.com/yingdazhao/qingque-data
+revision: 2ca2e417a71038da2a34a3c9f0fba2991b4e57d5
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/yingdazhao/qingque-data/blob/2ca2e417a71038da2a34a3c9f0fba2991b4e57d5/LICENSE.md
+attribution: 青雀古籍（YingdaZhao）『古辞书综合/龙龛手镜.csv』2ca2e417 (CC BY-SA 4.0)
+access:
+  repository: https://github.com/yingdazhao/qingque-data
+format:
+  table: "data/古辞书综合/龙龛手镜.csv: one row per entry in the printed order: 字头 (a headword, several printed one after another, or empty), 注文, 四声, 部首, 卷序, and the half-leaf of the entry in each edition"
+  edition: 宋本（国图）
+title: 龍龕手鏡
+work: 龍龕手鏡
+printing: 宋刻本
+volumes: {"1": 卷一　平聲, "2": 卷二　上聲, "3": 卷三　去聲, "4": 卷四　入聲}
+register: kanbun
+copies:
+  # The scan of the printing the headwords are cut from: the embedded image of each PDF page, two half-leaves of ten columns,
+  # or one half-leaf where the image is taller than wide. `pitch` bounds the half-column's width on the image enlarged `enlarge` times.
+  - id: song
+    title: 龍龕手鑑 四卷 宋刻本（中華再造善本影印）
+    kind: commons-pdf
+    repository: https://commons.wikimedia.org/wiki/File:ZHSY000072_龍龕手鑑四卷_(遼)釋行均_撰_宋刻本.pdf
+    file: ZHSY000072 龍龕手鑑四卷 (遼)釋行均 撰 宋刻本.pdf
+    sha1: f96c09375604330fe564a6423e7848eb406a1b7e
+    holder: 中國國家圖書館
+    of: 中國國家圖書館藏
+    attribution: 中國國家圖書館藏宋刻本，中華再造善本影印（Wikimedia Commons ZHSY000072）
+    licence: PD
+    licence_evidence: https://commons.wikimedia.org/wiki/File:ZHSY000072_龍龕手鑑四卷_(遼)釋行均_撰_宋刻本.pdf
+    image_kind: flat-reproduction
+    enlarge: 2
+    scale: 0.8
+    pitch: [80, 95]
+dating:
+  - literal: 統和十五年丁酉七月一日癸亥序
+    start: 997
+    end: 997
+    kind: composition
+    evidence: 宋刻本卷首 智光序（中國國家圖書館藏，ZHSY000072 PDF第4頁）
+notes:
+  - The holder is the one the reproduction states on its first leaf, 據中國國家圖書館藏宋刻本影印 (PDF page 2). No source read dates this impression, so it carries no printing date.
+  - The table was roughly proofread (粗校); its README says the origin of the first transcription of 龍龕手鏡 and its licence could not be traced. The table places and labels crops and is not republished.
+  - The table's 高丽本 column covers volumes 1, 3 and 4 alone, and NDL opens only volume 1 of that reprint (pid 1194507); its volumes 2 to 4 (1194508 to 1194510) are in-library only, read 2026-11-25.
+  - The half-leaf a page shows is found by fit, not by its number; the table skips numbers between volumes.

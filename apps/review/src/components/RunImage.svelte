@@ -12,8 +12,14 @@
   import { t } from '../lib/i18n.svelte.js'
   import { cropShape, cropTone } from '../lib/cropPaint.js'
 
-  let { crops, page = null, vertical = true, oninspect = null, context = false, fill = null } = $props()
+  let { crops, page = null, vertical = true, oninspect = null, context = false, fill = null, active = null } = $props()
   let broken = $state(false), uncut = $state(false)
+  $effect(() => {
+    page?.image
+    page?.cut
+    broken = false
+    uncut = false
+  })
   const whole = $derived(page && !broken)
   // The run's region as its own image, where the render's service cuts one; the whole render otherwise.
   const cutShown = $derived(whole && !context && page.cut && !uncut)
@@ -79,16 +85,19 @@
     {:else}{#each crops as crop, i (i)}<rect class="run-paper" style={cropTone(crop)} {...paper(crop, cells[i])} /><image href={crop.image} {...cut(cells[i])} />{/each}{/if}
   </svg>
   {#if oninspect}{#each crops as crop, i (i)}
-    <rect class="run-hit" class:marked={context && whole} x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
+    <rect class="run-hit" class:marked={context && whole} class:checked={context && crop.state === 'checked'} class:flagged={context && (crop.state === 'flagged' || crop.state === 'hard')} class:active={active === i} x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
           aria-label={t('explore.tile.inspect', { label: crop.label })} onclick={() => oninspect(crop.id)} onkeydown={event => pressed(event, crop)} />
-  {/each}{/if}
+  {/each}{:else if context && whole && placed}{#each cells as cell, i (i)}<rect class="run-mark" x={cell.x} y={cell.y} width={cell.w} height={cell.h} />{/each}{/if}
 </svg>
 
 <style>
   .run-image{display:block;width:100%;height:100%}
   .run-paper{fill:var(--tone,var(--crop-paper))}
+  .run-mark{fill:none;stroke:var(--accent);stroke-width:2px;vector-effect:non-scaling-stroke}
   .run-hit{fill:transparent;stroke:transparent;stroke-width:2px;vector-effect:non-scaling-stroke;cursor:pointer;outline:none}
   .run-hit:hover,.run-hit:focus-visible{stroke:var(--accent)}
   .run-hit.marked{stroke:var(--accent);stroke-opacity:.55}
-  .run-hit.marked:hover,.run-hit.marked:focus-visible{stroke-opacity:1;stroke-width:3px}
+  .run-hit.marked.checked{stroke:var(--good);stroke-opacity:.65}
+  .run-hit.marked.flagged{stroke:var(--wrong);stroke-opacity:.75}
+  .run-hit.marked:hover,.run-hit.marked:focus-visible,.run-hit.marked.active,.run-hit.active{stroke:var(--accent);stroke-opacity:1;stroke-width:3px}
 </style>

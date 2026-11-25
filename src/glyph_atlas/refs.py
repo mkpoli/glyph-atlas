@@ -263,10 +263,48 @@ def variant_edges() -> tuple[dict[str, Any], ...]:
     return tuple(edges)
 
 
+#: The source id of the edges `seal_chain_edges` infers, and its citation.
+SEAL_CHAIN = "seal-chain"
+SEAL_CHAIN_CITATION = (
+    "Inferred, stated by no source: a small seal character joined to the character whose 說文解字 隸定字 "
+    "(OpenCC SealVariants) is the seal character's modern CJK equivalent (Unicode SealSources.txt "
+    "kSEAL_MCJK); Glyph Atlas, CC BY-SA 4.0 (LICENSE-DATA)"
+)
+
+
+@cache
+def seal_chain_edges() -> tuple[dict[str, Any], ...]:
+    """A small seal character joined to the character written today, through its 隸定字.
+
+    Unicode gives 𽀅 the equivalent 叓 (`small-seal`), and OpenCC gives 叓 as the 說文 隸定字 of 吏
+    (`shuowen`): the two rows together make 𽀅 the seal character of 吏, which neither source says.
+    Each such pair is an edge of the `small-seal` relation under the source `SEAL_CHAIN`, its detail
+    the two rows it rests on. No edge is made where a source already states the pair.
+    """
+    rows = variant_edges()
+    seals: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row["relation"] == "small-seal":
+            seals.setdefault(row["a"], []).append(row)
+    stated = {(row["a"], row["b"]) for row in rows if row["relation"] == "small-seal"}
+    found = []
+    for row in rows:
+        if row["relation"] != "shuowen":
+            continue
+        for seal in seals.get(row["b"], ()):
+            if (row["a"], seal["b"]) not in stated:
+                found.append({
+                    "a": row["a"], "b": seal["b"], "relation": "small-seal", "source": SEAL_CHAIN,
+                    "detail": f"{row['a']}→{row['b']} {row['detail']} ({row['source']}) + {seal['detail']} ({seal['source']})",
+                    "written": False, "widens": False,
+                })
+    return tuple(sorted(found, key=lambda edge: (edge["a"], edge["b"])))
+
+
 @cache
 def _edges_by_char() -> dict[str, tuple[dict[str, Any], ...]]:
     found: dict[str, list[dict[str, Any]]] = {}
-    for edge in variant_edges():
+    for edge in (*variant_edges(), *seal_chain_edges()):
         found.setdefault(edge["a"], []).append(edge)
         if edge["b"] != edge["a"]:
             found.setdefault(edge["b"], []).append(edge)
@@ -274,7 +312,7 @@ def _edges_by_char() -> dict[str, tuple[dict[str, Any], ...]]:
 
 
 def variant_edges_of(char: str) -> tuple[dict[str, Any], ...]:
-    """The edges of the 異体字 graph with `char` at either end."""
+    """The edges of the 異体字 graph with `char` at either end, the inferred seal edges after them."""
     return _edges_by_char().get(char, ())
 
 
@@ -297,8 +335,9 @@ def _source_citations(name: str) -> dict[str, str]:
 
 @cache
 def variant_sources() -> dict[str, str]:
-    """The citation of each source of the 異体字 graph, as the table's header states it."""
-    return _source_citations(VARIANTS_TSV)
+    """The citation of each source of the 異体字 graph, as the table's header states it, and of the
+    inferred seal edges."""
+    return {**_source_citations(VARIANTS_TSV), SEAL_CHAIN: SEAL_CHAIN_CITATION}
 
 
 @cache
@@ -399,36 +438,64 @@ def ids_sequences(char: str) -> list[str]:
 SOURCE_REGIONS = "GHMTJKPVUSB"
 
 
+@cache
+def _by_region(char: str) -> tuple[tuple[str, frozenset[str]], ...]:
+    """`char`'s descriptions as BabelStone's sources use them, each with the source letters it names."""
+    found: dict[str, set[str]] = {}
+    for sequence in han_components._sequences().get(char, ()):
+        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
+        if named:
+            found.setdefault(han_component_variants.REGION.sub("", sequence), set()).update(named)
+    return tuple((text, frozenset(named)) for text, named in found.items())
+
+
+@cache
+def _in_region(char: str, region: str, depth: int = 0) -> str:
+    """`char` as `region` draws it: itself, or its description there where its sources draw it in
+    several ways (勺 is ⿹勹一 in K and ⿹勹丶 in J), with such parts of it spelt out alike. A character
+    with one description, with none there or with several there stands as itself."""
+    described = _by_region(char)
+    drawn = [text for text, named in described if region in named]
+    if len(described) < 2 or len(drawn) != 1 or drawn[0] == char or depth > 8:
+        return char
+    return _spelt(drawn[0], region, depth + 1)
+
+
+def _spelt(text: str, region: str, depth: int = 0) -> str:
+    return "".join(_in_region(part, region, depth) for part in han_components.TOKEN.findall(text))
+
+
 def regional_shapes(char: str) -> list[dict[str, str]]:
     """The shapes BabelStone gives `char` by source, as `{"text", "regions"}` (所 as ⿰戶斤 in GHTKPV
     and ⿰戸斤 in J), when its descriptions name more than one; empty otherwise. Only source letters
     count (`SOURCE_REGIONS`), read as `han_component_variants.regions` reads a tag: 主's ⿱亠土 (X)
-    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph."""
+    analyses the ⿱丶王 every source writes, and 亼's ⿱人一 (Z) is no source's glyph.
+
+    A part is written as the region itself draws it, so one shape can be spelt twice: 酌 is ⿰酉勺 in
+    GHTJPV and ⿰酉⿹勹丶 in K, whose own 勺 is ⿹勹一. Shapes that come to one description in every
+    region they name are one, under the spelling that holds in all of them. A shape whose regions draw
+    a part of it in different ways (灼's ⿰火勺, in G and in K) is compared with none. A part the source
+    describes once is one part, whatever its own parts are."""
     usable = ids_sequences(char)
-    found: dict[str, set[str]] = {}
-    for sequence in han_components._sequences().get(char, ()):
-        text = han_component_variants.REGION.sub("", sequence)
-        named = han_component_variants.regions(sequence) & set(SOURCE_REGIONS)
-        if named and text in usable:
-            found.setdefault(text, set()).update(named)
-    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in named)}
-            for text, named in found.items()] if len(found) > 1 else []
-
-
-def shape_structures(shapes: list[dict[str, str]], own: Any) -> list[dict[str, Any]]:
-    """`shapes` (`regional_shapes`), each with its 構形 as `structure` where that is not `own`, its
-    character's: `{"id", "label"}`, or None for a shape that names none. 臭 is ⿱自犬 and its J shape
-    ⿱自大 is the structure of 𦤀; a shape that spells its character's structure carries nothing."""
-    from . import structures
-
-    found = []
-    for shape in shapes:
-        structure = structures.for_name(shape["text"])
-        if (structure and structure.id) == (own and own.id):
-            found.append(shape)
+    named = [(text, regions) for text, regions in _by_region(char) if text in usable]
+    if len(named) < 2:
+        return []
+    shapes: list[tuple[str, frozenset[str]]] = []
+    drawn: dict[str, list[tuple[str, frozenset[str]]]] = {}
+    for text, regions in named:
+        spelt = {_spelt(text, region) for region in regions}
+        if len(spelt) == 1:
+            drawn.setdefault(spelt.pop(), []).append((text, regions))
         else:
-            found.append({**shape, "structure": {"id": structure.id, "label": structure.label} if structure else None})
-    return found
+            shapes.append((text, regions))
+    for spelling, alike in drawn.items():
+        everywhere = frozenset().union(*(regions for _, regions in alike))
+        # The spelling that holds in every region the shapes name; without one they stay apart.
+        holds = [text for text, _ in alike if all(_spelt(text, region) == spelling for region in everywhere)]
+        shapes += [(min(holds, key=lambda text: len(han_components.TOKEN.findall(text))), everywhere)] if holds else alike
+    order = [text for text, _ in named]
+    return [{"text": text, "regions": "".join(r for r in SOURCE_REGIONS if r in regions)}
+            for text, regions in sorted(shapes, key=lambda shape: order.index(shape[0]))] if len(shapes) > 1 else []
 
 
 def substitutes(component: str) -> list[dict[str, Any]]:
@@ -449,7 +516,7 @@ def ids_of(char: str) -> dict[str, Any]:
     structure = structures.for_character(char)
     parts = sorted({part for text in sequences for part in han_components.TOKEN.findall(text)
                     if part not in han_components.BINARY | han_components.TERNARY | han_components.UNARY})
-    return {"char": char, "sequences": sequences, "shapes": shape_structures(regional_shapes(char), structure),
+    return {"char": char, "sequences": sequences, "shapes": structures.encoded_shapes(char, regional_shapes(char)),
             "structure": {"id": structure.id, "label": structure.label} if structure else None,
             "substitutes": {part: found for part in parts if (found := substitutes(part))}}
 
@@ -473,20 +540,72 @@ def descriptions() -> han_component_variants.Descriptions:
 STRUCTURE_CHARS = 48
 
 
+def _standing(named: Sequence[Mapping[str, Any]], folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None,
+              ) -> Callable[[Mapping[str, Any]], dict[str, Any] | None]:
+    """Where each named structure stands, as `{head, by}` or None for one that stands on its own: at the
+    end of the readers' folds (`folds`) and of the layouts (`structures.head`), a reader's fold first. A
+    layout whose head a reader folded into it stands on its own. The Worker's `standingOf` answers the
+    same."""
+    from . import structures
+
+    heads: dict[str, dict[str, str]] = {}
+    folded: dict[str, Mapping[str, Any]] = {}
+    asked: set[str] = set()
+    reading: list[Mapping[str, Any]] = list(named)
+    while reading:
+        for structure in reading:
+            if found := structures.head(structure["label"]):
+                heads[structure["id"]] = {"id": found[0], "label": found[1]}
+        wanted = list(dict.fromkeys(id_ for structure in reading for id_ in (structure["id"], heads.get(structure["id"], structure)["id"])
+                                    if id_ not in asked))
+        asked.update(wanted)
+        more = folds(wanted) if folds and wanted else {}
+        folded.update(more)
+        reading = [fold["head"] for fold in more.values() if fold["head"]["id"] not in asked]
+
+    def standing(structure: Mapping[str, Any]) -> dict[str, Any] | None:
+        path: list[Mapping[str, Any]] = [structure]
+        while True:
+            at = path[-1]["id"]
+            following: Mapping[str, Any] | None = folded[at]["head"] if at in folded else heads.get(at)
+            if following and at not in folded and at in folded.get(following["id"], {}).get("path", ()):
+                following = None
+            if following is None:
+                break
+            seen = [one["id"] for one in path]
+            if following["id"] in seen:
+                path.append(min(path[seen.index(following["id"]):], key=lambda one: one["id"]))
+                break
+            path.append(following)
+        if path[-1]["id"] == structure["id"]:
+            return None
+        return {"head": path[-1], "by": folded[structure["id"]]["by"] if structure["id"] in folded else []}
+
+    return standing
+
+
 def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
-                     folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None) -> dict[str, Any]:
+                     folds: Callable[[list[str]], Mapping[str, Mapping[str, Any]]] | None = None,
+                     of: str = "") -> dict[str, Any]:
     """The 構形 of each character or description named, as groups of those that share one, in the
     order named, as the Worker's `/layers/structures` answers. A name stands under the structure
     readers filed its form under (`claimed`, by name: `{id, label, by}` each, the one that holds first),
-    and the group names who says so; with no claim it stands under the one its description gives. A
+    and the group names who says so; with no claim it stands under the one its description gives, and a
+    regional shape of one of the characters `of` under that character's. A
     structure a reader folded into another (`folds`, by id: `{head, by}`) stands under that one, and
-    the group lists it in `folded` with the names built as it. A name with no structure is in no
-    group. `filed` lists the other structures a name was filed under."""
+    the group lists it in `folded` with the names built as it. So does a structure that is another
+    layout of one (`structures.head`: ⿰辵禺 under ⿺辶禺), with nobody in `by`, unless a reader folded
+    that one under it. A name with no structure is in no group. `filed` lists the other structures a name was filed under."""
     from . import structures
     from .representation import written
 
     built: dict[str, dict[str, Any]] = {}
     filed: dict[str, list[dict[str, Any]]] = {}
+    shapes: dict[str, str | None] = {}
+    for char in dict.fromkeys(written(of)):
+        for shape in regional_shapes(char) if len(char) == 1 else ():
+            # A shape two of them share is neither's.
+            shapes[shape["text"]] = None if shape["text"] in shapes else char
     for name in list(dict.fromkeys(written(chars)))[:STRUCTURE_CHARS]:
         claims = list((claimed or {}).get(name, ()))
         if claims:
@@ -495,20 +614,19 @@ def structure_groups(chars: str, claimed: Mapping[str, Sequence[Mapping[str, Any
                 filed[name] = [dict(other) for other in claims[1:]]
             continue
         try:
-            structure = structures.for_name(name)
+            structure = structures.for_name(shapes.get(name) or name)
         except ValueError:
             continue
         if structure:
             built[name] = {"id": structure.id, "label": structure.label}
-    others = [other["id"] for rest in filed.values() for other in rest]
-    folded = folds(list(dict.fromkeys([*(value["id"] for value in built.values()), *others]))) if folds and built else {}
+    standing = _standing([*built.values(), *(other for rest in filed.values() for other in rest)], folds)
     for rest in filed.values():
         for other in rest:
-            if other["id"] in folded:
-                other["head"] = folded[other["id"]]["head"]["id"]
+            if fold := standing(other):
+                other["head"] = fold["head"]["id"]
     groups: dict[str, dict[str, Any]] = {}
     for name, structure in built.items():
-        fold = folded.get(structure["id"])
+        fold = standing(structure)
         head = fold["head"] if fold else structure
         group = groups.setdefault(head["id"], {"id": head["id"], "label": head["label"], "chars": []})
         group["chars"].append(name)
@@ -1037,6 +1155,27 @@ WRITES = "writes"
 STANDS_FOR = "stands-for"
 
 
+#: The role of a row by which a small seal character (`b`) is a member (`shape_families.SEAL`).
+SEAL = "seal"
+#: The relation of a family that only its small seal characters make more than one character.
+SMALL_SEAL = "small-seal"
+#: The code points of Unicode's Seal block.
+SEAL_BLOCK = range(0x3D000, 0x3FC40)
+
+
+def is_small_seal(char: str) -> bool:
+    """Whether a character is a small seal character (小篆)."""
+    return len(char) == 1 and ord(char) in SEAL_BLOCK
+
+
+def transcribed(members: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The members of a family a transcription may write under one code point: every one but the small
+    seal characters. A corpus that writes 仮 and 假 under 仮 never writes 𾛷 so, and the classifier
+    trained on it has no seal form in its class, so a seal character among the members never makes a
+    glyph's character uncertain (docs/decisions/0015-small-seal-forms.md)."""
+    return [member for member in members if not is_small_seal(member["char"])]
+
+
 @cache
 def _source_record(identifier: str) -> dict:
     return yaml.safe_load((SOURCES / f"{identifier}.yaml").read_text(encoding="utf-8"))
@@ -1050,7 +1189,8 @@ def _grapheme_families() -> dict[str, dict]:
     A curated family may hold more members than graphemes.yaml names, each joined by an edge of
     the tsv; every member of a family must be one of the two, or the table is stale. The members
     the tsv joins follow the stated ones, most attested first (the sources whose edges reach them),
-    then by code point: 时 before 㫭 and 峕 in the family of 時.
+    then by code point: 时 before 㫭 and 峕 in the family of 時. The family's drawn forms follow, and its
+    small seal characters come last.
     """
     path = VOCAB / "graphemes.yaml"
     document = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
@@ -1063,7 +1203,7 @@ def _grapheme_families() -> dict[str, dict]:
         stated = [to_code_point(char) for char in family["members"]] if family else [head]
         attested: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
-            if row["role"] not in (WRITES, STANDS_FOR):
+            if row["role"] not in (WRITES, STANDS_FOR, SEAL):
                 for end in ("a", "b"):
                     attested.setdefault(to_code_point(row[end]), set()).add(row["source"])
         members = stated + sorted(set(attested) - set(stated),
@@ -1072,6 +1212,7 @@ def _grapheme_families() -> dict[str, dict]:
             members = [head]
         # A drawn form is a member of the family it is written for, after its characters.
         members += [form.code_point for form in drawn_forms.written_for(to_char(head))]
+        members += sorted((to_code_point(row["b"]) for row in edges.get(head, ()) if row["role"] == SEAL), key=_point_order)
         writing: dict[str, set[str]] = {}
         for row in edges.get(head, ()):
             if row["role"] in (WRITES, STANDS_FOR):
@@ -1093,7 +1234,7 @@ def _grapheme_families() -> dict[str, dict]:
             "members": members,
             "stated": stated if family else [],
             "writers": writers,
-            "relation": family["relation"] if family else SHAPE_VARIANT,
+            "relation": family["relation"] if family else SHAPE_VARIANT if attested or writing else SMALL_SEAL,
             "evidence": evidence,
         }
     return families
@@ -1241,7 +1382,7 @@ def kana_origins() -> dict[str, frozenset[str]]:
     found: dict[str, set[str]] = {}
     for row in (row for row in _read_tsv(KANA_ORIGINS_TSV) if row["field"] == "平仮名字源"):
         info = grapheme_info(row["origin_code_point"])
-        members = {row["origin"], *(member["char"] for member in (info or {}).get("members") or [])}
+        members = {row["origin"], *(member["char"] for member in transcribed((info or {}).get("members") or []))}
         for member in members:
             found.setdefault(member, set()).add(row["kana"])
     return {kanji: frozenset(kana) for kanji, kana in found.items()}

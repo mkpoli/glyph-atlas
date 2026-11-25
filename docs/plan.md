@@ -76,6 +76,11 @@ Imported as they are, with identifiers kept:
 - HDIC KRM, KTB and TSJ (観智院本類聚名義抄, 高山寺本篆隷萬象名義, 天治本新撰字鏡): every entry with its place on a page of
   a printed edition and its headword as written; the headwords are placed on NDL facsimiles of
   those editions (`glyph_atlas.hdic`), and KTB's seal-script forms are taken in HDIC's own boxes.
+- nk2028 tshet-uinh-data: every headword of the 澤存堂本 廣韻 with its leaf, column and place in the column
+  and its gloss; the headwords are placed on images of the printing by the gaps the gloss lengths predict
+  (`glyph_atlas.leaf_text`).
+- 青雀古籍's 龍龕手鏡 table: every entry's half-leaf in the 宋刻本 and its place in order there; the headwords are placed on the
+  scan by the gloss lengths and the likeness of each crop to its character drawn in a font (`glyph_atlas.tape`).
 - 東京大学史料編纂所 くずし字データセット: 325,261 crops without page coordinates. The record fields
   (文書名, 和暦年月日, 史料群名 and others) exist in the 電子くずし字字典 database, whose search API
   refuses anonymous requests; a route to them has to come from the institute.

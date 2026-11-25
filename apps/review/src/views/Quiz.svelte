@@ -15,17 +15,25 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
+  import FormText from '../components/FormText.svelte'
+  import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
-  import { catalogue, character, corpusCharacter, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
+  import { catalogue, character, cropPixels, randomSeed, request, remember, stored, number, suggestionsFor } from '../lib/client.js'
   import { cropDetails } from '../lib/cropDetails.js'
   import { keptCrops, keptState, keyOf } from '../lib/outbox.svelte.js'
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
+  import { isDescription } from '../lib/ids.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
-  import { firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import {
+    dealtRound, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress,
+    ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences,
+    QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
+    normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
+  } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { unslug } from '../lib/gallery.js'
-  import { cropOrigin } from '../lib/movedCrop.js'
+  import { ledTo, unslug } from '../lib/addresses.js'
+  import { character as layerCharacter } from '../lib/layers.js'
   import { useSession } from '../lib/session.svelte.js'
   let { initialGrapheme = '', initialProduction = '', inspect } = $props()
   // The browser's reviewer id, which a form marking and its undo name like every other save.
@@ -51,7 +59,8 @@
   let categoryOpen = $state(false), search = $state(''), completed = $state(0), last = $state(null)
   let roundId = $state(crypto.randomUUID()), requestId = 0, closed = false
   let roundSeed = randomSeed()
-  const graphemeLabel = $derived(grapheme ? graphemeText(grapheme) : '')
+  // The grapheme's character, and what the round is named by.
+  const graphemeChar = $derived(grapheme ? graphemeText(grapheme) : ''), graphemeName = $derived(graphemeLabel(graphemeChar))
   // Already-confirmed and already-seen crops of the current grapheme, for comparison against the
   // round on screen. Loaded after the round itself, and a failure here never blocks the round.
   let references = $state([])
@@ -83,8 +92,7 @@
   $effect(() => {
     // Never while an error is showing: a failed batch would otherwise be retried at once, forever,
     // and an error from another action would be cleared before anyone could read it.
-    // Showing only suspects, a round may show nothing for many batches, so more crops wait to be asked for.
-    if (nearEnd && hasMore && !onlySuspects && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
+    if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
   // The scopes a round can be dealt from, in the order the material menu lists them.
@@ -107,19 +115,24 @@
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
-  // The crops the classifier doubts (`suspect`), shown alone when the reader asks. The rest of the round
-  // stays dealt but off screen: a crop never shown is not recorded as seen, and a later round shows it
-  // again. A crop the reader skipped while it was shown stays skipped.
-  let onlySuspects = $state(stored('atlas.quiz.suspects-only', false) === true)
-  const shown = $derived(onlySuspects ? items.filter(i => i.suspect) : items)
-  function toggleSuspects() {
+  // The crops the classifier doubts (`suspect`), dealt alone when the reader asks. Each round keeps which way
+  // it was dealt, since its cursor goes on in the same list. A visit that names no round takes the last choice.
+  let onlySuspects = $state(false)
+  const suspectsParam = only => only ? { suspects: 'only' } : {}
+  // Turning the choice leaves the round as any way out does, its crops recorded; Back returns to it.
+  async function toggleSuspects() {
     if (saving || loading || selection.length || step !== 'select') return
-    onlySuspects = !onlySuspects; remember('atlas.quiz.suspects-only', onlySuspects)
+    if (!(await record())) return
+    const only = !onlySuspects
+    await load({ target: grapheme || null, only })
+    if (onlySuspects === only) remember('atlas.quiz.suspects-only', only)
   }
   const selection = $derived(Object.keys(selected).filter(id => selected[id]))
   // A crop skipped in the review step stays selected so the reader can go back to it, but it is no
   // longer a problem to decide: whether the round still has one, and what moving on records, ask this.
   const openSelection = $derived(selection.filter(id => !skipped[id]))
+  // A form marks the crops still to decide; one already given an answer keeps it.
+  const markable = $derived(openSelection.filter(id => !choices[id]))
   const selectedItems = $derived(selection.map(id => items.find(i => i.id === id))
     .filter(item => item && !failed[item.id]))
   const queue = $derived(selectedItems)
@@ -136,10 +149,10 @@
   // A selected crop still needs an explicit issue before it can be saved.
   const undecided = $derived(remaining.filter(i => selected[i.id] && !choices[i.id] && !skipped[i.id]).length)
   // Unavailable and skipped images cannot carry a decision.
-  const remaining = $derived(shown.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && !decidedHere(i.id)))
-  const settled = $derived(shown.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
-  const ready = $derived(shown.length > 0 && settled && remaining.length > 0)
-  const exhausted = $derived(shown.length > 0 && settled && !remaining.length)
+  const remaining = $derived(items.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && !decidedHere(i.id)))
+  const settled = $derived(items.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
+  const ready = $derived(items.length > 0 && settled && remaining.length > 0)
+  const exhausted = $derived(items.length > 0 && settled && !remaining.length)
   const rounds = $derived(roundGraphemes(data?.categories ?? []))
   const categories = $derived(rounds.filter(c => c.pending > 0 && (!search || c.members.some(m => m.label.includes(search)))))
 
@@ -151,7 +164,7 @@
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
     return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, markedAs, suggestions, contextSuggestions,
-      roundId, roundSeed, hasMore, nextCursor, production, summary: data, entry })
+      roundId, roundSeed, hasMore, nextCursor, onlySuspects, production, summary: data, entry })
   }
   function checkpoint() {
     if (historyIndex >= 0) history[historyIndex] = snapshot()
@@ -160,7 +173,7 @@
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; markedAs = round.markedAs ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
-    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null
+    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null; onlySuspects = round.onlySuspects ?? false
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
     anchor = null; formDone = null; formError = ''
@@ -183,9 +196,9 @@
   function address(how) {
     // Back or Forward came while this round was being dealt or saved: the page follows that entry instead.
     if (page.state !== followedState) return
-    const state = { round: { entry, grapheme, production } }
+    const state = { round: { entry, grapheme, production, suspects: onlySuspects } }
     followedState = state
-    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production)), state)
+    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production, onlySuspects)), state)
     addressed = true
   }
   // Back and Forward bring the entry's round back, once nothing is being dealt or saved: from this page's
@@ -199,34 +212,42 @@
   })
   function locationRound() {
     const { path } = delocalize(location.pathname), key = path.startsWith('/review/') ? unslug(path.slice(8)) : null
-    return { entry: null, grapheme: key ?? '', production: new URLSearchParams(location.search).get('production') ?? '' }
+    const query = new URLSearchParams(location.search)
+    return { entry: null, grapheme: key ?? '', production: query.get('production') ?? '',
+      suspects: query.get('suspects') === 'only' || !key && stored('atlas.quiz.suspects-only', false) === true }
   }
   function follow(round) {
     if (round.entry && round.entry === entry) return
     const index = round.entry ? history.findIndex(each => each.entry === round.entry)
-      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production))
+      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production)
+        && each.onlySuspects === Boolean(round.suspects))
     if (index >= 0 && index === historyIndex) address('replace')
     else if (index >= 0) visit(index, { followed: true })
-    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' })
+    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) })
   }
   async function chooseCategory(target) {
     categoryOpen = false
     if (target === grapheme || saving) return
     if (!(await record())) return
-    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production)
+    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production && round.onlySuspects === onlySuspects)
     if (previous >= 0) visit(previous)
     else load({ target })
   }
-  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push' } = {}) {
+  /** Deals a round: of `target`, or the next. A target's key may have been a grapheme's and be a member's since
+   *  (one an address or a kept round names): its grapheme's round is dealt. */
+  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push', only = onlySuspects } = {}) {
     checkpoint()
     // A round dealt again in place keeps its history entry.
     const kept = replace ? entry : null
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending' })
+      const [summary, named] = await Promise.all([
+        catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending', ...suspectsParam(only) }),
+        target ? layerCharacter(target, 'none').then(ledTo).catch(() => target) : target])
       if (closed || id !== requestId) return
-      data = summary
+      // A summary of suspects alone counts for a round it deals, and not for the one on screen.
+      if (!only || !grapheme) data = summary
       const epochKey = 'atlas.review-epoch'
       if (stored(epochKey, null) !== (summary.review_epoch ?? null)) {
         last = null; completed = 0; history = []; historyIndex = -1
@@ -236,36 +257,33 @@
       // Crops of rounds kept on this device read as pending until they are sent, and are not dealt again.
       const away = await keptCrops()
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
-      let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
-      for (let tries = 0; tries < 8; tries++) {
-        chosen = tries === 0 && target && available.some(c => c.label === target) ? target
-          : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
-        if (!chosen) break
-        result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
-          ...(cursor ? { cursor } : {}) }), away)
-        if (closed || id !== requestId) return
-        if (result.items.length) break
-        available = available.filter(c => c.label !== chosen)
-        chosen = null
-      }
+      const seed = dealt ?? randomSeed(), available = roundGraphemes(summary.categories).filter(c => c.pending > 0)
+      const round = await dealtRound(available, named,
+        left => nextGrapheme(left, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed()),
+        key => firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: key, state: 'pending', limit: ROUND_BATCH, seed,
+          ...suspectsParam(only), ...(cursor ? { cursor } : {}) }), away), () => closed || id !== requestId)
+      if (closed || id !== requestId) return
+      const { chosen, result } = round
+      // Opened on suspects alone, or taken to a material, with none to deal, a round deals the rest.
+      if (!chosen && only && (!grapheme || scope !== production)) return await load({ target, replace, scope, seed: dealt, how, only: false })
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ grapheme: '', members: [], items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
             contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: randomSeed(), hasMore: false,
-            production: scope, summary })
+            onlySuspects: only, production: scope, summary })
           historyIndex = -1
           address(how)
         } else {
           if (!grapheme) items = []
-          else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
+          else { error = t(only ? 'quiz.suspect.none' : 'quiz.noOtherCharacters'); errorStatus = 0 }
           // Asked for by an address, the address now names the round still on screen.
           if (how === 'replace') address('replace')
         }
         return
       }
-      restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
+      restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items), 0, graphemeText(chosen))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: Boolean(result.next), nextCursor: result.next ?? null,
+        hasMore: Boolean(result.next), nextCursor: result.next ?? null, onlySuspects: only,
         production: scope, summary })
       entry = kept ?? crypto.randomUUID()
       address(how)
@@ -292,7 +310,7 @@
       // A page asks for no more than the batch has room for, since the cursor moves past every crop dealt.
       while (additions.length < batchLimit && cursor) {
         const room = batchLimit - additions.length
-        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed, ...suspectsParam(onlySuspects) })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = unique(result.items).filter(item => !seen.has(item.id))
         additions.push(...fresh)
@@ -301,7 +319,7 @@
       }
       more = Boolean(cursor)
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
-      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more; nextCursor = cursor
+      items = [...items, ...arranged(numbered(additions, items.length, graphemeChar))]; hasMore = more; nextCursor = cursor
     } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }
@@ -328,19 +346,21 @@
 
   // Step one: choose the crops that are wrong, or that the form bar marks as one form. A selection is
   // not a verdict, so nothing is assigned here, and a crop taken out of the selection gives up the
-  // answer it had. Shift-click selects every crop from the last one clicked.
+  // answer it had. Shift-click selects every crop from the last one clicked (stored by id so loading
+  // more crops into an earlier form section never shifts the anchor).
   let anchor = null
   const selectable = id => loaded[id] && !failed[id] && !decidedHere(id) && !skipped[id]
   function toggle(id, event) {
     if (saving || loading || !loaded[id] || failed[id] || decidedHere(id)) return
-    const index = shown.findIndex(i => i.id === id)
-    if (event?.shiftKey && anchor !== null && index >= 0) {
-      const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
-      const range = shown.slice(from, to + 1).map(i => i.id).filter(selectable)
+    const index = ordered.findIndex(i => i.id === id)
+    const anchorIndex = anchor ? ordered.findIndex(i => i.id === anchor) : -1
+    if (event?.shiftKey && anchorIndex >= 0 && index >= 0) {
+      const [from, to] = anchorIndex < index ? [anchorIndex, index] : [index, anchorIndex]
+      const range = ordered.slice(from, to + 1).map(i => i.id).filter(selectable)
       selected = { ...selected, ...Object.fromEntries(range.map(each => [each, true])) }
-      anchor = index; at = 0; return
+      anchor = id; at = 0; return
     }
-    anchor = index
+    anchor = id
     if (skipped[id]) { skipped = without(skipped, [id]); selected = { ...selected, [id]: true }; at = 0; return }
     if (selected[id]) {
       selected = { ...selected, [id]: false }
@@ -379,9 +399,9 @@
   // A marking and its undo hold the round as a save does: nothing moves to another round meanwhile.
   let formError = $state(''), formDone = $state(null)
   const CORRECTION_BATCH = 144
-  async function assignForm(form, chosen, claims = {}) {
+  async function assignForm(form, chosen, claims = {}, relabel = false) {
     if (!chosen.length) return
-    const named = members.includes(form)
+    const named = relabel || members.includes(form)
     const characterOf = i => named ? form : i.written_character || i.label
     const crops = chosen.filter(i => !((i.written_character || i.label) === characterOf(i) && i.state === 'checked'))
     // One run of batches for each character the crops are corrected to.
@@ -456,12 +476,14 @@
     if (waited.length && !formError) formError = t('client.pausedKept')
     return failure
   }
-  /** Mark the selection as `form`: a form of the round's grapheme by correction alone, any other
-   *  claimed on each crop first. */
+  /** Mark the selection as `form`: a character by correction alone, a description claimed on each
+   *  crop first. */
   async function markSelection(form) {
     if (saving || loading || step !== 'select') return
-    const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
+    const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (members.includes(form)) return assignForm(form, chosen)
+    // A character found by search is what the crops are written as, as in the collection view's bar.
+    if (!isDescription(form)) return assignForm(form, chosen, {}, true)
     const failure = await markClaimed(form, chosen)
     if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
   }
@@ -480,7 +502,7 @@
         gone(batch)
         const now = Object.fromEntries(await Promise.all(batch.ids.map(async id => {
           const i = done.before[id]
-          return [id, { ...i, ...(i.origin === 'corpus' ? await corpusCharacter(id) : await character(id)) }]
+          return [id, { ...i, ...await character(id) }]
         })))
         items = items.map(i => now[i.id] ?? i)
         unmark(batch.ids)
@@ -548,6 +570,38 @@
     if (pressed === next[0] && offersSuggestions(pressed)) suggest(items.find(i => i.id === id))
     error = ''; errorStatus = 0
   }
+  /** The classifier's reading taken as what a doubted crop is written as: the crop is chosen as a wrong character
+   *  with that one, and pressed again it is neither. */
+  const reading = item => item.suspect?.reads_as ?? null
+  const taken = item => reading(item) !== null && choices[item.id]?.character === reading(item)
+  async function takeReading(item, button) {
+    if (saving || loading || step !== 'select' || !selectable(item.id)) return
+    const { id } = item
+    anchor = id; at = 0
+    const chosen = chosenIssues(choices[id]), bad = chosen.includes('crop')
+    if (taken(item)) {
+      if (bad) choices = { ...choices, [id]: { verdict: 'wrong', character: null, correction: null, noneSelected: false, ...issueFields(['crop']) } }
+      else { choices = without(choices, [id]); selected = { ...selected, [id]: false } }
+    } else {
+      selected = { ...selected, [id]: true }
+      choices = { ...choices, [id]: { verdict: 'wrong', character: reading(item), correction: null, noneSelected: false, ...issueFields(bad ? ['character', 'crop'] : ['character']) } }
+    }
+    error = ''; errorStatus = 0
+    // A tile dealt among the others has its reading only while it is selected.
+    await tick()
+    if (!button.isConnected) document.querySelector(`.quiz-tile[data-unit="${CSS.escape(id)}"] .quiz-choice`)?.focus({ preventScroll: true })
+  }
+  /** Any other character: the crop's own step, with its candidates open under the wrong-character card. A crop with a
+   *  main problem opens as it stands, and one left without a character is given no answer. */
+  let opened = null
+  async function correctOne(item) {
+    if (saving || loading || step !== 'select' || !selected[item.id]) return
+    const { id } = item, chosen = chosenIssues(choices[id])
+    if (!chosen.some(issue => issue !== 'crop')) { assign(id, 'character'); opened = id }
+    jump(queue.findIndex(i => i.id === id))
+    await tick()
+    if (current?.id === id) greetSuggestions(suggestionsElement, { focus: true })
+  }
   /** Choose the current crop's issue. The candidates, when the issue has any, open under the cards. */
   async function assignCurrent(issue) {
     if (!current) return
@@ -602,7 +656,7 @@
   }
   // A crop names the pixels it was shown with: a local crop by its page hash, a corpus glyph by its
   // source revision, which covers its box and image.
-  const pixels = i => i.origin === 'corpus' ? { source_revision: i.source_revision } : { image_sha256: i.image_sha256 }
+  const pixels = i => cropPixels(i)
   /** Take a crop out of the round: a review saved elsewhere has decided it. */
   function drop(id) {
     items = items.filter(i => i.id !== id)
@@ -614,7 +668,7 @@
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
   function inspectChoice(item, opening = null) {
-    inspect(item.id, shown, inspected, item.origin === 'corpus' ? 'corpus' : 'collection', opening)
+    inspect(item.id, ordered, inspected, opening)
   }
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
@@ -624,12 +678,12 @@
     // A save decides the crop at once: it leaves the selection, the answers and the skips, and shows as saved.
     if (how === 'saved') {
       choices = without(choices, [id]); selected = without(selected, [id]); skipped = without(skipped, [id])
-      markRecorded([item], result?.state === 'flagged' ? 'flagged' : 'assigned')
+      markRecorded([item], (result?.results?.[0]?.state ?? result?.state) === 'flagged' ? 'flagged' : 'assigned')
       // The last crop of the issue step decided here leaves nothing to show there.
       if (step !== 'select' && !queue.length) back()
     }
-    // A corpus glyph's save answers with its record; a crop's is read again, as Explore reads it.
-    const record = item.origin === 'corpus' ? result : await character(id).catch(() => null)
+    // A crop's updated record is read again, as Explore reads it.
+    const record = await character(id).catch(() => null)
     // The round may have moved on meanwhile; the tile it left is no longer on screen.
     if (closed || roundId !== round || !record) return
     items = items.map(i => i.id === id ? { ...i, ...record } : i)
@@ -668,6 +722,9 @@
     jump(0)
   }
   function back() {
+    const left = choices[opened]
+    if (left?.issue === 'character' && !left.character && !left.noneSelected) assign(opened, 'character')
+    opened = null
     step = 'select'
     at = Math.min(at, Math.max(queue.length - 1, 0))
     error = ''; errorStatus = 0
@@ -685,7 +742,7 @@
   function primary() {
     if (saving || loading || loadingMore) return
     if (!openSelection.length) { pass(); return }
-    if (step === 'select') { reviewSelected(); return }
+    if (step === 'select') { if (answered) submit(); else reviewSelected(); return }
     if (!current || !(choices[current.id] || skipped[current.id])) return
     if (focusIndex < queue.length - 1) { move(1); return }
     if (!answered) { jump(selectedItems.findIndex(i => !choices[i.id] && !skipped[i.id])); return }
@@ -713,7 +770,7 @@
   const CARRIED = 'atlas.quiz.carried'
   function reloadKeepingRound() {
     try {
-      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, seed: roundSeed,
+      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, suspects: onlySuspects, seed: roundSeed,
         ...$state.snapshot({ choices, selected, skipped }) }))
     } catch { /* The page reloads without the choices. */ }
     location.reload()
@@ -725,8 +782,7 @@
     catch { return null }
   }
   async function resume(round) {
-    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace' })
-    if (grapheme !== round.grapheme) return
+    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace', only: Boolean(round.suspects) })
     // Only the crops dealt again: a crop decided elsewhere meanwhile has left the round.
     const dealt = new Set(items.map(item => item.id))
     const here = map => Object.fromEntries(Object.entries(map ?? {}).filter(([id]) => dealt.has(id)))
@@ -744,7 +800,6 @@
   }
   async function submit() {
     if (saving || loadingMore || !ready) return
-    if (step === 'select') return
     if (selection.length && !answered) { error = t('quiz.giveEachProblem'); errorStatus = 0; return }
     // Build an atomic request from explicit problems only; UI choice state never enters the API.
     const marked = new Set(selection)
@@ -762,9 +817,9 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
-      last = { id: roundId, count: answers.length, grapheme, production }
+      last = { id: roundId, count: answers.length, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last); completed += answers.length
-      if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeName)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       if (kept) markKept([...answers, ...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -784,9 +839,9 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
-      last = { id: roundId, count: 0, grapheme, production }
+      last = { id: roundId, count: 0, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last)
-      if (!kept) announceSaved(seen.length + passed.length, graphemeLabel)
+      if (!kept) announceSaved(seen.length + passed.length, graphemeName)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
       if (kept) markKept([...seen, ...passed], keyOf('/atlas/rounds', { id: roundId }))
       choices = {}; selected = {}; step = 'select'; at = 0; roundId = crypto.randomUUID()
@@ -807,9 +862,9 @@
       // Crops a publication changed since stay as published; the round keeps its count for them.
       const { refused } = kept ? { refused: 0 } : undoOutcome(await sent)
       // A round stored by an older version may name a scope the menu no longer offers.
-      const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
+      const target = last.grapheme, only = Boolean(last.suspects), scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - Math.max(0, last.count - refused)); last = null
-      remember('atlas.last-round', null); await load({ target, scope })
+      remember('atlas.last-round', null); await load({ target, scope, only })
       if (refused) error = t('review.undoRefused', { count: refused })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
@@ -825,10 +880,10 @@
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())
-      if (index >= 0 && shown[index] && !control) { e.preventDefault(); toggle(shown[index].id) }
+      if (index >= 0 && ordered[index] && !control) { e.preventDefault(); toggle(ordered[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
       const form = members['1234567890'.indexOf(e.key)]
-      if (/^[0-9]$/.test(e.key) && form && openSelection.length) { e.preventDefault(); markSelection(form) }
+      if (/^[0-9]$/.test(e.key) && form && markable.length) { e.preventDefault(); markSelection(form) }
       if (e.key === 'Escape') clearSelection()
       return
     }
@@ -840,31 +895,112 @@
   // A round is dealt as before; shown in shape order, the crops of one form sit together and a crop
   // unlike its neighbours stands out. `dealt` keeps the dealt order for switching back.
   let byShape = $state(stored('atlas.quiz.shape-order', true) !== false)
+  // View mode ('cards' or 'compact' thumbnails), tile width, and grouping by written form (字樣).
+  // Remembered in localStorage; restored on mount so server rendering matches initial client paint.
+  let view = $state('cards')
+  let tileSize = $state(QUIZ_CARDS_SIZE)
+  let cardsSize = QUIZ_CARDS_SIZE, compactSize = QUIZ_COMPACT_SIZE
+  let groupByForm = $state(true)
+  const compact = $derived(view === 'compact')
+  const sizeIndex = $derived(Math.max(0, QUIZ_TILE_SIZES.indexOf(tileSize)))
+  const gridGap = $derived(compact ? (tileSize <= 60 ? 5 : tileSize <= 96 ? 6 : 8) : (tileSize <= 124 ? 10 : 12))
+  const formSections = $derived(groupRoundByForm(items, members, graphemeChar))
+  const sectioned = $derived(groupByForm && formSections.length > 1)
+  const sections = $derived(sectioned ? formSections : [{ key: 'all', form: '', jibo: null, items }])
+  // Visual/DOM order of tiles, used by Shift-click range selection, keyboard picks and inspector stepping.
+  const ordered = $derived(sections.flatMap(section => section.items))
+  const indexById = $derived(new Map(ordered.map((item, i) => [item.id, i])))
+  function setView(next) {
+    const resolved = switchQuizView(next, { cardsSize, compactSize })
+    view = resolved.view; tileSize = resolved.size
+    remember('atlas.quiz.view', view)
+    remember('atlas.quiz.tileSize', tileSize)
+  }
+  function setTileSize(next) {
+    const resolved = resizeQuizTiles(next, view)
+    view = resolved.view; tileSize = resolved.size
+    if (view === 'compact') { compactSize = tileSize; remember('atlas.quiz.tileSize.compact', compactSize) }
+    else { cardsSize = tileSize; remember('atlas.quiz.tileSize.cards', cardsSize) }
+    remember('atlas.quiz.view', view)
+    remember('atlas.quiz.tileSize', tileSize)
+  }
+  function toggleGroupByForm() {
+    groupByForm = !groupByForm
+    anchor = null
+    remember('atlas.quiz.group-by-form', groupByForm)
+  }
+  function sectionStatus(section) {
+    const open = section.items.filter(i => selectable(i.id))
+    const picked = section.items.filter(i => selected[i.id])
+    const pickedOpen = open.filter(i => selected[i.id])
+    const state = !open.length ? (picked.length ? 'all' : 'none')
+      : pickedOpen.length === open.length ? 'all' : pickedOpen.length ? 'some' : 'none'
+    return { open, picked, state }
+  }
+  function toggleSection(section) {
+    if (saving || loading) return
+    const { open, picked, state } = sectionStatus(section)
+    if (state === 'all') {
+      const ids = picked.map(i => i.id)
+      if (!ids.length) return
+      choices = without(choices, ids)
+      selected = without(selected, ids)
+    } else if (open.length) {
+      selected = { ...selected, ...Object.fromEntries(open.map(i => [i.id, true])) }
+    }
+    anchor = null; at = 0
+  }
+  const compactTitle = item => {
+    const lines = cropDetails(item)
+    return [item.label, ...lines].filter(Boolean).join(' · ')
+  }
   // One tile per crop: the grid is keyed by id, and a repeated id would stop the round rendering.
   function unique(list) { const ids = new Set(); return list.filter(item => !ids.has(item.id) && ids.add(item.id)) }
-  function numbered(list, from = 0) { return list.map((item, i) => ({ ...item, dealt: item.dealt ?? from + i })) }
+  function numbered(list, from = 0, fallback = '') {
+    return list.map((item, i) => ({ ...item, dealt: item.dealt ?? from + i, dealtForm: item.dealtForm ?? cropSectionForm(item, fallback) }))
+  }
   function arranged(list) {
     return [...list].sort((a, b) => byShape
       ? (a.shape_order ?? Infinity) - (b.shape_order ?? Infinity) || a.dealt - b.dealt
       : a.dealt - b.dealt)
   }
-  function toggleShape() { byShape = !byShape; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
+  function toggleShape() { byShape = !byShape; anchor = null; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
   // A reload that kept its round deals it again; a page reached by Back after a reload carries the round its
   // entry named; otherwise the address names it. Each replaces the address with the round it deals.
   onMount(() => {
     last = stored('atlas.last-round', null)
+    const savedView = stored('atlas.quiz.view', 'cards') === 'compact' ? 'compact' : 'cards'
+    cardsSize = normalizeQuizTileSize(stored('atlas.quiz.tileSize.cards', QUIZ_CARDS_SIZE), QUIZ_CARDS_SIZE)
+    if (cardsSize < QUIZ_CARDS_MIN) cardsSize = QUIZ_CARDS_SIZE
+    compactSize = normalizeQuizTileSize(stored('atlas.quiz.tileSize.compact', QUIZ_COMPACT_SIZE), QUIZ_COMPACT_SIZE)
+    const savedSize = normalizeQuizTileSize(stored('atlas.quiz.tileSize', null), savedView === 'compact' ? compactSize : cardsSize)
+    const resolved = resizeQuizTiles(savedSize, savedView)
+    view = resolved.view; tileSize = resolved.size
+    groupByForm = stored('atlas.quiz.group-by-form', true) !== false
     const kept = carried(), round = page.state.round
     if (kept) resume(kept)
-    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' } : { target: initialGrapheme || null, how: 'replace' })
+    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
+      : { target: initialGrapheme || null, how: 'replace', only: locationRound().suspects })
     return () => { closed = true }
   })
 </script>
 
 <svelte:window onkeydown={keydown} />
+
+{#snippet quizTile(item, i)}
+  <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
+    <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} title={compact ? compactTitle(item) : undefined} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
+    <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
+    {#if compact && (markedAs[item.id] || choices[item.id]?.character || (!sectioned && item.label !== graphemeChar) || recorded[item.id] || failed[item.id] || skipped[item.id])}
+      <span class="compact-tag" aria-hidden="true">{#if markedAs[item.id]}<span class="quiz-written">→ {#if isFormState(markedAs[item.id])}{stateName(markedAs[item.id])}{:else}<ScriptText text={markedAs[item.id]} />{/if}</span>{:else if choices[item.id]?.character}<span class="quiz-written" class:wrong-read={taken(item)}>→ <ScriptText text={choices[item.id].character} /></span>{:else if failed[item.id]}<span class="compact-status">{t('quiz.choiceLabel.unavailable')}</span>{:else if skipped[item.id]}<span class="compact-status">{t('quiz.choiceLabel.skipped')}</span>{:else if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{:else if !sectioned && item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}</span>
+    {/if}
+    <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ {#if isFormState(markedAs[item.id])}{stateName(markedAs[item.id])}{:else}<ScriptText text={markedAs[item.id]} />{/if}</span>{:else if item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if choices[item.id]?.character && !taken(item)}<span class="quiz-written">→ <ScriptText text={choices[item.id].character} /></span>{/if}{#if onlySuspects && item.suspect && !reading(item)}<span class="suspect-badge">{t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}{#if reading(item) && (onlySuspects || selected[item.id]) && !failed[item.id] && !skipped[item.id]}<button class="reading-choice" aria-pressed={taken(item)} aria-label={t('quiz.suspect.readsAs', { character: reading(item) }) + ' · ' + (i + 1)} disabled={saving || !selectable(item.id)} title={t('quiz.suspect.readsAs', { character: reading(item) })} onclick={event => takeReading(item, event.currentTarget)}>{#if selected[item.id] || compact}{taken(item) ? '→ ' : ''}<span lang="ja">{reading(item)}</span>{taken(item) ? '' : '?'}{:else}{@const [before, after] = around('quiz.suspect.readsAs', 'character')}{before}<span lang="ja">{reading(item)}</span>{after}{/if}</button>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span>{#if selected[item.id] && !skipped[item.id] && !failed[item.id]}<button class="correct-choice" aria-label={t('quiz.correctCharacter', { number: i + 1 })} title={t('quiz.correct')} disabled={saving} onclick={() => correctOne(item)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4.5L16.5 4l3.5 3.5L8.5 19z" /></svg></button>{/if}<button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+  </div>
+{/snippet}
 <section class="quiz-workspace">
   <div class="quiz-topline"><a href={localize('/')} class="quiet-link">{t('quiz.backToCollection')}</a><div class="round-count"><span class="live-dot"></span>{t('quiz.issuesSavedSession', { count: completed })}</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? t('quiz.shapeToggle.byShape') : t('quiz.shapeToggle.dealt')}</button><button class="undo-round suspect-toggle" aria-pressed={onlySuspects} disabled={saving || loading || selection.length > 0 || step !== 'select'} onclick={toggleSuspects}>{onlySuspects ? t('quiz.suspectToggle.only') : t('quiz.suspectToggle.all')}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>{t('quiz.undoLastRound')}</button>{/if}</div>
-  <div class="quiz-heading"><div class="target-character" aria-label={t('quiz.targetGrapheme', { grapheme: graphemeLabel })}>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'grapheme')[0]}<b>{#if graphemeLabel}<ScriptText text={graphemeLabel} />{:else}…{/if}</b>{around('quiz.selectHint', 'grapheme')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
-  {#if categoryOpen}<div class="round-categories"><input aria-label={t('quiz.findCategory.aria')} placeholder={t('quiz.findCategory.placeholder')} bind:value={search}/><div class="category-options">{#each categories as c (c.label)}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span><ScriptText text={c.char} /></span>{#if c.members.length > 1}<small class="category-members"><ScriptText text={c.members.map(m => m.label).join('')} /></small>{/if}<small>{c.pending}</small></button>{/each}</div></div>{/if}
+  <div class="quiz-heading"><div class="target-character" class:pair={labelSize(graphemeChar) === 2} class:trio={labelSize(graphemeChar) === 3} aria-label={t('quiz.targetGrapheme', { grapheme: graphemeName })}>{#if graphemeChar}<ScriptText {...labelParts(graphemeChar)} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'grapheme')[0]}<b>{#if graphemeChar}<ScriptText {...labelParts(graphemeChar)} />{:else}…{/if}</b>{around('quiz.selectHint', 'grapheme')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
+  {#if categoryOpen}<div class="round-categories"><input aria-label={t('quiz.findCategory.aria')} placeholder={t('quiz.findCategory.placeholder')} bind:value={search}/><div class="category-options">{#each categories as c (c.label)}<button disabled={saving} onclick={() => chooseCategory(c.label)}><span class:pair={labelSize(c.char) === 2} class:trio={labelSize(c.char) === 3}><ScriptText {...labelParts(c.char)} /></span>{#if c.members.length > 1}<small class="category-members"><ScriptText text={c.members.map(m => m.label).join('')} /></small>{/if}<small>{c.pending}</small></button>{/each}</div></div>{/if}
   <label class="review-material">{t('quiz.material.label')}
     <select aria-label={t('quiz.material.aria')} value={production} disabled={saving || loading || loadingMore}
       onchange={event => load({ scope: event.currentTarget.value, target: grapheme })}>
@@ -874,7 +1010,7 @@
   {#if history.length > 1}
     <nav class="character-history" aria-label={t('quiz.history.label')}>
       <button class="history-previous" aria-label={t('quiz.history.previousRound')} disabled={saving || loading || historyIndex <= 0} onclick={() => visit(historyIndex - 1)}>{t('quiz.history.previous')}</button>
-      <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { grapheme: graphemeText(round.grapheme) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText text={graphemeText(round.grapheme)} /></button>{/each}</div>
+      <div class="history-characters">{#each history as round, i (round.roundId)}<button class="history-character" class:current={i === historyIndex} aria-current={i === historyIndex ? 'step' : undefined} aria-label={t('quiz.history.returnTo', { grapheme: graphemeLabel(graphemeText(round.grapheme)) })} disabled={saving || loading} onclick={() => visit(i)}><ScriptText {...labelParts(graphemeText(round.grapheme))} /></button>{/each}</div>
       <button class="history-next" aria-label={t('quiz.history.nextRound')} disabled={saving || loading || historyIndex >= history.length - 1} onclick={() => visit(historyIndex + 1)}>→</button>
     </nav>
   {/if}
@@ -882,33 +1018,78 @@
   {#if error}<div class="error-message" role="alert"><span>{error}</span>{#if stale}<button disabled={saving} onclick={() => load({ target: grapheme, replace: true })}>{t('quiz.reloadRound')}</button>{/if}</div>{/if}
 
   {#if step === 'select'}
-    <div class="stage-toolbar"><strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
-    {#key roundId}<div class="quiz-grid" aria-label={t('quiz.grid.label')} aria-busy={loading}>
-      {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
-      {:else}{#each shown as item, i (item.id)}
-        <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
-          <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
-          <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ {#if isFormState(markedAs[item.id])}{stateName(markedAs[item.id])}{:else}<ScriptText text={markedAs[item.id]} />{/if}</span>{:else if item.label !== graphemeLabel}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+    <div class="stage-toolbar">
+      <strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong>
+      <button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button>
+      <button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button>
+      <span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span>
+      <div class="quiz-view-controls">
+        <button type="button" class="form-group-toggle" aria-pressed={groupByForm} onclick={toggleGroupByForm}>{t('quiz.groupByForm')}</button>
+        <div class="layout-toggle quiz-mode-toggle" role="group" aria-label={t('quiz.view.label')}>
+          {#each [['cards', () => t('quiz.view.cards')], ['compact', () => t('quiz.view.compact')]] as [value, label]}
+            <button type="button" class:active={view === value} aria-pressed={view === value} onclick={() => setView(value)}>{label()}</button>
+          {/each}
         </div>
-      {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
+        <label class="zoom-control quiz-zoom" title={t('explore.zoom.label')}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg>
+          <input type="range" min="0" max={QUIZ_TILE_SIZES.length - 1} step="1" value={sizeIndex}
+            aria-label={t('explore.zoom.label')} aria-valuetext={`${tileSize}px`}
+            style:--attr-min={0} style:--attr-max={QUIZ_TILE_SIZES.length - 1} style:--control-value={sizeIndex}
+            oninput={event => setTileSize(QUIZ_TILE_SIZES[Number(event.currentTarget.value)])} />
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
+        </label>
+      </div>
+    </div>
+    {#key roundId}<div class="quiz-grid" class:compact class:tight={compact && tileSize <= 60} class:sectioned={!loading && sectioned} style:--quiz-tile-w={`${tileSize}px`} style:--quiz-gap={`${gridGap}px`} aria-label={t('quiz.grid.label')} aria-busy={loading}>
+      {#if loading}{#each Array(compact ? 24 : 12) as _}<div class="quiz-skeleton"></div>{/each}
+      {:else if sectioned}
+        {#each sections as section (section.key)}
+          {@const status = sectionStatus(section)}
+          <section class="quiz-section" data-form={section.form}>
+            <header class="quiz-section-head">
+              <button type="button" class="section-select" role="checkbox"
+                aria-checked={status.state === 'some' ? 'mixed' : status.state === 'all'}
+                aria-disabled={!status.open.length && status.state === 'none'}
+                aria-label={t('quiz.section.select', { form: section.form || graphemeName })}
+                title={t('quiz.section.select', { form: section.form || graphemeName })}
+                disabled={saving || loading}
+                onclick={() => toggleSection(section)}>
+                <span aria-hidden="true">{status.state === 'all' ? '✓' : status.state === 'some' ? '–' : ''}</span>
+              </button>
+              <h2 class="quiz-section-form">{#if section.form}<FormText text={section.form} />{:else}<ScriptText {...labelParts(graphemeChar)} />{/if}</h2>
+              {#if section.jibo}<span class="quiz-section-jibo"><ScriptText text={section.jibo} /></span>{/if}
+              <span class="quiz-section-count">{#if status.picked.length}{number(status.picked.length)} / {/if}{number(section.items.length)}</span>
+            </header>
+            <div class="quiz-section-grid">
+              {#each section.items as item (item.id)}
+                {@render quizTile(item, indexById.get(item.id) ?? 0)}
+              {/each}
+            </div>
+          </section>
+        {/each}
+        {#if loadingMore}<div class="quiz-section-grid">{#each Array(compact ? 12 : 6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}</div>{/if}
+      {:else}
+        {#each ordered as item, i (item.id)}
+          {@render quizTile(item, i)}
+        {/each}
+        {#if loadingMore}{#each Array(compact ? 12 : 6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}
+      {/if}
     </div>
     {/key}
-    {#if !loading && items.length && !shown.length}<p class="no-suspects" role="status">{t('quiz.suspect.none', { count: items.length })}</p>{/if}
     <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
          A button remains for the case scrolling cannot trigger (a failed batch waits for a retry). -->
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
       {#if loadingMore}<span class="load-more-status"><span class="load-more-spinner" aria-hidden="true"></span>{t('quiz.loadMore.loading')}</span>
       {:else if hasMore && items.length >= roundLimit}<span class="load-more-status">{t('quiz.loadMore.saveToLoad')}</span>
-      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { grapheme: graphemeLabel })}</button>
-      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { grapheme: graphemeLabel })}</span>{/if}
+      {:else if hasMore}<button class="load-more" disabled={loading || saving} onclick={loadMore}>{loadMoreFailed && error ? t('common.retry') : t('quiz.loadMore.more', { grapheme: graphemeName })}</button>
+      {:else}<span class="load-more-status">{t('quiz.loadMore.allLoaded', { grapheme: graphemeName })}</span>{/if}
     </div>{/if}
     {#if references.length}
       <section class="quiz-reference" aria-label={t('quiz.reference.label')}>
         <p class="reference-heading">{t('quiz.reference.heading')} <span>{number(references.length)}</span></p>
         <div class="reference-strip">
           {#each references as item (item.id)}
-            <button class="reference-tile" aria-label={t('quiz.reference.inspect', { label: item.label, state: item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen') })} onclick={() => inspect(item.id, [], null, cropOrigin(item))}>
+            <button class="reference-tile" aria-label={t('quiz.reference.inspect', { label: item.label, state: item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen') })} onclick={() => inspect(item.id)}>
               <span class="reference-glyph"><Glyph {item} /></span>
               <span class="reference-tag"><span class="status-dot" class:checked={item.referenceState === 'checked'} class:seen={item.referenceState === 'seen'}></span>{item.referenceState === 'checked' ? t('quiz.reference.confirmed') : t('quiz.reference.seen')}</span>
             </button>
@@ -925,16 +1106,17 @@
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
       <!-- The box is redrawn in the inspector, which saves the crop with it. -->
-      {#if currentIssues.includes('crop') && current.origin !== 'corpus'}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, { issues: currentIssues, character: choices[current.id].character, correction: choices[current.id].correction })}>{t('character.crop.adjust')}</button></div>{/if}
+      {#if currentIssues.includes('crop') && current.crop_editable !== false}<div class="crop-change"><button type="button" class="quiet-link adjust-crop" disabled={saving} onclick={() => inspectChoice(current, { issues: currentIssues, character: choices[current.id].character, correction: choices[current.id].correction })}>{t('character.crop.adjust')}</button></div>{/if}
     </QuizFocus>
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
-  {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeLabel} busy={saving} error={formError} done={formDone}
+  {:else}<div class="quiz-actionbar">{#if step === 'select' && (markable.length || formDone || formError)}<FormBar count={markable.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone}
     onassign={markSelection} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (offersSuggestions(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
+    {:else if step === 'select' && answered}<button class="quiet-link review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })}</button><button class="primary save-round" disabled={loading || saving || loadingMore || !ready} onclick={submit}>{saving ? t('common.saving') : t('quiz.saveIssues')} <span>✓</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>
     {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
     {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>
@@ -968,8 +1150,138 @@
   .quiz-tile.skipped .quiz-choice { opacity: .35; }
   .restore-choice { font-size: 9px; padding: 1px 7px; }
   /* One stage at a time: the selection toolbar belongs to step one and is not shown again. */
-  .stage-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 10px; font-size: 12px; }
+  .stage-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 12px; font-size: 12px; }
   .stage-toolbar strong { font-weight: 500; }
+  .quiz-view-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-inline-start: auto; }
+  :global(html:not([data-hydrated])) .quiz-view-controls { visibility: hidden; }
+  .form-group-toggle { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 11px; padding: 6px 10px; color: var(--muted); white-space: nowrap; }
+  .form-group-toggle[aria-pressed="true"] { background: var(--surface-selected); border-color: var(--line-strong); color: var(--ink); }
+  .quiz-zoom { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .quiz-zoom svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; flex-shrink: 0; }
+  /* Brand-consistent custom range slider (separate WebKit and Firefox pseudo-element blocks). */
+  .quiz-zoom input[type="range"] {
+    --slider-track-size: 4px;
+    --slider-thumb-size: 14px;
+    --slider-track-radius: 999px;
+    --slider-thumb-radius: 50%;
+    --slider-track-color: var(--line-strong);
+    --slider-fill-color: var(--accent-solid);
+    --slider-thumb-color: var(--accent-solid);
+    --slider-direction: to right;
+    --slider-progress: calc(progress(var(--control-value), var(--attr-min), var(--attr-max)) * 100%);
+    appearance: none;
+    inline-size: 92px;
+    block-size: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .quiz-zoom input[type="range"]:dir(rtl) { --slider-direction: to left; }
+  @supports not (opacity: progress(1, 0, 100)) {
+    .quiz-zoom input[type="range"] {
+      --slider-progress: calc((var(--control-value) - var(--attr-min)) / max(1, var(--attr-max) - var(--attr-min)) * 100%);
+    }
+  }
+  .quiz-zoom input[type="range"]::-webkit-slider-runnable-track {
+    block-size: var(--slider-track-size);
+    border: 0;
+    border-radius: var(--slider-track-radius);
+    background: linear-gradient(var(--slider-direction), var(--slider-fill-color) var(--slider-progress), var(--slider-track-color) var(--slider-progress));
+  }
+  .quiz-zoom input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    inline-size: var(--slider-thumb-size);
+    block-size: var(--slider-thumb-size);
+    margin-block-start: calc((var(--slider-track-size) - var(--slider-thumb-size)) / 2);
+    border: 0;
+    border-radius: var(--slider-thumb-radius);
+    background: var(--slider-thumb-color);
+  }
+  .quiz-zoom input[type="range"]::-moz-range-track {
+    block-size: var(--slider-track-size);
+    border: 0;
+    border-radius: var(--slider-track-radius);
+    background: var(--slider-track-color);
+  }
+  .quiz-zoom input[type="range"]::-moz-range-progress {
+    block-size: var(--slider-track-size);
+    border-radius: var(--slider-track-radius);
+    background: var(--slider-fill-color);
+  }
+  .quiz-zoom input[type="range"]::-moz-range-thumb {
+    inline-size: var(--slider-thumb-size);
+    block-size: var(--slider-thumb-size);
+    border: 0;
+    border-radius: var(--slider-thumb-radius);
+    background: var(--slider-thumb-color);
+  }
+  .quiz-zoom input[type="range"]:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
+  @media (pointer: coarse) { .quiz-zoom input[type="range"] { block-size: 36px; --slider-thumb-size: 18px; } }
+
+  /* Grid sizing driven by --quiz-tile-w with auto-fill so small form sections keep uniform tile width. */
+  .quiz-grid:not(.sectioned),
+  .quiz-section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--quiz-tile-w, 160px), 1fr));
+    gap: var(--quiz-gap, 12px);
+    align-items: start;
+  }
+  .quiz-grid.sectioned { display: flex; flex-direction: column; align-items: stretch; gap: 22px; }
+  .quiz-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .quiz-section-head { display: flex; align-items: center; gap: 10px; padding-block-end: 8px; border-block-end: 1px solid var(--line); }
+  .quiz-section-form { margin: 0; font-size: 24px; font-weight: 500; line-height: 1.15; font-family: var(--char-font, serif); }
+  .quiz-section-jibo { font-size: 13px; color: var(--muted); }
+  .quiz-section-count { margin-inline-start: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .section-select { position: relative; flex: none; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 5px; background: var(--surface); color: var(--on-color); font: 700 11px/1 var(--ga-font-ui, system-ui, sans-serif); padding: 0; }
+  .section-select::after { content: ''; position: absolute; inset: -10px -8px; }
+  .section-select:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--accent-solid); }
+  .section-select[aria-disabled="true"] { border-color: var(--line); cursor: default; }
+  .section-select:not([aria-checked="false"]) { background: var(--accent-solid); border-color: var(--accent-solid); }
+
+  /* Card tiles scale their image height smoothly with --quiz-tile-w. */
+  .quiz-grid:not(.compact) .quiz-tile { height: auto; min-height: 0; }
+  .quiz-grid:not(.compact) .quiz-choice { height: clamp(104px, calc(var(--quiz-tile-w, 160px) * 0.88), 184px); }
+  .quiz-grid:not(.compact) .quiz-skeleton { height: clamp(140px, calc(var(--quiz-tile-w, 160px) * 1.08), 216px); min-height: 0; }
+
+  /* Compact thumbnail mode: dense square crops for fast visual scanning. */
+  .quiz-grid.compact .quiz-tile { aspect-ratio: 1; height: auto; min-height: 0; border-radius: 6px; }
+  .quiz-grid.compact .quiz-skeleton { aspect-ratio: 1; height: auto; min-height: 0; border-radius: 6px; }
+  .quiz-grid.compact .quiz-choice { width: 100%; height: 100%; padding: 5px; }
+  .quiz-grid.compact.tight .quiz-choice { padding: 3px; }
+  .quiz-grid.compact .choice-mark { top: 3px; right: 3px; font-size: 16px; }
+  .quiz-grid.compact .quiz-tile.selected .choice-mark { width: 17px; height: 17px; font-size: 10px; top: 3px; right: 3px; }
+  .quiz-grid.compact .quiz-tile-details,
+  .quiz-grid.compact .quiz-production { display: none; }
+  .compact-tag { position: absolute; top: 3px; left: 3px; z-index: 1; max-width: calc(100% - 26px); padding: 1px 4px; border-radius: 4px; background: var(--overlay); font-size: 10px; line-height: 1.25; pointer-events: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .compact-tag .quiz-written { font-size: 10px; }
+  .compact-tag .wrong-read { color: var(--wrong); }
+  .compact-status { font-size: 9px; color: var(--muted); }
+  .quiz-grid.compact .quiz-tile-tools { position: absolute; left: 3px; right: 3px; bottom: 3px; z-index: 2; height: auto; min-height: 0; padding: 0; gap: 2px; justify-content: flex-end; opacity: 0; pointer-events: none; transition: opacity .12s; }
+  .quiz-grid.compact .quiz-tile:hover .quiz-tile-tools,
+  .quiz-grid.compact .quiz-tile:has(:focus-visible) .quiz-tile-tools { opacity: 1; pointer-events: auto; }
+  .quiz-grid.compact .quiz-tile-tools kbd,
+  .quiz-grid.compact .quiz-tile-tools .choice-label { display: none; }
+  .quiz-grid.compact .quiz-tile-tools button { min-width: 20px; min-height: 20px; padding: 0 4px; font-size: 11px; line-height: 1; background: var(--overlay); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); box-shadow: 0 1px 4px var(--shadow-soft); }
+  .quiz-grid.compact .quiz-tile-tools .reading-choice { font-size: 10px; padding: 1px 5px; border-color: var(--wrong); color: var(--wrong); background: var(--overlay); }
+  @media (hover: none) {
+    .quiz-grid.compact .quiz-tile-tools { display: none; }
+    .quiz-grid.compact .quiz-tile:is(.selected, .recorded, .skipped, .unavailable) .quiz-tile-tools { display: flex; opacity: 1; pointer-events: auto; }
+  }
+  @media (max-width: 700px) {
+    .quiz-view-controls { width: 100%; margin-inline-start: 0; justify-content: space-between; gap: 8px; }
+    .quiz-zoom input[type="range"] { inline-size: 72px; }
+    .quiz-grid:not(.compact):not(.sectioned),
+    .quiz-grid:not(.compact) .quiz-section-grid {
+      grid-template-columns: repeat(auto-fill, minmax(calc(var(--quiz-tile-w, 160px) * 0.68), 1fr));
+      gap: 8px;
+    }
+    .quiz-grid:not(.compact) .quiz-choice { height: clamp(88px, calc(var(--quiz-tile-w, 160px) * 0.68), 140px); padding: 10px 10px 0; }
+    .quiz-section-form { font-size: 21px; }
+  }
   .character-history { display:flex; align-items:center; gap:10px; margin:0 0 20px; min-width:0; }
   .character-history > button { flex-shrink:0; font-size:11px; }
   .history-characters { display:flex; gap:6px; overflow-x:auto; min-width:0; padding:3px; }
@@ -997,8 +1309,16 @@
   .recorded-badge { font-size:9px; color:var(--muted); white-space:nowrap; }
   .recorded-badge.refused { color:var(--wrong); }
   .suspect-badge { font-size:9px; color:var(--wrong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* The reading is pressed to take it, among the tile's tools: the details that open over a tile leave those clear. */
+  .quiz-tile-tools .reading-choice { flex:none; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:1px 8px; border:1px solid var(--wrong); border-radius:999px; color:var(--wrong); font-size:11px; line-height:1.2; }
+  .reading-choice + .choice-label { min-width:0; }
+  .quiz-tile-tools .reading-choice:hover:not(:disabled) { background:var(--wrong-light); color:var(--wrong); }
+  .quiz-tile-tools .reading-choice[aria-pressed="true"] { background:var(--wrong-light); font-weight:600; }
+  .quiz-tile-tools .correct-choice { display:inline-flex; align-items:center; justify-content:center; padding:0; }
+  .correct-choice svg { width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linejoin:round; }
+  /* A narrow tile keeps the reading on a line of its own, chosen or not. */
+  @media(max-width:740px) { .quiz-tile-tools:has(.reading-choice) { flex-wrap:wrap; height:auto; } .quiz-tile-tools .reading-choice { order:-1; flex:1 0 100%; } }
   .suspect-toggle[aria-pressed="true"] { color:var(--wrong); }
-  .no-suspects { margin:18px 0 0; font-size:13px; color:var(--muted); text-align:center; }
   .quiz-tile.recorded .quiz-choice { opacity:.72; }
   .quiz-tile.assigned { border-color:var(--good); }
   /* The form bar sits over the actions, on a row of its own. */

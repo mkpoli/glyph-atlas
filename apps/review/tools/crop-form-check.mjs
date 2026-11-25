@@ -135,10 +135,10 @@ try {
   await browser.waitFor('!!document.querySelector("dialog[open] .ids-field input")')
   const typeIds = text => browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-field input'); i.focus(); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await typeIds('⿰⿱匕矢')
-  await browser.waitFor('!!document.querySelector("dialog[open] .ids-problem")')
+  await browser.waitFor('!!document.querySelector("dialog[open] .ids-pending")')
   assert(await browser.evaluate('document.querySelector("dialog[open] .ids-use").disabled'), 'an unfinished description can be used')
   await typeIds('⿰⿱匕矢⿱コ疋')
-  await browser.waitFor('!document.querySelector("dialog[open] .ids-problem") && !!document.querySelector("dialog[open] .ids-tree")')
+  await browser.waitFor('!document.querySelector("dialog[open] .ids-pending") && !!document.querySelector("dialog[open] .ids-tree")')
   await browser.evaluate(`[...document.querySelectorAll('dialog[open] .ids-part')].find(b => b.textContent === '矢').click()`)
   await browser.waitFor(`document.querySelector('dialog[open] .ids-part.chosen')?.textContent === '矢'`)
   await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-search input'); i.focus(); i.value = '失'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
@@ -157,12 +157,10 @@ try {
   assert(units(config.directory)[second].unicode === 'U+3042', 'a description changed the crop\'s character')
   console.log('PASS a form written as a description is composed, checked and claimed')
 
-  // A character's variants are forms of its grapheme: they follow its members on the bar, and the ones
-  // past the bar's ten wait in the picker's Forms. The IVD's figures for it come first, named by their MJ
-  // figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃 (MJ012119). Its regional shapes follow,
-  // named by their regions: ⿰戶斤 (GHTKPV) and ⿰戸斤 (J). A character related otherwise (数) is no
-  // form of it, and is offered under Related.
-  // Another crop written as あ, one with an image to name, is renamed 所.
+  // A character's variants and related characters follow its members on the bar inline under their 構形.
+  // The IVD's figures come with their MJ figure and drawn in MJ Figures: 所 as 所󠄂 (MJ012120) and 所󠄃
+  // (MJ012119), followed by its regional shapes ⿰戶斤 (GHTKPV) and ⿰戸斤 (J), and related characters
+  // such as 数. Another crop written as あ, one with an image to name, is renamed 所.
   const others = Object.entries(units(config.directory)).filter(([id, unit]) => unit.active && unit.unicode === 'U+3042' && id !== first && id !== second).map(([id]) => id)
   const [third, renamed] = await browser.evaluate(`(async () => {
     for (const id of ${JSON.stringify(others)}) {
@@ -176,26 +174,29 @@ try {
   })()`)
   assert(third && renamed.startsWith('2'), `no crop could be renamed to 所: ${renamed}`)
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(third)}`, { waitFor: ready, timeout: 90000 })
-  await browser.waitFor(`${chips}.length >= 10`, 20000)
+  await browser.waitFor(`${chips}.length > 10`, 20000)
   const card = await (await fetch(`${service.base}/layers/characters/U%2B6240?expand=none`)).json()
   const members = card.grapheme.members.map(member => member.char)
   const section = title => `[...document.querySelectorAll('dialog[open] .form-picker .form-section')].find(s => s.querySelector('.form-section-title').textContent === '${title}')?.querySelectorAll('.form-option')`
+  const titles = await browser.evaluate(`[...${chips}].map(c => c.title)`)
+  assert(members.every(member => titles.includes(member)), `the bar lacks some of the grapheme's members: ${JSON.stringify({ members, titles })}`)
+  for (const expected of ['所\u{E0102} MJ012120', '所\u{E0103} MJ012119', '⿰戶斤 GHTKPV', '⿰戸斤 J', '数']) {
+    assert(titles.includes(expected), `the bar lacks ${expected}: ${JSON.stringify(titles)}`)
+  }
+  assert(titles.indexOf('所\u{E0102} MJ012120') < titles.indexOf('⿰戶斤 GHTKPV') && members.every(member => titles.indexOf(member) < titles.indexOf('数')),
+    `the figures do not lead the regional shapes, or 数 does not follow 所's forms: ${JSON.stringify(titles)}`)
+  assert(await browser.evaluate('document.querySelector("dialog[open] .form-add").textContent.trim()') === '+⌕', 'the add button still counts forms')
   await browser.evaluate('document.querySelector("dialog[open] .form-add").click()')
-  await browser.waitFor(`(${section('Forms')})?.length > 0`, 20000)
-  const onBar = await browser.evaluate(`[...${chips}].map(c => c.querySelector('.script-text').textContent)`)
-  const past = await browser.evaluate(`[...${section('Forms')}].map(o => o.title)`)
-  const related = await browser.evaluate(`[...(${section('Related')} ?? [])].map(o => o.title)`)
-  assert(onBar.length === 10 && members.length < 10 && members.every((member, i) => onBar[i] === member), `the bar does not lead with the grapheme's members: ${JSON.stringify(onBar)}`)
-  assert(onBar[members.length] === '所\u{E0102}' && past[0] === 'U+6240 U+E0103\nMJ012119', `the registered figures do not follow the members: ${JSON.stringify({ onBar, past })}`)
-  assert(past[1] === '⿰戶斤\nGHTKPV' && past[2] === '⿰戸斤\nJ', `the regional shapes do not follow the figures: ${JSON.stringify(past)}`)
-  assert(!onBar.includes('数') && related.includes('U+6570'), `数 is not offered as related: ${JSON.stringify({ onBar, related })}`)
-  assert(!await browser.evaluate(`(${section('Variants')})?.length > 0`), 'the picker still has a Variants section')
+  await browser.waitFor('!!document.querySelector("dialog[open] .form-picker .character-search input")', 20000)
+  for (const hidden of ['Forms', 'Variants', 'Related']) {
+    assert(!await browser.evaluate(`(${section(hidden)})?.length > 0`), `the picker still has a ${hidden} section`)
+  }
   await browser.waitFor(`[...document.fonts].some(f => f.family.replaceAll('"', '') === 'MJ Figures' && f.status === 'loaded')`, 20000)
   await browser.screenshot(join(screenshots, 'form-picker-variants-light.png'))
   await browser.setColorScheme('dark')
   await browser.screenshot(join(screenshots, 'form-picker-variants-dark.png'))
   await browser.setColorScheme('light')
-  console.log('PASS a character\'s variants follow its members on the bar, figures first, then its regional shapes')
+  console.log('PASS variants and related characters appear inline on the bar under their structures')
 
   // A variant chosen from the bar is claimed alone: the crop keeps its character.
   await browser.key('Escape')
@@ -234,6 +235,38 @@ try {
   const confirmations = events(config.directory).slice(confirming).filter(e => e.target_id === confirmed && e.field === 'review')
   assert(confirmations.length === 1, `confirming the crop's own form wrote ${confirmations.length} reviews`)
   console.log('PASS the crop\'s own form is chosen, dropped, and claimed with its review')
+
+  // Forms past ten (苽) and related characters (⽠ 蝸 鈲 𤓰) appear inline on 瓜's bar and in its
+  // 構形 dialog.
+  const gua = await browser.evaluate(`(async () => {
+    for (const id of ${JSON.stringify(others.filter(id => id !== third && id !== confirmed))}) {
+      const crop = await (await fetch('/atlas/characters/' + encodeURIComponent(id))).json()
+      if (!crop.image_sha256) continue
+      const response = await fetch('/layers/units/' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: crypto.randomUUID(), client_id: 'crop-form-check', revision: crop.revision, image_sha256: crop.image_sha256, verdict: 'wrong', issue: 'character', character: '瓜' }) })
+      if (response.ok) return id
+    }
+    return null
+  })()`)
+  assert(gua, 'no crop could be renamed to 瓜')
+  await browser.goto(`${service.base}/en/crop/${encodeURIComponent(gua)}`, { waitFor: ready, timeout: 90000 })
+  await browser.waitFor(`${chips}.length >= 15 && !!document.querySelector('dialog[open] .form-arrange')`, 30000)
+  const guaTitles = await browser.evaluate(`[...${chips}].map(c => c.title)`)
+  for (const expected of ['瓜', '苽', '\u2F60', '蝸', '鈲', '𤓰']) {
+    assert(guaTitles.includes(expected), `瓜 bar lacks ${expected}: ${JSON.stringify(guaTitles)}`)
+  }
+  assert(['\u2F60', '蝸', '鈲', '𤓰'].every(related => guaTitles.indexOf(related) > guaTitles.indexOf('苽')),
+    `瓜's related characters do not follow its forms: ${JSON.stringify(guaTitles)}`)
+  assert(await browser.evaluate('document.querySelector("dialog[open] .form-add").textContent.trim()') === '+⌕', '瓜 add button hides forms')
+  await browser.evaluate('document.querySelector("dialog[open] .form-arrange").click()')
+  await browser.waitFor('!!document.querySelector(".structure-dialog[open] .tray")', 20000)
+  const boardForms = await browser.evaluate(`[...document.querySelectorAll('.structure-dialog[open] [data-form]')].map(f => f.dataset.form)`)
+  for (const expected of ['瓜', '苽', '\u2F60', '蝸', '鈲', '𤓰']) {
+    assert(boardForms.includes(expected), `瓜 構形 dialog lacks ${expected}: ${JSON.stringify(boardForms)}`)
+  }
+  await browser.key('Escape')
+  await browser.waitFor('!document.querySelector(".structure-dialog")')
+  console.log('PASS 瓜 lists forms past ten and related characters inline on both the bar and the 構形 board')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS crop form')

@@ -428,17 +428,17 @@ it('a drawn form\'s row of graphemes is filed under the grapheme it writes, once
   const run = () => drawnHeads().map(sql => db.prepare(sql).run().changes);
   const insert = db.prepare('INSERT INTO graphemes(id,text,head) VALUES(?,?,?)');
   // No row of the form, or none of its grapheme: nothing is written.
-  expect(run()).toEqual([0, 0]);
+  expect(run()).toEqual([0, 0, 0, 0, 0]);
   insert.run(1, '\u{F0000}', null);
-  expect(run()).toEqual([0, 0]);
+  expect(run()).toEqual([0, 0, 0, 0, 0]);
   // 事 heads its own family here; a member's head is followed to it.
   insert.run(7, '事', 7);
   insert.run(2, '\u{F0001}', null);
-  expect(run()).toEqual([1, 1]);
+  expect(run()).toEqual([1, 1, 0, 0, 0]);
   expect(db.query('SELECT text,head FROM graphemes WHERE id IN (1,2) ORDER BY id').all()).toEqual([{ text: '\u{F0000}', head: 7 }, { text: '\u{F0001}', head: 7 }]);
-  expect(run()).toEqual([0, 0]);
+  expect(run()).toEqual([0, 0, 0, 0, 0]);
   // A head whose own row names none is its own head.
   db.exec('UPDATE graphemes SET head=NULL WHERE id IN (1,7)');
-  expect(run()).toEqual([1, 0]);
+  expect(run()).toEqual([1, 0, 0, 0, 0]);
   expect(db.query('SELECT head FROM graphemes WHERE id=1').get()).toEqual({ head: 7 });
 });

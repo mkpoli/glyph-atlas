@@ -119,16 +119,15 @@ try {
   assert(await browser.evaluate('document.querySelector("dialog[open]") === null'), `the crop opened again at ${await path()}`)
   console.log('PASS a reloaded crop closes and stays closed')
 
-  // A crop's character leads to its grapheme family on the character's page.
+  // A crop's character leads to its grapheme's page, under the grapheme's head.
   await browser.goto(`${service.base}/en/crop/${encodeURIComponent(some)}`, { waitFor: `${open} === ${JSON.stringify(some)}`, timeout: 90000 })
   await browser.waitFor('document.documentElement.dataset.hydrated !== undefined', 60000)
   const target = await browser.evaluate('document.querySelector("dialog[open] .character-link")?.getAttribute("href")')
-  assert(/^\/en\/character\/U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*\?scope=family$/.test(target ?? ''), `the crop's character should link to its grapheme family, not ${target}`)
+  assert(/^\/en\/grapheme\/U\+[0-9A-F]{4,6}(-U\+[0-9A-F]{4,6})*$/.test(target ?? ''), `the crop's character should link to its grapheme, not ${target}`)
   await browser.evaluate('document.querySelector("dialog[open] .character-link").click()')
-  // The page drops `scope=family` from its address where the family is already its default view.
-  await browser.waitFor(`location.pathname === ${JSON.stringify(target.split('?')[0])}`, 90000)
+  await browser.waitFor(`location.pathname.startsWith('/en/grapheme/') && !!document.querySelector('.character-layers .variant[aria-current=page]')`, 90000)
   await browser.waitFor(closed)
-  console.log('PASS a crop\'s character opens its grapheme family')
+  console.log('PASS a crop\'s character opens its grapheme')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS inspector address')

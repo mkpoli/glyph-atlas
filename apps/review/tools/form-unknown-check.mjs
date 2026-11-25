@@ -46,7 +46,6 @@ try {
   assert(id, 'the fixture has no crop written as あ')
   const open = async () => {
     await browser.goto(`${service.base}/en/crop/${encodeURIComponent(id)}`, { waitFor: ready, timeout: 90000 })
-    await browser.waitFor('document.querySelectorAll("dialog[open] .form-chip").length > 1', 30000)
     await browser.waitFor(`!!${unknown}`, 30000)
   }
 

@@ -75,7 +75,7 @@ class Bucket:
         return self.objects.get("v3/reference/manifest.json.gz", {})
 
 
-def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES):
+def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES, group=None):
     for name in ("reference", "load_history"):
         sys.modules.pop(name, None)
     module = importlib.import_module("reference")
@@ -90,6 +90,8 @@ def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES):
     monkeypatch.setattr(module, "fetch_manifest", bucket.manifest)
     monkeypatch.setattr(module, "READINGS", READINGS["path"])
     monkeypatch.setattr(module, "PROBES", probes)
+    if group:
+        monkeypatch.setattr(module, "GROUP", group)
     monkeypatch.setattr(module, "SEND_LOCK", READINGS["path"].parent / "lock" / "reference.lock")
     monkeypatch.setattr(sys, "argv", ["reference.py", *flags])
     module.main()
@@ -151,7 +153,8 @@ def test_a_card_is_one_object_with_its_edges_and_the_layout_numbers_its_characte
     assert bucket.objects["v3/reference/list/graphemes/0.json.gz"]["total"] == 2
     structure = structures.for_character("好")
     assert structure.label == "⿰女子"
-    assert bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"] == {
+    held = bucket.objects[f"v3/reference/ids/{shard('好', 2)}.json.gz"]
+    assert {char: row for char, row in held.items() if char not in structures.seal_equivalents()} == {
         "好": [["⿰女子"], None, [structure.id, structure.label]]}
     assert bucket.objects["v3/reference/structure.json.gz"] == {
         "scheme": structures.SCHEME, "version": structures.VERSION, "policy": structures.POLICY}
@@ -206,12 +209,125 @@ def test_search_names_load_under_one_code_point_and_change_as_the_aliases_do(lay
     assert local.execute("SELECT * FROM names ORDER BY text").fetchall() == [("ne", 0x306D, 3), ("ね", 0x306D, 0)]
 
 
+SEAL = "\U0003FBDB"
+
+
+def sealed(root, remote):
+    """𿯛 as a grapheme of its own, and the input that files it under 已."""
+    both(root, remote, f"INSERT INTO graphemes(id, text, head) VALUES(100, '{SEAL}', 100), (101, '已', 101);")
+    sources(root, cards=[card("已", members=["已", SEAL]), card(SEAL, head="已", members=["已", SEAL])])
+
+
+def spell(root, remote, where, key):
+    """The fixture's run あい, filed under `key` in D1 or in the local copy."""
+    db = remote.dbs["glyph-atlas-v3-runs"] if where == "d1" else sqlite3.connect(root / "out" / "atlas-runs.sqlite")
+    db.executescript(f"UPDATE runs SET graphemes='{key}'; UPDATE run_stats SET graphemes='{key}';")
+    return db
+
+
+def test_a_load_that_files_a_seal_character_under_its_kanji_moves_that_head_alone(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    load(remote, monkeypatch, "--send")
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (101,)
+    assert "characters whose family head moves: 1\n" in (root / "out" / "reference-report.txt").read_text()
+
+
+@pytest.mark.parametrize("flags", [(), ("--send",)])
+def test_a_load_stops_where_a_run_is_filed_under_a_grapheme_whose_head_moves(layout, monkeypatch, flags):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    # Spelled so in the local copy, or only in D1, where a claim moved it since the last publish.
+    spell(root, remote, "local", SEAL + "い")
+    with pytest.raises(SystemExit, match=f"1 run keys hold .* {SEAL}い"):
+        load(remote, monkeypatch, *flags)
+    spell(root, remote, "local", "あい")
+    first = ids(root)["ex:a1"]
+    spell(root, remote, "d1", SEAL + "い").executescript(f"INSERT INTO run_moves VALUES({first}, 2, {first});")
+    with pytest.raises(SystemExit, match=f"1 run keys hold .* {SEAL}い"):
+        load(remote, monkeypatch, *flags)
+    (root / "out" / "atlas-runs.sqlite").unlink()
+    with pytest.raises(SystemExit, match="local copy of the runs is missing"):
+        load(remote, monkeypatch, *flags)
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (100,)
+
+
+def claim(remote, name, predicate, key, actor="ann"):
+    remote.dbs["glyph-atlas-v3"].executescript(f"""INSERT INTO assertions(id,subject,predicate,slot,object,tier,asserted_by,asserted_at)
+      VALUES('{name}','fm:1','{predicate}','','{key}','observed','{actor}','2026-11-24');""")
+
+
+def test_a_load_stops_where_a_live_form_claim_names_a_grapheme_whose_head_moves_and_lists_a_crops(layout, monkeypatch, capsys):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    for name, predicate, key in (("a", "written_for", "U+3FBDB"), ("b", "written_for", "U+4E5F"), ("c", "has_grapheme", "U+3FBDB")):
+        claim(remote, name, predicate, key)
+    for flags in ((), ("--send",)):
+        with pytest.raises(SystemExit, match=r"written_for claims name a grapheme whose head moves: fm:1 for U\+3FBDB$"):
+            load(remote, monkeypatch, *flags)
+    # The owner files the form under the head: nobody's word is taken back, and the card keeps the form.
+    claim(remote, "d", "written_for", "U+5DF2", "owner")
+    capsys.readouterr()
+    load(remote, monkeypatch, "--send")
+    said = capsys.readouterr().out
+    # Printed before the rows land and after.
+    assert said.count("has_grapheme claims on 1 moved heads: U+3FBDB\n") == said.count("written_for claims on 1 moved heads: none\n") == 2
+    reads = "EXPLAIN QUERY PLAN " + importlib.import_module("reference").CLAIMED
+    assert any("assertion_object (object>? AND object<?)" in row[3] for row in remote.dbs["glyph-atlas-v3"].execute(reads))
+
+
+def test_a_stopped_load_is_checked_before_the_rest_of_it_is_sent(layout, monkeypatch, capsys):  # noqa: F811
+    root, _publish, remote = layout
+    sealed(root, remote)
+    import publish
+    monkeypatch.setattr(publish, "PART_BYTES", 1)
+    real, sent = remote.send, []
+
+    def stops(database, file, stamp):
+        if sent:
+            raise SystemExit("stopped after the first part")
+        return sent.append(stamp) or real(database, file, stamp)
+
+    both(root, remote, "INSERT INTO graphemes(id, text, head) VALUES(102, '\U0003D307', 102), (103, '春', 103);")
+    sources(root, cards=[card("已", members=["已", SEAL]), card(SEAL, head="已", members=["已", SEAL]),
+                         card("春", members=["春", "\U0003D307"]), card("\U0003D307", head="春", members=["春", "\U0003D307"])])
+    monkeypatch.setattr(remote, "send", stops)
+    with pytest.raises(SystemExit, match="stopped"):
+        load(remote, monkeypatch, "--send", group=1)
+    monkeypatch.setattr(remote, "send", real)
+    d1 = remote.dbs["glyph-atlas-v3"]
+    moved = {gid for (gid,) in d1.execute("SELECT id FROM graphemes WHERE id IN (100, 102) AND head<>id")}
+    assert len(moved) == 1
+    left = {100: "U+3FBDB", 102: "U+3D307"}[({100, 102} - moved).pop()]
+    claim(remote, "a", "written_for", left)
+    with pytest.raises(SystemExit, match="written_for claims name a grapheme whose head moves"):
+        load(remote, monkeypatch, "--send")
+    assert len({gid for (gid,) in d1.execute("SELECT id FROM graphemes WHERE id IN (100, 102) AND head<>id")}) == 1
+    d1.executescript("INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES('x','a','retract','ann','2026-11-24');")
+    capsys.readouterr()
+    load(remote, monkeypatch, "--send")
+    assert capsys.readouterr().out.count("run keys on 1 moved heads: none") == 2
+    assert d1.execute("SELECT count(*) FROM graphemes WHERE id IN (100, 102) AND head<>id").fetchone() == (2,)
+
+
+def test_a_load_moves_no_head_but_a_seal_characters_unless_told_to(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    both(root, remote, "INSERT INTO graphemes(id, text, head) VALUES(100, '萅', 100), (101, '春', 101);")
+    sources(root, cards=[card("春", members=["春", "萅"]), card("萅", head="春", members=["春", "萅"])])
+    for flags in ((), ("--send",)):
+        with pytest.raises(SystemExit, match="1 characters that are not small seal, 萅; --heads"):
+            load(remote, monkeypatch, *flags)
+    load(remote, monkeypatch, "--send", "--heads")
+    assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (101,)
+
+
 def test_heads_of_graphemes_a_publish_made_come_from_the_cards(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     both(root, remote, "INSERT INTO graphemes(id, text, head) VALUES(100, 'ゑ', NULL);")
     sources(root, cards=[card("ゑ", head="ヱ", members=["ヱ", "ゑ"]), card("ヱ", members=["ヱ", "ゑ"]),
                          card("い", head="𛀆")])
-    load(remote, monkeypatch, "--send")
+    sqlite3.connect(root / "out" / "atlas-runs.sqlite").executescript("DELETE FROM run_stats;")
+    load(remote, monkeypatch, "--send", "--heads")
     db = remote.dbs["glyph-atlas-v3"]
     katakana, hentaigana = grapheme(db, "ヱ"), grapheme(db, "𛀆")
     assert db.execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (katakana,)
@@ -457,6 +573,8 @@ def test_only_components_sends_the_component_objects_alone_and_touches_no_d1(lay
 
 def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
+    # Two seal characters of the 11,328, so a shard can still empty and leave R2.
+    monkeypatch.setattr(structures, "seal_equivalents", lambda: {"𾲟": "臭", "𽓻": "遇"})
     sources(root, cards=[card("あ")])
     bucket = load(remote, monkeypatch, "--send")
     others = {k: v for k, v in bucket.manifest().items() if not k.startswith(("ids/", "structure.json.gz"))}
@@ -480,17 +598,19 @@ def test_only_ids_sends_the_descriptions_and_their_structures_and_no_other_path(
     assert "objects to delete: 1" in report and "char " not in report
     load(remote, monkeypatch, "--only", "ids", "--send", bucket=bucket)
     structure, described, one = structures.for_character("峰"), structures.for_character("脫"), structures.for_character("一")
-    smell, big = structures.for_character("臭"), structures.for_ids("⿱自大")
+    smell = structures.for_character("臭")
     shards = sorted(k for k in bucket.manifest() if k.startswith("ids/"))
-    assert shards != held
     rows = {char: row for name in shards for char, row in bucket.objects[f"v3/reference/{name}"].items()}
+    assert shards != held
+    # A small seal character is proposed its Han equivalent's structure (𾲟 is 臭's seal form).
+    assert rows.pop("𾲟") == [[], None, [smell.id, smell.label]]
+    assert rows.pop("𽓻") == [[], None, [structures.for_character("𽓻").id, "⿰辵禺"]]
     # A description the site names something by is a key of its own; one that names no structure has none.
-    # A character with no description to edit keeps its structure. A regional shape that is another
-    # character's structure (臭 as ⿱自大 in J is 𦤀's) carries it; one that spells its character's does not.
-    assert smell.id != big.id
+    # A character with no description to edit keeps its structure. A regional shape another character
+    # encodes again names it (臭's ⿱自大 is 𦤀).
     assert rows == {"峰": [["⿰山夆"], None, [structure.id, structure.label]], "一": [[], None, [one.id, one.label]],
                     "臭": [["⿱自犬"], [{"text": "⿱自犬", "regions": "GHTKPV"},
-                                      {"text": "⿱自大", "regions": "J", "structure": {"id": big.id, "label": big.label}}],
+                                      {"text": "⿱自大", "regions": "J", "chars": ["𦤀"]}],
                           [smell.id, smell.label]],
                     "⿰月兊": [["⿰月兊"], None, [described.id, described.label]], "〾⿰山夆": [["〾⿰山夆"], None, None]}
     assert bucket.objects["v3/reference/structure.json.gz"]["policy"] == structures.POLICY

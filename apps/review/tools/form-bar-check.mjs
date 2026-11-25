@@ -48,7 +48,7 @@ try {
   await browser.waitFor(`document.querySelector('.form-done')`, 20000)
   for (const id of ids.slice(0, 3)) assert(await written(id) === forms[1], `${id} is written as ${forms[1]}`)
   const shown = await browser.evaluate(`[...document.querySelectorAll('.quiz-tile')].slice(0, 3).map(t => [t.classList.contains('assigned'), t.querySelector('.quiz-written')?.innerText])`)
-  assert(shown.every(([assigned, label]) => assigned && label === forms[1]), `the tiles show the form (${JSON.stringify(shown)})`)
+  assert(shown.every(([assigned, label]) => assigned && label === `→ ${forms[1]}`), `the tiles show the form (${JSON.stringify(shown)})`)
   assert(!await browser.evaluate(`document.querySelector('.selection-count')`), 'the marked crops leave the selection')
   console.log(`ok   2 marks the three crops as ${forms[1]}`)
 
@@ -59,6 +59,22 @@ try {
   assert(after.join() === before.join(), `undo restores the characters (${after.join()} vs ${before.join()})`)
   assert(!await browser.evaluate(`document.querySelector('.quiz-tile.assigned')`), 'undo restores the tiles')
   console.log('ok   undo takes the marking back')
+
+  // A character found by search marks the selection as well, and undo takes that back too.
+  await browser.evaluate(`(() => { const i = document.querySelector('.form-bar .character-search input'); i.focus(); i.value = '侯'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.waitFor(`document.querySelector('.form-bar .character-search [role="option"]')`, 20000)
+  await browser.key('Enter')
+  await browser.waitFor(`document.querySelector('.assign-searched') && !document.querySelector('.assign-searched').disabled`, 20000)
+  if (process.env.FORM_BAR_SHOT) await browser.screenshot(process.env.FORM_BAR_SHOT)
+  const offered = await browser.evaluate(`document.querySelector('.assign-searched').innerText`)
+  const searched = offered.replace('Mark as ', '')
+  await browser.evaluate(`document.querySelector('.assign-searched').click()`)
+  await browser.waitFor(`document.querySelector('.form-done')`, 20000)
+  for (const id of ids.slice(0, 3)) assert(await written(id) === searched, `${id} is written as the searched ${searched}`)
+  await browser.evaluate(`[...document.querySelectorAll('.form-bar button')].find(b => b.innerText === 'Undo').click()`)
+  await browser.waitFor(`!document.querySelector('.form-done')`, 20000)
+  assert((await Promise.all(ids.slice(0, 3).map(written))).join() === before.join(), 'undo restores the searched marking')
+  console.log(`ok   a searched character (${searched}) marks the selection`)
 
   // A chip marks too; moving on records the other crops as seen and the marked one as nothing more.
   await clickTile(1)

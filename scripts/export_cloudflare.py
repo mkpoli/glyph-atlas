@@ -21,8 +21,20 @@ import export_character_variants
 from catalogue_schema import schema
 from PIL import Image
 
-from glyph_atlas import ainu_geometry, export_lock, images, ngrams, page_sources, refs, style, tone, withdrawn
+from glyph_atlas import (
+    ainu_geometry,
+    export_lock,
+    images,
+    ngrams,
+    page_sources,
+    refs,
+    registry,
+    style,
+    tone,
+    withdrawn,
+)
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
+from glyph_atlas.credit_line import credit_line
 from glyph_atlas.review import atlas, characters, collection, corpus_source, ledger
 from glyph_atlas.review.context_suggestions import context_guesses
 from glyph_atlas.review.media import MediaCache
@@ -191,23 +203,75 @@ def page_fields(page) -> dict:
     return {"page_number": page.seq + 1 if page else None, "page_index": page.seq if page else None}
 
 
-def page_record(page, doc, crops, catalogue=None) -> dict:
+#: The longer side of a hosted page photograph, the size the page view asks an IIIF service for
+#: (`PAGE_IMAGE` in the Worker's `routes/crop.ts`), and its WebP quality: the holders' files are JPEGs
+#: already, and at 80 a 2390 x 2000 page is about 0.7 MB where 90 gives 1.2 MB.
+PAGE_PHOTO_EDGE = 3000
+PAGE_PHOTO_QUALITY = 80
+
+
+def page_record(page, doc, crops, catalogue=None, photo=None) -> dict:
     """A page as the page view shows it (0078): its book, number and size in the page pixels boxes are
     given in, its IIIF image service, where it can be opened at its source (`page_sources`), its
-    credit and the ids of its crops in reading order. The pages before and after it are the publisher's
-    to name, which knows every page of the book the site holds (`atlas3/publish.py`)."""
+    credit and the ids of its crops in reading order. `photo` is the site's own copy of the page image,
+    which a page no service serves is shown from; a page without one has no such field. The pages
+    before and after it are the publisher's to name, which knows every page of the book the site holds
+    (`atlas3/publish.py`)."""
     rights = doc.image_rights if doc else None
     service = images.service_of(page.image or "")
     return {"id": page.id, "document": page.document_id, "title": doc.title if doc else None,
             "page_number": page.seq + 1, "width": page.width, "height": page.height, "service": service,
             **page_sources.page_sources(doc.source_refs if doc else None, page.canvas, service, catalogue),
             "holder": doc.holder if doc else None, "licence": str(rights.licence) if rights else None,
-            "attribution": rights.attribution if rights else None, "rights_url": rights.evidence if rights else None,
+            "attribution": credit_line(rights.attribution) if rights else None, "rights_url": rights.evidence if rights else None,
+            **({"photo": photo} if photo else {}),
             "crops": crops}
 
 
-def page_rows(db, published, units, pages, documents):
-    """Rewrite `pages` from the ids of the crops `published`: a page appears once one of its crops does."""
+def page_file(page) -> Path | None:
+    """The cached file of a page image: the one its checksum names, else the one held under its URL."""
+    if page.sha256:
+        for candidate in sorted((images.images_root() / page.sha256[:2]).glob(f"{page.sha256}.*")):
+            if candidate.is_file():
+                return candidate
+    return images.path_for(page.image) if page.image else None
+
+
+class PagePhotos:
+    """What gives a page its hosted photograph: the URL of the whole page image as the site serves it,
+    packed with the crops, or None.
+
+    A page has one when its document is among `hosted` (the sources' `hosted_pages`), no IIIF service
+    serves its image, its document's image licence lets the site serve crops of it, and the file is in
+    the image cache. Every other page is left as it is: one with a service is shown from the service.
+    """
+
+    def __init__(self, media, packs, hosted=None):
+        self.media, self.packs = media, packs
+        self.hosted = registry.hosted_documents() if hosted is None else hosted
+
+    def __call__(self, page, doc):
+        if (doc is None or page.document_id not in self.hosted or images.service_of(page.image or "")
+                or not doc.image_rights or str(doc.image_rights.licence) not in PROXYABLE):
+            return None
+        path = page_file(page)
+        if path is None:
+            return None
+        # The key names the document, so withdrawing one document never takes the photograph of another
+        # that was photographed from the same file.
+        url = self.media.local(path, edge=PAGE_PHOTO_EDGE, quality=PAGE_PHOTO_QUALITY, scope=page.document_id)
+        key = url.rsplit("/", 1)[-1].removesuffix(".webp")
+        self.packs.add(key, self.media.materialize(key))
+        return url
+
+    def sync(self):
+        """Put the photographs' bytes on disk, before the rows that name them are committed."""
+        self.packs.sync()
+
+
+def page_rows(db, published, units, pages, documents, photo=None):
+    """Rewrite `pages` from the ids of the crops `published`: a page appears once one of its crops does.
+    `photo` gives a page its hosted photograph (`PagePhotos`)."""
     held = defaultdict(list)
     for identity in published:
         unit = units.get(identity)
@@ -218,8 +282,11 @@ def page_rows(db, published, units, pages, documents):
     for page_id, own in held.items():
         page = pages[page_id]
         crops = [u.id for u in sorted(own, key=lambda u: (u.line_id or "", u.seq if u.seq is not None else -1, u.id))]
-        record = page_record(page, documents.get(page.document_id), crops, catalogue.get(page.document_id))
+        doc = documents.get(page.document_id)
+        record = page_record(page, doc, crops, catalogue.get(page.document_id), photo(page, doc) if photo else None)
         db.execute("INSERT INTO pages VALUES (?,?,?)", (page.id, page.document_id, encoded(record)))
+    if photo:
+        photo.sync()
     db.commit()
 
 
@@ -389,7 +456,7 @@ def export(dataset: Path, output: Path, *, resume=False, pages: set[str] | None 
                       "page_number": page_fields(page)["page_number"], **cut}
             detail["licence"] = str(doc.image_rights.licence) if doc and doc.image_rights else None
             detail["holder"] = doc.holder if doc else None
-            detail["attribution"] = doc.image_rights.attribution
+            detail["attribution"] = credit_line(doc.image_rights.attribution)
             detail["rights_url"] = doc.image_rights.evidence
             # Full-resolution pages remain separate; the viewer can pan the hosted context
             # immediately without trying a local full-page endpoint.
@@ -416,7 +483,8 @@ def export(dataset: Path, output: Path, *, resume=False, pages: set[str] | None 
                 db.commit()
                 print(encoded({"stage": "local-crops", "done": i}), flush=True)
         packs.sync()
-        page_rows(db, [i for i, in db.execute("SELECT id FROM units WHERE origin='local'")], units, pages, documents)
+        page_rows(db, [i for i, in db.execute("SELECT id FROM units WHERE origin='local'")], units, pages, documents,
+                  PagePhotos(media, packs))
         # The claims made here, and those an action here names, go to the site's ledger, but none about a
         # crop of a withdrawn document; the site resolves their slots once they are there (`seal_cloudflare`).
         gone = withdrawn.documents()

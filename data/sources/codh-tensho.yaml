@@ -1,0 +1,158 @@
+# 篆書字体データセット: seal forms cut from twelve dictionaries and seal collections, each filed under a
+# Han 親字. Book TE00039 is the 陳昌治 edition of 説文解字, the edition Unicode 18.0 cites for its small
+# seal characters as kSEAL_CCZSrc; `data/tensho/TE00039/characters.tsv` places its crops on them and
+# `pages.tsv` pins the pages of the 東方學デジタル圖書館 facsimile they were cut from. Books TE00024 to
+# TE00026 are the three volumes of 新撰篆書字典 (1924) on the 国立国会図書館's IIIF pages; their tables
+# place a crop on a seal character where its 親字 alone answers one or the crop is drawn as one of its
+# own. Book TE00003 is 聯珠篆文 (享和二序) on the pages 新潟大学附属図書館 serves through
+# 国書データベース, placed by the same rule.
+
+id: codh-tensho
+name: 篆書字体データセット
+publisher: 情報・システム研究機構 データサイエンス共同利用基盤施設 人文学オープンデータ共同利用センター (ROIS-DS CODH), 一般財団法人 人文情報学研究所
+kind: character-dataset
+url: https://codh.rois.ac.jp/tensho/
+doi: 10.20676/00000390
+version: "2.0"
+released: 2022-08-11
+licence: CC-BY-SA-4.0
+licence_evidence: https://codh.rois.ac.jp/tensho/book/TE00039/
+attribution: 『篆書字体データセット』（国文学研究資料館が複数の機関から収集／CODH・DHII加工）doi:10.20676/00000390
+checked: "2026-11-20"
+counts:
+  characters: 181084
+  code_points: 13213
+  titles: 12
+access:
+  book_zip: https://codh.rois.ac.jp/tensho/dataset/v2/{book}.zip
+  book_list: https://codh.rois.ac.jp/tensho/book/
+  providers: https://codh.rois.ac.jp/tensho/provider.ja.txt
+format:
+  coordinates: "{book}_coordinate.csv with columns Unicode, Image, X, Y, Block ID, Char ID, Width, Height, Overlap"
+  pages: "{book}_source.csv with columns Image, Manifest URI, Canvas URI, Image Info"
+  crops: "characters/U+XXXX/U+XXXX_{image}_X{x}_Y{y}.jpg, the 親字 as folder"
+  notes: "{book}_note.txt, the 凡例 and the book's credit"
+# The facsimile's pages are plain JPEGs with no IIIF service, flat reproductions of a print of 1873.
+hosted_pages:
+  - codh-tensho:TE00039
+books:
+  - id: TE00039
+    title: 說文解字十五卷 坿 通檢十四卷 末一卷
+    work: 説文解字
+    author: 漢 許愼撰; 宋 徐鉉等奉敕校定; 通檢 淸 黎永椿撰
+    edition: 同治十二年番禺陳昌治校刊本
+    year: 1873
+    holder: 京都大学人文科学研究所
+    provider: 東方學デジタル圖書館
+    url: http://kanji.zinbun.kyoto-u.ac.jp/db-machine/toho/html/A028menu.html
+    zip_sha256: d6226629d7b46613a0838a1c4b9866767433012bb01080d16d2e915c851e0ede
+    crops: 10403
+    codh_page_width: 4110
+    production: printed/woodblock
+    origin: china
+    text_scope: marked seal forms; the entries below them are not transcribed
+  # Title, author, publisher, date and the public-domain mark of the three volumes are the metadata of
+  # each volume's manifest (https://dl.ndl.go.jp/api/iiif/<pid>/manifest.json, read 2026-11-20): Title
+  # 新撰篆書字典.巻1, Creator 安本春湖 著, Publisher 春湖書屋, Publication Date 大正13 (W3CDTF 1924), Access
+  # Restrictions PDM. `provider_urls` are the URLs of the title's line in `access.providers`.
+  - id: TE00026
+    title: 新撰篆書字典 巻1
+    work: 新撰篆書字典
+    author: 安本春湖 著
+    publisher: 春湖書屋
+    edition: 春湖書屋 大正13
+    dated: 大正13
+    year: 1924
+    holder: 国立国会図書館
+    provider: 国立国会図書館デジタルコレクション
+    url: https://dl.ndl.go.jp/info:ndljp/pid/1181876
+    provider_urls: &shinsen
+      - https://dl.ndl.go.jp/info:ndljp/pid/1181876
+      - https://dl.ndl.go.jp/info:ndljp/pid/1181885
+      - https://dl.ndl.go.jp/info:ndljp/pid/1181893
+    manifest: https://dl.ndl.go.jp/api/iiif/1181876/manifest.json
+    image_licence: PDM-1.0
+    zip_sha256: ed1d458944179c8f1b923009d564e3ef2f27996db5a7ee807240e5caf8038922
+    crops: 3561
+    production: printed
+    origin: japan
+    text_scope: marked seal forms; the 親字 above them are not transcribed
+  - id: TE00025
+    title: 新撰篆書字典 巻2
+    work: 新撰篆書字典
+    author: 安本春湖 著
+    publisher: 春湖書屋
+    edition: 春湖書屋 大正13
+    dated: 大正13
+    year: 1924
+    holder: 国立国会図書館
+    provider: 国立国会図書館デジタルコレクション
+    url: https://dl.ndl.go.jp/info:ndljp/pid/1181885
+    provider_urls: *shinsen
+    manifest: https://dl.ndl.go.jp/api/iiif/1181885/manifest.json
+    image_licence: PDM-1.0
+    zip_sha256: f9b8cdc08e7ab65365e996d1011e02f5684aaa6cf5df2d8e8fa7f1d66eda8e1c
+    crops: 4018
+    production: printed
+    origin: japan
+    text_scope: marked seal forms; the 親字 above them are not transcribed
+  - id: TE00024
+    title: 新撰篆書字典 巻3
+    work: 新撰篆書字典
+    author: 安本春湖 著
+    publisher: 春湖書屋
+    edition: 春湖書屋 大正13
+    dated: 大正13
+    year: 1924
+    holder: 国立国会図書館
+    provider: 国立国会図書館デジタルコレクション
+    url: https://dl.ndl.go.jp/info:ndljp/pid/1181893
+    provider_urls: *shinsen
+    manifest: https://dl.ndl.go.jp/api/iiif/1181893/manifest.json
+    image_licence: PDM-1.0
+    zip_sha256: fd401585501fb25106286e2d14fb0025f1538da4946eebd37c1db5031c00ebe4
+    crops: 3795
+    # The manifest's Note: 画像の一部差替え（41コマ目）（2026-09-01）. The new photograph frames the opening
+    # otherwise: its 45 forms lie 29 to 87 pixels right of CODH's boxes and 3 to 59 above them, about
+    # 2 % larger (crop files matched on the page, 2026-11-20).
+    replaced_pages: [41]
+    production: printed
+    origin: japan
+    text_scope: marked seal forms; the 親字 above them are not transcribed
+  # Title and author are the metadata of the manifest (https://kokusho.nijl.ac.jp/biblio/100250413/manifest,
+  # read 2026-11-24): Title 聯珠篆文, author 池永／栄春, attribution 新潟大学附属図書館 国文学研究資料館. The
+  # date and publishers are the 国書データベース record's (https://kokusho.nijl.ac.jp/api/biblioDetail/100250413,
+  # read 2026-11-24): 刊, 享和二序（1802）, 〈京都〉出雲寺文次郎 and five more booksellers of 大坂 and 江戸. The record
+  # dates the preface and leaves the printing undated, so the book has no `edition` or `year`; `atlas dates`
+  # reads the preface's year from the record. The
+  # holder's conditions (https://collections.lib.niigata-u.ac.jp/collections/, read 2026-11-24): Rights
+  # Statements "No Copyright - Contractual Restrictions"; free to use where 新潟大学附属図書館 is named as the
+  # provider and a changed image is said to be changed; a notice of use through its form is asked for.
+  - id: TE00003
+    title: 聯珠篆文
+    work: 聯珠篆文
+    author: 池永栄春
+    publisher: 出雲寺文次郎ほか
+    holder: 新潟大学附属図書館
+    provider: 新日本古典籍総合データベース
+    url: https://kotenseki.nijl.ac.jp/biblio/100250413/
+    provider_urls:
+      - https://kotenseki.nijl.ac.jp/biblio/100250413/
+    manifest: https://kokusho.nijl.ac.jp/biblio/100250413/manifest
+    image_licence: RS-NOC-CR
+    rights_evidence: https://collections.lib.niigata-u.ac.jp/collections/
+    checked: "2026-11-24"
+    zip_sha256: 4a988683b39e3808253f7e6704a15a7a365894b62d19d862e4be2b588618e558
+    crops: 6195
+    production: printed
+    origin: japan
+    text_scope: marked seal forms; the 親字 beside them are not transcribed
+notes:
+  - Books TE00040 to TE00058 (選集漢印分韻, 朝陽閣字鑑) are CC BY-NC-SA 4.0 and are not imported; the others are CC BY-SA 4.0.
+  - 派生した新たなデータセットやソフトウェアを公開する場合は、「原本画像公開元・所蔵者一覧ファイル」を配布物に含めてください (the dataset's page). Each imported book's line of that list (title, provider, holder, URL) is in its document's image attribution, which a release prints in ATTRIBUTION.md; the whole list is at `access.providers`.
+  - The 親字 follows the form the book prints, mostly the character whose components answer the seal form's, sometimes the later form of the character (凡例 2 and 3). It is kept on each unit as CODH's reading beside the seal character.
+  - "For TE00039 CODH cut the head of each entry and the 篆文 and 或体 below it, and left out the 古文 and 籀文 except those the book calls 篆文 (凡例 3). The coordinates are pixels of CODH's page images, which the dataset does not ship. The pages the 東方學デジタル圖書館 serves are 2390 pixels wide and 0.5815 of that size, with no offset. `codh_page_width`, 4110, is 2390 over that scale: with it every one of the 10,403 crop files, reduced and matched on its page, is found within one pixel of its box (2026-11-20)."
+  - "For TE00024 to TE00026 the coordinates are pixels of the 国立国会図書館's full-size images (5,183 to 5,199 pixels wide), counted from one: every crop file, matched on its page, is found one to three pixels left of and above its box (2026-11-20), except on the page the library has replaced since (`replaced_pages`). Every row has Block ID B0001 and Char ID C0001, so the columns of a page are read from the boxes. TE00026 states one crop twice (U+5BFD on TE00026_0012_1), read once, and files one under 〓."
+  - "新撰篆書字典 prints one or more seal forms under each 親字 and 聯珠篆文 two over nearly every one, bronze, stone and old script forms among them, without saying which is the small seal form. `scripts/build_tensho_equivalents.py` places a crop on a seal character of Unicode by its 親字 where the title files no other crop under it (6,225 and 12 crops), else by its drawing (2,987 and 3,015): the seal character is one of the 親字, or of its 字種 where the 親字 has none, and among the three of 11,328 that models/seal/match.py, trained on the crops of TE00039, the glyphs of Sealie (https://github.com/iebb/sealie, OFL 1.1) and the crops of these titles it is sure of, finds nearest. A 古文 or 籀文 that Unicode encodes is placed on its own character. In a random 200 of them, two are another form than their seal character (2026-11-24, models/seal/sample.tsv). Ten more are on the seal character their drawing was read as (`data/tensho/read.tsv`). The rest stay on the 親字 in seal style: 2,155 of 新撰篆書字典 and 3,164 of 聯珠篆文."
+  - "For TE00003 the coordinates are pixels of the full-size images of 国書データベース (5,616 by 3,744): all 160 crop files of three openings, matched on their pages, lie exactly on their boxes (2026-11-24). The database numbers its canvases from zero and CODH's table from one, so a page is found by its image service."
+  - The first release is of 2021-03-31; version 2 of 2022-05-10 added this book, and 176 characters were corrected on 2022-08-11.

@@ -10,7 +10,7 @@
   // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失⬚); put on an operator, it takes
   // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
   // A component found, typed into the part field or offered by the variant table replaces the chosen
-  // part, and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
+  // part, as does one of the part's registered figures (辶 with one dot, U+8FB6 U+E0101), and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
   // The part picker under the tree has three tabs: a component found by name or reading, the parts
   // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
   // Every change can be undone, a hundred steps back.
@@ -19,31 +19,19 @@
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
   import IdsParts from './IdsParts.svelte'
-  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, nextEmpty, parse, partAt, paths,
+  import FigureText from './FigureText.svelte'
+  import OperatorIcon from './OperatorIcon.svelte'
+  import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, layout, nextEmpty, parse, partAt, paths,
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
-  import { lookupChar } from '../lib/decompose.js'
+  import { lookupChar, regionNames, startCharacter, variants } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { figuresFor } from '../lib/partFigures.js'
+  import { base, t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
-  // Each operator's name, the key that puts it, and its icon: the box it fills (the accent) and the
-  // places of its parts inside it (dashed), each a line or a box as [left, top, right, bottom] in a
-  // unit square; ⿻ is two boxes over each other, the first in the accent. 〾 marks its part as a
-  // variant, drawn as a wave.
+  // The key that puts each operator, and its name.
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
-  const ICON = {
-    '⿰': [[.5, 0, .5, 1]], '⿱': [[0, .5, 1, .5]], '⿲': [[.33, 0, .33, 1], [.67, 0, .67, 1]], '⿳': [[0, .33, 1, .33], [0, .67, 1, .67]],
-    '⿴': [[.25, .25, .75, .75]], '⿵': [[.25, .3, .75, 1]], '⿶': [[.25, 0, .75, .7]], '⿷': [[.3, .25, 1, .75]],
-    '⿸': [[.35, .35, 1, 1]], '⿹': [[0, .35, .65, 1]], '⿺': [[.35, 0, 1, .65]], '⿻': [[.25, .25, 1, 1]],
-    '⿼': [[0, .25, .7, .75]], '⿽': [[0, 0, .65, .65]], '⿾': [[.5, .1, .5, .9]], '⿿': [[.2, .2, .8, .8]],
-    '㇯': [[.3, .3, .7, .7]], '〾': [],
-  }
-  const OUTER = { '⿻': [0, 0, .75, .75] }
   const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
-  // How the box tree lays a node's parts out: in a row, in a column, the second inside the first, or
-  // one over the other.
-  const LAYOUT = { '⿰': 'row', '⿲': 'row', '⿱': 'column', '⿳': 'column', '⿻': 'stack', '㇯': 'stack', '⿾': 'stack', '⿿': 'stack', '〾': 'stack' }
-  const layout = op => LAYOUT[op] ?? 'enclosure'
   const HISTORY = 100
   // Where the preview's drawings come from and the terms they carry.
   const SOURCES = 'https://github.com/mkpoli/glyph-atlas/blob/main/docs/licensing.md#composer-drawings'
@@ -69,19 +57,61 @@
     return asked
   }
   const sequencesOf = c => known[c]?.sequences ?? []
+  // The registered figures of each component met, asked with its descriptions; a failed read is asked again.
+  let figures = $state({})
+  const figuring = new Set()
+  function readFigures(c) {
+    if (!isComponent(c) || figuring.has(c)) return
+    figuring.add(c)
+    figuresFor(c).then(found => { figures = { ...figures, [c]: found } }, () => figuring.delete(c))
+  }
 
-  // Each crop starts again: from a description the reader had typed into the search, or else from
-  // the character's own. What is typed into the search afterwards leaves the draft alone.
+  // Each crop starts again: from a description or single character the reader had typed into the
+  // search, or else from the character's own. What is typed into the search afterwards leaves the
+  // draft alone. Any existing character can also be loaded as the starting draft, with its regional
+  // or variant decompositions offered to pick from.
+  let source = $state(''), startQuery = $state(''), startPicked = $state(false), startSearch = $state(null), startSeq = 0, draftRev = 0
   $effect(() => {
     const of = char
     untrack(() => {
       const typed = isSequence(start) ? start : ''
+      const initial = !typed ? (startCharacter(start) || startCharacter(of)) : ''
       past = []; future = []; note = ''
+      source = initial; startQuery = ''; startPicked = false
+      const seq = ++startSeq
       reset(typed)
-      if (!typed && of) read(of).then(found => { if (!draft && found?.sequences?.length) reset(found.sequences[0]) })
+      const rev = draftRev
+      if (!typed && initial) {
+        read(initial).then(found => {
+          if (seq !== startSeq || rev !== draftRev || draft) return
+          const first = found?.sequences?.[0] ? parse(found.sequences[0], { open: true }) : null
+          const next = first && !first.problem && first.tree ? found.sequences[0] : variants(found).find(v => v.tree)?.text
+          if (next) reset(next)
+        })
+      }
     })
   })
+  const startCandidate = $derived(startCharacter(startQuery))
+  const startEntry = $derived(source ? known[source] : undefined)
+  const startVariants = $derived(variants(startEntry).filter(v => v.tree))
+  const startStatus = $derived(source ? startEntry?.status ?? null : null)
+  async function loadChar(raw, { again = false } = {}) {
+    if (disabled) return
+    const c = startCharacter(raw)
+    if (!c) return
+    startSearch?.close()
+    source = c
+    startQuery = c
+    startPicked = true
+    const seq = ++startSeq
+    const rev = draftRev
+    const found = await read(c, { again })
+    if (seq !== startSeq || rev !== draftRev || disabled) return
+    const list = variants(found).filter(v => v.tree)
+    if (list.length && (whole !== list[0].text || chosen !== null)) change(list[0].tree, null)
+  }
   function reset(text) {
+    draftRev += 1
     draft = text; chosen = null; piece = ''
     tree = parse(text, { open: true }).tree ?? null
   }
@@ -110,11 +140,12 @@
     commit(next, select)
   }
   function commit(next, select) {
+    draftRev += 1
     tree = next; chosen = select; note = ''
     if (!typing) draft = write(next)
     const part = select ? partAt(next, select) : undefined
     piece = text(part)
-    if (typeof part === 'string') read(lookupChar(part))
+    if (typeof part === 'string') { read(lookupChar(part)); readFigures(lookupChar(part)) }
   }
   // One step back or forward: the state left is kept on the other side.
   function step(from, to) {
@@ -177,18 +208,27 @@
   function take(written) { const found = parse(written, { open: true }); if (!disabled && !found.problem && found.tree !== null) place(found.tree) }
   // The descriptions a component can be split into, those the editor can read.
   const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
+  // The picked part as its other figures, the bare character among them once it carries a selector.
+  const figured = $derived.by(() => {
+    if (typeof picked !== 'string') return []
+    const base = lookupChar(picked), found = figures[base] ?? []
+    return [...(picked !== base && found.length ? [{ char: base, mj: null }] : []), ...found.filter(figure => figure.char !== picked)]
+  })
+  const point = text => [...text].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')
   function choose(path) {
     chosen = samePath(chosen, path) ? null : path
     note = ''
     const part = chosen ? partAt(tree, chosen) : undefined
     piece = text(part)
-    if (typeof part === 'string') read(lookupChar(part))
+    if (typeof part === 'string') { read(lookupChar(part)); readFigures(lookupChar(part)) }
   }
   function remove(path) { if (!disabled && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
 
-  // The part field: Enter puts what it holds in the chosen slot and moves on to the next empty one.
+  // The part field: Apply or Enter puts what it holds in the chosen slot and moves on to the next empty one.
+  const pieceDirty = $derived(Boolean(piece.trim()) && (chosen === null || unalias(piece.trim()) !== text(picked)))
   function enter() {
+    if (disabled) return
     const typedText = unalias(piece.trim())
     if (!typedText) return
     const found = parse(typedText, { open: true })
@@ -209,8 +249,8 @@
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
-    // Undo and redo work from anywhere in the editor; the focus stays in a picker that has it.
-    const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel'))
+    // Undo and redo work from anywhere in the editor; the focus stays in a picker or start-from-character search that has it.
+    const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel, .ids-start'))
     const after = () => { if (!inPicker) focusChosen() }
     if (command && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); after(); return }
     if (command && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); after(); return }
@@ -252,16 +292,8 @@
   }
 </script>
 
-{#snippet icon(op, size)}
-  {@const [x0, y0, x1, y1] = OUTER[op] ?? [0, 0, 1, 1]}
-  <svg viewBox="-1.5 -1.5 23 23" width={size} height={size} aria-hidden="true" class="ids-icon">
-    {#each ICON[op] as [a, b, c, d], i (i)}
-      {#if a === c || b === d}<line class="inner" x1={a * 20} y1={b * 20} x2={c * 20} y2={d * 20} />
-      {:else}<rect class="inner" x={a * 20} y={b * 20} width={(c - a) * 20} height={(d - b) * 20} />{/if}
-    {/each}
-    {#if op === '〾'}<path class="inner" d="M3 10q2.5-4 5 0t5 0 5 0" />{/if}
-    <rect x={x0 * 20} y={y0 * 20} width={(x1 - x0) * 20} height={(y1 - y0) * 20} />
-  </svg>
+{#snippet named(key, part)}
+  {@const [before, after] = t(key, { part: '\u0000' }).split('\u0000')}{before}<FigureText text={part} />{after}
 {/snippet}
 
 {#snippet box(part, path, parent)}
@@ -272,7 +304,7 @@
       <div class="ids-head">
         <button type="button" class="ids-op" data-path={pathKey(path)} aria-pressed={selected} {disabled}
           aria-label={t('form.ids.node', { name: name(part.op), sequence: write(part) })} title={`${part.op} ${name(part.op)}`}
-          onclick={() => choose(path)}>{@render icon(part.op, 14)}</button>
+          onclick={() => choose(path)}><OperatorIcon op={part.op} size={14} /></button>
         <button type="button" class="ids-unwrap" tabindex="-1" {disabled} aria-label={t('form.ids.unwrapNode', { what })} title={t('form.ids.unwrap')}
           onclick={() => remove(path)}>×</button>
       </div>
@@ -287,22 +319,53 @@
     <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} aria-pressed={selected}
       data-path={pathKey(path)} {disabled} title={part === null ? label : t('form.ids.choose', { part })}
       aria-label={parent ? t('form.ids.part', { part: label, n: parent.n, name: name(parent.op) }) : label}
-      onclick={() => choose(path)}>{part ?? EMPTY}</button>
+      onclick={() => choose(path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
   {/if}
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="ids-composer" bind:this={root} onkeydown={keydown}>
-  <label class="ids-field">
-    <span class="ids-title">{t('form.ids.label')}</span>
-    <input bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off"
-      placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
-      onkeydown={event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); use() } }} />
-  </label>
+  <div class="ids-start">
+    <span class="ids-title">{t('form.ids.start')}</span>
+    <div class="ids-start-row">
+      <CharacterSearch bind:this={startSearch} compact codePoints bind:value={startQuery} label={t('form.ids.start')} placeholder={t('search.placeholder')}
+        onselect={item => loadChar(item.char)} onsubmit={text => loadChar(text)} />
+      <button type="button" class="ids-start-load" disabled={disabled || !startCandidate} onclick={() => loadChar(startCandidate)}>{t('form.ids.start.load')}</button>
+    </div>
+    {#if startStatus === 'loading' && startPicked}
+      <p class="ids-start-note">{t('form.ids.from.loading', { char: source })}</p>
+    {:else if startStatus === 'failed' && startPicked}
+      <p class="ids-start-note fault" role="status">
+        {t('form.ids.from.failed', { char: source })}
+        <button type="button" class="ids-start-retry" {disabled} onclick={() => loadChar(source, { again: true })}>{t('form.ids.from.retry')}</button>
+      </p>
+    {:else if startStatus === 'ready' && !startVariants.length && startPicked}
+      <p class="ids-start-note" role="status">{source}: {t('form.ids.from.atomic')}</p>
+    {:else if startVariants.length > 1}
+      <div class="ids-start-shapes" role="group" aria-label={t('form.ids.start.shapes', { char: source })}>
+        {#each startVariants as shape (shape.text)}
+          <button type="button" class="ids-shape" class:active={whole === shape.text} aria-pressed={whole === shape.text} {disabled}
+            title={shape.regions ? t('form.ids.from.regions', { regions: regionNames(shape.regions, base()) }) : shape.text}
+            onclick={() => { if (whole !== shape.text || chosen !== null) change(shape.tree, null) }}>
+            <span class="ids-shape-text" lang="ja">{shape.text}</span>{#if shape.regions}<span class="ids-shape-regions">{shape.regions}</span>{/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+  <div class="ids-field">
+    <label class="ids-title" for={`${uid}-field`}>{t('form.ids.label')}</label>
+    <div class="ids-field-row">
+      <input id={`${uid}-field`} bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off" enterkeyhint="done"
+        placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
+        onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); use() } }} />
+      <button type="button" class="ids-use" disabled={disabled || !usable} onclick={use}>{t('form.ids.use')}</button>
+    </div>
+  </div>
   <div class="ids-operators" role="group" aria-label={t('form.ids.operators')}>
     {#each OPERATORS as [op] (op)}
       <button type="button" class="ids-key" data-op={op} {disabled} aria-label={name(op)}
-        title={t('form.ids.operatorTitle', { op, name: name(op), key: KEY[op] })} onclick={() => operator(op)}>{@render icon(op, 22)}</button>
+        title={t('form.ids.operatorTitle', { op, name: name(op), key: KEY[op] })} onclick={() => operator(op)}><OperatorIcon {op} /></button>
     {/each}
   </div>
   <div class="ids-view">
@@ -312,11 +375,14 @@
     <IdsPreview {tree} sequence={whole} {chosen} />
   </div>
   <div class="ids-tools">
-    <label class="ids-slot">
-      <span class="ids-title">{t('form.ids.slot')}</span>
-      <input bind:this={slot} bind:value={piece} {disabled} lang="ja" spellcheck="false" autocomplete="off"
-        placeholder={t('form.ids.slotHint')} onkeydown={event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); enter() } }} />
-    </label>
+    <div class="ids-slot">
+      <label class="ids-title" for={`${uid}-slot`}>{t('form.ids.slot')}</label>
+      <div class="ids-slot-row">
+        <input id={`${uid}-slot`} bind:this={slot} bind:value={piece} {disabled} lang="ja" spellcheck="false" autocomplete="off" enterkeyhint="done"
+          placeholder={t('form.ids.slotHint')} onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); enter() } }} />
+        <button type="button" class="ids-apply" disabled={disabled || !pieceDirty} onclick={enter}>{t('form.ids.apply')}</button>
+      </div>
+    </div>
     <button type="button" class="ids-clear" disabled={disabled || !chosen || picked === null} onclick={() => empty(chosen)}>{t('form.ids.clear')}</button>
     <button type="button" class="ids-remove" disabled={disabled || !isNode(picked)} onclick={() => remove(chosen)}>{t('form.ids.unwrap')}</button>
     <button type="button" class="ids-undo" disabled={disabled || !past.length} title={t('forms.undo.title')} onclick={undo}>{t('forms.undo')}</button>
@@ -324,10 +390,14 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
-  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length)}
+  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
-      <span class="ids-title">{t('form.ids.swaps', { part: picked })}</span>
+      <span class="ids-title">{@render named('form.ids.swaps', picked)}</span>
       <div class="ids-options">
+        {#each figured as figure (figure.char)}
+          <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
+            onclick={() => place(figure.char)}><FigureText text={figure.char} /></button>
+        {/each}
         {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
           <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
         {/each}
@@ -338,7 +408,7 @@
     </div>
   {/if}
   <div class="ids-search">
-    <span class="ids-title">{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}</span>
+    <span class="ids-title">{#if chosen && typeof picked === 'string'}{@render named('form.ids.replace', picked)}{:else}{chosen && picked !== null ? t('form.ids.replace', { part: write(picked) }) : t('form.ids.insert')}{/if}</span>
     <div class="ids-pick-tabs" role="tablist" aria-label={t('form.ids.pick.label')}>
       {#each PICKERS as tab, index (tab)}
         <button type="button" role="tab" id={`${uid}-pick-${tab}`} aria-controls={opened.has(tab) ? `${uid}-pick-${tab}-panel` : undefined} bind:this={pickButtons[index]}
@@ -357,25 +427,37 @@
       {/if}
     {/each}
   </div>
-  <div class="ids-actions">
-    <p class="ids-keys">{t('form.ids.keys')} <a class="ids-sources" href={SOURCES} rel="noopener" target="_blank">{t('form.ids.sources')}</a></p>
-    <button type="button" class="ids-use" disabled={disabled || !usable} onclick={use}>{t('form.ids.use')}</button>
-  </div>
+  <p class="ids-keys">{t('form.ids.keys')} <a class="ids-sources" href={SOURCES} rel="noopener" target="_blank">{t('form.ids.sources')}</a></p>
 </div>
 
 <style>
-  .ids-composer{--ids-font:"GenZui Sans","Noto Serif Tangut","Klee One","LXGW WenKai TC",serif;display:flex;flex-direction:column;gap:10px}
+  .ids-composer{--ids-font:var(--char-font);display:flex;flex-direction:column;gap:10px}
+  .ids-start{display:flex;flex-direction:column;gap:4px}
+  .ids-start-row{display:flex;align-items:stretch;gap:6px}
+  .ids-start-row :global(.character-search){flex:1;min-width:0}
+  .ids-start-load{flex:none;padding:5px 12px;font-size:13px;white-space:nowrap}
+  .ids-start-note{margin:0;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ids-start-note.fault{color:var(--fault)}
+  .ids-start-retry{padding:2px 8px;font-size:12px}
+  .ids-start-shapes{display:flex;flex-wrap:wrap;gap:6px}
+  .ids-shape{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;font-size:15px;line-height:1.3}
+  .ids-shape-text{font-family:var(--ids-font)}
+  .ids-shape-regions{font-size:10px;letter-spacing:.08em;padding:1px 4px;border-radius:4px;background:var(--surface-selected);color:var(--muted);font-variant-numeric:tabular-nums}
+  .ids-shape:not(:disabled):hover,.ids-shape.active{border-color:var(--accent)}
+  .ids-shape.active{background:var(--accent-light)}
   .ids-field,.ids-slot{display:flex;flex-direction:column;gap:4px}
   .ids-title{font-size:11px;color:var(--muted)}
+  .ids-field-row{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+  .ids-field-row input{flex:1 1 200px;min-width:0}
   .ids-field input{font-size:20px;padding:6px 8px;font-family:var(--ids-font)}
   .ids-field input[aria-invalid="true"]{border-color:var(--fault)}
+  .ids-use{flex:none;min-height:40px;padding:6px 16px;font-size:13px;font-weight:500;white-space:nowrap;
+    border-color:var(--accent-solid);background:var(--accent-solid);color:var(--on-color)}
+  .ids-use:not(:disabled):hover{border-color:var(--accent-solid-hover);background:var(--accent-solid-hover)}
   .ids-operators{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px}
   @media (max-width:520px){.ids-operators{grid-template-columns:repeat(6,minmax(0,1fr))}}
   .ids-key{display:grid;place-items:center;padding:5px 0;min-width:0}
   .ids-key:not(:disabled):hover,.ids-key:focus-visible{border-color:var(--accent)}
-  .ids-icon{display:block;overflow:visible}
-  .ids-icon :is(rect,line,path){fill:none;stroke:var(--accent);stroke-width:1.6}
-  .ids-icon .inner{stroke:var(--ink-soft);stroke-dasharray:2 1.5}
 
   .ids-view{display:flex;align-items:flex-start;gap:12px}
   .ids-view > .ids-tree{flex:1;min-width:0}
@@ -429,10 +511,13 @@
   .ids-op:focus-visible,.ids-part:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
 
   .ids-tools{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px}
-  .ids-slot{flex:1 1 180px;min-width:0}
+  .ids-slot{flex:1 1 160px;min-width:0}
+  .ids-slot-row{display:flex;align-items:stretch;gap:6px}
+  .ids-slot-row input{flex:1;min-width:0}
   .ids-slot input{font-size:14px;padding:7px 8px;min-height:38px}
   .ids-slot input:not(:placeholder-shown){font-size:18px;padding:5px 8px;font-family:var(--ids-font)}
-  .ids-tools > button{padding:5px 10px;font-size:13px}
+  .ids-apply{flex:none;min-height:38px;padding:5px 11px;font-size:13px;white-space:nowrap}
+  .ids-tools > button{min-height:38px;padding:5px 9px;font-size:13px}
   .ids-swaps{display:flex;flex-direction:column;gap:4px}
   .ids-options{display:flex;flex-wrap:wrap;gap:6px}
   .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:var(--ids-font)}
@@ -447,8 +532,6 @@
   .ids-pick-tabs button.active{background:var(--surface-selected);color:var(--ink)}
   .ids-pick-panel{min-width:0}
   .ids-pick-panel[hidden]{display:none}
-  .ids-actions{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
   .ids-keys{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
   .ids-sources{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
-  .ids-use{flex:none;padding:5px 14px}
 </style>

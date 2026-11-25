@@ -26,6 +26,7 @@ from glyph_atlas.corpus.index import (
     _MetaCache,
     _unit_row,
 )
+from glyph_atlas.credit_line import credit_line
 from glyph_atlas.importers.codh_all import reading_place
 from glyph_atlas.review.media import MediaCache
 
@@ -93,12 +94,12 @@ def holder_context(joined, box, page):
 
 def attribution(joined):
     """The credit line the source asks for, from the image rights of its registry record, or None."""
-    return (joined.get("image_rights") or {}).get("attribution") or None
+    return credit_line((joined.get("image_rights") or {}).get("attribution"))
 
 
 def text_attribution(joined):
     """The credit of the transcription that labels the unit, or None when it repeats the image's credit."""
-    credit = joined.get("text_attribution") or None
+    credit = credit_line(joined.get("text_attribution"))
     return None if credit == attribution(joined) else credit
 
 

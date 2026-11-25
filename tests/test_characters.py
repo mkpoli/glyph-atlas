@@ -74,7 +74,7 @@ def test_the_table_is_one_row_per_character():
 def test_the_table_holds_the_kana_and_the_kanji():
     rows = rows_of(TABLE)
     scripts = {row["script"] for row in rows}
-    assert scripts == {"gugyeol", "han", "hangul", "hiragana", "hentaigana", "katakana", "symbol", "tangut"}
+    assert scripts == {"gugyeol", "han", "hangul", "hiragana", "hentaigana", "katakana", "seal", "symbol", "tangut"}
     assert len([row for row in rows if row["script"] == "hentaigana" and len(row["char"]) == 1]) == 285
     assert len([row for row in rows if row["script"] == "han"]) > 90_000
 
@@ -107,6 +107,16 @@ def test_the_table_holds_the_hanyang_gugyeol_block():
     assert all(row["name"] == "" and row["grapheme"] == row["code_point"] for row in rows)
     assert all(row["readings"] == "" and row["jibo"] == "" for row in rows)
     assert refs.script_of(chr(0xF67E)) == "gugyeol"
+
+
+def test_the_table_holds_the_small_seal_characters():
+    """Every character of the Seal block, named after its code point, under a Han character's grapheme."""
+    rows = [row for row in rows_of(TABLE) if row["script"] == "seal"]
+    assert {row["block"] for row in rows} == {"Seal"} and len(rows) == 11_328
+    assert all(row["name"] == f"SMALL SEAL CHARACTER-{row['code_point'][2:]}" for row in rows)
+    scripts = {row["code_point"]: row["script"] for row in rows_of(TABLE)}
+    assert all(scripts[row["grapheme"]] == "han" and row["readings"] == "" for row in rows)
+    assert refs.script_of(chr(0x3D000)) == "seal" and refs.script_of(chr(0x3FC40)) == "unknown"
 
 
 def test_the_table_holds_the_tangut_ideographs():
@@ -469,10 +479,14 @@ def build(directory: Path, vocab: Path):
 
 
 def write_shape_tables(vocab: Path, variants: str = "", equivalents: str = "", figures: str = "") -> None:
-    """The three tables the shape families are read from, with the given data rows."""
+    """The tables the shape families are read from, with the given data rows."""
     (vocab / "kanji-variants.tsv").write_text("# fixture\na\tb\trelation\tsource\tdetail\n" + variants, encoding="utf-8")
     (vocab / "kanji-equivalents.tsv").write_text("a\tb\tkind\tsource\n" + equivalents, encoding="utf-8")
     (vocab / "mj-kanji.tsv").write_text("mj\tcode_point\timplemented_code_point\tivs\n" + figures, encoding="utf-8")
+    (vocab / "tongyong-guifan.tsv").write_text("position\tcode_point\tchar\n", encoding="utf-8")
+    (vocab / "tongyong-guifan-forms.tsv").write_text("position\tchar\tfull\tvariant\tnote\n", encoding="utf-8")
+    (vocab / "headword-readings.tsv").write_text("dictionary\tentry\tchar\trole\treading\n", encoding="utf-8")
+    (vocab / "grapheme-rulings.tsv").write_text("form\tfull\truling\tby\tdate\tnote\n", encoding="utf-8")
 
 
 @pytest.fixture

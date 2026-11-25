@@ -6,7 +6,9 @@
 #
 # State lives in object storage, not in git: the collection is bulk images and
 # tables that this repository keeps out of version control. Each run pulls the
-# current store, advances it, and pushes it back. A run that dies halfway still
+# current store, advances it, and pushes it back. The runner cache carries the
+# last run's copy, so the pull reads only the files that differ: the store bills
+# every object read, and fetching all of them took most of a run. A run that dies halfway still
 # saves whatever it finished, so a long polite harvest is never thrown away.
 #
 # A silent harvest failure looks exactly like a week with nothing new to
@@ -86,13 +88,22 @@ jobs:
       - name: Install
         run: uv sync
 
+      - name: Reuse the last run's copy of the store
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            work/honkoku-collection
+            work/wikisource-collection
+          key: harvest-store-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: harvest-store-
+
       - name: Restore the collection store
         id: restore
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: ./scripts/r2-sync.sh restore collections
+        run: ./scripts/r2-sync.sh mirror collections
 
       - name: Collect from みんなで翻刻
         shell: bash
@@ -122,12 +133,23 @@ jobs:
       # harvest is worth keeping and re-running is how it finishes. The save mirrors
       # the local store, so it runs only over a complete restore.
       - name: Save the collection store
+        id: save
         if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: ./scripts/r2-sync.sh save collections
+
+      # Only a copy the archive now matches is worth carrying to the next run.
+      - name: Keep this copy of the store for the next run
+        if: ${{ !cancelled() && steps.save.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            work/honkoku-collection
+            work/wikisource-collection
+          key: harvest-store-${{ github.run_id }}-${{ github.run_attempt }}
 
       # The body carries log text from third-party hosts, so it is passed as an
       # environment variable and printed with printf. Expanding `${{ }}` inside

@@ -141,9 +141,11 @@ async function reader() {
 // caller that wants round items says so.
 export const catalogue = ({ purpose = 'browse', ...params } = {}, options = {}) =>
   request('/atlas?' + new URLSearchParams(Object.entries({ purpose, ...params }).filter(([, v]) => v !== '' && v != null)), undefined, options)
+/** Every crop the site holds, by character and grapheme: `[label, grapheme, collected, corpus]`, the label '' for crops with no character. */
+export const graphemeCounts = async options => (await request('/atlas/graphemes/counts', undefined, options)).items
 export const character = (id, options) => request('/atlas/characters/' + encodeURIComponent(id), undefined, options)
-/** A crop's neighbours on its line, four either side in reading order: `{ items: [{ id, offset, label, image, revision, image_sha256, state }] }`, empty when it has none. */
-export const line = (id, options) => request('/atlas/characters/' + encodeURIComponent(id) + '/line', undefined, options)
+/** A crop's neighbours on its line, four either side in reading order or as many as `reach`: `{ items: [{ id, offset, label, image, revision, image_sha256, crop_version, box, state }] }`, empty when it has none. */
+export const line = (id, { reach = null, ...options } = {}) => request('/atlas/characters/' + encodeURIComponent(id) + '/line' + (reach ? '?reach=' + reach : ''), undefined, options)
 // A crop's look-alikes are read once by the similar-crops section and the suggestions together; a
 // write may relabel any of them, so it empties the cache.
 const similarAsked = new Map()
@@ -159,7 +161,8 @@ export function similar(id) {
 }
 export const history = (params = {}, options = {}) =>
   request('/atlas/history?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)), undefined, options)
-export const corpusCharacter = (id, options) => request('/atlas/corpus/character?' + new URLSearchParams({ id }), undefined, options)
+import { cropPixels } from './identity.js'
+export { cropPixels }
 export const randomSeed = () => Math.floor(Math.random() * 2147483647)
 /** How many shuffles the collection is dealt in. A listing someone was dealt before is kept at the edge
  *  and answered without reading its crops again, so the seeds are few, spread over the whole range by a
@@ -188,10 +191,7 @@ export function download(value, name) {
 
 const suggestionCache = new Map()
 export function suggestionsFor(item, source = 'visual') {
-  // A corpus glyph names its pixels by its source revision, a crop by its page hash, and a crop
-  // published without a hash by its image.
-  const pixels = item.origin === 'corpus' ? { source_revision: item.source_revision }
-    : item.image_sha256 ? { image_sha256: item.image_sha256 } : { image: item.image }
+  const pixels = cropPixels(item, { withImage: true })
   const key = source + ':' + item.id + ':' + item.revision + ':' + Object.values(pixels)[0]
   if (!suggestionCache.has(key)) {
     if (suggestionCache.size > 256) suggestionCache.delete(suggestionCache.keys().next().value)

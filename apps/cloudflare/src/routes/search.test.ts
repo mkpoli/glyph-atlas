@@ -1,10 +1,11 @@
+import { structureId } from './claims';
 import { Database } from 'bun:sqlite';
 import { afterAll, describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { IDS_DIGITS, SUMMARY_DIGITS, componentMatches, referenceShard } from '../atlas3Reference';
 import { formNamed } from './claims';
-import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, wordChoices, wordChoicesQuery } from './search';
+import { choiceSpellingsQuery, headsQuery, namesQuery, idsOf, structuresOf, substitutesQuery, suggest, unlistedForms, wordChoices, wordChoicesQuery } from './search';
 
 // The edge cache.
 const edge = new Map<string, Response>();
@@ -62,6 +63,8 @@ const cards: Card[] = [
   { char: '突', occurrences: 66, family: ['突', '\ufa55'] },
   { char: '\ufa55', occurrences: 40, name: 'CJK COMPATIBILITY IDEOGRAPH-FA55', family: ['突', '\ufa55'] },
   { char: '鴇', occurrences: 1 },
+  // A reference load has filed 𽌇 under 春 in `graphemes`, and its card is still in its own shard.
+  { char: '春', occurrences: 3 }, { char: '\u{3D307}', occurrences: 2, name: 'SMALL SEAL CHARACTER-3D307' },
   { char: '鯡', occurrences: 7 }, { char: '𩹉', occurrences: 2 },
   { char: '鮓', occurrences: 9 }, { char: '鮺', occurrences: 3 }, { char: '鮨', occurrences: 3 }, { char: '蚱', occurrences: 1 },
   { char: 'か゚', occurrences: 6, name: '' }, { char: 'か', occurrences: 300, name: 'HIRAGANA LETTER KA' },
@@ -100,6 +103,8 @@ const readings = { 'とき': ['時', '刻', '鴇', '朱鷺'], 'ね': ['子', '�
 const structures: [string, string[], { text: string; regions: string }[] | null, [string, string]?][] = [
   ['滑', ['⿰氵骨'], [{ text: '⿰氵骨', regions: 'GTJ' }, { text: '⿰氵⿵冖月', regions: 'K' }], ['st:00000000000000000000000000000001', '⿰水骨']],
   ['骨', ['⿱⿵冂⿰丨𠃌月'], null],
+  ['遇', ['⿺辶禺'], null, ['st:8809517f55e2790006eb57615ce80656', '⿺辶禺']],
+  ['𽓻', [], null, ['st:ad2b2b78de86a82256b5b47ad68053dd', '⿰辵禺']],
   ['磆', ['⿰石骨'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
   // A description the site names a form by, kept under its own text.
   ['⿰氵⿵冖月', ['⿰氵⿵冖月'], null, ['st:00000000000000000000000000000001', '⿰水骨']],
@@ -132,6 +137,7 @@ for (const card of cards) {
   const head = (card.family ?? [card.char])[0];
   atlasDb.query('INSERT INTO graphemes(id,text,head) VALUES(?,?,?)').run(ids.get(card.char)!, card.char, head === card.char ? null : ids.get(head)!);
 }
+atlasDb.query('UPDATE graphemes SET head=? WHERE id=?').run(ids.get('春')!, ids.get('\u{3D307}')!);
 for (const [query, code, rank] of aliases) if (!code.includes(' '))
   atlasDb.query('INSERT OR IGNORE INTO names(text,code_point,rank) VALUES(?,?,?)').run(query, parseInt(code.slice(2), 16), rank);
 for (const [a, b, count] of substitutions) atlasDb.query('INSERT INTO component_variants(a,b,count) VALUES(?,?,?)').run(a, b, count);
@@ -186,6 +192,7 @@ for (const [char, sequences, shapes, structure] of structures) {
 // Component lists as reference.component_list writes them.
 const byComponent = new Map<string, Row[]>();
 for (const row of rows) byComponent.set(row[0], [...(byComponent.get(row[0]) ?? []), row]);
+objects['v3/reference/structure.json.gz'] = { scheme: 'babelstone-ids', version: '2025-06-27', policy: 'structure-v1' };
 objects['v3/reference/components/names.json.gz'] = { same: [...byComponent.keys()].join(''), other: { '⺡': '氵' } };
 for (const [c, list] of byComponent) {
   const groups: [number, number, number[], number[]][] = [];
@@ -246,6 +253,28 @@ describe('a character search', () => {
     expect(await chars('鯡')).toEqual(['鯡', '𩹉']);
   });
 
+  it('finds a character filed under a family whose shard does not hold it yet', async () => {
+    const found = await suggest(newEnv, ask('\u{3D307}', 8), ctx);
+    expect(found.items.map((item: { char: string }) => item.char)).toEqual(['\u{3D307}']);
+    expect((await suggest(newEnv, ask('春', 8), ctx)).items.map((item: { char: string }) => item.char)).toEqual(['春']);
+  });
+
+  it('lists a small seal character only where every other form has its place', () => {
+    // 殺's family and 箕's, from the character table: 53 Han forms and 12 small seal characters.
+    const table = readFileSync(new URL('../../../../data/vocab/characters.tsv', import.meta.url), 'utf8').split('\n').map(line => line.split('\t'));
+    const family = (head: string) => ({ code_point: head, grapheme: { code_point: head,
+      members: table.filter(row => row[10] === head).map(row => ({ code_point: row[0], char: row[1] })).reverse() } });
+    const found = [family('U+6BBA'), family('U+7B95')], cards = new Map(found.flatMap(f => f.grapheme.members).map(m => [m.code_point, m]));
+    expect([found[0].grapheme.members.length, found[1].grapheme.members.length]).toEqual([42, 23]);
+    const seal = (code: string) => /^U\+3[D-F]/.test(code);
+    const listed = [...unlistedForms(found, cards).keys()];
+    expect(listed.length).toBe(48);
+    expect(listed.some(seal)).toBe(false);
+    // 殺 alone leaves room for all of them, after the rest.
+    const alone = [...unlistedForms([found[0]], cards).keys()];
+    expect([alone.length, alone.slice(-6).every(seal), alone.slice(0, -6).some(seal)]).toEqual([41, true, false]);
+  });
+
   it('finds the unified ideograph a compatibility ideograph stands for, and lists one only with crops', async () => {
     const answer = await suggest(newEnv, ask('\uf96f', 8), ctx);
     expect(answer.query).toBe('\uf96f');
@@ -299,6 +328,30 @@ describe("the IDS editor's structure", () => {
     await expect(idsOf(newEnv, ctx, 'https://new.test', '滑骨')).rejects.toThrow('Name one character.');
   });
 
+  it('groups a structure under the one it is another layout of, unless a reader folded that one into it', async () => {
+    const meet = 'st:8809517f55e2790006eb57615ce80656', beside = 'st:ad2b2b78de86a82256b5b47ad68053dd', other = 'st:00000000000000000000000000000009', at = '2026-11-24T00:00:00Z';
+    const part = { id: beside, label: '⿰辵禺', by: [], chars: ['𽓻'] };
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).toEqual({ items: [{ id: meet, label: '⿺辶禺', chars: ['遇', '𽓻'], folded: [part] }] });
+    expect((await idsOf(newEnv, ctx, 'https://new.test', '𽓻') as any).structure).toEqual({ id: beside, label: '⿰辵禺' });
+    for (const [id, label] of [[meet, '⿺辶禺'], [beside, '⿰辵禺'], [other, '骨']])
+      atlasDb.query("INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,?,'babelstone-ids','v','structure-v1','u',?)").run(id, label, at);
+    const fold = (from: string, into: string) => atlasDb.query("INSERT OR REPLACE INTO current_claims(subject,predicate,scope,slot,status,object,members,supporting,claims,resolver,at) VALUES(?,'folds_into','','','asserted',?,'[]','[]',?,'ledger-r1',?)")
+      .run(from, into, JSON.stringify([{ asserted_by: 'reader', standing: true }]), at);
+    fold(meet, other);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).toEqual({ items: [{ id: other, label: '骨', chars: ['遇', '𽓻'],
+      folded: [{ id: meet, label: '⿺辶禺', by: ['reader'], chars: ['遇'] }, part] }] });
+    // What stands there does not depend on what else is asked for, and folds and layouts lead to one end.
+    expect((await structuresOf(newEnv, ctx, 'https://new.test', '𽓻')).items).toEqual([{ id: other, label: '骨', chars: ['𽓻'], folded: [part] }]);
+    const ji = await structureId('⿰辵丌', 'babelstone-ids', 'structure-v1'), end = await structureId('⿺辶丌', 'babelstone-ids', 'structure-v1');
+    atlasDb.query("INSERT OR IGNORE INTO structures(id,label,scheme,version,policy,created_by,created_at) VALUES(?,'⿰辵丌','babelstone-ids','v','structure-v1','u',?)").run(ji, at);
+    fold(meet, ji);
+    expect((await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).items.map(group => [group.id, group.label, group.chars])).toEqual([[end, '⿺辶丌', ['遇', '𽓻']]]);
+    fold(meet, beside);
+    expect(await structuresOf(newEnv, ctx, 'https://new.test', '遇𽓻')).toEqual({ items: [{ id: beside, label: '⿰辵禺', chars: ['遇', '𽓻'],
+      folded: [{ id: meet, label: '⿺辶禺', by: ['reader'], chars: ['遇'] }] }] });
+    atlasDb.run("DELETE FROM current_claims WHERE predicate='folds_into'");
+  });
+
   it('groups the characters and descriptions named by the structure they share and leaves out one with none', async () => {
     // 滑 U+F904 is a compatibility ideograph of 滑.
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '滑磆骨滑\uf904⿰氵⿵冖月⿰石月')).toEqual({ items: [
@@ -341,11 +394,14 @@ describe("the IDS editor's structure", () => {
       .run((await formNamed('磆'))!, third, third, JSON.stringify([{ object: third }]), JSON.stringify([{ asserted_by: 'ann', standing: true }, { asserted_by: 'bob', standing: true }]), at);
     expect((await structuresOf(newEnv, ctx, 'https://new.test', '滑磆') as any).filed).toEqual({ '磆': [{ id: other, label: '一', by: ['reader'], head: 'st:00000000000000000000000000000001' }] });
     atlasDb.run("DELETE FROM current_claims WHERE predicate IN ('has_structure','folds_into')");
-    // A regional shape is no key of the shards: named with its character, it has the structure the character's shard gives it.
+    // A regional shape is no key of the shards: named with its character, it has that character's structure.
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月'] }] });
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨', '滑')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月', '⿰氵骨'] }] });
+    // Named with several, each has its own character's.
+    const several = await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨', '遇滑骨');
+    expect(several.items).toEqual([{ id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月', '⿰氵骨'] }]);
     await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
   });
 

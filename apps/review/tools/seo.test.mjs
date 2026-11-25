@@ -6,6 +6,7 @@ import { render } from 'svelte/server'
 import * as seo from '../src/lib/seo.js'
 const { indexCollection } = seo
 mock.module('$lib/seo.js', () => seo)
+mock.module('$lib/citation.js', () => ({ galleryName: shown => shown.char, galleryTitle: shown => shown.char }))
 
 const LOCALES = ['en', 'ja', 'zh-Hant', 'lzh', 'ja-x-classical'].map(tag => ({ tag }))
 const HREFLANG = LOCALES.slice(0, 3)
@@ -20,8 +21,10 @@ mock.module('$lib/i18n.svelte.js', () => language)
 const page = { url: new URL('https://atlas.test/en') }
 mock.module('$app/state', () => ({ page }))
 mock.module('../src/lib/forms.js', () => ({ familyCodes: async () => ['U+304B'] }))
-mock.module('../src/lib/client.js', () => ({ catalogue: async () => ({ categories: [] }) }))
-mock.module('../src/lib/issues.js', () => ({ hasCharacterPage: () => true, pointOf: value => value }))
+let counts = []
+mock.module('../src/lib/client.js', () => ({ graphemeCounts: async () => counts }))
+mock.module('../src/lib/issues.js', () => ({ hasCharacterPage: text => [...text].length === 1,
+  pointOf: char => [...char].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ') }))
 plugin({ name: 'seo-server-render', setup(build) {
   build.onLoad({ filter: /\.svelte$/ }, async ({ path }) => ({
     contents: compile(await readFile(path, 'utf8'), { filename: path, generate: 'server' }).js.code,
@@ -34,7 +37,7 @@ mock.module('$views/Explore.svelte', () => ({ default: () => {} }))
 mock.module('$lib/inspector.svelte.js', () => ({ useInspector: () => ({ inspect() {} }) }))
 mock.module('$lib/session.svelte.js', () => ({ useSession: () => ({ state: { ink: 'original' }, setInk() {} }) }))
 const { default: Collection } = await import('../src/routes/[lang=locale]/+page.svelte')
-const { pagePaths, urlset } = await import('../src/lib/sitemap.js')
+const { characterPaths, pagePaths, urlset } = await import('../src/lib/sitemap.js')
 const { GET: robots } = await import('../src/routes/robots.txt/+server.js')
 
 describe('search indexing', () => {
@@ -59,6 +62,22 @@ describe('search indexing', () => {
     expect(head).toContain('hreflang="x-default"')
     expect(head).not.toContain('?order=')
   })
+  it('names the page kept for a gallery that another page shows, in every language', () => {
+    page.url = new URL('https://atlas.test/ja/grapheme/U+9047')
+    const { head } = render(Seo, { props: { path: '/character/U+9047' } })
+    for (const tag of ['en', 'ja', 'zh-Hant']) expect(head).toContain(`hreflang="${tag}" href="https://atlas.test/${tag}/character/U+9047"`)
+    expect(head).toContain('rel="canonical" href="https://atlas.test/ja/character/U+9047"')
+    expect(head).not.toContain('/grapheme/')
+  })
+  it('lists each character held, and each grapheme no one character holds every crop of', async () => {
+    // 仮's second form is the corpus's, crops with no character name は, and a claim filed か under 加.
+    counts = [['仮', 'U+4EEE', 1, 0], ['假', 'U+4EEE', 0, 2], ['遇', 'U+9047', 1, 1], ['は', 'U+306F', 3, 0], ['', 'U+306F', 0, 2], ['加', 'U+52A0', 1, 0],
+      ['か', 'U+52A0', 1, 0, 1], ['か゚', 'U+304B U+309A', 1, 0], ['が゚', 'U+304B U+309A', 1, 0], ['債', 'U+50B5', 0, 4]]
+    const paths = ['/character/U+304B', '/character/U+306F', '/character/U+4EEE', '/character/U+52A0', '/character/U+9047', '/grapheme/U+306F', '/grapheme/U+4EEE', '/grapheme/U+52A0']
+    expect(await characterPaths(() => {})).toEqual(paths)
+    counts = [...counts].reverse()
+    expect(await characterPaths(() => {})).toEqual(paths)
+  })
   it('keeps unsupported hreflang languages indexable outside the alternate cluster', () => {
     for (const tag of ['lzh', 'ja-x-classical']) {
       page.url = new URL(`https://atlas.test/${tag}`)
@@ -77,13 +96,19 @@ describe('search indexing', () => {
   })
   it('lists public landing pages and form families in each language', async () => {
     const paths = await pagePaths(() => {})
-    expect(paths).toEqual(['/', '/contact', '/privacy', '/ranking', '/forms/U+304B'])
+    expect(paths).toEqual(['/', '/contact', '/privacy', '/ranking', '/roadmap', '/forms/U+304B'])
     const body = await urlset('https://atlas.test', paths, LOCALES.map(locale => locale.tag)).text()
     for (const tag of LOCALES.map(locale => locale.tag)) {
       for (const path of paths) expect(body).toContain(`<loc>https://atlas.test${localize(path, tag)}</loc>`)
     }
     expect(body).not.toContain('hreflang="lzh"')
     expect(body).not.toContain('/review</loc>')
+  })
+  it('keeps crawlers out of run pages in every language', async () => {
+    const body = await robots({ url: new URL('https://atlas.test/robots.txt') }).text()
+    expect(body).toContain('Disallow: /sequence/\n')
+    expect(body).toContain('Disallow: /*/sequence/\n')
+    expect(body).not.toContain('character')
   })
   it('keeps crop images crawlable while excluding the account API', async () => {
     const body = await robots({ url: new URL('https://atlas.test/robots.txt') }).text()
