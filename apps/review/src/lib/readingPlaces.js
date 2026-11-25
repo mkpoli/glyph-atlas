@@ -24,14 +24,14 @@ export async function readingsNow(ids) {
 
 /**
  * The places of a run other than the crop's own, each with how it is read now. A place is `open` to a
- * reading while none of its crops carries one, each can be claimed, and its page can be seen around it; else it
- * shows what it is `read` as. Its run is in the characters it is written with.
+ * reading while none of its crops carries a reading or a ruby, each can be claimed, and its page can be seen
+ * around it; else it shows what it is `read` as. Its run is in the characters it is written with.
  */
 export function readingPlaces(items, reads, own) {
   return items.filter(item => !item.crops.some(crop => crop.id === own)).map(item => {
     const crops = item.crops.map(crop => ({ ...crop, ...reads.get(crop.id) }))
     const run = crops.map(crop => (crop.written_character ?? crop.label ?? '').normalize('NFC'))
-    const read = crops.find(crop => crop.reading?.values.length)?.reading ?? null
+    const read = (crops.find(crop => crop.reading?.values.length) ?? crops.find(crop => crop.reading))?.reading ?? null
     const open = !read && Boolean(item.page) && run.every(Boolean) && crops.every(crop => reads.get(crop.id)?.crop_version)
     return { id: crops[0].id, crops, run, read, open, page: item.page, vertical: item.vertical }
   })
@@ -43,3 +43,13 @@ export function placeReading(place, value, { method, word }) {
   const [first, ...rest] = place.crops
   return [first, { run: place.run, at: 0, reading: value.reading, method, word, crops: new Map(rest.map((crop, i) => [i + 1, crop])) }]
 }
+
+/** The places after one was saved: that one, and each that shares a crop with it, is read. */
+export function placesSaved(places, saved, reading) {
+  const taken = new Set(saved.crops.map(crop => crop.id))
+  return places.map(place => place.crops.some(crop => taken.has(crop.id)) ? { ...place, open: false, read: place.read ?? reading } : place)
+}
+
+/** How many other places a first page of them says there are: the crop's own is counted once it is seen, or may be further on. */
+export const otherPlaces = (page, own) => page.items.some(item => item.crops.some(crop => crop.id === own)) || page.total > page.items.length
+  ? Math.max(0, page.total - 1) : page.total

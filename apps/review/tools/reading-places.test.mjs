@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { bookOf, placeReading, placesText, readingPlaces, readingsNow, runPlaces } = await import('../src/lib/readingPlaces.js')
+const { bookOf, otherPlaces, placeReading, placesSaved, placesText, readingPlaces, readingsNow, runPlaces } = await import('../src/lib/readingPlaces.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
 
@@ -32,6 +32,19 @@ describe('the other places of a run', () => {
     const reads = new Map([now('a'), now('b'), now('c'), now('d', read)])
     const places = readingPlaces([place('x', 'own'), place('a', 'b'), place('c', 'd')], reads, 'own')
     expect(places.map(one => [one.id, one.open, one.read?.status ?? null])).toEqual([['a', true, null], ['c', false, 'disputed']])
+  })
+  it('are closed where a crop carries a ruby and no reading, which a save would take back', () => {
+    const ruby = { status: null, values: [], ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 0, ruby: ['しょ', 'き'] }] }, left: null }
+    expect(readingPlaces([place('a', 'b')], new Map([now('a', ruby), now('b')]), 'own')[0]).toMatchObject({ open: false, read: ruby })
+  })
+  it('are closed with the one saved, where they share a crop', () => {
+    const places = readingPlaces([place('a', 'b'), place('b', 'c'), place('d', 'e')], new Map(['a', 'b', 'c', 'd', 'e'].map(id => now(id))), 'own')
+    expect(placesSaved(places, places[0], read).map(one => [one.id, one.open, Boolean(one.read)])).toEqual([['a', false, true], ['b', false, true], ['d', true, false]])
+  })
+  it('are counted without the crop\'s own', () => {
+    const own = place('own', 'z'), other = place('a', 'b')
+    expect([otherPlaces({ items: [own, other], total: 2 }, 'own'), otherPlaces({ items: [own], total: 1 }, 'own'), otherPlaces({ items: [other], total: 1 }, 'own'),
+      otherPlaces({ items: [], total: 0 }, 'own'), otherPlaces({ items: [other], total: 30 }, 'own')]).toEqual([1, 0, 1, 0, 29])
   })
   it('are closed where their page cannot be seen, a crop is not published, or one has no version or character', () => {
     const open = (item, entries) => readingPlaces([item], new Map(entries), 'own')[0].open
