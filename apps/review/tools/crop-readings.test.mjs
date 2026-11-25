@@ -131,8 +131,8 @@ describe('the reading client', () => {
   const value = { run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'], left: ['うつわ'], method: 'ruby' }
   it('names the other crops of the run at the version they are shown at', async () => {
     const item = crop(), slot = { status: 'asserted' }
-    request.mockResolvedValue({ reading: slot })
-    expect(await setReading(item, { ...value, crops: new Map([[0, { id: 'other', crop_version: 'other@shown' }]]) })).toEqual({ ...item, reading: slot })
+    request.mockResolvedValue({ reading: slot, word: null })
+    expect(await setReading(item, { ...value, crops: new Map([[0, { id: 'other', crop_version: 'other@shown' }]]) })).toEqual({ ...item, reading: slot, word: null })
     expect(request.mock.calls[0]).toEqual([`/atlas/characters/${item.id}/reading`,
       { id: expect.any(String), crop_version: 'v', ...value, others: [{ id: 'other', crop_version: 'other@shown', at: 0 }] }])
   })
@@ -147,5 +147,12 @@ describe('the reading client', () => {
     expect(new Set(ids).size).toBe(3)
     await clearReading(item)
     expect(request.mock.calls.at(-1)[1]).toEqual({ id: expect.any(String), crop_version: 'v', run: null })
+    await clearReading(item, { word: true })
+    expect(request.mock.calls.at(-1)[1]).toMatchObject({ run: null, word: null })
+  })
+  it('names a word only when it is given one, null to take it back', async () => {
+    request.mockResolvedValue({ reading: null, word: null })
+    for (const word of [undefined, null, { id: 'ja/のみ/副助詞', form: 'certain', method: 'ruby' }]) await setReading(crop(), { ...value, word })
+    expect(request.mock.calls.map(([, body]) => 'word' in body ? body.word : 'none')).toEqual(['none', null, { id: 'ja/のみ/副助詞', form: 'certain', method: 'ruby' }])
   })
 })

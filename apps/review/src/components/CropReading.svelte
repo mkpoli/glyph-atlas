@@ -6,7 +6,7 @@
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
   import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, setReading, stretch } from '../lib/cropReadings.js'
-  import { clearWord, setWord, wordChoices } from '../lib/cropWords.js'
+  import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
   import { t } from '../lib/i18n.svelte.js'
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
@@ -29,7 +29,7 @@
   let letters = $state.raw(null)
   let method = $state('context'), choices = $state([])
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
-  let chosen = $state(undefined), probable = $state(false)
+  let chosen = $state(undefined), probable = $state(false), changed = false
 
   const values = $derived(item.reading?.values ?? [])
   const rubyValues = $derived(item.reading?.ruby?.values ?? [])
@@ -68,7 +68,7 @@
   async function open() {
     // Whose reading it opens with waits until the page knows who reads.
     await sessionStarted()
-    error = ''; chosen = undefined; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
+    error = ''; chosen = undefined; changed = false; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
     const opened = opening(item.reading, signedInUser()?.id)
     method = opened.method ?? untrack(() => method)
     place(cropLine(item), opened)
@@ -163,6 +163,12 @@
     return () => { active = false; clearTimeout(timer) }
   })
 
+  // The word the reader chose here, or whose certainty they changed. Any other goes with the run as they hold it.
+  function wordText() {
+    const form = probable ? 'probable' : 'certain'
+    if (chosen) return { id: chosen, form, method }
+    return chosen === null ? null : held?.word && changed ? { id: held.word, form } : undefined
+  }
   async function save() {
     if (busy) return
     if (!reads) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
@@ -171,14 +177,8 @@
       await arriving
       const others = new Map(places.flatMap((place, i) => place !== line.at && crops.has(place) ? [[i, crops.get(place)]] : []))
       // The reading is written in ordinary kana; a hentaigana typed there is the page's, kept in the ruby.
-      let result = await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
-        left: leftText(), method, crops: others })
-      saved?.(result)
-      // The word is written only when the reader chose one here, or changed how sure its form is.
-      if (picked ? picked !== held?.word || probable !== (held?.form === 'probable') : chosen === null && held) {
-        result = (picked ? await setWord(result, { word: picked, method, form: probable ? 'probable' : 'certain' }) : await clearWord(result)).crop
-        saved?.(result)
-      }
+      saved?.(await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
+        left: leftText(), method, word: wordText(), crops: others }))
       leave()
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
@@ -187,9 +187,7 @@
     if (busy) return
     pending = true; working?.(true); error = ''
     try {
-      let result = item
-      if (slots.some(mine)) { result = await clearReading(result); saved?.(result) }
-      if (mine(item.word)) { result = (await clearWord(result)).crop; saved?.(result) }
+      saved?.(await clearReading(item, { word: mine(item.word) }))
       leave()
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
@@ -282,7 +280,7 @@
           {#each offered as choice (choice.id)}
             <button type="button" aria-pressed={picked === choice.id} disabled={busy} onclick={() => pick(choice)}><b>{choice.reading}</b> <span>{choice.class}</span> <span>{choice.spellings.join('・')}</span></button>
           {/each}
-          {#if picked}<button type="button" role="switch" aria-checked={probable} disabled={busy} onclick={() => probable = !probable}>{t('word.probable')}</button>{/if}
+          {#if picked}<button type="button" role="switch" aria-checked={probable} disabled={busy} onclick={() => { probable = !probable; changed = true }}>{t('word.probable')}</button>{/if}
         </div>
       {/if}
       <div class="reading-actions">
