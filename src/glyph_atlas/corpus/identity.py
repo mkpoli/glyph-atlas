@@ -52,7 +52,8 @@ def shape_of(identity: str | None, code_point: str | None, source_label: str | N
     return refs.to_char(row["code_point"]) if row and row["kana"] == source_label else None
 
 
-def identity_fields(    row: dict[str, Any], corpus: str | None, *, human_character: str | None = None,
+def identity_fields(
+    row: dict[str, Any], corpus: str | None, *, human_character: str | None = None,
     source_revision: str | None = None,
 ) -> dict[str, Any]:
     """Resolve identity without rewriting the source's own class or transcription.
@@ -62,6 +63,9 @@ def identity_fields(    row: dict[str, Any], corpus: str | None, *, human_charac
     ideograph, a normalised corpus included, and `source_code_point` keeps the source's own.
     """
     cp = row.get("source_code_point") or row.get("unicode") or row.get("codepoint") or row.get("code_point")
+    # A record's `code_point` is of the form it was given here; its source names none.
+    if row.get("identity_basis") == "glyph_shape" and not row.get("source_code_point"):
+        cp = None
     encoded = refs.from_code_points(cp.split()) if cp and cp.startswith("U+") else None
     source_label = row.get("source_label")
     if source_label is None:
