@@ -218,7 +218,7 @@ class OpenPurse:
     def settle(self, kind, day, **tally):
         pass
 
-    def add(self, kind, cost):
+    def search(self, queries):
         pass
 
 
@@ -2893,7 +2893,21 @@ def test_each_search_query_is_counted(tmp_path, monkeypatch):
     monkeypatch.setattr(model, "_send", lambda body, **_: found)
     model.search("tangut")
     row = {row["kind"]: row for row in store.usage(1)}["grounding"]
-    assert round(row["cost"], 6) == round(3 * fish_bot.PRICE_SEARCH_QUERY, 6)
+    assert (row["calls"], row["cost"]) == (3, 0)
+
+
+def test_searches_past_the_months_free_ones_are_charged(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("grounding", calls=fish_bot.FREE_SEARCHES - 1)
+    purse.search(3)
+    assert purse.spent() == pytest.approx(2 * fish_bot.PRICE_SEARCH_QUERY)
+    purse.search(1)
+    assert purse.spent() == pytest.approx(3 * fish_bot.PRICE_SEARCH_QUERY)
+    later = fish_bot.now_ms() + 32 * 86_400_000
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: later)
+    purse.search(5)
+    assert purse.spent() == 0
 
 
 def test_a_reply_names_the_message_it_answers(tmp_path):

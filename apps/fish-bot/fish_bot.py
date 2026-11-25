@@ -220,8 +220,8 @@ LOOKUP_ROUNDS = 4
 # What the model costs, to count each day's spend: gemini-4-hydrogen per million tokens on Google
 # AI Studio's paid tier, Standard: $1.50 input, $0.075 implicit cache read, $7.50 output including
 # thinking tokens. Grounding with Google Search is free for 5,000 queries a month shared by every
-# Gemini 3 and newer model on the account, then $14 per 1,000; other projects can use up that
-# allowance, so each query is counted at $14 per 1,000, an upper bound. Flex inference costs half,
+# Gemini 3 and newer model on the account, then $14 per 1,000. Other projects may use some of that
+# allowance, so the bot counts its own queries as free only up to FREE_SEARCHES a month. Flex inference costs half,
 # but Google expects 1-15 minutes per call and advises client timeouts of 600 s or more; the bot
 # answers chat on the same thread, so every call is Standard. Sources:
 # https://ai.google.dev/gemini-api/docs/pricing and
@@ -230,6 +230,7 @@ PRICE_INPUT = 1.50
 PRICE_CACHE_READ = 0.075
 PRICE_OUTPUT = 7.50
 PRICE_SEARCH_QUERY = 0.014
+FREE_SEARCHES = 3000
 # deepseek-flash (V4.1-Flash-1017) per million tokens, doubled in the peak hours (UTC, Monday to
 # Friday; Chinese public holidays are off-peak, so on those this counts too much). Summarizing follows
 # DeepSeek's temperature for data analysis. Sources: https://api-docs.deepseek.com/quick_start/pricing
@@ -1351,6 +1352,10 @@ class Store:
                 f"WHERE ts>=? AND sender NOT IN ({','.join('?' * len(left_out))}) GROUP BY hour", (since, *left_out)):
             counts[int(row["hour"])] = int(row["lines"])
         return counts
+
+    def calls_this_month(self, kind: str) -> int:
+        return int(self.db.execute("SELECT COALESCE(SUM(calls), 0) FROM usage WHERE (kind=? OR kind LIKE ?) AND day>=?",
+                                   (kind, f"% {kind}", local_day(now_ms())[:8] + "01")).fetchone()[0])
 
     def spent_on(self, work: str, day: str) -> float:
         """What one kind of unasked work cost, its lookups included."""
@@ -2590,9 +2595,11 @@ class Purse:
         self.store.count_usage(self._kind(kind), failed=failed, tokens_in=tokens_in, tokens_out=tokens_out,
                                cost=cost - CALL_RESERVE, day=day, calls=0)
 
-    def add(self, kind: str, cost: float) -> None:
-        """A charge that comes with a call, such as its web searches."""
-        self.store.count_usage(kind, cost=cost)
+    def search(self, queries: int) -> None:
+        """Count the web searches a call made, and charge those past the month's free ones."""
+        done = self.store.calls_this_month("grounding")
+        paid = max(0, done + queries - FREE_SEARCHES) - max(0, done - FREE_SEARCHES)
+        self.store.count_usage(self._kind("grounding"), cost=paid * PRICE_SEARCH_QUERY, calls=queries)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -2668,11 +2675,11 @@ class Model:
         except Exception:
             log.exception("settling a %s call", kind)
 
-    def _charge(self, kind: str, cost: float) -> None:
+    def _charge_searches(self, queries: int) -> None:
         try:
-            self.purse.add(kind, cost)
+            self.purse.search(queries)
         except Exception:
-            log.exception("charging %s", kind)
+            log.exception("counting searches")
 
     def _send(self, body: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
         _require_service()
@@ -2979,7 +2986,7 @@ class Gemini(Model):
         citations = [(title, _resolve_grounding_url(url)) for title, url in _interaction_citations(answer)[:count]]
         queries = _search_queries(answer)
         if queries:
-            self._charge("grounding", queries * PRICE_SEARCH_QUERY)
+            self._charge_searches(queries)
         if not citations:
             # A summary without sources is the model's own words, not a search result.
             raise ModelError("the search found no sources")
