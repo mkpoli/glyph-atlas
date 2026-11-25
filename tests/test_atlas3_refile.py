@@ -180,6 +180,210 @@ def test_a_run_a_claim_moves_while_it_is_filed_is_left_as_the_worker_left_it(lay
     assert rows == stats and rows_of(local(root)) == rows_of(runs)
 
 
+def run_of(root, remote, key, first, second, written=(), shuffle=50):
+    """One more run of two crops, filed under `key`, in D1 and the local copy."""
+    sql = f"INSERT INTO runs VALUES(2, '{key}', 1, {shuffle}, {first}, {second}, NULL, 1);"
+    sql += f"INSERT INTO run_stats VALUES(2, '{key}', 1, 1) ON CONFLICT(size, graphemes) DO UPDATE SET n=n+1, down=down+1;"
+    sql += "".join(f"INSERT INTO run_written VALUES({crop}, '{char}');" for crop, char in written)
+    for db in (sqlite3.connect(root / "out" / "atlas-runs.sqlite"), remote.dbs["glyph-atlas-v3-runs"]):
+        db.executescript(sql)
+        db.commit()
+
+
+def crop_of(root, remote, crop, char, kind=0):
+    """One more crop of the page; `char` None for a corpus glyph known by its label alone."""
+    both(root, remote, f"INSERT INTO crops(id, kind, book, char, state, quiz, shuffle) VALUES({crop}, {kind}, 1, {GRAPHEMES[char] if char else 'NULL'}, 0, 1, 0);")
+
+
+def claim(remote, crop, text):
+    remote.dbs["glyph-atlas-v3"].execute(
+        "INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+        "VALUES(?,'has_grapheme','','',?,0,'asserted',?,'[]','[]','[]','r','2026-11-25')", (f"ex:{crop}", crop, f"U+{ord(text):04X}"))
+    remote.dbs["glyph-atlas-v3"].commit()
+
+
+def worker_moves(remote, crop, old, new, written=None):
+    """A run the Worker files under another key, its counts and the crop's row with it."""
+    remote.dbs["glyph-atlas-v3-runs"].executescript(f"""UPDATE runs SET graphemes='{new}' WHERE first={crop} AND graphemes='{old}';
+      INSERT INTO run_stats VALUES(2, '{new}', 1, 1) ON CONFLICT(size, graphemes) DO UPDATE SET n=n+1, down=down+1;
+      UPDATE run_stats SET n=n-1, down=down-1 WHERE graphemes='{old}'; DELETE FROM run_stats WHERE n<=0;"""
+                                                         + (f"INSERT OR REPLACE INTO run_written VALUES({crop}, '{written}');" if written else ""))
+
+
+def before_the_send(remote, monkeypatch, publish, once):
+    """Runs `once` after the runs are read, before they are sent the first time."""
+    real, done = remote.send, []
+
+    def send(database, file, stamp):
+        if ".refile." in stamp and not done:
+            done.append(once())
+        return real(database, file, stamp)
+    monkeypatch.setattr(publish, "send", send)
+
+
+def held_by(remote):
+    return dict(remote.dbs["glyph-atlas-v3-runs"].execute("SELECT crop, char FROM run_written"))
+
+
+def consistent(root, remote):
+    rows, stats = counts_match(remote.dbs["glyph-atlas-v3-runs"])
+    assert rows == stats and rows_of(local(root)) == rows_of(remote.dbs["glyph-atlas-v3-runs"])
+
+
+#: The limits D1 sets its databases.
+D1_LIMITS = {sqlite3.SQLITE_LIMIT_EXPR_DEPTH: 100, sqlite3.SQLITE_LIMIT_COMPOUND_SELECT: 5, sqlite3.SQLITE_LIMIT_SQL_LENGTH: 100_000}
+
+
+def test_a_load_that_moves_many_keys_stays_within_the_limits_of_d1(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    crops = spread(root, remote)
+    others = [chr(0x4F00 + i) for i in range(150)]
+    both(root, remote, "".join(f"INSERT INTO graphemes(id, text, head) VALUES({200 + i}, '{c}', {200 + i});" for i, c in enumerate(others)))
+    for i, char in enumerate(others):
+        crop_of(root, remote, 9_100 + i, "萅")
+        run_of(root, remote, f"萅{char}", 9_100 + i, crops["e"], shuffle=100 + i)
+    sources(root, cards=[*cards(), *(card(c) for c in others)])
+    for db in remote.dbs.values():
+        for limit, value in D1_LIMITS.items():
+            db.setlimit(limit, value)
+    load(remote, monkeypatch, "--send", "--heads")
+    consistent(root, remote)
+    d1 = remote.dbs["glyph-atlas-v3-runs"]
+    assert d1.execute("SELECT count(*) FROM runs WHERE graphemes LIKE '春%' AND first >= 9100").fetchone() == (150,)
+    assert d1.execute("SELECT count(*) FROM runs WHERE graphemes LIKE '萅%'").fetchone() == (0,)
+
+
+def test_a_claim_filed_before_the_send_keeps_what_it_wrote_when_the_load_would_drop_it(layout, monkeypatch):  # noqa: F811
+    """春 stands under 萅 and goes to 春, where its row in `run_written` is dropped; a claim files it under 留 first."""
+    root, publish, remote = layout
+    spread(root, remote)
+    both(root, remote, "UPDATE graphemes SET head=100 WHERE id=101;")
+    run_of(root, remote, "萅の", 9_020, 9_004, written=[(9_020, "春")])
+    crop_of(root, remote, 9_020, "春")
+    before_the_send(remote, monkeypatch, publish, lambda: (worker_moves(remote, 9_020, "萅の", "留の", "春"), claim(remote, 9_020, "留")))
+    load(remote, monkeypatch, "--send", "--heads")
+    assert remote.dbs["glyph-atlas-v3-runs"].execute("SELECT graphemes FROM runs WHERE first=9020").fetchone() == ("留の",)
+    assert held_by(remote)[9_020] == "春"
+    consistent(root, remote)
+
+
+def test_a_claim_filed_before_the_send_is_not_overwritten(layout, monkeypatch):  # noqa: F811
+    """The load would write 萅 for b, whose run the Worker has filed under 留 with the row it wrote."""
+    root, publish, remote = layout
+    crops = spread(root, remote)
+    before_the_send(remote, monkeypatch, publish, lambda: (worker_moves(remote, crops["b"], "萅の", "留の", "の"), claim(remote, crops["b"], "留")))
+    load(remote, monkeypatch, "--send", "--heads")
+    assert runs_of(remote, crops)["b"] == "留の" and held_by(remote)[crops["b"]] == "の"
+    consistent(root, remote)
+
+
+def test_a_run_whose_other_crop_a_claim_moved_meanwhile_is_filed_again(layout, monkeypatch):  # noqa: F811
+    """The Worker reads the の of 萅の as 留 and leaves the 萅 beside it, which the load moves to 春."""
+    root, publish, remote = layout
+    crops = spread(root, remote)
+    before_the_send(remote, monkeypatch, publish, lambda: (worker_moves(remote, crops["b"], "萅の", "萅留"), claim(remote, crops["e"], "留")))
+    load(remote, monkeypatch, "--send", "--heads")
+    assert runs_of(remote, crops)["b"] == "春留" and held_by(remote)[crops["b"]] == "萅"
+    consistent(root, remote)
+    assert local(root).execute("SELECT count(*) FROM imports WHERE stamp LIKE '%.refiled'").fetchone() == (1,)
+
+
+def test_a_load_whose_runs_never_stand_still_is_left_for_the_next(layout, monkeypatch):  # noqa: F811
+    root, publish, remote = layout
+    crops = spread(root, remote)
+    real, keys = remote.send, iter(["萅留", "萅の", "萅留", "萅の", "萅留", "萅の"])
+
+    def send(database, file, stamp):
+        if ".refile." in stamp:
+            (old,) = remote.dbs["glyph-atlas-v3-runs"].execute("SELECT graphemes FROM runs WHERE first=?", (crops["b"],)).fetchone()
+            worker_moves(remote, crops["b"], old, next(keys))
+        return real(database, file, stamp)
+    monkeypatch.setattr(publish, "send", send)
+    with pytest.raises(SystemExit, match="1 runs were moved by other writes"):
+        load(remote, monkeypatch, "--send", "--heads")
+    assert local(root).execute("SELECT count(*) FROM sqlite_master WHERE name='imports'").fetchone() == (1,)
+    assert local(root).execute("SELECT count(*) FROM imports WHERE stamp LIKE '%.refiled'").fetchone() == (0,)
+    monkeypatch.setattr(publish, "send", real)
+    load(remote, monkeypatch, "--send", "--heads")
+    assert runs_of(remote, crops)["b"].startswith("春")
+    consistent(root, remote)
+
+
+def test_a_corpus_glyph_known_by_its_label_alone_is_filed_and_written_by_it(layout, monkeypatch):  # noqa: F811
+    root, _publish, remote = layout
+    spread(root, remote)
+    # 萅, the head its run names, and 备, which its row says, under 留.
+    for crop in (9_030, 9_031):
+        crop_of(root, remote, crop, None, kind=1)
+    run_of(root, remote, "萅の", 9_030, 9_004, shuffle=60)
+    run_of(root, remote, "留の", 9_031, 9_004, written=[(9_031, "备")], shuffle=61)
+    load(remote, monkeypatch, "--send", "--heads")
+    d1 = remote.dbs["glyph-atlas-v3-runs"]
+    assert [d1.execute("SELECT graphemes FROM runs WHERE first=?", (c,)).fetchone()[0] for c in (9_030, 9_031)] == ["春の", "備の"]
+    assert {c: held_by(remote).get(c) for c in (9_030, 9_031)} == {9_030: "萅", 9_031: "备"}
+    consistent(root, remote)
+
+
+def test_a_crop_a_claim_reads_as_a_member_that_moves_goes_with_it(layout, monkeypatch, capsys):  # noqa: F811
+    """d is a 留 a claim reads as 备, which stands under 留 and goes to 備: neither its run's key nor its character moves."""
+    root, _publish, remote = layout
+    crops = spread(root, remote)
+    claim(remote, crops["d"], "备")
+    load(remote, monkeypatch, "--heads")
+    assert "3 runs moved to another key" in capsys.readouterr().out, "a dry run counts it, the local heads unmoved"
+    load(remote, monkeypatch, "--send", "--heads")
+    assert runs_of(remote, crops) == {**FILED, "d": "備の"} and held_by(remote)[crops["d"]] == "留"
+    consistent(root, remote)
+
+
+def test_a_load_stopped_before_its_new_heads_are_replayed_is_finished(layout, monkeypatch):  # noqa: F811
+    """D1 has numbered 旾, which 萅 goes to, and the local copy has not."""
+    root, publish, remote = layout
+    crops = spread(root, remote)
+    sources(root, cards=[*(c for c in cards(萅="旾") if c[0] != "U+65FE"), card("旾", members=["旾", "萅"])])
+    real = remote.send
+
+    def send(database, file, stamp):
+        done = real(database, file, stamp)
+        if database == "glyph-atlas-v3" and stamp.startswith("reference-"):
+            raise SystemExit("stopped")
+        return done
+    monkeypatch.setattr(remote, "send", send)
+    with pytest.raises(SystemExit, match="stopped"):
+        load(remote, monkeypatch, "--send", "--heads", group=1, batch=1)
+    local_atlas = sqlite3.connect(root / "out" / "atlas.sqlite")
+    assert local_atlas.execute("SELECT count(*) FROM graphemes WHERE text='旾'").fetchone() == (0,)
+    monkeypatch.setattr(remote, "send", real)
+    load(remote, monkeypatch, "--send", "--heads", group=1, batch=1)
+    assert runs_of(remote, crops)["b"] == "旾の"
+    consistent(root, remote)
+
+
+def test_loads_left_to_file_are_filed_in_the_order_of_their_generations(layout, monkeypatch):  # noqa: F811
+    """The ninth moves 萅 to 春 and the tenth back to 萅: by name the tenth comes first."""
+    root, _publish, remote = layout
+    crops = spread(root, remote)
+    load(remote, monkeypatch, "--send", "--heads")
+    with local(root) as runs:
+        runs.execute("DELETE FROM imports WHERE stamp LIKE '%.refiled'")
+    worker_moves(remote, crops["b"], "春の", "萅の")
+    atlas, folder = sqlite3.connect(root / "out" / "atlas.sqlite"), root / "out" / "reference-load"
+    for old in folder.glob("reference-*"):
+        old.rename(folder / f"kept-{old.name}")
+    for name, heads in (("reference-9-aa", {"萅": ["萅", "春"]}), ("reference-10-bb", {"萅": ["春", "萅"]})):
+        (folder / name).mkdir()
+        (folder / name / "0000.sql").write_text("")
+        (folder / name / "heads.json").write_text(json.dumps(heads))
+        for db in (atlas, remote.dbs["glyph-atlas-v3"]):
+            db.execute("INSERT INTO imports VALUES(?, 0)", (f"{name}.0000",))
+            db.commit()
+    refile = importlib.import_module("refile")
+    assert [run.name for run in refile.loads()] == ["reference-9-aa", "reference-10-bb"]
+    refile.refile_moved(atlas)
+    assert runs_of(remote, crops)["b"] == "萅の"
+    consistent(root, remote)
+
+
 def test_the_two_databases_are_written_apart(layout, monkeypatch):  # noqa: F811
     root, publish, remote = layout
     spread(root, remote)

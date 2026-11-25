@@ -350,17 +350,21 @@ CLAIMED = ("SELECT c.crop, c.object FROM current_claims c CROSS JOIN crops k ON 
            f"AND c.status IN ({','.join(map(repr, FILING))}) AND c.cut = k.cut + (r.x IS NOT NULL)")
 
 
-def claimed_heads(atlas, recut, crops=None):
+def claimed_heads(atlas, recut, crops=None, moved=None):
     """{crop: head} of the crops a grapheme claim reads as a grapheme, of `crops` alone where named:
     the head of the family that grapheme is filed under in the local copy, else the grapheme itself.
     A crop this publish cuts again leaves its claims on the old cut, as the Worker reads them once the
-    new cut lands."""
-    heads = {}
+    new cut lands. `moved` ({character: (old head, new head)}) are heads a load moves, whether or not the
+    local copy holds them moved."""
+    heads, moved = {}, moved or {}
     named = "" if crops is None else f" AND c.crop IN ({','.join(map(str, crops)) or 'NULL'})"
     for r in query("glyph-atlas-v3", CLAIMED + named):
         if r["crop"] in recut:
             continue
         text = char_text(r["object"])
+        if text in moved:
+            heads[r["crop"]] = moved[text][1]
+            continue
         row = atlas.execute("SELECT coalesce(h.text, g.text) FROM graphemes g LEFT JOIN graphemes h ON h.id = g.head WHERE g.text = ?",
                             (text,)).fetchone()
         heads[r["crop"]] = row[0] if row else text
@@ -446,7 +450,9 @@ def snapshot(runs, keys):
             continue
         counted = sorted({(r["size"], r["graphemes"]) for r in live + held})
         crops = sorted({r[c] for r in live + held for c in ("first", "second", "third") if r[c] is not None})
-        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(f"(size={n} AND graphemes={lit(g)})" for n, g in counted))
+        # A list a size: D1 takes an expression a hundred deep at most, and a term a key is one deeper each.
+        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(
+            f"(size={size} AND graphemes IN ({','.join(lit(g) for n, g in counted if n == size)}))" for size in sorted({n for n, _ in counted}))) if counted else []
         written = query(RUNS_DATABASE, f"SELECT crop, char FROM run_written WHERE crop IN ({','.join(map(str, crops))})")
         runs.executemany("DELETE FROM runs WHERE first=? AND size=?", [(r["first"], r["size"]) for r in held])
         runs.executemany(f"INSERT INTO runs({','.join(RUN_COLS)}) VALUES({','.join('?' * len(RUN_COLS))})", [[r[c] for c in RUN_COLS] for r in live])

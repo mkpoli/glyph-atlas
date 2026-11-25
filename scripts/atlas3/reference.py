@@ -754,7 +754,7 @@ def finish(atlas, any_head):
     part, as when a run stopped between applying a part and replaying it, once the heads its remaining
     parts move pass `check_heads`; a folder D1 never started is a load not sent, and is removed."""
     started, moved = loads(atlas), {}
-    for run in sorted((OUT / "reference-load").glob("reference-*")):
+    for run in refile.loads():
         if not run.is_dir() or run.name.endswith(".building"):
             continue
         parts = sorted(run.glob("*.sql"))
@@ -764,6 +764,10 @@ def finish(atlas, any_head):
         if run.name in started or applied("glyph-atlas-v3", f"{run.name}.{parts[0].stem}"):
             print(f"finishing {run.name}", flush=True)
             heads = moved_heads(atlas, {int(gid): int(head) for p in rest for head, gid in HEAD_UPDATE.findall(p.read_text())}, {})
+            # A head a part of the load numbers is in the texts it was built with; the local copy may lack it.
+            if (run / refile.HEADS).exists():
+                built = {text: tuple(pair) for text, pair in json.loads((run / refile.HEADS).read_text()).items()}
+                heads = {text: built.get(text, pair) for text, pair in heads.items()}
             check_heads(atlas, heads, any_head)
             deliver(run, atlas)
             moved.update(heads)
