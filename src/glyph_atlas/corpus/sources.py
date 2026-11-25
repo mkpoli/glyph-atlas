@@ -142,6 +142,7 @@ ID_FAMILIES = {
     "hdic-tsj": "hdic-tsj",
     "guangyun-photographs": "guangyun-photographs",
     "guangyun-ioc": "guangyun-ioc",
+    "longkan-song": "longkan-song",
     "codh-tensho": "codh-tensho",
     "nogeoldae-eonhae": "nogeoldae-eonhae",
     "wikisource-ko-glyphs": "wikisource-ko-glyphs",
@@ -221,6 +222,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "guangyun-ioc",
         "note": "澤存堂本廣韻 headwords on 東京大學東洋文化研究所's scanned copy (倉石文庫), labelled from nk2028's 廣韻 "
                 "tables (scripts/cut_guangyun_headwords.py).",
+    },
+    {
+        "name": "longkan-song",
+        "note": "龍龕手鏡 headwords on the 宋刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), labelled "
+                "from 青雀古籍's table of the book (scripts/cut_longkan_headwords.py). A label is the table's headword; the print may show a variant of it.",
     },
     {
         "name": "codh-tensho",
