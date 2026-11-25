@@ -119,6 +119,18 @@ def test_a_retraction_is_the_asserters_and_leaves_the_crop_unsorted(conn):
     assert len(ledger.history(conn, CROP)) == 1, "the claim itself stays in the ledger"
 
 
+def test_a_verdict_on_a_claim_taken_back_is_refused(conn):
+    first = claim(conn, "ann", "unresolved")["assertions"][0]
+    second = claim(conn, "ann", "unreadable")["assertions"][0]
+    for action in ("accept", "reject", "adjudicate"):
+        with pytest.raises(LedgerError, match="This claim was taken back.") as refused:
+            act(conn, "bob", first, action, adjudicator=True)
+        assert refused.value.status == 409
+    assert conn.execute("SELECT count(*) FROM assertion_actions WHERE action<>'retract'").fetchone() == (0,)
+    act(conn, "bob", second, "accept")
+    assert now(conn)["status"] == "accepted"
+
+
 def test_rejections_outnumbering_support_leave_the_candidate_rejected(conn):
     made = claim(conn, "ann", "unresolved")["assertions"][0]
     act(conn, "bob", made, "reject")
