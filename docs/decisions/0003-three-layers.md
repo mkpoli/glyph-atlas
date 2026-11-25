@@ -98,6 +98,10 @@ the 說文解字 heads an entry with each (蕩, as 𣿴, and 盪).
 on by hand. The joined grapheme keeps the key of the full form's, unless the form is better known in Japan (没 over 沒,
 黄 over 黃).
 
+The same two dictionaries stop a join of the variant tables between two characters both hold as headwords
+with no reading in common: 蚳 (ant eggs) is no form of 螮 (rainbow), which 䗖 simplifies. 61 such joins of one
+table's row are undone.
+
 - 教育部・国家语言文字工作委员会『通用规范汉字表』附件1 规范字与繁体字、异体字对照表, 国发〔2013〕23号, as transcribed by
   Wikisource and mandel59 (`data/sources/tongyong-guifan.yaml`); nos. 1151–1508 compared with the official scan.
 - 文化庁『常用漢字表』(2010), through CJKVI `joyo-variants.txt` (`joyo-2010` in `graphemes.yaml`).
