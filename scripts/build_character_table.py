@@ -76,6 +76,9 @@ VARIANTS_NAME = "kanji-variants.tsv"
 EQUIVALENTS_NAME = "kanji-equivalents.tsv"
 MJ_KANJI_NAME = "mj-kanji.tsv"
 FAMILIES_NAME = "grapheme-families.tsv"
+TONGYONG_NAME, TONGYONG_FORMS_NAME = "tongyong-guifan.tsv", "tongyong-guifan-forms.tsv"
+HEADWORDS_NAME, APART_NAME = "headword-readings.tsv", "grapheme-apart.tsv"
+RULINGS_NAME = "grapheme-rulings.tsv"
 VOICING_NAME = "kana-voicing.tsv"
 FAMILY_FIELDS = ("head", "a", "b", "relation", "source", "role", "detail")
 
@@ -533,6 +536,7 @@ def build(
     vocab: Path | None = None,
     refused: list[tuple[str, shape_families.Edge]] | None = None,
     voicing: list[Voicing] | None = None,
+    decisions: list[shape_families.Decision] | None = None,
 ) -> tuple[list[Character], list[shape_families.Family]]:
     """Every character in code point order, and the kanji families of more than one character.
 
@@ -567,7 +571,7 @@ def build(
     _add_readings(characters)
     _add_graphemes(characters, kana, curated)
     _add_voiced_graphemes(characters, voiced, curated)
-    families = _add_seal_members(characters, _add_shape_families(characters, document, ucd, vocab, refused), vocab)
+    families = _add_seal_members(characters, _add_shape_families(characters, document, ucd, vocab, refused, decisions), vocab)
     _add_confusables(characters, lookalikes)
     sequences, evidence = _voiced_sequences(characters, voiced, mj)
     _check_graphemes(characters, sequences)
@@ -661,6 +665,7 @@ def _irg_repertoire(ucd: Path, field: str, prefix: str) -> set[str]:
 def _add_shape_families(
     characters: dict[int, Character], document: dict[str, Any], ucd: Path, vocab: Path,
     refused: list[tuple[str, shape_families.Edge]] | None = None,
+    decisions: list[shape_families.Decision] | None = None,
 ) -> list[shape_families.Family]:
     """Put the kanji a source defines as one character in another shape under one grapheme.
 
@@ -677,7 +682,13 @@ def _add_shape_families(
                for head, family in (document.get("families") or {}).items()}
     families = shape_families.families(
         read_table(vocab / VARIANTS_NAME), read_table(vocab / EQUIVALENTS_NAME), ideographs,
-        default_figure, jis0208(ucd), curated, refused, gb2312(ucd), cns1(ucd), familiarity(ucd), readings(ucd))
+        default_figure, jis0208(ucd), curated, refused, gb2312(ucd), cns1(ucd), familiarity(ucd), readings(ucd),
+        shape_families.standard_forms(
+            read_table(vocab / TONGYONG_FORMS_NAME),
+            {row["char"]: int(row["position"]) for row in read_table(vocab / TONGYONG_NAME)}),
+        shape_families.Headwords(read_table(vocab / HEADWORDS_NAME),
+                                 {member: head for head, members in curated.items() for member in members}), decisions,
+        shape_families.rulings(read_table(vocab / RULINGS_NAME)))
     for family in families:
         head = code_point(ord(family.head))
         for member in family.members:
@@ -1270,6 +1281,21 @@ def write_families(families: list[shape_families.Family], target: Path, vocab: P
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_apart(decisions: list[shape_families.Decision], target: Path) -> None:
+    """Write the standard forms that stay out of the grapheme of their full form, each with why."""
+    apart = [found for found in decisions if found.reasons]
+    lines = [
+        "# The 简体字 of the 通用规范汉字表 and the 新字体 of the 常用漢字表 that are not in the grapheme of their full",
+        "# form, with the rules of src/glyph_atlas/shape_families.py that keep them apart; the sources of the edges as",
+        "# in grapheme-families.tsv.",
+        f"# standard forms: {len(decisions)}, joined: {len(decisions) - len(apart)}, apart: {len(apart)}",
+        "form\tfull\treasons\tsources",
+    ]
+    lines += ["\t".join((found.form, "".join(sorted(found.full)), " | ".join(found.reasons),
+                         " ".join(sorted({edge.source for edge in found.edges})))) for found in apart]
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("ucd", type=Path, help="directory holding the Unicode release's files")
@@ -1284,9 +1310,11 @@ def main(argv: list[str] | None = None) -> int:
 
     refused: list[tuple[str, shape_families.Edge]] = []
     voicing: list[Voicing] = []
-    rows, families = build(arguments.ucd, arguments.vocab, refused, voicing)
+    decisions: list[shape_families.Decision] = []
+    rows, families = build(arguments.ucd, arguments.vocab, refused, voicing, decisions)
     write(rows, arguments.out)
     write_families(families, arguments.out.with_name(FAMILIES_NAME), arguments.vocab)
+    write_apart(decisions, arguments.out.with_name(APART_NAME))
     write_voicing(voicing, arguments.out.with_name(VOICING_NAME))
     scripts = Counter(row.script for row in rows)
     ages = Counter(row.age for row in rows)
