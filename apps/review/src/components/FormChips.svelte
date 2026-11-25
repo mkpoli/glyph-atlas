@@ -46,14 +46,14 @@
 </div>
 
 <style>
-  .form-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
-  .form-chips.grouped{gap:8px 14px;align-items:flex-end}
-  .form-group{display:flex;flex-wrap:wrap;gap:8px 6px;min-width:0}
-  .form-block{display:flex;flex-direction:column;gap:3px;min-width:0}
-  .form-block + .form-block{padding-left:6px;border-left:1px solid var(--line)}
-  .form-group-label{font-size:11px;line-height:1.3;color:var(--muted)}
+  .form-chips{display:flex;flex-wrap:wrap;gap:8px;flex:1;min-width:0}
+  .form-chips.grouped{gap:12px 16px;align-items:flex-end}
+  .form-group{display:flex;flex-wrap:wrap;gap:12px 8px;min-width:0}
+  .form-block{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .form-block + .form-block{padding-left:8px;border-left:1px solid var(--line)}
+  .form-group-label{font-size:11px;line-height:16px;color:var(--muted)}
   .form-block.own > .form-group-label{color:var(--ink)}
-  .form-group-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .form-group-chips{display:flex;flex-wrap:wrap;gap:8px}
   .form-chip{position:relative;display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;font-size:22px;line-height:1.2;
     font-family:var(--char-font)}
   .form-chip:not(:disabled):hover{border-color:var(--accent)}
@@ -62,6 +62,6 @@
   .form-chip.chosen{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light)}
   .form-chip sup{position:absolute;top:4px;right:4px;font-size:11px;line-height:1;color:var(--muted)}
   .form-chip kbd{font-family:ui-monospace,monospace;font-size:9px;color:var(--muted)}
-  @media(max-width:700px){.form-chip{font-size:19px;padding:3px 8px}.form-chip.chosen{padding:2px 7px}.form-chip kbd{display:none}}
+  @media(max-width:700px){.form-chip{font-size:19px;padding:6px 8px}.form-chip.chosen{padding:5px 7px}.form-chip kbd{display:none}}
   @media(hover:none){.form-chip kbd{display:none}}
 </style>

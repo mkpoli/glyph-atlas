@@ -67,9 +67,10 @@
   .style-field{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:12px;color:var(--muted)}
   .style-value b{color:var(--ink);font-weight:600}
   .style-basis{margin-left:6px}
-  .style-own{display:inline-flex;gap:6px;align-items:center}
-  .style-own select{appearance:none;font:inherit;font-size:12px;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 24px 4px 9px;cursor:pointer;
+  .style-own{display:inline-flex;gap:8px;align-items:center}
+  .style-own select{appearance:none;font:inherit;font-size:12px;color:var(--ink);border:1px solid var(--line);border-radius:6px;height:32px;padding:0 24px 0 10px;cursor:pointer;
     background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a93' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 8px center/9px 6px}
+  @media(max-width:700px){.style-own select{height:36px}}
   .style-own select:hover:not(:disabled){border-color:var(--line-strong)}
   .style-own select:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
   .style-error{color:var(--wrong)}
