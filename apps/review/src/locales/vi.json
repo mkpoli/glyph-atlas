@@ -673,6 +673,8 @@
   "quiz.suspect.readsAs": "Có thể là {character}",
   "quiz.suspect.doubtful": "Cần xem lại",
   "quiz.suspect.none": "Không còn vùng cắt đáng ngờ nào ở đây.",
+  "quiz.correct": "Chọn chữ đúng",
+  "quiz.correctCharacter": "Chọn chữ đúng của vùng cắt {number}",
   "quiz.skipCharacter": "Bỏ qua chữ {number}",
   "quiz.skipSelected": "{skip} các mục đã chọn",
   "quiz.skippedNotSaved": "{count} đã bỏ qua · chưa lưu",

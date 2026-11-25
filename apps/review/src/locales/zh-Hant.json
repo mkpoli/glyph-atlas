@@ -681,6 +681,8 @@
   "quiz.suspect.readsAs": "疑爲{character}",
   "quiz.suspect.doubtful": "存疑",
   "quiz.suspect.none": "這裡沒有可疑項了。",
+  "quiz.correct": "選擇正確的字",
+  "quiz.correctCharacter": "為第{number}個裁切選擇正確的字",
   "quiz.skipCharacter": "略過第{number}字",
   "quiz.skipSelected": "{skip}已選取項目",
   "quiz.skippedNotSaved": "已略過{count}個 · 未儲存",

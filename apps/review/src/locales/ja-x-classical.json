@@ -660,6 +660,8 @@
   "quiz.suspect.readsAs": "{character}ニ似タリ",
   "quiz.suspect.doubtful": "疑ハシ",
   "quiz.suspect.none": "疑ハシキモノ最早無之",
+  "quiz.correct": "正字ヲ選ブ",
+  "quiz.correctCharacter": "第{number}ノ截片ノ正字ヲ選ブ",
   "quiz.skipCharacter": "第{number}字ヲ保留ス",
   "quiz.skipSelected": "選ビタルヲ{skip}",
   "quiz.skippedNotSaved": "保留{count} · 保存セズ",

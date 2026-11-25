@@ -712,6 +712,8 @@
   "quiz.suspect.readsAs": "{character}처럼 보임",
   "quiz.suspect.doubtful": "확인 필요",
   "quiz.suspect.none": "의심스러운 크롭이 더 없습니다.",
+  "quiz.correct": "바른 글자 고르기",
+  "quiz.correctCharacter": "{number}번 크롭의 바른 글자 고르기",
   "quiz.skipCharacter": "글자 {number} 건너뛰기",
   "quiz.skipSelected": "선택한 항목 {skip}",
   "quiz.skippedNotSaved": "{count}개 건너뜀 · 저장되지 않음",
