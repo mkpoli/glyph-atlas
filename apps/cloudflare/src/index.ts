@@ -12,7 +12,7 @@ import { typefaceFile } from './typefaces';
 import { MAX_BODY, QueryError, addressKey, boundedText, modelFile, modelInfo, query as imageQuery } from './reverse';
 import { idsOf, structuresOf, suggest, wordChoices } from './routes/search';
 import { auth, claim, providers, viewer } from './auth';
-import { AVATAR_PATH, avatar, setAvatar } from './avatar';
+import { AVATAR_PATH, PICTURE_PATH, avatar, picture, setAvatar } from './avatar';
 import { ranking } from './routes/ranking';
 import { connections } from './connections';
 import { flagCorpus, flaggedCorpus, reject, reviewerActors, reviewers, submissions } from './routes/admin';
@@ -34,7 +34,7 @@ import { OPEN, opened } from './open';
 import { sendContact } from './contact';
 import { communityCounts } from './community';
 import { communityPreview } from './preview';
-import { cards, characterCard, characterPage, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
+import { bookGallery, cards, characterCard, characterPage, graphemeForms, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
 import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 type Json = Record<string, any>;
@@ -143,8 +143,10 @@ const routes = {
         if(path==='/api/admin/submissions')return json(await submissions(env,q,await reviewerActors(env,Object.fromEntries(q),{text})));
         throw new Problem(404,'Unknown endpoint.');
       }
-      const picture=path.match(AVATAR_PATH);
-      if(picture)return await avatar(env,picture[1],picture[2]);
+      const upload=path.match(AVATAR_PATH);
+      if(upload)return await avatar(env,upload[1],upload[2]);
+      const pictured=path.match(PICTURE_PATH);
+      if(pictured)return await picture(env,pictured[1]);
       if(path==='/api/account/connections'){const me=await viewer(env,request,true);if(!me)throw new Problem(401,'Sign in to see your account.');return json(await connections(env,me.id))}
       if(path==='/api/favourites'||path==='/api/favourites/crops'){
         // A browser that has never signed in has starred nothing, and reading starts no session.
@@ -167,7 +169,11 @@ const routes = {
       if(path==='/atlas/history')return json(await history(env,q,(await viewer(env,request))?.id??null,{text,integer}));
       const run=await runsRoute(env,ctx,url);
       if(run)return run;
-      if(path==='/atlas/corpus/characters')return json(await browse.corpusCharacters(env,ctx,url),200,{'cache-control':'private, max-age=300'});
+      if(path==='/atlas/graphemes/counts'){
+        const {text:counts,tag}=await browse.graphemeCounts(env,ctx,url),headers={'cache-control':'private, no-cache',etag:tag};
+        if(request.headers.get('if-none-match')===tag)return new Response(null,{status:304,headers});
+        return new Response(counts,{headers:{'content-type':'application/json','x-content-type-options':'nosniff',...headers}});
+      }
       const cropped=await cropRoute(env,ctx,url);
       if(cropped)return cropped;
       const books=await booksRoute(env,url);
@@ -220,8 +226,11 @@ const routes = {
         return json({...found,glyphs:found.total,glyph_items:found.items,retry:false})}
       if(path==='/layers/gallery'){const timing=new Timing();const body=await browse.gallery(env,ctx,q,timing);return json(body,200,{'server-timing':timing.header()})}
       if(path==='/layers/decades')return json(await decades(env,ctx,url,characterTools));
+      if(path==='/layers/books')return json(await bookGallery(env,ctx,url,characterTools));
       if(path==='/layers/chronology')return json(await chronology(env,ctx,url,characterTools));
       if(path==='/layers/summary')return json(await browse.siteValue(env,'corpus_index'));
+      const formed=path.match(/^\/layers\/graphemes\/([^/]+)\/forms$/);
+      if(formed)return json(await graphemeForms(env,ctx,url,decodeURIComponent(formed[1]),characterTools));
       if(path==='/layers/graphemes'||path==='/layers/ligatures')return json(await cards(env,path.endsWith('ligatures')?'ligatures':'graphemes',q,ctx));
       if(path==='/atlas/corpus/reviews')return json(await flaggedCorpus(env,listingItems));
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);

@@ -23,12 +23,38 @@ def test_every_edge_is_kept_and_only_written_relations_are_written():
                                             if not line.startswith("#")) - 1
 
 
+def test_a_seal_character_is_related_to_its_equivalent_and_written_for_nothing():
+    seal = "\U0003D005"
+    stated = [e for e in refs.variant_edges() if e["relation"] == "small-seal"]
+    assert len(stated) == 11328 and not any(e["written"] or e["widens"] for e in stated)
+    assert [(e["a"], e["b"], e["source"]) for e in refs.variant_edges_of(seal)] == [
+        ("叓", seal, "unicode-ucd"), ("吏", seal, refs.SEAL_CHAIN)]
+    assert refs.variants(seal) == [] and seal not in [char for char, _ in refs.variants("叓")]
+    items, related = characters.variant_pairs("吏")
+    assert seal not in [row["char"] for row in items]
+    assert [row["relations"] for row in related if row["char"] == seal] == [[{
+        "relation": "small-seal", "source": refs.SEAL_CHAIN,
+        "detail": f"吏→叓 SealVariants (opencc) + {seal}→叓 kSEAL_MCJK (unicode-ucd)"}]]
+
+
+def test_an_inferred_seal_edge_rests_on_two_stated_rows_and_repeats_none():
+    chain = refs.seal_chain_edges()
+    stated = {(e["a"], e["b"]) for e in refs.variant_edges() if e["relation"] == "small-seal"}
+    shuowen = {(e["a"], e["b"]) for e in refs.variant_edges() if e["relation"] == "shuowen"}
+    assert chain and not any((e["a"], e["b"]) in stated for e in chain)
+    assert all(not e["written"] and not e["widens"] and e["source"] == refs.SEAL_CHAIN for e in chain)
+    assert all(any((e["a"], han) in shuowen and (han, e["b"]) in stated for han in [e["detail"].split("→")[1].split(" ")[0]])
+               for e in chain)
+    assert refs.SEAL_CHAIN in refs.variant_sources()
+    assert (("吏", "\U0003D005", "small-seal", refs.SEAL_CHAIN) in {row[:4] for row in export.edge_rows()})
+
+
 def test_the_card_lists_written_variants_apart_from_related_characters(monkeypatch):
     monkeypatch.setattr(characters.corpus_source, "counts", lambda chars: {"𠚰": {"n_glyphs": 3}})
     card = characters.variant_card("刻", {"U+206B0": 2})
     items = [row["char"] for row in card["items"]]
     assert items[:4] == ["𠚰", "𠛳", "𠜇", "𠞫"]
-    assert [row["char"] for row in card["related"]] == ["克", "剋"]
+    assert [row["char"] for row in card["related"]] == ["克", "剋", "\U0003DC8F"], "its small seal character last"
     first = card["items"][0]
     assert first["sources"] == ["cjkvi-variants", "mj-shrink-map", "wikidata"]
     assert (first["count"], first["corpus_count"]) == (2, 3)
@@ -62,7 +88,7 @@ def test_the_graph_replaces_every_table_of_the_reference_input(tmp_path, monkeyp
     monkeypatch.setattr(sys, "argv", ["export_character_variants.py", "--input", str(path), "--described", str(listed)])
     export.main()
     db = sqlite3.connect(path)
-    edges = {(e["a"], e["b"], e["relation"], e["source"]): e for e in refs.variant_edges()}
+    edges = {(e["a"], e["b"], e["relation"], e["source"]): e for e in (*refs.variant_edges(), *refs.seal_chain_edges())}
     assert db.execute("SELECT count(*), sum(written), sum(widens) FROM character_variants").fetchone() == (
         len(edges), sum(e["written"] for e in edges.values()), sum(e["widens"] for e in edges.values()))
     assert db.execute("SELECT count(*) FROM character_variants WHERE a='a'").fetchone() == (0,), "an earlier row goes"

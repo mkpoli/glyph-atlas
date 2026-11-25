@@ -10,8 +10,10 @@ import { Problem } from '../busy';
 import { bibtex, citedVersion, cropEntry, csl, FORMATS, hayagriva, type Day, type Format } from '../citation';
 import { axisOf } from '../dating';
 import { honkokuPage } from '../honkoku';
-import { cropForms, cropGraphemes, cropWords } from '../cropPanels';
-import { MARKS, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
+import { cropForms, cropGraphemes, cropStructures, cropWords } from '../cropPanels';
+import { cropReadings } from '../cropReadings';
+import { keyHeads, RUN_MAX } from '../ledger';
+import { MARKS, codePoints, cropVersion, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
 
 type Json = Record<string, any>;
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {
@@ -58,18 +60,23 @@ const documentFor = ({ row, record }: FoundCrop): string | null => row.kind === 
 
 // The statuses of a grapheme slot that file its crop, as the galleries read them (`FILES`, atlas3Gallery.ts).
 const FILING = new Set(['asserted', 'accepted', 'adjudicated']);
-/** A crop's record for its inspector, with its grapheme, form, word, book's dates and the claims they
- *  rest on. A grapheme claim that holds names the grapheme the crop is filed under. */
+/** A crop's record for its inspector, with its grapheme, form, structure, reading, word, book's dates and the claims they
+ *  rest on. A grapheme claim that holds names the grapheme the crop is filed under, and `own_grapheme` is its character's. */
 export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
   const id = found.row.id, document = documentFor(found);
   // The styles a reviewer may give it: those a publication has numbered (`setStyle`), read as they stand, since a
   // publication may number one after the isolate's code table was read.
-  const [graphemes, forms, words, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropWords(env, [id]),
-    bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
+  const [graphemes, forms, structures, readings, words, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropStructures(env, [id]),
+    cropReadings(env, [id]), cropWords(env, [id]), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
   const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
+  // A claim of a key of its character's own grapheme, made before the two joined, reads it as no other. A record that
+  // names no grapheme is of its character's.
+  const character = found.record.grapheme ?? codePoints(found.record.written_character ?? found.record.label ?? '');
+  const heads = filed ? await keyHeads(env, [filed, character]) : null;
+  const own = heads && (heads.get(filed!) === heads.get(character) ? filed : heads.get(character));
   const styles = numbered.results.map(row => row.key);
-  const record = { ...found.record, ...(filed ? { grapheme: filed } : {}), grapheme_claim: claim, form: forms.get(id) ?? null, word: words.get(id) ?? null,
-    style_choices: styles };
+  const record = { ...found.record, ...(filed ? { grapheme: filed, own_grapheme: own } : {}), grapheme_claim: claim, form: forms.get(id) ?? null,
+    structure: structures.get(id) ?? null, reading: readings.get(id) ?? null, word: words.get(id) ?? null,    style_choices: styles };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };
 }
@@ -159,17 +166,17 @@ async function listedCrops(env: Env, ids: number[]): Promise<Map<number, { row: 
 const boxOf = (row: Listed, entry: Json) => row.x !== null ? { x: row.x, y: row.y, w: row.w, h: row.h } : entry.box ?? null;
 
 // A crop's neighbours on its line, in reading order: the pairs `runs` holds are followed forward by their
-// first crop (`run_first`) and backward by their second (`run_second`), at most `LINE_REACH` steps each way,
+// first crop (`run_first`) and backward by their second (`run_second`), at most `reach` steps each way,
 // one row a step. The size test is kept off the forward step's index (`+`), or the planner would read every
 // pair of the size; the backward step repeats `run_second`'s condition, so its index is used.
-const LINE_REACH = 4;
-export const lineQuery = () => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN runs p ON p.first=a.id AND +p.size=2 WHERE a.d<${LINE_REACH}),
+const LINE_REACH = 4, LINE_REACH_MAX = RUN_MAX - 1;
+export const lineQuery = (reach = LINE_REACH) => `WITH RECURSIVE ahead(id,d) AS (SELECT ?1,0 UNION ALL
+    SELECT p.second,a.d+1 FROM ahead a CROSS JOIN runs p ON p.first=a.id AND +p.size=2 WHERE a.d<${reach}),
   behind(id,d) AS (SELECT ?1,0 UNION ALL
-    SELECT p.first,b.d-1 FROM behind b CROSS JOIN runs p ON p.second=b.id AND p.size=2 WHERE b.d>-${LINE_REACH})
+    SELECT p.first,b.d-1 FROM behind b CROSS JOIN runs p ON p.second=b.id AND p.size=2 WHERE b.d>-${reach})
   SELECT d,id FROM ahead UNION ALL SELECT d,id FROM behind WHERE d<0`;
 // What the inspector's line strip needs of each neighbour: the crop as the review path judges it (revision
-// and pixels), the label it carries now, and what is painted in its place until it loads. A crop with no
+// and pixels), the version a claim on it names, its box on the page, the label it carries now, and what is painted in its place until it loads. A crop with no
 // neighbours has an empty line.
 export function lineItems(steps: { d: number; id: number }[], crops: Map<number, { row: Listed; entry: Json }>): Json[] {
   const seen = new Set<number>();
@@ -179,17 +186,20 @@ export function lineItems(steps: { d: number; id: number }[], crops: Map<number,
     seen.add(step.id);
     const { row, entry } = found;
     return [{ id: publicId(row.id), offset: step.d, label: row.char ?? entry.label ?? null, image: entry.image ?? null, revision: row.revision,
-      image_sha256: entry.image_sha256 ?? null, state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null }];
+      image_sha256: entry.image_sha256 ?? null, crop_version: cropVersion(publicId(row.id), { ...entry, box: boxOf(row, entry) }), box: boxOf(row, entry),
+      state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null }];
   });
   return items.length > 1 ? items : [];
 }
 // The edge keeps a copy per catalogue version; a review or an undo makes a new key.
-async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name: string) {
-  const key = new Request(`${url.origin}${url.pathname}?v=${encodeURIComponent(await catalogueVersion(env))}`);
+// `LINE_SHAPE` is part of its key: it moves when the answer gains or changes a field.
+const LINE_SHAPE = 3;
+async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name: string, reach: number) {
+  const key = new Request(`${url.origin}${url.pathname}?r=${reach}&v=${encodeURIComponent(`${LINE_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as Json;
-  const steps = (await env.ATLAS_RUNS.prepare(lineQuery()).bind(id).all<{ d: number; id: number }>()).results;
-  const body = { id: name, reach: LINE_REACH, items: lineItems(steps, await listedCrops(env, [...new Set(steps.map(s => s.id))])) };
+  const steps = (await env.ATLAS_RUNS.prepare(lineQuery(reach)).bind(id).all<{ d: number; id: number }>()).results;
+  const body = { id: name, reach, items: lineItems(steps, await listedCrops(env, [...new Set(steps.map(s => s.id))])) };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=60' } })));
   return body;
 }
@@ -198,18 +208,28 @@ async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name:
 // it now, label and box, so a review or a redrawn box shows on the page once the catalogue version moves. The
 // record names its crops by source id in its order, which its bundle maps to slots; a crop retired or not on
 // the page is left out. The photo is a request of the holder's IIIF image service, its longer side at most
-// PAGE_IMAGE pixels, laid over the page pixels the boxes are given in; a page no service serves is shown as
-// its boxes alone. Beside the record's own source fields (its manifest, canvas and the holder's catalogue
+// PAGE_IMAGE pixels and named alone (`w,` or `,h`), the one size request a level 1 service must answer, laid over the page pixels the boxes are given in; a page no service serves is shown
+// from the site's own copy when its record names one (`photo`, an image of the key map), else as its
+// boxes alone. Beside the record's own source fields (its manifest, canvas and the holder's catalogue
 // record), a page carries its book's dates and its page on みんなで翻刻. A page is named by its key.
 const PAGE_IMAGE = 3000;
 // Part of the edge key of a page's answer: moves when the answer gains or changes a field.
-const PAGE_SHAPE = 2;
+const PAGE_SHAPE = 3;
+// A hosted photo is named by its path among the site's images and by nothing else.
+const hostedPhoto = (photo: unknown) => typeof photo === 'string' && /^\/atlas\/media\/[a-f0-9]{64}\.webp$/.test(photo) ? photo : null;
+function photoRequest(service: string, width: unknown, height: unknown) {
+  const [w, h] = [Number(width), Number(height)];
+  // A page whose size is not recorded can only be asked for as a box to fit, which level 2 services answer.
+  if (!(w > 0 && h > 0)) return `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg`;
+  const side = Math.min(PAGE_IMAGE, Math.max(w, h));
+  return `${service}/full/${w >= h ? `${side},` : `,${side}`}/0/default.jpg`;
+}
 export function pageView(record: Json, crops: { row: Listed; entry: Json }[]): Json {
-  const { crops: _, service, page_number, document, title, ...rest } = record;
+  const { crops: _, service, photo, page_number, document, title, ...rest } = record;
   const honkoku = honkokuPage({ page_number }, document);
   return { ...rest, document_id: document, document_title: title, seq: page_number - 1, service: service ?? null,
     ...(honkoku ? { honkoku_url: honkoku } : {}),
-    image_url: service ? `${service}/full/!${PAGE_IMAGE},${PAGE_IMAGE}/0/default.jpg` : null, drawable: false,
+    image_url: service ? photoRequest(service, record.width, record.height) : hostedPhoto(photo), drawable: false,
     units: crops.map(({ row, entry }) => ({ id: publicId(row.id), line_id: entry.line_id ?? null, box: boxOf(row, entry), character: row.char,
       code_point: null, image: entry.image ?? null, state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null })) };
 }
@@ -244,8 +264,9 @@ export async function cropRoute(env: Env, ctx: ExecutionContext, url: URL): Prom
   if (neighbours) {
     const raw = neighbours[1], text = segment(raw, ABSENT), param = await cropParam(env, raw, ctx);
     if (param && 'moved' in param) return movedPathResponse(url, raw, param.moved);
+    const asked = Number(q.get('reach') ?? LINE_REACH), reach = Number.isSafeInteger(asked) && asked >= 1 ? Math.min(asked, LINE_REACH_MAX) : LINE_REACH;
     // An id that names no live crop has an empty line, as one with no neighbours.
-    const body = param && 'id' in param ? await line(env, ctx, url, param.id, text) : { id: text, reach: LINE_REACH, items: [] };
+    const body = param && 'id' in param ? await line(env, ctx, url, param.id, text, reach) : { id: text, reach, items: [] };
     return json(body, 200, { 'cache-control': 'no-cache' });
   }
   const shown = path.match(/^\/atlas\/pages\/([^/]+)$/);

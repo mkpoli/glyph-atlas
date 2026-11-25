@@ -642,6 +642,24 @@ def test_a_re_cut_to_a_redrawn_box_leaves_it_pending_no_longer(layout, monkeypat
         assert boxes == {a2: [None] * 4, a1: [3, 3, 5, 5]}
 
 
+def test_a_re_cut_over_a_neighbour_stands_only_as_a_reviewer_drew_it(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    a2 = ids(root)["ex:a2"]
+    # a2 re-cut onto a1's glyph: a box no reviewer drew there would let two crops trade a glyph.
+    over = {"x": 0, "y": 1, "w": 10, "h": 10}
+    with pytest.raises(SystemExit, match="need the slot matcher"):
+        run(publish, monkeypatch, catalogue(tmp_path / "a.sqlite", [unit("ex:a2", "hl:p1", over, "い", revision=3)]))
+    # The same box, redrawn by a reviewer on the site, is the crop's own.
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("INSERT INTO reviews(crop, gen, at, char, state, x, y, w, h) SELECT id, 0, 0, char, 1, 0, 1, 10, 10 "
+                   "FROM crops WHERE id=?", (a2,))
+        db.commit()
+    before = crops(remote)[a2]["cut"]
+    run(publish, monkeypatch, catalogue(tmp_path / "b.sqlite", [unit("ex:a2", "hl:p1", over, "い", revision=3)]))
+    assert crops(remote)[a2]["cut"] == before + 1
+    assert remote.query("glyph-atlas-v3", f"SELECT x FROM reviews WHERE crop={a2}") == [{"x": None}]
+
+
 def test_a_publication_that_does_not_speak_for_a_crop_leaves_the_stores_revision_alone(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a2 = ids(root)["ex:a2"]
@@ -732,6 +750,131 @@ def page_catalogue(path, units, pages):
     db.executemany("INSERT INTO pages VALUES(?, 'book:a', ?)", [(key, json.dumps(facts)) for key, facts in pages.items()])
     db.commit()
     return path
+
+
+def test_published_credits_take_the_words_a_reader_should_see(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    noted, whole = "unstated holder, via Wikimedia Commons, https://example.org/x", "国立国会図書館 National Diet Library, JAPAN"
+    units = [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ"),
+             unit("ex:b1", "hl:p2", {"x": 0, "y": 0, "w": 10, "h": 10}, "う")]
+    units = [(*u[:-1], json.dumps({**json.loads(u[-1]), "attribution": a, "cut_at": "2026-10-03"}))
+             for u, a in zip(units, (noted, "unresolved for review: no licence statement"), strict=True)]
+    run(publish, monkeypatch, page_catalogue(tmp_path / "c.sqlite", units, {
+        "hl:p1": {"page_number": 1, "attribution": noted}, "hl:p2": {"page_number": 2, "attribution": whole}}))
+    pages = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT key, id FROM pages"))
+
+    def bundle(key):
+        rev = remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pages[key]}")[0]["rev"]
+        return rev, json.loads(gzip.decompress((root / "out" / "pages" / f"{pages[key]}-{rev}.json.gz").read_bytes()))
+    before = {key: bundle(key) for key in ("hl:p1", "hl:p2")}
+    crops = remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id")
+    sys.modules.pop("credits", None)
+    credits = importlib.import_module("credits")
+    credits.main([str(tmp_path / "credits.sqlite")])
+    assert dict(sqlite3.connect(tmp_path / "credits.sqlite").execute("SELECT * FROM credits")) == {
+        noted: "Wikimedia Commons, https://example.org/x", "unresolved for review: no licence statement": None}
+
+    run(publish, monkeypatch, tmp_path / "credits.sqlite")
+    (rev, page), (other_rev, other) = bundle("hl:p1"), bundle("hl:p2")
+    assert page["page"] == {**before["hl:p1"][1]["page"], "attribution": "Wikimedia Commons, https://example.org/x"}
+    assert other["page"] == before["hl:p2"][1]["page"], "a credit that needs no change stays"
+    entries = {c["id"]: c for c in (*page["crops"], *other["crops"])}
+    held = {c["id"]: c for key in before for c in before[key][1]["crops"]}
+    assert entries["ex:a1"] == {**held["ex:a1"], "attribution": "Wikimedia Commons, https://example.org/x"}
+    assert entries["ex:b1"] == {k: v for k, v in held["ex:b1"].items() if k != "attribution"}
+    assert entries["ex:a2"] == held["ex:a2"]
+    assert (rev, other_rev) == (before["hl:p1"][0] + 1, before["hl:p2"][0] + 1)
+    assert remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id") == crops, "no crop row changes"
+    capsys.readouterr()
+    run(publish, monkeypatch, tmp_path / "credits.sqlite")
+    assert "nothing changed" in capsys.readouterr().out
+    # A retired crop's record loses its credit too, and a page with no live crop left is passed over.
+    path = root / "out" / "pages" / f"{pages['hl:p2']}-{other_rev}.json.gz"
+    gone = "unresolved for review: no licence statement"
+    path.write_bytes(gzip.compress(json.dumps({**other, "page": {**other["page"], "attribution": gone},
+                                               "crops": [{**c, "retired": True, "attribution": gone} for c in other["crops"]]}).encode()))
+    for db in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        db.execute("DELETE FROM crops WHERE id >= ? AND id < ?", (pages["hl:p2"] * publish.PAGE, (pages["hl:p2"] + 1) * publish.PAGE))
+        db.commit()
+    run(publish, monkeypatch, tmp_path / "credits.sqlite")
+    assert "credits: 1 crops and 0 pages" in capsys.readouterr().out
+    assert all("attribution" not in c for c in bundle("hl:p2")[1]["crops"])
+    with sqlite3.connect(tmp_path / "credits.sqlite") as db:
+        db.execute("CREATE TABLE media(key)")
+    with pytest.raises(SystemExit, match="holds credits alone"):
+        run(publish, monkeypatch, tmp_path / "credits.sqlite")
+
+
+def test_a_corpus_record_is_written_again_with_the_credit_a_reader_should_see(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    noted = "橋本雄太, Honkoku-Lines v2.0; transcriptions from みんなで翻刻 (CC BY-SA 4.0); images per holder"
+    old = {"id": "codh:g1", "label": "が", "attribution": "国立国会図書館", "text_attribution": noted, "box": {"x": 1}}
+    raw = json.dumps(old, ensure_ascii=False).encode()
+    fetched = tmp_path / "fetched"
+    fetched.mkdir()
+    (fetched / PACK[1].removeprefix("packs/")).write_bytes(b"x" * 40 + raw)
+    db = sqlite3.connect(tmp_path / "c.sqlite")
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[1]}',40,{len(raw)},'printed',0,'unassessed','codh:b',NULL)")
+    db.commit()
+    run(publish, monkeypatch, tmp_path / "c.sqlite")
+    crops = remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id")
+    sys.modules.pop("record_credits", None)
+    record_credits = importlib.import_module("record_credits")
+    capsys.readouterr()
+    record_credits.main([str(tmp_path / "out1"), "--books", "codh:", "--list"])
+    assert capsys.readouterr().out.split() == [PACK[1].removeprefix("packs/")]
+    record_credits.main([str(tmp_path / "out1"), "--books", "book:", "--packs", str(fetched)])
+    assert "0 of 0 records" in capsys.readouterr().out
+    record_credits.main([str(tmp_path / "out2"), "--books", "codh:", "--packs", str(fetched)])
+    (glyph, pack, offset, size, *replaced), = sqlite3.connect(tmp_path / "out2" / "records.sqlite").execute("SELECT * FROM record_places")
+    assert replaced == [PACK[1], 40, len(raw)]
+    new = json.loads((tmp_path / "out2" / pack).read_bytes()[offset:offset + size])
+    assert new == {**old, "text_attribution": "橋本雄太, Honkoku-Lines v2.0; みんなで翻刻 (CC BY-SA 4.0)"}
+
+    run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    pid = ids(root)["codh:g1"] // publish.PAGE
+    rev = remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pid}")[0]["rev"]
+    entry, = json.loads(gzip.decompress((root / "out" / "pages" / f"{pid}-{rev}.json.gz").read_bytes()))["crops"]
+    assert (glyph, entry["record_place"]) == ("codh:g1", [pack, offset, size])
+    assert remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id") == crops, "no crop row changes"
+    capsys.readouterr()
+    run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    assert "nothing changed" in capsys.readouterr().out
+    # A record published since the catalogue was written is kept, not put back.
+    with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
+        db.execute("UPDATE record_places SET offset = 7, old_offset = 41")
+    with pytest.raises(SystemExit, match="published since the catalogue was written, e.g. codh:g1"):
+        run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+    with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
+        db.execute("DELETE FROM record_places")
+        db.execute(f"INSERT INTO record_places VALUES('ex:a1', '{PACK[2]}', 0, 1, '{PACK[1]}', 0, 1)")
+    with pytest.raises(SystemExit, match="no published record, e.g. ex:a1"):
+        run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
+
+
+def test_a_book_cut_from_its_pages_takes_the_title_of_its_page_records(layout, monkeypatch, tmp_path):
+    root, publish, remote = layout
+    db = sqlite3.connect(catalogue(tmp_path / "c.sqlite", [
+        unit("te:g1", "te:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, document="te:1")]))
+    db.execute("CREATE TABLE pages(id, document, data)")
+    db.execute("INSERT INTO pages VALUES('te:p1', 'te:1', ?)", (json.dumps({"title": "聯珠篆文", "page_number": 1}),))
+    db.commit()
+    path = tmp_path / "c.sqlite"
+    run(publish, monkeypatch, path)
+    titles = lambda: dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, title FROM books"))
+    assert titles()["te:1"] == "聯珠篆文"
+    # A book published with no title takes it when its catalogue is published again, once.
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title=NULL WHERE key='te:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["te:1"] == "聯珠篆文"
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title='given by hand' WHERE key='te:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["te:1"] == "given by hand"
 
 
 def published_pages(root):
@@ -864,6 +1007,40 @@ def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path)
     run(publish, monkeypatch, path)
     pages = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT id, key FROM pages"))
     assert pages[ids(root)["codh:x1"] // PAGE] == "corpus:codh:codh:b:x:0"
+
+
+def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, tmp_path, capsys):
+    root, publish, remote = layout
+    path = tmp_path / "corpus.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute(f"INSERT INTO corpus_units VALUES('gy:x1','き',NULL,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','gy:1',NULL)")
+    db.execute("CREATE TABLE corpus_documents(document PRIMARY KEY, n, title)")
+    db.execute("INSERT INTO corpus_documents VALUES('gy:1', 0, '廣韻 卷一')")
+    db.commit()
+    run(publish, monkeypatch, path)
+    titles = lambda: dict(remote.dbs["glyph-atlas-v3"].execute("SELECT key, title FROM books"))
+    assert titles()["gy:1"] == "廣韻 卷一"
+    # A book the site holds with no title takes the catalogue's on the next publish; one it has keeps its own.
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title=NULL WHERE key='gy:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["gy:1"] == "廣韻 卷一"
+    for held in (remote.dbs["glyph-atlas-v3"], sqlite3.connect(root / "out" / "atlas.sqlite")):
+        held.execute("UPDATE books SET title='given by hand' WHERE key='gy:1'")
+        held.commit()
+    run(publish, monkeypatch, path)
+    assert titles()["gy:1"] == "given by hand"
+    # Asked to, it takes the catalogue's whatever D1 holds, and a second run has nothing to change.
+    remote.dbs["glyph-atlas-v3"].execute("UPDATE books SET title='of another hand' WHERE key='gy:1'")
+    remote.dbs["glyph-atlas-v3"].commit()
+    run(publish, monkeypatch, path, "--retitle")
+    assert titles()["gy:1"] == "廣韻 卷一"
+    assert dict(sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT key, title FROM books")) == titles()
+    capsys.readouterr()
+    run(publish, monkeypatch, path, "--retitle")
+    assert "nothing changed" in capsys.readouterr().out
 
 
 def test_two_new_boxes_on_one_glyph_stop_the_publish(layout, monkeypatch, tmp_path):
@@ -1220,8 +1397,8 @@ def test_a_build_files_a_glyph_with_no_character_under_its_family(layout, monkey
 def test_a_layout_without_the_family_column_is_refused_by_a_publish(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     local = sqlite3.connect(root / "out" / "atlas.sqlite")
-    local.executescript("".join(f"DROP INDEX {name};" for (name,) in local.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND sql LIKE '%family%'").fetchall()) + "ALTER TABLE crops DROP COLUMN family;")
+    local.executescript("".join(f"DROP {kind} {name};" for kind, name in local.execute(
+        "SELECT type,name FROM sqlite_master WHERE type IN ('index','trigger') AND sql LIKE '%family%' ORDER BY type DESC").fetchall()) + "ALTER TABLE crops DROP COLUMN family;")
     local.close()
     with pytest.raises(SystemExit, match="fill.py"):
         run(publish, monkeypatch, corpus_catalogue(tmp_path / "corpus.sqlite", [("codh:m1", None, "U+3082", "も")]))

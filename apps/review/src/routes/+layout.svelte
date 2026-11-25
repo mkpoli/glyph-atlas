@@ -2,6 +2,7 @@
   import '../app.css'
   import '../layers.css'
   import '../tangut-font.css'
+  import '../seal-font.css'
   import '../drawn-forms.css'
   import '../script-colors.css'
   import ChatLinks from '../components/ChatLinks.svelte'
@@ -73,23 +74,23 @@
   }
   // A write that keeps the inspector open (a crop's style): the crop's tile and record are stale all
   // the same, so the next open reads it afresh.
-  function changed(id, result) {
+  function changed(id, result, was = null) {
     forgetCrop(id)
-    inspector.update?.(id, result, 'changed')
+    inspector.update?.(id, result, 'changed', was)
     written = { ...written, [id]: true }
   }
   // A write that decided a crop without the inspector closing for it: a line correction, which moves
   // labels, or a save that landed after the inspector closed or moved on.
-  function reviewed(id, result) {
+  function reviewed(id, result, was = null) {
     forgetCrop(id)
-    inspector.update?.(id, result, 'saved')
+    inspector.update?.(id, result, 'saved', was)
     written = { ...written, [id]: true }
   }
   // The reader declined to judge the crop; a round counts it as skipped.
   const skipped = id => inspector.update?.(id, null, 'skipped')
-  function saved(id, result) {
+  function saved(id, result, was = null) {
     forgetCrop(id)
-    inspector.update?.(id, result, 'saved')
+    inspector.update?.(id, result, 'saved', was)
     written = { ...written, [id]: true }
     savedNotice = t('app.saved')
     setTimeout(() => savedNotice = '', 2000)
@@ -143,6 +144,7 @@
     · {around('footer.code', 'license')[0]}<a href="https://github.com/mkpoli/glyph-atlas/blob/main/LICENSE" rel="noopener" target="_blank"><LinkMark name="code" />MIT</a>{around('footer.code', 'license')[1]}
     · <a href="https://github.com/mkpoli/glyph-atlas" rel="noopener" target="_blank"><LinkMark name="github" />GitHub</a>
     · <a href={localize('/privacy')}><LinkMark name="privacy" />{t('footer.privacy')}</a>
+    · <a href={localize('/roadmap')}>{t('roadmap.title')}</a>
     · <a href={localize('/design')}>{t('nav.design')}</a>
     · <ChatLinks /></p>
 </footer>

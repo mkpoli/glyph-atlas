@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { StorageUnavailable } from './busy';
 import { counted } from './rateLimit';
 import { typefaceFile } from './typefaces';
-import { TYPEFACE_VERSION } from './typefaceVersions';
+import { SEAL_FONT_VERSION, TYPEFACE_VERSION } from './typefaceVersions';
 
 const version = TYPEFACE_VERSION;
 const stored = new Map([[`fonts/${version}/sans/04e.woff2`, new Uint8Array([0x77, 0x4f, 0x46, 0x32])],
@@ -15,6 +15,19 @@ const env = { MEDIA: { async get(key: string) {
 } } } as any;
 
 describe('typefaceFile', () => {
+  it('serves the small seal build under its own version', async () => {
+    const seal = { MEDIA: { async get(key: string) {
+      return [`fonts/${SEAL_FONT_VERSION}/seal/s.woff2`, `fonts/${SEAL_FONT_VERSION}/seal/0b0.woff2`, `fonts/${SEAL_FONT_VERSION}/OFL.txt`].includes(key)
+        ? { body: new Response(new Uint8Array([0x77])).body!, size: 1, httpEtag: '"e"' } : null;
+    } } } as any;
+    expect(SEAL_FONT_VERSION).toMatch(/^[0-9a-f]{12}$/);
+    expect((await typefaceFile(seal, `${SEAL_FONT_VERSION}/seal/s.woff2`))!.headers.get('content-type')).toBe('font/woff2');
+    expect((await typefaceFile(seal, `${SEAL_FONT_VERSION}/seal/0b0.woff2`))!.status).toBe(200);
+    expect((await typefaceFile(seal, `${SEAL_FONT_VERSION}/OFL.txt`))!.status).toBe(200);
+    expect((await typefaceFile(seal, `${SEAL_FONT_VERSION}/seal/0b1.woff2`))!.status).toBe(404);
+    for (const bad of [`${SEAL_FONT_VERSION}/seal/x.woff2`, `${SEAL_FONT_VERSION}/seal/0B0.woff2`, `${SEAL_FONT_VERSION}/seal/s.css`])
+      expect(await typefaceFile(seal, bad)).toBeNull();
+  });
   it('serves a stored file of a version for good', async () => {
     const response = (await typefaceFile(env, `${version}/sans/04e.woff2`))!;
     expect(response.status).toBe(200);

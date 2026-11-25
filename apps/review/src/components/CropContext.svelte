@@ -4,13 +4,16 @@
   import Glyph from './Glyph.svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
   import { t } from '../lib/i18n.svelte.js'
+  import { rubyLine } from '../lib/cropReadings.js'
+  import ReadingRuby from './ReadingRuby.svelte'
   import { toSource } from '../lib/cropBox.js'
   import { cropCut, isPaddedCrop } from '../lib/cropPaint.js'
   // `cropBox` is a box drawn over the crop (a redraw), in source pixels; the view stays framed on the
   // crop as it was cut. `editing` turns the box into one the reader moves and resizes here, and
   // `onedit` hears each new box, in source pixels, `onexit` an Escape. `page` is the link to the whole
-  // page the crop was cut from (`pageLink`), offered in the view's corner.
-  let { item, detail = null, cropBox = null, disabled = false, editing = false, page = null,
+  // page the crop was cut from (`pageLink`), offered in the view's corner. `run` is the other boxes of a run the
+  // reader is reading the crop in, in source pixels, outlined on the page.
+  let { item, detail = null, cropBox = null, disabled = false, editing = false, page = null, run = [],
     onedit = null, onexit = null, describedby = undefined, onload = () => {}, onerror = () => {} } = $props()
   const isCorpus = $derived((detail ?? item)?.origin === 'corpus')
   // A supplied record names the crop shown: the same crop, revision and image (or source revision).
@@ -35,6 +38,11 @@
     // The record rendered with is already shown, and its photos may have loaded before hydration.
     if (rendered && supplied === rendered) { rendered = null; return }
     rendered = null
+    // A claim replaces the record and moves neither the crop nor its photos: what is on screen stays, since
+    // a photo that is already in place never loads again.
+    const on = untrack(() => data)
+    if (supplied && on && matches(supplied, on) && matches(supplied, { id, revision, image_sha256, source_revision })
+      && supplied.context_image === on.context_image && supplied.image === on.image) { data = supplied; return }
     const abort = new AbortController()
     data = null; loading = true; detailFailed = false
     contextReady = false; contextFailed = false; fullReady = false; fullFailed = fromCorpus
@@ -68,6 +76,8 @@
     observer.observe(viewport)
     return () => observer.disconnect()
   })
+  // The ruby the page writes beside the crop's run, over the run on its line.
+  const read = $derived(rubyLine(data))
   const contextual = $derived(Boolean(data?.context !== false && data?.context_box && data?.crop_box && data?.context_image))
   const fullPage = $derived(contextual && !isCorpus && data?.full_page_available !== false && (expandPage || contextFailed) && Boolean(data?.image_sha256))
   const ready = $derived(contextual && (fullReady || contextReady))
@@ -220,7 +230,7 @@
           onerror={() => fullFailed = true} />{/if}
       </div>
       {#if ready}
-        <svg class="context-shade" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none" aria-hidden="true"><path d={shadePath} fill-rule="evenodd" /></svg>
+        <svg class="context-shade" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none" aria-hidden="true"><path d={shadePath} fill-rule="evenodd" />{#each run as box}<rect class="run-outline" x={origin.x + box.x * scale} y={origin.y + box.y * scale} width={box.w * scale} height={box.h * scale} />{/each}</svg>
         {#if editing}<BoxEditor box={crop} {scale} {origin} {disabled} onedit={(box, mode) => onedit?.(box, mode)}
           onstart={() => { expandPage = true; viewport.focus({ preventScroll: true }) }} />
         {:else}<span class="crop-mask" style={mask} aria-hidden="true"></span>{/if}
@@ -236,7 +246,7 @@
       <button type="button" class="zoom-in" aria-label={t('crop.zoomIn')} title={t('crop.zoomIn')} disabled={disabled || !ready || zoom >= 4} onclick={() => magnify(1.25)}>+</button>
     </div>
   </div>
-  {#if data?.text}<div class="context-text"><span>{t('crop.transcription')}</span><p lang="ja">{data.text}</p></div>{/if}
+  {#if data?.text}<div class="context-text"><span>{t('crop.transcription')}</span><p lang="ja">{#if read}{read.before}<ReadingRuby value={read.value} />{read.after}{:else}{data.text}{/if}</p></div>{/if}
 </div>
 
 <style>
@@ -250,6 +260,7 @@
   .crop-plane img{position:absolute;display:block;max-width:none;max-height:none;object-fit:fill;filter:none;pointer-events:none}
   .page-photo{left:0;top:0}
   .context-shade{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:light-dark(rgb(24 20 17 / 42%), rgb(24 20 17 / 42%))}
+  .run-outline{fill:none;stroke:light-dark(#cfc8ff, #cfc8ff);stroke-width:2}
   .crop-mask{position:absolute;pointer-events:none;box-shadow:0 0 12px 3px light-dark(rgb(24 20 17 / 24%), rgb(24 20 17 / 24%))}
   /* The framing rule: centred, its longer side 34% of the view's shorter one. */
   .crop-viewport :global(.crop-early){position:absolute;left:50%;top:50%;width:min(34cqw,34cqh);height:min(34cqw,34cqh);translate:-50% -50%;max-width:none;max-height:none;filter:none;pointer-events:none}

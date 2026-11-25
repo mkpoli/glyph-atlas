@@ -6,6 +6,7 @@
   // picker floats over the inspector, so opening it moves nothing.
   import CharacterSearch from './CharacterSearch.svelte'
   import ScriptText from './ScriptText.svelte'
+  import { labelParts } from '$worker/graphemeLabel.ts'
   import { graphemeChoices, graphemeOf, setGrapheme } from '../lib/cropGraphemes.js'
   import { t } from '../lib/i18n.svelte.js'
   import { signedInUser } from '../lib/session.svelte.js'
@@ -38,6 +39,8 @@
   // A pick from search finds its grapheme first; nothing else saves until it has. A save shuts the picker.
   async function save(key, picked = null) {
     if (disabled || pending) return
+    // The crop the claim is made of, which the answer is compared with; the dialog may show another by then.
+    const crop = item
     pending = true; working?.(true); error = ''
     let done = false
     try {
@@ -47,7 +50,7 @@
         if (mine(head.code_point)) return
         key = head.code_point
       }
-      saved?.(await setGrapheme(item, key, ready ? offered.own?.code_point : null))
+      saved?.(await setGrapheme(crop, key, ready ? offered.own?.code_point : null), crop)
       done = true
     } catch (e) { error = e.message }
     finally { pending = false; working?.(false); if (done) close() }
@@ -76,7 +79,7 @@
     {#each chips as chip (chip.code_point)}
       <button type="button" class="grapheme-chip" class:current={chip.code_point === current} class:claimed={claimed(chip.code_point)}
         aria-pressed={chip.code_point === current} disabled={disabled || pending} title={chip.code_point} onclick={() => choose(chip)}>
-        <ScriptText text={chip.char} titled={false} />
+        <ScriptText {...labelParts(chip.char)} titled={false} />
       </button>
     {/each}
     {#if disputed}<span class="grapheme-note">{t('grapheme.disputed')}</span>{/if}

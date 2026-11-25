@@ -28,7 +28,7 @@ export function pageSeq(key: string): number | null {
 }
 
 // A script written without spaces: a word in it is found anywhere inside a field.
-const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Tangut}]/u;
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Tangut}\u{3D000}-\u{3FC3F}]/u;
 const LETTER = /[\p{L}\p{N}\p{M}]/u;
 
 /** Whether `word` opens one of `text`'s words, with accented Latin letters counting as letters. */
@@ -42,7 +42,7 @@ function startsWord(text: string, word: string): boolean {
 }
 
 /** Whether a book answers to a word: a spaced-script word opens one of its words, and Han, kana,
- *  Hangul and Tangut are found anywhere inside, as the local review service matches them. */
+ *  Hangul, Tangut and small seal are found anywhere inside, as the local review service matches them. */
 export function bookSays(book: Json, word: string): boolean {
   const fields = [book.title, book.id,
     ...Object.values(book.dating).flatMap((date: any) => [date?.text, date?.label])];

@@ -196,7 +196,7 @@ function decodeCursor(value: string): { at: number; id: number } {
 // review by someone else has built on is left as it is and reported; `next` continues after the page.
 const REJECT_PAGE = 40;
 // Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
-// stops before the crops it has put back pass this many.
+// stops before the crops it has put back, and the queries of the forms put back with them, pass this many.
 const REJECT_CROPS = 250;
 // An admin's flag request is a submission too, but no review: nothing puts a flag back, so a rejection
 // never takes one up. A reviewer's style for a crop is none either, and is changed by choosing another.
@@ -230,7 +230,7 @@ export async function reject(env: Env, admin: string, input: Json, tools: AdminT
   for (const submission of rows) {
     if (spent && spent + submission.crops > REJECT_CROPS) break;
     spent += submission.crops; done.push(submission);
-    try { await revert(env, submission, actor, { by: admin, reason, reviewer }); rejected++ }
+    try { spent += (await revert(env, submission, actor, admin, { reason, reviewer })).queries ?? 0; rejected++ }
     catch (error) {
       // A crop someone else has changed since stays as it is; a crop no longer in the collection
       // cannot be put back. Either way the rest go on.

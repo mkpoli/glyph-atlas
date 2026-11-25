@@ -16,7 +16,7 @@ describe('an error', () => {
   it('is told by its status, its route and the connection', () => {
     expect(errorCase({ status: 404 })).toBe('notFound')
     expect(errorCase({ status: 404, routeId: '/[lang=locale]/crop/[id]' })).toBe('crop')
-    expect(errorCase({ status: 404, routeId: '/[lang=locale]/character/[code]' })).toBe('character')
+    for (const page of ['character', 'grapheme']) expect(errorCase({ status: 404, routeId: `/[lang=locale]/${page}/[code]` })).toBe('character')
     expect(errorCase({ status: 404, routeId: '/[lang=locale]/forms/[[family]]' })).toBe('forms')
     expect(errorCase({ status: 503, code: 'busy' })).toBe('busy')
     expect(errorCase({ status: 500 })).toBe('server')
@@ -39,6 +39,7 @@ describe('a missing address', () => {
     for (const path of ['/', '/nope', '/about/team', '/%E0%A4%A', '/U+110000']) expect(suggestion(path)).toBe(null)
     expect(suggestion('/character/U+5B57', 'character')).toBe(null)
     expect(suggestion('/character/u+5b57', 'character')).toEqual({ kind: 'character', path: '/character/U+5B57', text: '字' })
+    expect(suggestion('/grapheme/u+5b57', 'character')).toEqual({ kind: 'character', path: '/grapheme/U+5B57', text: '字' })
     expect(suggestion('/crop/ar:x:1', 'crop')).toBe(null)
   })
 })

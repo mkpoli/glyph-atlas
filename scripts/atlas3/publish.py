@@ -4,7 +4,7 @@
     python3 publish.py [<catalogue.sqlite>] --replacements [--dry-run]
 
 The catalogue is what export_cloudflare.py / export_cloudflare_corpus.py write: `units`, and when
-present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`. A `media` table also adds its
+present `corpus_units`, `media`, `unit_ngrams`, `pages`, `document_dating`, `unit_redirects`, `based_on`. A `media` table also adds its
 images to the image key map (`media_map.py`).
 
 - Ids come from out/mirror.sqlite. A new text id gets a page and slot once; the allocation and a
@@ -42,6 +42,12 @@ images to the image key map (`media_map.py`).
   moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
   dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
   needs `--approve-styles` naming that count of crops.
+- A catalogue's `record_places` (id, object, offset, size, and the place it replaces), as `record_credits.py` writes it, points each
+  named corpus glyph at its record in that pack, which is in the bucket before the publish. Only the
+  bundles and their pages' revisions change.
+- A catalogue's `credits` (attribution, credit), as `credits.py` writes it, gives every published page
+  and crop entry that carries the attribution the credit in its place, or none where it names no one.
+  Only their bundles change, and the revisions of their pages.
 - A catalogue whose `units` carry `visual` and `context` sets the published crops' model votes for
   their cut in the page objects `v3/votes/<build>/<page>.json.gz` (votes.py), uploaded once the D1
   parts naming their model codes have landed; a reading that is not ready, or a retirement, removes the
@@ -161,6 +167,11 @@ def image_keys(entry):
             if (key := (e.get(field) or "").rsplit("/", 1)[-1].removesuffix(".webp"))}
 
 
+def photo_key(facts):
+    """The image key of the hosted photograph a page's facts name, or None."""
+    return (facts or {}).get("photo", "").rsplit("/", 1)[-1].removesuffix(".webp") or None
+
+
 def lit(v):
     if v is None:
         return "NULL"
@@ -189,6 +200,14 @@ def iou(a, b):
 
 def wrangler(*args, capture=False):
     return subprocess.run([BUNX, "wrangler", *args], cwd=CF, capture_output=capture, text=True, check=False)
+
+
+def pending_boxes(crops, chunk=500):
+    """The boxes reviewers redrew on the site that still wait for a cut, by crop: `reviews.x..h` on D1."""
+    crops = sorted(c for c in crops if c is not None)
+    return {r["crop"]: {k: r[k] for k in "xywh"} for i in range(0, len(crops), chunk)
+            for r in query("glyph-atlas-v3", "SELECT crop, x, y, w, h FROM reviews WHERE x IS NOT NULL AND crop IN ("
+                           + ",".join(map(str, crops[i:i + chunk])) + ")")} if crops else {}
 
 
 def query(database, sql):
@@ -584,8 +603,26 @@ def releases_base(atlas, overlay):
     return released
 
 
+def book_titles(src, tables):
+    """The title the catalogue gives each document, which the site lists its books by: the page records'
+    for a document that has any, else the corpus export's, in the order of `books.py`'s `titles`."""
+    found = {}
+    if "corpus_documents" in tables:
+        found.update(src.execute("SELECT document, title FROM corpus_documents WHERE title <> ''"))
+    if "pages" in tables:
+        stated = {}
+        for r in src.execute("SELECT document, data FROM pages ORDER BY id"):
+            if title := json.loads(r["data"]).get("title"):
+                stated.setdefault(r["document"], title)
+        found.update(stated)
+    return found
+
+
 class Mirror:
     def __init__(self):
+        self.titled = {}  # the titles the catalogue gives its documents
+        self.retitle = False  # whether a book that has another title takes the catalogue's
+        self.retitled = {}  # the title each book had that takes another, by book id, with the new one
         self.ids = sqlite3.connect(OUT / "mirror.sqlite")
         self.ids.executescript("""
           CREATE TABLE IF NOT EXISTS book_years(key TEXT PRIMARY KEY, year INTEGER) WITHOUT ROWID;
@@ -637,7 +674,11 @@ class Mirror:
         return code
 
     def book(self, key):
+        """A book's id, the book added where the site lacks it. A new book takes the title the catalogue
+        gives it (`titled`), and a book the site holds with no title takes it once; with `retitle`, a book
+        that has another title takes it too."""
         key = key or "unknown"
+        title = self.titled.get(key)
         row = self.ids.execute("SELECT id FROM books WHERE key=?", (key,)).fetchone()
         if row:
             bid = row[0]
@@ -645,7 +686,16 @@ class Mirror:
             bid = (self.ids.execute("SELECT max(id) FROM books").fetchone()[0] or 0) + 1
             self.ids.execute("INSERT INTO books VALUES(?,?)", (key, bid))
         if not self.has("books", "id", bid):
-            self.emit("books", ("id", "key"), (bid, key))
+            self.emit("books", ("id", "key", "title"), (bid, key, title))
+        elif title:
+            held = self.atlas.execute("SELECT title FROM books WHERE id=?", (bid,)).fetchone()[0]
+            if held is None or (self.retitle and held != title):
+                # A retitle holds whatever title D1 has, so D1 and the local copy end with the same one.
+                untitled = "" if self.retitle else " AND title IS NULL"
+                self.head.append(f"UPDATE books SET title={lit(title)} WHERE id={bid}{untitled};")
+                self.atlas.execute(f"UPDATE books SET title=? WHERE id=?{untitled}", (title, bid))
+                if held is not None:
+                    self.retitled[bid] = (held, title)
         return bid
 
     def grapheme(self, text):
@@ -1272,6 +1322,7 @@ def main():
     parser = argparse.ArgumentParser(description="Publish a catalogue into the new layout.")
     parser.add_argument("catalogue", type=Path, nargs="?")
     parser.add_argument("--dry-run", action="store_true", help="write the parts and bundles, publish nothing")
+    parser.add_argument("--retitle", action="store_true", help="give the catalogue's books its titles where the site has others")
     parser.add_argument("--approve-styles", type=int, metavar="N",
                         help="send a book_styles catalogue that changes exactly N crops, the figure its dry run reported")
     parser.add_argument("--replacements", action="store_true",
@@ -1337,6 +1388,11 @@ def main():
     # nothing else, so nothing reaches D1 before its count is checked.
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
+    m.titled, m.retitle = book_titles(src, tables), args.retitle
+    if "record_places" in tables and tables - {"record_places"}:
+        sys.exit(f"a record_places catalogue holds record_places alone, not {sorted(tables - {'record_places'})}; nothing published")
+    if "credits" in tables and tables - {"credits"}:
+        sys.exit(f"a credits catalogue holds credits alone, not {sorted(tables - {'credits'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
     # D1 apart from catalogues). A book with neither keeps its crops' years.
     years = dict(m.ids.execute("SELECT key, year FROM book_years"))
@@ -1354,9 +1410,9 @@ def main():
                      f"{unaddressed[0][0]} in {unaddressed[0][1]}; name the packs by their content first (address_packs.py)")
     media, fresh_media = {}, []
     if "media" in tables:
-        media = {r["key"]: [r["object"], r["offset"], r["size"]] for r in src.execute("SELECT key, object, offset, size FROM media")}
-        # Checked against the map now, merged into the local shards once the run is pending (`deliver`).
-        fresh_media = media_map.grow(src.execute("SELECT key, object, offset, size, content_type FROM media"))[1]
+        # Checked against the map now, merged into the local shards once the run is pending (`deliver`). An
+        # image the map already holds is served from its place there, so its crop names that place.
+        _grown, fresh_media, media = media_map.grow(src.execute("SELECT key, object, offset, size, content_type FROM media"))
 
     def place(data, field):
         key = (data.get(field) or "").rsplit("/", 1)[-1].split(".")[0]
@@ -1386,6 +1442,24 @@ def main():
 
     def entry(cid):
         return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
+
+    # A catalogue made from published records (relabel.py) says what it was made from. A crop reviewed or a
+    # page published since, here or on the site, would be put back, so it is made again instead.
+    if "based_on" in tables:
+        based, moved_on = {m.known(r["id"]): r for r in src.execute("SELECT id, revision, page_rev FROM based_on")}, []
+        for cid, r in based.items():
+            row = cid is not None and m.atlas.execute("SELECT c.revision, p.rev FROM crops c JOIN pages p ON p.id=c.id/? WHERE c.id=?",
+                                                      (PAGE, cid)).fetchone()
+            if not row or tuple(row) != (r["revision"], r["page_rev"]):
+                moved_on.append(r["id"])
+        for i in range(0, len(numbers := sorted(cid for cid in based if cid is not None)), 200):
+            chunk = numbers[i:i + 200]
+            live = {row["id"]: row["revision"] for row in query(
+                "glyph-atlas-v3", f"SELECT id, revision FROM crops WHERE id IN ({','.join(map(str, chunk))})")}
+            moved_on += [based[cid]["id"] for cid in chunk if live.get(cid) != based[cid]["revision"]]
+        if moved_on:
+            sys.exit(f"{len(set(moved_on))} crops were reviewed or published since the catalogue was made, for example "
+                     f"{min(moved_on)}; make it again (after answers.py, which takes the site's reviews); nothing published")
 
     # Identity checks a publish without the slot matcher can make.
     columns = "id, origin, character, visual_group, production, category, state, revision, quiz, document, style, data"
@@ -1418,6 +1492,13 @@ def main():
             if (data.get("box") and published.get("box") and data["box"] != published["box"]) or \
                     (data.get("image_sha256") and published.get("image_sha256") and data["image_sha256"] != published["image_sha256"]):
                 recut.add(r["id"])
+    # A box a reviewer redrew on the site waits in `reviews` for its cut; a re-cut to exactly that box is the
+    # reviewer's, whatever it covers (as `box_pending` says in a catalogue taken from the site).
+    drawn = pending_boxes([m.known(i) for i in recut])
+
+    def redrawn(rid, data):
+        box = data.get("box")
+        return bool(data.get("box_pending")) or (box is not None and drawn.get(m.known(rid)) == {k: int(box[k]) for k in "xywh"})
     refused = []
     for r in units:
         data = json.loads(r["data"])
@@ -1438,9 +1519,9 @@ def main():
                 refused.append(f"{r['id']}: retired without its revision recorded, so it cannot be put back safely")
             elif m.page_key(cid // PAGE) != page_key:
                 refused.append(f"{r['id']}: page {m.page_key(cid // PAGE)} -> {page_key}")
-            elif r["id"] in recut and data.get("box") and not data.get("box_pending"):
+            elif r["id"] in recut and data.get("box") and not redrawn(r["id"], data):
                 # Against every other crop's published box, re-cut ones too, so two crops cannot trade glyphs.
-                # A box a reviewer redrew on the site (`box_pending`) is the crop's own, whatever it covers.
+                # A box a reviewer redrew on the site is the crop's own, whatever it covers.
                 for e in bundle_of(cid // PAGE)["crops"]:
                     if e["id"] != r["id"] and not e.get("retired") and e["id"] not in retiring \
                             and iou(data["box"], e.get("box")) >= 0.5:
@@ -1703,6 +1784,53 @@ def main():
             sys.exit(f"{len(unknown)} cut_facts rows name crops the mirror lacks: {unknown[:5]}; nothing published")
         if gone:
             print(f"cut_facts: {gone} crops retired or without an entry, left as they are", flush=True)
+
+    # A corpus glyph's record written again in another pack: its entry points there, and nothing else moves.
+    if "record_places" in tables:
+        unplaced, moved = [], []
+        for r in src.execute("SELECT * FROM record_places ORDER BY id"):
+            cid = m.known(r["id"])
+            old = entry(cid) if cid is not None else {}
+            if not old.get("record_place") or old.get("retired"):
+                unplaced.append(r["id"])
+                continue
+            place = [r["object"], r["offset"], r["size"]]
+            if old["record_place"] == place:
+                continue
+            # A record published since the catalogue was written holds what the catalogue's does not.
+            if old["record_place"] != [r["old_object"], r["old_offset"], r["old_size"]]:
+                moved.append(r["id"])
+                continue
+            m.touched_pages[cid // PAGE][cid % PAGE] = (
+                {**{k: v for k, v in old.items() if k != "slot"}, "record_place": place}, False)
+        if moved:
+            sys.exit(f"{len(moved)} glyphs' records have been published since the catalogue was written, e.g. {moved[0]}; "
+                     "write it again; nothing published")
+        if unplaced:
+            sys.exit(f"{len(unplaced)} record_places rows name glyphs with no published record, e.g. {unplaced[0]}; nothing published")
+
+    # A credit shown otherwise than it was published: each published page and crop entry that carries the
+    # catalogue's attribution takes the credit, and loses the field where that names no one.
+    credited = {}
+    if "credits" in tables:
+        credits, crops = dict(src.execute("SELECT attribution, credit FROM credits")), 0
+
+        def with_credit(record):
+            credit = credits[record["attribution"]]
+            # A retired entry's new record is laid over its old one, so a credit that goes is named as none.
+            kept = {k: v for k, v in record.items() if k != "attribution"}
+            return {**kept, "attribution": credit} if credit or record.get("retired") else kept
+        for p in m.atlas.execute("SELECT id, key FROM pages WHERE rev > 0 ORDER BY id").fetchall():
+            bundle = stored(p["id"])
+            # A page none of whose crops is live has no page view, and its facts are not published again.
+            live = m.atlas.execute("SELECT 1 FROM crops WHERE id >= ? AND id < ? LIMIT 1", (p["id"] * PAGE, (p["id"] + 1) * PAGE)).fetchone()
+            if live and (page := bundle.get("page")) and page.get("attribution") in credits:
+                credited[p["key"]] = with_credit({k: v for k, v in page.items() if k not in LINKS})
+            for e in bundle["crops"]:
+                if e.get("attribution") in credits:
+                    m.touched_pages[p["id"]][e["slot"]] = (with_credit({k: v for k, v in e.items() if k != "slot"}), False)
+                    crops += 1
+        print(f"credits: {crops} crops and {len(credited)} pages", flush=True)
 
     # Corpus glyphs flagged for a person, in the order the catalogue names them, after the crops above.
     # Each is the Worker's admin flag (`flagCorpus`): its finding, its first corpus row and an event of
@@ -2004,6 +2132,7 @@ def main():
     # every page of its book the site holds once this publish lands; links a catalogue carries are dropped.
     facts = {r["id"]: {k: v for k, v in json.loads(r["data"]).items() if k not in LINKS}
              for r in src.execute("SELECT id, data FROM pages")} if "pages" in tables else {}
+    facts.update(credited)
     # The books whose pages may change: those the catalogue carries a page of, a page new to the site among them,
     # and those a page of which gained or lost a crop in this run, since a page that lost its last one leaves the chain.
     books = {row["book"] for key in facts if (row := m.atlas.execute("SELECT book FROM pages WHERE key=?", (key,)).fetchone())}
@@ -2032,7 +2161,9 @@ def main():
                     page_facts[pid] = {**record, **dict(zip(LINKS, links[key], strict=True))}
                     m.touched_pages.setdefault(pid, {})
                     relinked += bool(moved and held is not None)
-    files, unmapped = [], set()
+    # A hosted photograph leaves the image key map when its page stops naming it: the page's facts name
+    # another or none, or the page has no live crop left, retired or withdrawn.
+    files, unmapped, photos_leaving = [], set(), defaultdict(set)
     for pid, entries in m.touched_pages.items():
         p = m.atlas.execute("SELECT * FROM pages WHERE id=?", (pid,)).fetchone()
         previous = bundle_of(pid)
@@ -2061,7 +2192,12 @@ def main():
         if not touched:
             continue
         rev = p["rev"] + 1
-        body = {"key": p["key"], "book": p["book"], "rev": rev, "page": page_facts.get(pid, previous.get("page")),
+        shown = page_facts.get(pid, previous.get("page"))
+        if photo_key(shown) and all(e.get("retired") or e.get("withdrawn") for e in merged.values()):
+            shown = {k: v for k, v in shown.items() if k != "photo"}
+        if (held := photo_key(previous.get("page"))) and held != photo_key(shown):
+            photos_leaving[p["book"]].add((pid, held))
+        body = {"key": p["key"], "book": p["book"], "rev": rev, "page": shown,
                 "crops": sorted(merged.values(), key=lambda e: e["slot"])}
         path = run / "pages" / f"{pid}-{rev}.json.gz"
         path.write_bytes(gzip.compress(json.dumps(body, ensure_ascii=False).encode()))
@@ -2070,6 +2206,14 @@ def main():
         # The revision moves in the same part as the page's rows, so a reader sees the old page or the new.
         m.page_sql[pid].append(f"UPDATE pages SET rev={rev}, next_slot=max(next_slot,{next_slot}) WHERE id={pid};")
         m.atlas.execute("UPDATE pages SET rev=?, next_slot=max(next_slot,?) WHERE id=?", (rev, next_slot, pid))
+    shown_now = {int(f.name.split("-")[0]): photo_key(json.loads(gzip.decompress(f.read_bytes()))["page"]) for f in files} \
+        if photos_leaving else {}
+    for book, leaving in photos_leaving.items():
+        # A photograph another page of the book still shows stays mapped. A photograph's key names its
+        # document (`export_cloudflare.PagePhotos`), so no page of another book shows it.
+        kept = {shown_now[row["id"]] if row["id"] in shown_now else photo_key(published_facts(row["id"]))
+                for row in m.atlas.execute("SELECT id FROM pages WHERE book=?", (book,)).fetchall()}
+        unmapped |= {key for _, key in leaving} - kept
     stray = [pid for pid, statements in m.page_sql.items() if statements and pid not in {int(f.name.split("-")[0]) for f in files}]
     if stray:
         sys.exit(f"pages {stray[:5]} have row changes but no new bundle; nothing published")
@@ -2093,6 +2237,8 @@ def main():
                                               if (OUT / "votes" / f"{pid}.json.gz").exists() else None)]
     print(f"{n} crops read, {statements} statements in {atlas_parts} parts{runs_note} in {runs_parts} parts, "
           f"{len(files)} pages, {len(voted)} vote objects -> {run}", flush=True)
+    for held, title in m.retitled.values():
+        print(f"title: {held} -> {title}", flush=True)
     if relinked:
         print(f"{relinked} pages published before take other neighbours in their book", flush=True)
     if unmapped:

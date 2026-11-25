@@ -123,8 +123,8 @@ try {
 
   // The form's own page: under 事, with the crop, and no link to a dictionary of encoded characters.
   await browser.goto(`${service.base}/en/character/U+F0000`, { waitFor: '!!document.querySelector(".character-members")', timeout: 90000 })
-  await browser.waitFor(`!!document.querySelector('.character-members .member.active')`, 30000)
-  const own = await browser.evaluate(`({ active: document.querySelector('.character-members .member.active .script-char')?.textContent,
+  await browser.waitFor(`!!document.querySelector('.character-members .member[aria-current]')`, 30000)
+  const own = await browser.evaluate(`({ active: document.querySelector('.character-members .member[aria-current] .script-char')?.textContent,
     zi: !!document.querySelector('.character-members .zi-link') })`)
   assert(own.active === forms[0] && !own.zi, `the drawn form's page is not its own: ${JSON.stringify(own)}`)
   await browser.waitFor(`[...document.querySelectorAll('.glyph-tile')].some(tile => tile.dataset.unit === ${JSON.stringify(id)})`, 30000)

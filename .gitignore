@@ -21,6 +21,8 @@ logs/
 *.webp
 # The author's face on the sponsor button and in its dialog.
 !apps/review/static/sponsor-*.webp
+# Bundled 大肥魚 chat stickers.
+!apps/fish-bot/stickers/*.png
 *.tif
 *.tiff
 .DS_Store

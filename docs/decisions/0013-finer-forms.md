@@ -24,6 +24,15 @@ A 字体 is named at one of three levels, the broadest that tells it apart:
 | Registered figure | a variation sequence of the IVD | 突 `U+7A81 U+E0103` (Moji_Joho, MJ030283) |
 | Described form | an ideographic description sequence | `⿰月兊` |
 
+A description names a part by its registered figure where the part's shape is what differs. The IVD
+registers 遇 with one dot or with the 禺 whose left stroke rises above its bar, never both, so the
+form with both is `⿺辶󠄁禺󠄁`: 辶 `U+8FB6 U+E0101` (Adobe-Japan1, CID+15403) and 禺 `U+79BA U+E0101`
+(Adobe-Japan1, CID+13571). The IDS editor offers the figures the composer draws of a chosen part.
+
+A described form or a registered figure is one of a 字種's 字体 while a crop of it carries the form: the claim
+on the crop says so, and the card, the form bar and the bulk targets list it with the crops that have it
+(`carried_forms`, migration 0020).
+
 A CJK compatibility ideograph is a code point that stands for a unified ideograph, and normalisation
 writes the unified ideograph in its place. It is no form, and is written as what it stands for:
 
@@ -71,6 +80,9 @@ The 構形 is unchanged: a compatibility ideograph has had its unified ideograph
 
 ## Sources
 
+- Unicode, Ideographic Variation Database, `IVD_Sequences.txt` of 2025-07-14,
+  https://www.unicode.org/ivd/data/2025-07-14/IVD_Sequences.txt, read 2026-11-24: the sequences of
+  遇 U+9047, 辶 U+8FB6 and 禺 U+79BA; their figures compared in IPAmj明朝 Ver.006.01 and Noto Sans CJK JP.
 - Unicode, `StandardizedVariants.txt`, version 18.0.0 (2026-07-29),
   https://www.unicode.org/Public/UCD/latest/ucd/StandardizedVariants.txt, read 2026-11-15: 1,002
   rows named `CJK COMPATIBILITY IDEOGRAPH-`. `data/sources/unicode-ucd.yaml`.

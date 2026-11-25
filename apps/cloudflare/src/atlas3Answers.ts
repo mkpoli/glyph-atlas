@@ -77,9 +77,10 @@ export async function charsOf(env: Env, known: Record<string, [string, string]>,
 }
 
 // The tally's deltas above a generation, both kinds in one primary-key range (`gen` leads the key).
-export const tallyDeltasQuery = () => `SELECT kind,char,book,production,state,quiz,sum(n) AS n FROM tally
-  WHERE gen>? GROUP BY kind,char,book,production,state,quiz`;
-type Delta = { kind: number; char: number; book: number; production: number; state: number; quiz: number; n: number };
+// A delta of crops with no character (-1) names the family they are filed under.
+export const tallyDeltasQuery = () => `SELECT kind,char,CASE WHEN char=-1 THEN family ELSE -1 END AS filed,book,production,state,quiz,sum(n) AS n FROM tally
+  WHERE gen>? GROUP BY kind,char,filed,book,production,state,quiz`;
+type Delta = { kind: number; char: number; filed: number; book: number; production: number; state: number; quiz: number; n: number };
 // The deltas move only with a review, an undo or a publication, each of which moves the catalogue
 // stamps, so an isolate keeps the last read under the publication, its generation and the stamps' key,
 // and the edge keeps each read under the same key for DELTAS_EDGE_SECONDS: an isolate new to a key
@@ -92,7 +93,7 @@ export function tallyDeltas(env: Env, pub: string, through: number, stamps: stri
   const key = `${pub}|${through}|${stamps}`;
   if (deltasHeld?.key === key) return deltasHeld.read;
   const read = (async () => {
-    const edge = new Request(`https://glyphatlas.org/_deltas/${encodeURIComponent(key)}`);
+    const edge = new Request(`https://glyphatlas.org/_deltas/${encodeURIComponent(key)}?s=2`);
     const kept = await caches.default.match(edge).then(hit => hit ? hit.json() as Promise<Delta[]> : null).catch(() => null);
     if (kept) return kept;
     const rows = (await env.ATLAS.prepare(tallyDeltasQuery()).bind(through).all<Delta>()).results;
@@ -125,7 +126,7 @@ export async function collectedCounts(env: Env, stamps: string, timing?: Timing)
     ({ char, book, production, category, priority, state, quiz, n }));
   const collected = deltas.filter(d => d.kind === 0);
   const chars = await timed('chars', charsOf(env, body.chars, [...cells.map(c => c.char), ...collected.map(d => d.char)]));
-  for (const { kind: _, ...d } of collected) {
+  for (const { kind: _, filed: __, ...d } of collected) {
     const text = chars.get(d.char)?.text;
     cells.push({ ...d, category: text ? categories.get(categoryOf(text)) ?? null : null, priority: null });
   }
@@ -134,6 +135,8 @@ export async function collectedCounts(env: Env, stamps: string, timing?: Timing)
 
 /** A corpus glyph count: character, production (-1 unknown), state code and withheld flag. */
 export type GlyphCell = { char: number; production: number; state: number; quiz: number; n: number };
+/** The crops with no character that are filed under a family, of one kind. */
+export type FiledCell = { family: number; kind: number; n: number };
 /** The corpus glyphs with a character by character, production, state and withheld flag. With the
  *  catalogue key `stamps`, the reviews since the publication are added. */
 export async function corpusCounts(env: Env, stamps: string | null): Promise<{ pub: string; cells: GlyphCell[]; chars: Map<number, CharInfo> }> {
@@ -142,6 +145,17 @@ export async function corpusCounts(env: Env, stamps: string | null): Promise<{ p
   const cells: GlyphCell[] = (body.cells as number[][]).map(([char, production, state, quiz, n]) => ({ char, production, state, quiz, n }));
   for (const d of deltas) if (d.kind === 1 && d.char !== -1) cells.push({ char: d.char, production: d.production, state: d.state, quiz: d.quiz, n: d.n });
   return { pub, cells, chars: await charsOf(env, body.chars, cells.map(c => c.char)) };
+}
+/** The crops of both kinds with no character by family, the reviews since the publication among them,
+ *  with the families' texts and graphemes. A publication that does not count them has none, and its
+ *  reviews nothing to be counted from. */
+export async function filedCounted(env: Env, stamps: string): Promise<{ cells: FiledCell[]; chars: Map<number, CharInfo> }> {
+  const { pub, through_gen } = await currentPointer(env);
+  const [body, deltas] = await Promise.all([answer(env, pub, 'corpus.json.gz'), tallyDeltas(env, pub, through_gen, stamps)]);
+  if (!body.filed) return { cells: [], chars: new Map() };
+  const cells: FiledCell[] = (body.filed as number[][]).map(([family, kind, n]) => ({ family, kind, n }));
+  for (const d of deltas) if (d.char === -1 && d.filed !== -1) cells.push({ family: d.filed, kind: d.kind, n: d.n });
+  return { cells, chars: await charsOf(env, body.chars, cells.map(c => c.family)) };
 }
 
 /** Each book's collected crops and corpus glyphs at the publication, by book id. */

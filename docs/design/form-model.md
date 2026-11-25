@@ -97,6 +97,11 @@ that grapheme as the claim is saved or taken back (`refileRuns`, `routes/runs.ts
 finds 后日 written for 後日 under 後日. A disputed or rejected slot names none, and a crop cut again
 waits for a claim on its new cut.
 
+A crop's `built_as` claim names the structure its letterforms are built as, where no recorded form names
+their shape: ⿱网直 for a 置 whose strokes no 字体 on record has. It gives no form, so the `has_form` slot stays
+empty and a form named later is nobody's dispute; while the crop has a form, the form is what is shown.
+A reader who gives the structure alone takes back their own form on the crop.
+
 A crop's `writes_word` claim names the word it writes at its place in the text (decision 0004), or a
 gloss where no word row fits yet. Its `method` is the strongest evidence for the sense: the source's
 own gloss of a headword, a 振り仮名 over the character or its word (`rubies`), a note such as a 割書,
@@ -108,6 +113,18 @@ same word and judge the form differently agree on the slot; disputed is what the
 never a value anyone asserts. `atlas review sense-candidates` lists the crops worth such a claim: those a
 person filed under another Han character than their source text gives, with the 異体字 relation
 between the two and the rubies over the crop.
+
+A crop's `bears_ruby` claim gives the 振り仮名 beside the run of characters it stands in as the page writes
+it, hentaigana included (諸器 𛁈よ・き), with the crop's own place in the run (from 0). A `bears_left_ruby`
+claim gives the 左訓 on its left (もろもろのうつわ), split as the page splits it. These are the text, and stand
+over the run wherever it is shown. A `read_as` claim is a reader's note on the same run: how it is read, in
+ordinary kana or letters, over each character (しょ・き) or over them all (村落 ざいご), with what that rests
+on (`method`, as for `writes_word`). It is shown as a note and never in place of the text. Any of the three
+may stand without the others. Each is a slot of its own, so two readers who read a run
+alike agree whatever each records of the ruby. A save claims the same run on each of its crops that is
+published, at the version its reader saw, and replaces the reader's earlier runs that it meets, whole.
+A character of the run with no published crop is named in the run alone. A reading names no word: the word
+a run writes is its `writes_word` claim, saved with the run on each of its crops.
 
 Acceptance is its own row in `assertion_actions`: `accept`, `reject`, `retract` (by the asserter) or
 `adjudicate` (by an adjudicator). A predicate catalogue (`data/ledger.json`) states each
@@ -128,6 +145,9 @@ rows and never rebuild the graph per request.
 4. Otherwise one standing value is current; several standing values make the slot `disputed`, and
    every claim stays; live claims that all fell to rejections make it `rejected`.
 5. A person's new claim in a single-valued slot retracts their own earlier one in the same write.
+6. Undoing a review retracts the form it claimed. The person's own claim it replaced comes back as a new
+   row of the submission that made it, with the verdicts on it and the first row as its premise
+   (`restores`), and the two count as one claim.
 
 ## Rules
 

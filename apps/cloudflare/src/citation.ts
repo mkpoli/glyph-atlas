@@ -3,6 +3,8 @@
 // schema.org for the page). The Worker serves them at /atlas/cite/<kind>/<id>, and the pages build the
 // same entry from the record they render. Nothing is stated that the record does not carry;
 // attributions stay verbatim.
+import { graphemeLabel } from './graphemeLabel';
+
 type Json = Record<string, any>;
 
 export const SITE = 'Glyph Atlas';
@@ -16,6 +18,8 @@ export type Source = {
 };
 export type Entry = {
   kind: Kind; id: string; label: string | null; codePoint?: string;
+  /** The one character that names it, when other than its label: a grapheme's head. */
+  key?: string;
   /** The form the site holds for a crop, when it is other than its label. */
   form?: string;
   /** The page's address on the site, without a language prefix: the site sends it to the reader's language. */
@@ -91,12 +95,13 @@ export function cropEntry(record: Json, version: string | null = record.crop_ver
   };
 }
 
-/** A character's page: its whole grapheme family, or the one form alone. */
+/** A grapheme's page, named by its label, or the page of one form. */
 export function characterEntry(kind: 'grapheme' | 'form', card: Json): Entry {
   const named = kind === 'grapheme' && card.grapheme?.code_point ? card.grapheme : card;
   const codePoint = String(named.code_point);
-  return { kind, id: slug(codePoint), label: text(named.char) ?? null, codePoint,
-    path: `/character/${slug(codePoint)}?scope=${kind === 'grapheme' ? 'family' : 'exact'}` };
+  const char = text(named.char) ?? null, label = char && kind === 'grapheme' ? graphemeLabel(char) : char;
+  return { kind, id: slug(codePoint), label, ...(char && label !== char ? { key: char } : {}), codePoint,
+    path: `/${kind === 'grapheme' ? 'grapheme' : 'character'}/${slug(codePoint)}` };
 }
 
 export const FORMATS = ['csl', 'bibtex', 'hayagriva'] as const;
@@ -116,8 +121,9 @@ export const title = (entry: Entry): string => entry.label ?? (entry.kind === 'c
 /** A short key a bibliography cites the entry by: `glyphatlas-敢-k3x9a2`, `glyphatlas-あ-grapheme`. A
  *  label that is not letters (a description sequence) is named by its code points. */
 export function citationKey(entry: Entry): string {
-  const label = entry.label && /^[\p{L}\p{M}\p{N}]{1,4}$/u.test(entry.label) ? entry.label
-    : entry.label ? [...entry.label].map(c => 'U' + c.codePointAt(0)!.toString(16).toUpperCase()).join('') : entry.kind;
+  const named = entry.key ?? entry.label;
+  const label = named && /^[\p{L}\p{M}\p{N}]{1,4}$/u.test(named) ? named
+    : named ? [...named].map(c => 'U' + c.codePointAt(0)!.toString(16).toUpperCase()).join('') : entry.kind;
   const tail = entry.kind !== 'crop' ? entry.kind : entry.token ?? versionToken(entry.id, entry.id + '@') ?? 'crop';
   return `glyphatlas-${label}-${tail}`;
 }
@@ -231,11 +237,12 @@ export function licenceUrl(licence: string | undefined): string | null {
 }
 
 /** The entry as schema.org describes it, for the page's JSON-LD: a crop as an image of its source, a
- *  grapheme or form as a term of the site's set. `image` is the crop's absolute image address, if shown. */
+ *  grapheme or form as a term of the site's set, a grapheme by its head and its label's others beside it. `image` is the crop's absolute image address, if shown. */
 export function linkedData(entry: Entry, origin: string, image: string | null = null): Json {
   const site = { '@type': 'Dataset', name: SITE, url: origin + '/' };
-  if (entry.kind !== 'crop') return { '@type': 'DefinedTerm', name: entry.label ?? entry.codePoint, termCode: entry.codePoint,
-    url: origin + entry.path, inDefinedTermSet: site };
+  if (entry.kind !== 'crop') return { '@type': 'DefinedTerm', name: entry.key ?? entry.label ?? entry.codePoint,
+    ...(entry.key ? { alternateName: [...entry.label!].filter(char => char !== entry.key) } : {}),
+    termCode: entry.codePoint, url: origin + entry.path, inDefinedTermSet: site };
   const source = entry.source ?? {};
   const licence = licenceUrl(source.licence);
   const credit = source.attribution ?? source.holder;

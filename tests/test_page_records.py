@@ -6,8 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from glyph_atlas import images
+from glyph_atlas.review.media import MediaCache
 from glyph_atlas.schema import Page
 
 SCHEMA = "\n".join(p.read_text() for p in sorted(Path("apps/cloudflare/migrations").glob("*.sql")))
@@ -72,3 +74,69 @@ def test_a_republished_page_keeps_the_crops_another_dataset_put_on_it(scripts):
     before = db.total_changes
     db.execute(schema.page_upsert("hk:p", "hk:d", page("new", ["c", "a", "b"])))
     assert db.total_changes == before
+
+
+class Packed:
+    """The packs of an export, as far as a page photograph meets them."""
+    def __init__(self):
+        self.added, self.synced = {}, 0
+
+    def add(self, key, path, content_type="image/webp"):
+        self.added[key] = path
+
+    def sync(self):
+        self.synced += 1
+
+
+@pytest.fixture
+def scan(tmp_path, monkeypatch):
+    """A page image in the image cache, registered under a plain URL no IIIF service serves."""
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(tmp_path))
+    file = tmp_path / "A0280017.jpg"
+    Image.new("RGB", (239, 200), "white").save(file)
+    held = images.register(file, "http://kanji.example/toho/L/A0280017.jpg")
+    return Page(id="doc:0", document_id="doc", seq=0, image=held.url, width=411, height=344, sha256=held.sha256)
+
+
+def book(licence="PD"):
+    rights = SimpleNamespace(licence=licence, attribution="Holder", evidence="https://x.org/rights")
+    return SimpleNamespace(title="Book", holder="Holder", image_rights=rights, source_refs={}, meta={})
+
+
+def test_a_page_of_a_hosted_document_is_packed_whole_and_named_in_its_record(scripts, scan):
+    export, _ = scripts
+    packs = Packed()
+    photo = export.PagePhotos(MediaCache(), packs, hosted={"doc"})
+    url = photo(scan, book())
+    key = url.removeprefix("/atlas/media/").removesuffix(".webp")
+    assert set(packs.added) == {key}
+    with Image.open(packs.added[key]) as picture:
+        assert (picture.format, picture.size) == ("WEBP", (239, 200))
+    # The same page asked again is the same image, so a second export packs nothing new.
+    assert photo(scan, book()) == url
+    # Another document photographed from the same file has a photograph of its own.
+    other = export.PagePhotos(MediaCache(), Packed(), hosted={"twin"})(scan.model_copy(update={"document_id": "twin"}), book())
+    assert other and other != url
+    db = sqlite3.connect(":memory:")
+    db.executescript(SCHEMA)
+    export.page_rows(db, ["a"], {"a": unit("a", "doc:0")}, {"doc:0": scan}, {"doc": book()}, photo)
+    record = json.loads(db.execute("SELECT data FROM pages").fetchone()[0])
+    assert (record["photo"], record["service"], packs.synced) == (url, None, 1)
+
+
+def test_a_page_keeps_no_photograph_unless_every_condition_holds(scripts, scan):
+    export, _ = scripts
+    packs = Packed()
+    media = MediaCache()
+    # A document no source names.
+    assert export.PagePhotos(media, packs, hosted=set())(scan, book()) is None
+    hosted = export.PagePhotos(media, packs, hosted={"doc"})
+    # A page a IIIF service serves is shown from the service.
+    served = scan.model_copy(update={"image": "https://x.org/iiif/2/p", "sha256": None})
+    assert hosted(served, book()) is None
+    # A licence the site serves no crops under.
+    assert hosted(scan, book("CC-BY-NC-4.0")) is None
+    # A page whose file is not in the image cache.
+    assert hosted(scan.model_copy(update={"image": "http://kanji.example/other.jpg", "sha256": None}), book()) is None
+    assert packs.added == {}
+    assert "photo" not in export.page_record(scan, book(), [])

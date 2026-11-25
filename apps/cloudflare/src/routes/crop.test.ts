@@ -10,7 +10,7 @@ import { votesKey } from '../atlas3Votes';
 import { versionToken } from '../citation';
 import { cropSlotsQuery, formNamesQuery, wordMethodsQuery, wordNamesQuery } from '../cropPanels';
 import { cropVersion, cropVersionNow, recordQuery, redrawLimits } from '../cropRecords';
-import { bookDatesQuery, dateClaimsQuery, lineQuery, listedCropsQuery, samePixels } from './crop';
+import { bookDatesQuery, dateClaimsQuery, lineQuery, listedCropsQuery, pageView, samePixels } from './crop';
 import worker from '../index';
 
 // The Workers cache.
@@ -152,8 +152,9 @@ describe('a crop\'s record', () => {
     const pub = publicId(ids.a);
     const want = { ...withoutNulls(records.a), id: pub, source_id: records.a.id, crop_version: `${pub}@${hash}@10,10,20,30`, crop_editable: true,
       // The style it is listed under, which a reviewer may change.
-      style: 'unassessed', style_basis: 'none', style_editable: true, style_choices: [],
+      style: 'unassessed', style_basis: 'none', style_editable: true, style_inherited: 'unassessed', style_choices: [],
       grapheme_claim: null, form: { status: 'single', values: [{ form: 'form:1', scheme: 'unicode', text: '弌', confidence: null }], supporting: ['f1'], by: ['x'] },
+      reading: null, structure: null,
       word: { status: 'single', values: [{ word: 'ja/いち', reading: 'いち', class: 'noun', form: null }], methods: ['ruby'], supporting: ['w1'], by: ['x'] },
       honkoku_url: `https://app.honkoku.org/transcription/${book.slice(3)}/5`,
       dating: { witness: { kind: 'copied', start: 1790, end: 1790, precision: 'year', qualifier: null, uncertain: false, text: '寛政二年',
@@ -163,11 +164,23 @@ describe('a crop\'s record', () => {
     expect(await response.json()).toEqual(want);
   });
 
+  it('names its character\'s grapheme beside the one a claim files it under', async () => {
+    const { db, get, ids, text } = setup();
+    const claim = (crop: number, subject: string, grapheme: string) => db.exec(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      SELECT '${subject}','has_grapheme','','',id,cut,'asserted','${grapheme}','[{"object":"${grapheme}","assertion":"g"}]','["g"]','[{"asserted_by":"x","members":[{"assertion":"g","object":"${grapheme}"}]}]','r','t' FROM crops WHERE id=${crop}`);
+    claim(ids.a, text.a, 'U+56DB');
+    expect(await (await get(`/atlas/characters/${publicId(ids.a)}`)).json()).toMatchObject({ grapheme: 'U+56DB', own_grapheme: 'U+4E00' });
+    // ム is filed under む: a claim of its own character reads it as no other grapheme.
+    claim(ids.c, text.c, 'U+30E0');
+    expect(await (await get(`/atlas/characters/${publicId(ids.c)}`)).json()).toMatchObject({ grapheme: 'U+30E0', own_grapheme: 'U+30E0' });
+    expect(await (await get(`/atlas/characters/${publicId(ids.d)}`)).json()).not.toHaveProperty('own_grapheme');
+  });
+
   it('carries the style its row is listed under', async () => {
     const { db, get, ids } = setup();
     db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',90,'regular'); UPDATE crops SET style=90 WHERE id IN (${ids.a},${ids.glyph})`);
     for (const path of [`/atlas/characters/${publicId(ids.a)}`, `/atlas/characters/${publicId(ids.glyph)}`])
-      expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none' });
+      expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none', style_inherited: 'regular' });
   });
 
   it('names no style the vocabulary lacks', async () => {
@@ -349,7 +362,15 @@ describe('a crop\'s line', () => {
       [1, 'ム', 'checked', null], [2, '四', 'pending', null]]);
     expect(body.items[3].revision).toBe(1);
     expect(body.items[0]).toEqual({ id: publicId(ids.a), offset: -1, label: '一', image: '/atlas/media/19968.webp', revision: 0, image_sha256: hash,
-      state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
+      crop_version: `${publicId(ids.a)}@${hash}@10,10,20,30`, box: { x: 10, y: 10, w: 20, h: 30 }, state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
+    // A neighbour's version is its own record's, a box redrawn and not yet cut included.
+    for (const [item, id] of [[body.items[0], ids.a], [body.items[3], ids.d]]) expect(item.crop_version).toBe((await (await get(`/atlas/characters/${publicId(id)}`)).json() as any).crop_version);
+  });
+  it('reaches as far as it is asked, within the longest run', async () => {
+    const { get, ids } = setup();
+    const line = async (reach: string) => await (await get(`/atlas/characters/${publicId(ids.b)}/line?reach=${reach}`)).json() as any;
+    expect((await line('1')).items.map((i: any) => i.offset)).toEqual([-1, 0, 1]);
+    for (const [asked, reach] of [['99', 11], ['0', 4], ['x', 4], ['-3', 4]]) expect((await line(asked as string)).reach).toBe(reach);
   });
   it('is empty for a crop with no neighbour or no crop, and redirects an old id', async () => {
     const { get, ids, text } = setup();
@@ -367,8 +388,22 @@ describe('a source page', () => {
       [publicId(ids.b), '二', 'flagged']]);
     expect(view.units[2]).toMatchObject({ issue: 'crop', box: { x: 40, y: 10, w: 20, h: 30 }, line_id: `${book}:4:L1`, code_point: null });
     expect(view).toMatchObject({ id: pageKey, document_id: book, document_title: 'Book', seq: 4, previous: `${book}:3`, next: null, drawable: false,
-      image_url: 'https://x.org/iiif/p/full/!3000,3000/0/default.jpg' });
+      image_url: 'https://x.org/iiif/p/full/400,/0/default.jpg' });
     expect(view.crops).toBeUndefined();
+  });
+  it('shows a page no service serves from the site\'s own copy, when its record names one', () => {
+    const facts = { id: 'codh-tensho:TE00039:p017', document: 'codh-tensho:TE00039', title: '說文解字', page_number: 17, width: 4110, height: 3440,
+      service: null, crops: [] };
+    const photo = `/atlas/media/${'a'.repeat(64)}.webp`;
+    const view = pageView({ ...facts, photo }, []);
+    expect([view.image_url, view.service, view.photo]).toEqual([photo, null, undefined]);
+    expect(pageView(facts, []).image_url).toBeNull();
+    // A service is asked first, and a photo that is not one of the site's images is not shown.
+    expect(pageView({ ...facts, photo, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/3000,/0/default.jpg');
+    // The longer side alone is named, never beyond the image's own size; without a size, a box to fit.
+    expect(pageView({ ...facts, width: 1200, height: 2000, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/,2000/0/default.jpg');
+    expect(pageView({ ...facts, width: null, height: null, service: 'https://x.org/iiif/p' }, []).image_url).toBe('https://x.org/iiif/p/full/!3000,3000/0/default.jpg');
+    expect(pageView({ ...facts, photo: 'https://elsewhere.example/p.jpg' }, []).image_url).toBeNull();
   });
   it('says where the page can be opened at its source, and when its book was made', async () => {
     const { get, pageKey, book } = setup();
@@ -427,6 +462,7 @@ describe('the crop routes\' queries', () => {
     expect(plan(db, recordQuery(), 1)).toEqual([]);
     expect(plan(db, listedCropsQuery(), '[1]')).toEqual([]);
     expect(plan(db, cropSlotsQuery(), '[1]', 'has_form')).toEqual([]);
+    expect(plan(db, cropSlotsQuery(3), '[1]', 'read_as', 'bears_ruby', 'bears_left_ruby')).toEqual([]);
     expect(plan(db, formNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordMethodsQuery(), '[]')).toEqual([]);

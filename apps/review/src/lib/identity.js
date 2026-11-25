@@ -33,7 +33,7 @@ export function matchesVisualGroup(item, group) {
 
 
 const SCRIPT_NAMES = { hiragana: 'Hiragana', hentaigana: 'Hiragana', katakana: 'Katakana',
-  han: 'Kanji', kanji: 'Kanji', hangul: 'Hangul', gugyeol: 'Gugyeol', tangut: 'Tangut', latin: 'Latin', symbol: 'Symbol', mixed: 'Mixed', unknown: 'Unknown' }
+  han: 'Kanji', kanji: 'Kanji', hangul: 'Hangul', gugyeol: 'Gugyeol', tangut: 'Tangut', seal: 'Small seal', latin: 'Latin', symbol: 'Symbol', mixed: 'Mixed', unknown: 'Unknown' }
 
 // ー belongs to Unicode's Common script and to `symbol` in the character table; it is coloured as katakana.
 const KATAKANA_MARKS = new Set(['ー'])
@@ -57,6 +57,7 @@ export function scriptInfo(text, stated = '') {
     if (/\p{Script=Hangul}/u.test(char)) return 'hangul'
     if (cp >= 0xF67E && cp <= 0xF77C) return 'gugyeol'
     if (/\p{Script=Tangut}/u.test(char)) return 'tangut'
+    if (cp >= 0x3D000 && cp <= 0x3FC3F) return 'seal'
     if (/\p{Script=Latin}/u.test(char)) return 'latin'
     if (/[\p{Symbol}\p{Punctuation}]/u.test(char)) return 'symbol'
     return 'unknown'
@@ -102,8 +103,16 @@ export const claimedGrapheme = item => FILING.has(item?.grapheme_claim?.status) 
 /** `crop` with its grapheme slot `claim`, filed under the grapheme the claim holds, or `own`, its
  *  character's, once none does. */
 export function withGraphemeClaim(crop, claim, own = null) {
-  const saved = { ...crop, grapheme_claim: claim }
-  return { ...saved, grapheme: claimedGrapheme(saved) ?? own ?? crop.grapheme }
+  const saved = { ...crop, grapheme_claim: claim }, character = own ?? crop.own_grapheme ?? crop.grapheme
+  return { ...saved, grapheme: claimedGrapheme(saved) ?? character, own_grapheme: character }
+}
+/** The grapheme a holding claim reads the crop as, `{ grapheme, char }`, where it is another than its
+ *  character's own; null where none is. */
+export function readAs(item) {
+  const filed = claimedGrapheme(item)
+  if (!filed || isUnassigned(item)) return null
+  const own = item.own_grapheme?.code_point ?? item.own_grapheme, value = item.grapheme_claim.values.find(each => each.grapheme === filed)
+  return filed === own || value.char === (item.written_character ?? item.label) ? null : value
 }
 
 /** The pixel token a crop is checked against: a corpus glyph by its source revision, a crop by

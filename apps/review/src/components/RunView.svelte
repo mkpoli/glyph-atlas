@@ -9,7 +9,7 @@
   // by that group or by work, and the sequences near it are one link away. The search box above it
   // goes on to the next search: a run found on a line opens its own page, anything else the collection's search.
   import { tick, untrack } from 'svelte'
-  import { goto, replaceState } from '$app/navigation'
+  import { beforeNavigate, goto, replaceState } from '$app/navigation'
   import CharacterSearch from './CharacterSearch.svelte'
   import RunCandidate from './RunCandidate.svelte'
   import RunImage from './RunImage.svelte'
@@ -21,7 +21,9 @@
   import WorkFilter from './WorkFilter.svelte'
   import { RUN_FIRST, runAddress, runOccurrences, runRelated } from '../lib/ngrams.js'
   import { tileDate } from '../lib/dating.js'
-  import { characterAddress, collectionAddress } from '../lib/gallery.js'
+  import { characterAddress, collectionAddress } from '../lib/addresses.js'
+  import { codesOf } from '../lib/graphemeGroups.js'
+  import { SearchGroups } from '../lib/searchGroups.svelte.js'
   import { runText } from '../lib/runs.js'
   import { mergeCropPatch, occurrenceState, occurrenceWritten, resolveInspectedCrop } from '../lib/sequenceReview.js'
   import { character, number } from '../lib/client.js'
@@ -89,12 +91,14 @@
     replaceState(localize(runAddress(text, { work, form, hand, sort })), {})
     load()
   }
+  const searchGroups = new SearchGroups()
   let query = $state(''), searchRound = $state(0)
   const run = $derived(runText(query))
   // A run the site holds no occurrence of goes to the collection's search, which still has its characters.
   // A count that answers after the reader has chosen something else, or left the page, is dropped.
   let searchId = 0
   $effect(() => () => { searchId += 1 })
+  beforeNavigate(() => { searchId += 1 })
   async function search(value) {
     const term = value.trim(), id = ++searchId
     if (!term) return
@@ -104,7 +108,7 @@
     if (id !== searchId) return
     goto(localize(found?.total ? runAddress(term) : collectionAddress({ q: term })))
   }
-  function openCharacter(item) { searchId += 1; goto(localize(characterAddress(item.code_point))) }
+  function openCharacter(item) { goto(localize(characterAddress(item.code_point))) }
   const near = $derived([
     [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
     [() => t('run.near.longer'), related?.longer ?? []],
@@ -127,7 +131,7 @@
   })
   $effect(() => {
     if (!sentinel) return
-    const observer = new IntersectionObserver(([entry]) => { nearEnd = entry.isIntersecting }, { rootMargin: '0px 0px 1200px 0px' })
+    const observer = new IntersectionObserver(entries => { nearEnd = entries.at(-1).isIntersecting }, { rootMargin: '0px 0px 1200px 0px' })
     observer.observe(sentinel)
     return () => observer.disconnect()
   })
@@ -141,10 +145,11 @@
     <SiteLinks />
   </div>
   <header class="run-heading">
-    <div class="run-top">
+    <div class="run-top" onfocusin={e => { if (e.target.matches('.character-search input')) searchGroups.read() }}>
       <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
       {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs lead={run ? runLead : null} />{/key}
+      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs groupOf={searchGroups.groupOf} countOf={searchGroups.countOf}
+        onform={form => openCharacter({ code_point: codesOf(form) })} lead={run ? runLead : null} />{/key}
     </div>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>

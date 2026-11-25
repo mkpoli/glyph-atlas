@@ -9,8 +9,10 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
 import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
-  formOfCrop, graphemeHeadQuery, ownClaimQuery, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, setWord, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
+  formOfCrop, ownClaimQuery, setCropStructure, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
+import { cropStructures } from '../cropPanels';
+import { cropReadings } from '../cropReadings';
 import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { familyClaims } from '../atlas3Gallery';
 
@@ -75,8 +77,10 @@ function setup() {
     integer: (q, key, fallback) => Number(q.get(key) ?? fallback),
   };
   const version = (id: number, pixels = 'px') => `${publicId(id)}@${pixels}@0,0,10,10`;
-  const input = (value = {}) => ({ id: crypto.randomUUID(), crop_version: version(local), word: W, method: 'ruby', form: 'certain', ...value });
-  const save = (value = {}, actor = 'reader') => setWord(env, input(value), publicId(local), actor, tools);
+  // A reading of one crop with the word it writes, or, with no word, the reader's reading and word taken back.
+  const input = ({ word = W, form = 'certain', method = 'ruby', ...value }: Record<string, any> = {}): Record<string, any> => ({ id: crypto.randomUUID(), crop_version: version(local),
+    ...(word === null ? { run: null, word } : { run: ['計'], at: 0, reading: ['ばかり'], method: 'context', word: { id: word, form, method } }), ...value });
+  const save = (value = {}, actor = 'reader') => setReading(env, input(value), publicId(local), actor, tools);
   const post = (path: string, body: unknown, me = { id: 'reader', admin: false }) => claimWrite(env,
     new Request('https://x' + path, { method: 'POST', body: JSON.stringify(body) }), path, me, tools, async () => {});
   const claim = (members: unknown[], actor: string, method = 'context', crop = local) => post('/atlas/claims',
@@ -86,52 +90,108 @@ function setup() {
   return { db, runs, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page, objects };
 }
 
-describe('the crop word picker', () => {
-  it('saves once, replaces its own word, and clears only its own claim', async () => {
-    const { db, env, tools, local, input, save } = setup();
-    const first = input(), answer = await setWord(env, first, publicId(local), 'reader', tools);
-    expect(answer.id).toBe(publicId(local));
-    expect(answer.replaced).toBeNull();
-    expect(answer.word).toMatchObject({ status: 'asserted', values: [{ word: W, reading: 'ばかり', class: '副助詞', form: 'certain' }], methods: ['ruby'], by: ['reader'] });
-    expect(await setWord(env, first, publicId(local), 'reader', tools)).toEqual(answer);
-    expect(db.query('SELECT subject,crop,cut FROM assertions').all()).toEqual([{ subject: expect.stringMatching(/^ex:/), crop: local, cut: 0 }]);
-    expect(db.query("SELECT ref,crop,cut FROM assertion_evidence WHERE kind='crop'").get()).toEqual({ ref: `${publicId(local)}@px@0,0,10,10`, crop: local, cut: 0 });
-    await expect(setWord(env, { ...first, word: OTHER }, publicId(local), 'reader', tools)).rejects.toThrow('409');
-    const replaced = await save({ word: OTHER, form: 'probable', method: 'context' });
-    expect(replaced.replaced).toEqual({ word: W, method: 'ruby', form: 'certain' });
-    expect(replaced.word?.values).toEqual([{ word: OTHER, reading: 'のみ', class: '副助詞', form: 'probable' }]);
-    await save({}, 'other');
+describe('the word of a run', () => {
+  it('is saved once on every crop of the run, replaced and taken back with it, and cleared as the reader\'s own only', async () => {
+    const { db, env, tools, local, corpus, version, input, save } = setup();
+    const others = [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }], run = { run: ['而', '已'], reading: ['のみ'], others };
+    const on = async (crop: number) => (await wordOfCrop(env, crop))?.values.map((v: any) => v.word) ?? null;
+    const first = input({ ...run, word: OTHER }), answer = await setReading(env, first, publicId(local), 'reader', tools);
+    expect(answer.word).toMatchObject({ status: 'asserted', values: [{ word: OTHER, reading: 'のみ', class: '副助詞', form: 'certain' }], methods: ['ruby'], by: ['reader'] });
+    expect(await on(corpus)).toEqual([OTHER]);
+    expect(await setReading(env, first, publicId(local), 'reader', tools)).toEqual(answer);
+    expect(db.query("SELECT crop,cut FROM assertions WHERE predicate='writes_word' ORDER BY crop").all()).toEqual([{ crop: local, cut: 0 }, { crop: corpus, cut: 0 }]);
+    await expect(setReading(env, { ...first, word: { id: W, form: 'certain', method: 'ruby' } }, publicId(local), 'reader', tools)).rejects.toThrow('409');
+    // Another reader's word is theirs.
+    await save({ ...run, word: OTHER }, 'other');
+    // The run shrinks to one crop, with another word.
+    expect((await save({ word: W, form: 'probable' })).word).toMatchObject({ status: 'disputed' });
+    expect((await wordOfCrop(env, corpus))?.by).toEqual(['other']);
     const cleared = await save({ word: null });
-    expect(cleared.replaced).toEqual({ word: OTHER, method: 'context', form: 'probable' });
-    expect(cleared.word?.by).toEqual(['other']);
-    await expect(save({ word: null })).rejects.toThrow('409 You have no word on this crop to clear.');
-    const clear = input({ word: null });
-    const last = await setWord(env, clear, publicId(local), 'other', tools);
-    expect(last.word).toBeNull();
-    expect(await setWord(env, clear, publicId(local), 'other', tools)).toEqual(last);
+    expect([cleared.word?.by, cleared.reading?.by]).toEqual([['other'], ['other']]);
+    await expect(save({ word: null })).rejects.toThrow('409 You have no reading on this crop to clear.');
+    await save({ word: null }, 'other');
+    expect([await on(local), await on(corpus)]).toEqual([null, null]);
     // A claim changes no review state.
     expect(db.query('SELECT revision,state FROM crops WHERE id=?').get(local)).toEqual({ revision: 0, state: 0 });
+  });
+
+  it('stands through a save that does not name it, keeps its own evidence, and is taken back alone', async () => {
+    const { env, tools, local, version, save, input } = setup();
+    await save({ method: 'gloss' });
+    const { word: _, ...plain } = input({ reading: ['はかり'] });
+    expect((await setReading(env, plain, publicId(local), 'reader', tools)).word).toMatchObject({ values: [{ word: W, form: 'certain' }], methods: ['gloss'] });
+    const kept = await setReading(env, { ...input(), word: { id: W, form: 'probable' } }, publicId(local), 'reader', tools);
+    expect(kept.word).toMatchObject({ values: [{ word: W, form: 'probable' }], methods: ['gloss'] });
+    const alone = await setReading(env, { ...input(), word: null }, publicId(local), 'reader', tools);
+    expect([alone.word, alone.reading?.by]).toEqual([null, ['reader']]);
+    // Taken back without the word, a reading leaves it.
+    await save();
+    const left = await setReading(env, { id: crypto.randomUUID(), crop_version: version(local), run: null }, publicId(local), 'reader', tools);
+    expect([left.reading, left.word?.by]).toEqual([null, ['reader']]);
+  });
+
+  it('goes with the run as the reader holds it when a save does not name it: its alternatives, its certainty and its evidence', async () => {
+    const { db, env, tools, local, corpus, version, input, save, claim } = setup();
+    const others = [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }];
+    const plain = (value = {}) => { const { word: _, ...rest } = input(value); return setReading(env, rest, publicId(local), 'reader', tools); };
+    await claim([W, OTHER].map(object => ({ object, confidence: 0.5, confidence_scheme: 'form' })), 'reader', 'note');
+    // Another reader's certainty of the same words is theirs.
+    const before = await wordOfCrop(env, local);
+    await plain({ run: ['而', '已'], reading: ['のみ'], others });
+    for (const crop of [local, corpus]) expect(await wordOfCrop(env, crop)).toMatchObject({ values: before!.values, methods: ['note'], by: ['reader'] });
+    const count = () => (db.query("SELECT count(*) AS n FROM assertions WHERE predicate='writes_word'").get() as any).n;
+    // Saved again, the words that stand are not claimed again.
+    const held = count(); await plain({ run: ['而', '已'], reading: ['ばかり'], others });
+    expect(count()).toBe(held);
+    // The run leaves a crop behind, and its word with it.
+    await plain();
+    expect([(await wordOfCrop(env, local))?.values.length, await wordOfCrop(env, corpus)]).toEqual([2, null]);
+    await save({ word: null });
+    await save({ form: 'probable' }); await save({}, 'other');
+    await plain({ reading: ['はかり'] });
+    expect(db.query(`SELECT a.confidence FROM assertions a WHERE a.asserted_by='reader' AND a.predicate='writes_word' AND NOT EXISTS
+      (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`).all()).toEqual([{ confidence: 0.5 }]);
+  });
+
+  it('on an earlier cut does not go with the run', async () => {
+    const { db, env, tools, local, corpus, version, input, save } = setup();
+    await save();
+    db.exec(`UPDATE crops SET cut=1 WHERE id=${local}`);
+    const { word: _, ...rest } = input({ run: ['而', '已'], reading: ['のみ'], others: [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }] });
+    await setReading(env, rest, publicId(local), 'reader', tools);
+    expect([await wordOfCrop(env, local), await wordOfCrop(env, corpus)]).toEqual([null, null]);
+  });
+
+  it('is saved with the page\'s letters and no note, or alone', async () => {
+    const { env, tools, local, corpus, version, input } = setup();
+    const word = { id: W, form: 'certain', method: 'context' }, others = [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }];
+    const save = (value: object) => setReading(env, { ...input(), run: ['村', '落'], reading: null, others, word, ...value }, publicId(local), 'reader', tools);
+    expect(await save({ ruby: ['ざい', 'ご'] })).toMatchObject({ word: { values: [{ word: W }] }, reading: { values: [], ruby: { values: [{ ruby: ['ざい', 'ご'] }] } } });
+    expect(await save({})).toMatchObject({ word: { values: [{ word: W }] }, reading: null });
+    expect((await wordOfCrop(env, corpus))?.values).toMatchObject([{ word: W }]);
+    for (const none of [null, undefined]) await expect(save({ word: none })).rejects.toThrow('422');
+    await expect(save({ run: [] })).rejects.toThrow('422');
   });
 
   it('recognises an earlier actor key belonging to the same reader', async () => {
     const { save } = setup();
     await save({}, 'old-reader');
-    const result = await save({ word: null });
-    expect(result.word).toBeNull();
-    expect(result.replaced?.word).toBe(W);
+    expect((await save({ word: null })).word).toBeNull();
   });
 
   it('refuses unknown words, missing evidence, invalid confidence and other versions before writing', async () => {
-    const { db, local, save } = setup();
-    for (const word of ['missing', {}, undefined]) await expect(save({ word })).rejects.toThrow('422 No such word.');
-    for (const method of [undefined, '', 'guess']) await expect(save({ method })).rejects.toThrow('422');
-    for (const form of [undefined, 'maybe', 1]) await expect(save({ form })).rejects.toThrow('422');
-    await expect(save({ crop_version: `${publicId(local)}@old@0,0,10,10` })).rejects.toThrow('409 This crop was cut again. Reload it.');
+    const { db, env, tools, local, input, save } = setup();
+    const named = (word: unknown) => setReading(env, { ...input(), word }, publicId(local), 'reader', tools);
+    for (const id of ['missing', {}, undefined]) await expect(named({ id, form: 'certain', method: 'ruby' })).rejects.toThrow('422 No such word.');
+    for (const method of ['', 'guess']) await expect(save({ method })).rejects.toThrow('422');
+    for (const form of ['maybe', 1, null]) await expect(save({ form })).rejects.toThrow('422');
+    await expect(setReading(env, { ...input({ word: null }), word: { id: W, form: 'certain' } }, publicId(local), 'reader', tools)).rejects.toThrow('422');
+    await expect(save({ crop_version: `${publicId(local)}@old@0,0,10,10` })).rejects.toThrow('409 Some of these crops were cut again. Reload them.');
     expect(db.query('SELECT count(*) AS n FROM ledger_submissions').get()).toEqual({ n: 0 });
     await save();
     // A redrawn box waiting for the next publication is the version a reviewer sees now.
     db.exec(`INSERT INTO reviews(crop,gen,at,state,x,y,w,h) VALUES(${local},0,0,0,1,2,3,4)`);
-    await expect(save({ word: null })).rejects.toThrow('409 This crop was cut again. Reload it.');
+    await expect(save({ word: null })).rejects.toThrow('409 Some of these crops were cut again. Reload them.');
     expect((await save({ word: null, crop_version: `${publicId(local)}@px@1,2,3,4` })).word).toBeNull();
   });
 
@@ -144,11 +204,11 @@ describe('the crop word picker', () => {
     const disputed = await save({ word: OTHER, form: 'probable', method: 'note' }, 'other');
     expect(disputed.word).toMatchObject({ status: 'disputed', supporting: [], methods: ['ruby', 'note'] });
     // Competing claims can share a millisecond; their generated ids break the tie in either order.
-    expect(disputed.word.values).toHaveLength(2);
-    expect(disputed.word.values).toEqual(expect.arrayContaining([
+    expect(disputed.word!.values).toHaveLength(2);
+    expect(disputed.word!.values).toEqual(expect.arrayContaining([
       { word: W, reading: 'ばかり', class: '副助詞', form: 'certain' }, { word: OTHER, reading: 'のみ', class: '副助詞', form: 'probable' },
     ]));
-    expect([...disputed.word.by].sort()).toEqual(['other', 'reader']);
+    expect([...disputed.word!.by].sort()).toEqual(['other', 'reader']);
     await save({ word: null }, 'other');
     await save({ method: 'context' }, 'context');
     await save({ method: 'gloss' }, 'gloss');
@@ -203,9 +263,23 @@ describe('the crop grapheme picker', () => {
     expect(await familyClaims(env, QUEEN, [2])).toEqual({ away: [], here: [] });
   });
 
-  it('names only a grapheme that heads its family, on the generic route too', async () => {
+  it('records a claim under the head its key is filed under, and compares what is sent again as it was sent', async () => {
     const { db, local, version, pick, post } = graphemes();
-    await expect(pick('U+4ECE')).rejects.toThrow('422 This character is filed under 從.');
+    // 𽌇 headed itself when this pick was kept on a device; by the time it is sent it is filed under 春.
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(5,'春',5),(6,'\u{3D307}',5);`);
+    const id = crypto.randomUUID(), kept = await pick('U+3D307', 'reader', id);
+    expect(kept.grapheme_claim).toMatchObject({ status: 'asserted', values: [{ grapheme: 'U+6625', char: '春' }] });
+    expect(await pick('U+3D307', 'reader', id)).toEqual(kept);
+    await expect(pick('U+6625', 'reader', id)).rejects.toThrow('409');
+    const again = crypto.randomUUID(), claim = (object: string, named: string = crypto.randomUUID()) => post('/atlas/claims', { id: named,
+      crop_version: version(local), subject: publicId(local), predicate: 'has_grapheme', claims: [{ object }] }) as Promise<any>;
+    const made = await claim('U+3D307', again);
+    expect(made.current[0]).toMatchObject({ predicate: 'has_grapheme', status: 'asserted', object: 'U+6625' });
+    expect(await claim('U+3D307', again)).toEqual(made);
+  });
+
+  it('names only a grapheme the site holds, on the generic route too', async () => {
+    const { local, version, pick, post } = graphemes();
     await expect(pick('U+9999')).rejects.toThrow('422 No such character.');
     await expect(pick('後')).rejects.toThrow('422 Name a grapheme by its code points.');
     await expect(pick('U+005F8C')).rejects.toThrow('422 Name a grapheme by its code points.');
@@ -213,11 +287,9 @@ describe('the crop grapheme picker', () => {
     await expect(pick(null)).rejects.toThrow('409 You have no grapheme on this crop to clear.');
     const claim = (object: string) => post('/atlas/claims', { id: crypto.randomUUID(), crop_version: version(local), subject: publicId(local),
       predicate: 'has_grapheme', claims: [{ object }] }) as Promise<any>;
-    await expect(claim('U+4ECE')).rejects.toThrow('422 U+4ECE cannot be the object of has_grapheme.');
     await expect(claim('U+005F8C')).rejects.toThrow('422 U+005F8C cannot be the object of has_grapheme.');
     await expect(claim('U+110000')).rejects.toThrow('422 U+110000 cannot be the object of has_grapheme.');
     expect((await claim(AFTER)).current[0]).toMatchObject({ predicate: 'has_grapheme', status: 'asserted', object: AFTER });
-    expect(db.query(graphemeHeadQuery()).get('从')).toEqual({ id: 4, head: 0, family: '從' });
   });
 
   it('files the crop under the family its grapheme is filed under after a publication moves it', async () => {
@@ -305,14 +377,28 @@ describe('a form written for a grapheme', () => {
     await expect(add(AFTER, true)).rejects.toThrow('409 You have not said this form writes 後.');
   });
 
-  it('takes back only the reader\'s own claim, and names only a grapheme that heads its family', async () => {
+  it('records a form under the head its key is filed under, and takes it back by either', async () => {
+    const { db, form, add } = await forms();
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(5,'春',5),(6,'\u{3D307}',5);`);
+    const id = crypto.randomUUID(), spring = { grapheme: 'U+6625', char: '春', by: ['reader'] };
+    expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, grapheme: 'U+6625', written_for: [spring], replaced: null });
+    expect(await add('U+3D307', false, 'reader', id)).toEqual({ id: form, grapheme: 'U+6625', written_for: [spring], replaced: null });
+    await expect(add('U+6625', false, 'reader', id)).rejects.toThrow('409');
+    // The page the claim was made on still names 𽌇.
+    expect(await add('U+3D307', true)).toMatchObject({ written_for: [], replaced: 'U+6625' });
+    // A claim is taken back by its own key whatever the table holds of it.
+    await add(AFTER);
+    db.exec('DELETE FROM graphemes WHERE id=1');
+    expect(await add(AFTER, true)).toMatchObject({ written_for: [], replaced: AFTER });
+  });
+
+  it('takes back only the reader\'s own claim, and names only a grapheme the site holds', async () => {
     const { db, env, tools, form, add } = await forms();
     await add(AFTER);
     await add(AFTER, false, 'other');
     expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='written_for'").get()).toEqual({ n: 2 });
     expect((await add(AFTER, true, 'other')).written_for).toEqual([{ grapheme: AFTER, char: '後', by: ['reader'] }]);
     await expect(add(AFTER, true, 'third')).rejects.toThrow('409 You have not said this form writes 後.');
-    await expect(add('U+4ECE')).rejects.toThrow('422 This character is filed under 從.');
     await expect(add('U+9999')).rejects.toThrow('422 No such character.');
     await expect(add('後')).rejects.toThrow('422 Name a grapheme by its code points.');
     await expect(add('U+005F8C')).rejects.toThrow('422 Name a grapheme by its code points.');
@@ -341,8 +427,10 @@ describe('a form filed under a structure', () => {
     const wind = await structureId('⿱山風', SOURCE.scheme, SOURCE.policy);
     const rows: Record<string, unknown[]> = { '峰': [['⿰山夆'], null, [beside, '⿰山夆']], '峯': [['⿱山夆'], null, [above, '⿱山夆']],
       '丑': [[], null, null], '岑': [['⿱山今'], null, ['st:' + '0'.repeat(32), '⿱山今']], '嵐': [['⿱山風'], null, [wind, '⿱山風']],
-      // 嶺 has one regional shape with the character's structure and one with 峯's.
-      '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J', structure: { id: above, label: '⿱山夆' } }], [beside, '⿰山夆']],
+      // The seal character of 遇.
+      '𽓻': [[], null, [await structureId('⿰辵禺', SOURCE.scheme, SOURCE.policy), '⿰辵禺']],
+      // 嶺's regional shapes are spellings of its structure, even the one that is 峯's own.
+      '嶺': [['⿱山領'], [{ text: '⿱山領', regions: 'GT' }, { text: '⿱山夆', regions: 'J' }], [beside, '⿰山夆']],
       // A description the load read: the form's own, which spells 峰 with another drawing of 夆.
       '⿰山夅': [['⿰山夅'], null, [beside, '⿰山夆']] };
     const shards = new Map<string, Record<string, unknown>>();
@@ -391,6 +479,51 @@ describe('a form filed under a structure', () => {
     expect(both.map((v: any) => [v.structure, [...v.by].sort()])).toEqual([[beside, ['other', 'reader']]]);
   });
 
+  it('says what structure a crop is built as with no form, and takes it back', async () => {
+    const { db, env, tools, local, version, beside, above } = await forms();
+    const crop = publicId(local), say = (target: Record<string, unknown>, actor = 'reader', id: string = crypto.randomUUID()) =>
+      setCropStructure(env, { id, crop_version: version(local), ...target }, crop, actor, tools);
+    // The reader's own form on the crop is taken back with it.
+    const id = crypto.randomUUID(), saved = await say({ char: '峰' }, 'reader', id);
+    expect(saved).toEqual({ id: crop, structure: { status: 'asserted', values: [{ structure: beside, label: '⿰山夆', by: ['reader'] }], by: ['reader'] }, form: null,
+      replaced: null, replaced_form: '⿰山夆' });
+    expect(await say({ char: '峰' }, 'reader', id)).toEqual(saved);
+    expect(db.query("SELECT crop,cut,object,method FROM assertions WHERE predicate='built_as'").all()).toEqual([{ crop: local, cut: 0, object: beside, method: 'form-picker' }]);
+    // Another structure replaces it, named by the id of one already claimed as well.
+    expect(await say({ char: '峯' })).toMatchObject({ replaced: beside, structure: { values: [{ structure: above }] } });
+    expect(await say({ structure: beside })).toMatchObject({ replaced: above, structure: { values: [{ structure: beside, label: '⿰山夆' }] } });
+    // A form chosen later leaves it, and is nobody's dispute.
+    const formed = await setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: '⿱山夆' }, crop, 'other', tools);
+    expect(formed.form).toMatchObject({ status: 'asserted', values: [{ text: '⿱山夆' }] });
+    expect((await cropStructures(env, [local])).get(local)).toMatchObject({ status: 'asserted' });
+    // Readers who name two structures disagree; another reader's claim is not mine to clear.
+    expect(await say({ char: '峯' }, 'other')).toMatchObject({ structure: { status: 'disputed' }, replaced_form: '⿱山夆' });
+    expect(await say({})).toMatchObject({ replaced: beside, structure: { values: [{ structure: above, by: ['other'] }] } });
+    await expect(say({})).rejects.toThrow('409 You have no structure on this crop to clear.');
+    await expect(say({ char: '丑' })).rejects.toThrow('422 No structure is known for 丑.');
+    await expect(setCropStructure(env, { id: crypto.randomUUID(), crop_version: 'old', char: '峰' }, crop, 'reader', tools)).rejects.toThrow('409');
+  });
+
+  it('takes back every form of the reader\'s own with a crop\'s structure, and leaves another\'s', async () => {
+    const { db, env, tools, local, version } = await forms();
+    const crop = publicId(local), form = (value: string, actor: string) => setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: value }, crop, actor, tools);
+    // A second claim under an id the reader held before, as a session joined since leaves it.
+    await form('⿱山夆', 'stranger');
+    db.exec("INSERT INTO actors(id,key,user) VALUES(7,'stranger','reader')");
+    const saved = await setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(local), char: '峰' }, crop, 'reader', tools);
+    expect(saved.form).toBeNull();
+    await form('⿱山夆', 'other');
+    expect((await setCropStructure(env, { id: crypto.randomUUID(), crop_version: version(local), char: '峯' }, crop, 'reader', tools)).form).toMatchObject({ values: [{ text: '⿱山夆' }], by: ['other'] });
+  });
+
+  it('names by a layout the structure it stands under, which no claim has named', async () => {
+    const { env, tools, form } = await forms();
+    const name = (char: string) => setStructure(env, { id: crypto.randomUUID(), char, head: true }, form, 'reader', tools);
+    // structures.for_character("遇").id
+    expect((await name('𽓻')).structures).toEqual([{ structure: 'st:8809517f55e2790006eb57615ce80656', label: '⿺辶禺', by: ['reader'] }]);
+    await expect(name('峰')).rejects.toThrow('422 峰 is no layout of another structure.');
+  });
+
   it('takes a claim back by the id of its structure, and refuses one id for two requests', async () => {
     const { env, tools, form, say, beside } = await forms();
     const id = crypto.randomUUID();
@@ -426,8 +559,8 @@ describe('a form filed under a structure', () => {
   it('names a structure by a regional shape of a character', async () => {
     const { env, tools, form, beside, above } = await forms();
     const by = (char: string, of: string) => setStructure(env, { id: crypto.randomUUID(), char, of }, form, 'reader', tools);
-    expect((await by('⿱山夆', '嶺')).structures.map((v: any) => v.structure)).toEqual([above]);
-    expect((await by('⿱山領', '嶺')).structures.map((v: any) => v.structure).sort()).toEqual([beside, above].sort());
+    expect((await by('⿱山夆', '嶺')).structures.map((v: any) => v.structure)).toEqual([beside]);
+    expect((await by('⿱山領', '嶺')).structures.map((v: any) => v.structure)).toEqual([beside]);
     await expect(by('⿱山今', '嶺')).rejects.toThrow('422 ⿱山今 is no shape of 嶺.');
   });
 
@@ -511,8 +644,8 @@ describe('a form filed under a structure', () => {
     expect((await foldsOf(env, [beside])).get(beside)?.head.id).toBe(wind);
     const moved = await fold({ char: '峯' }, { char: '嵐' });
     expect(moved).toEqual({ structure: above, folds_into: { id: wind, label: '⿱山風', by: ['reader'] }, replaced: beside });
-    // A regional shape names its structure, here 峯's.
-    expect((await fold({ char: '⿱山夆', of: '嶺' }, { char: '峰' })).structure).toBe(above);
+    // A regional shape names its character's structure, here 嶺's, though the same text alone is 峯's.
+    expect((await fold({ char: '⿱山夆', of: '嶺' }, { char: '峯' })).structure).toBe(beside);
   });
 
   it('refuses a fold into itself, one that leads back, and a structure no claim has named', async () => {
@@ -575,6 +708,116 @@ describe('a form filed under a structure', () => {
   });
 });
 
+describe('a crop read in a run', () => {
+  const read = () => {
+    const found = setup(), { env, tools, local, corpus, version } = found;
+    const body = (value = {}) => ({ id: crypto.randomUUID(), crop_version: version(local), run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'],
+      method: 'ruby', others: [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 0 }], ...value });
+    const set = (value = {}, actor = 'reader') => setReading(env, body(value), publicId(local), actor, tools);
+    const of = async (crop: number) => (await cropReadings(env, [crop])).get(crop) ?? null;
+    return { ...found, body, set, of };
+  };
+
+  it('is saved on every crop of the run at once, each with its place, and the ruby beside it as the page writes it', async () => {
+    const { db, env, tools, local, corpus, body, of } = read();
+    const first = body(), answer = await setReading(env, first, publicId(local), 'reader', tools);
+    expect(answer).toEqual({ id: publicId(local), crops: [publicId(local), publicId(corpus)], word: null, reading: { status: 'asserted',
+      values: [{ run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], by: ['reader'], methods: ['ruby'] }], methods: ['ruby'], by: ['reader'],
+      ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'], by: ['reader'] }], by: ['reader'] }, left: null } });
+    expect((await of(corpus))?.values).toMatchObject([{ run: ['諸', '器'], at: 0, reading: ['しょ', 'き'] }]);
+    // The same save sent again is the same write.
+    expect(await setReading(env, first, publicId(local), 'reader', tools)).toEqual(answer);
+    expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 4 });
+    expect(db.query('SELECT revision,state FROM crops WHERE id=?').get(local)).toEqual({ revision: 0, state: 0 });
+  });
+
+  it('replaces the reader\'s earlier run whole, and is taken back whole, leaving another reader\'s', async () => {
+    const { corpus, local, set, of } = read();
+    await set(); await set({}, 'other');
+    expect((await of(local))?.by.sort()).toEqual(['other', 'reader']);
+    // The run shrinks to this crop, read alone and with no ruby recorded.
+    const alone = await set({ run: ['器'], at: 0, reading: ['き'], ruby: null, method: 'context', others: [] });
+    expect(alone.reading).toMatchObject({ status: 'disputed', ruby: { by: ['other'] } });
+    expect((await of(corpus))?.by).toEqual(['other']);
+    const cleared = await set({ run: null });
+    expect(cleared.reading).toMatchObject({ status: 'asserted', by: ['other'] });
+    expect((await of(corpus))?.by).toEqual(['other']);
+    await expect(set({ run: null })).rejects.toThrow('409 You have no reading on this crop to clear.');
+    await set({ run: null }, 'other');
+    expect([await of(local), await of(corpus)]).toEqual([null, null]);
+  });
+
+  it('shows one value for readers who agree, beside a third who does not', async () => {
+    const { local, set, of } = read();
+    await set(); await set({}, 'other'); await set({ run: ['器'], at: 0, reading: ['うつわ'], ruby: null, others: [] }, 'third');
+    const held = async () => ((await of(local))!.values as any[]).map(v => [v.reading.join(''), [...v.by].sort(), v.methods]).sort();
+    expect(await held()).toEqual([['うつわ', ['third'], ['ruby']], ['しょき', ['other', 'reader'], ['ruby']]]);
+    // Standing alone, a value still names everyone who holds it.
+    await set({ run: null }, 'third');
+    expect(await held()).toEqual([['しょき', ['other', 'reader'], ['ruby']]]);
+  });
+
+  it('is its ruby as the page writes it, whether or not a reader says how it is read', async () => {
+    const { corpus, set, of } = read();
+    const written = await set({ reading: null, method: undefined });
+    expect(written.reading).toMatchObject({ status: null, values: [], ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }] } });
+    expect((await of(corpus))?.ruby.values).toMatchObject([{ at: 0 }]);
+    // A note joins it, and goes without it.
+    expect((await set()).reading).toMatchObject({ values: [{ reading: ['しょ', 'き'] }], ruby: { values: [{ ruby: ['𛁈よ', 'き'] }] } });
+    expect((await set({ reading: null })).reading).toMatchObject({ values: [], ruby: { status: 'asserted' } });
+    expect((await set({ reading: null, ruby: null, left: ['うつわ'] })).reading).toMatchObject({ values: [], ruby: null, left: { status: 'asserted' } });
+    await expect(set({ reading: null, ruby: null })).rejects.toThrow('422');
+  });
+
+  it('keeps a 左訓 beside the ruby, split its own way, and drops either the save leaves out', async () => {
+    const { corpus, set, of } = read();
+    const both = await set({ left: ['もろもろのうつわ'] });
+    expect(both.reading).toMatchObject({ ruby: { values: [{ ruby: ['𛁈よ', 'き'] }] }, left: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['もろもろのうつわ'], by: ['reader'] }] } });
+    expect((await of(corpus))?.left?.values).toMatchObject([{ at: 0, ruby: ['もろもろのうつわ'] }]);
+    const left = await set({ ruby: null, left: ['もろもろの', 'うつわ'] });
+    expect(left.reading).toMatchObject({ ruby: null, left: { values: [{ ruby: ['もろもろの', 'うつわ'] }] } });
+    expect((await set()).reading).toMatchObject({ ruby: { status: 'asserted' }, left: null });
+    await expect(set({ left: ['a b'] })).rejects.toThrow('422');
+    await set({ left: ['うつわ'] });
+    expect((await set({ run: null })).reading).toBeNull();
+    expect(await of(corpus)).toBeNull();
+  });
+
+  it('is read for several crops at once, each with its version; one not published is left out', async () => {
+    const { local, corpus, retired, version, set, read: ledger } = read();
+    await set();
+    const of = async (crops: string) => await ledger('/atlas/readings?crops=' + crops) as any;
+    const { items } = await of([local, corpus, retired].map(publicId).join() + ',0,' + publicId(local));
+    expect(items.map((one: any) => [one.id, one.crop_version, one.text, one.reading.values[0].at, one.word])).toEqual([
+      [publicId(local), version(local), null, 1, null], [publicId(corpus), version(corpus, 'rev1'), null, 0, null]]);
+    await expect(of('')).rejects.toThrow('422 Name 1–48 crops.');
+    await expect(of(Array(49).fill(publicId(local)).join())).rejects.toThrow('422');
+  });
+
+  it('may have one reading for all of its characters', async () => {
+    const { set } = read();
+    const answer = await set({ run: ['村', '落'], reading: ['ざいご'], ruby: ['ざいご'] });
+    expect(answer.reading!.values).toMatchObject([{ run: ['村', '落'], at: 1, reading: ['ざいご'] }]);
+  });
+
+  it('is refused whole when it is no reading, two crops share a place, or a crop was cut again', async () => {
+    const { db, local, corpus, version, set, post, body } = read();
+    for (const value of [{ run: [] }, { run: '諸器' }, { at: 2 }, { at: 0.5 }, { reading: [] }, { reading: ['', ''] }, { reading: ['し', 'よ', 'き'] }, { reading: ['し よ', 'き'] },
+      { reading: ['𛁈よ', 'き'] }, { run: ['諸', '器 '] }, { run: Array(13).fill('諸'), reading: ['き'] }, { ruby: ['(き)'] }])
+      await expect(set(value)).rejects.toThrow('422');
+    await expect(set({ ruby: ['しよき'] })).rejects.toThrow('422 The ruby is split as the reading is.');
+    for (const method of [undefined, 'guess']) await expect(set({ method })).rejects.toThrow('422 read_as names how it is known');
+    const other = { id: publicId(corpus), crop_version: version(corpus, 'rev1') };
+    await expect(set({ others: [{ ...other, at: 1 }] })).rejects.toThrow('422 Each place of the run is one crop.');
+    await expect(set({ others: [{ id: publicId(local), crop_version: version(local), at: 0 }] })).rejects.toThrow('422 Each place of the run is one crop.');
+    for (const others of ['x', [null]]) await expect(set({ others })).rejects.toThrow('422');
+    const stale = await set({ others: [{ ...other, crop_version: 'old', at: 0 }] }).catch(error => error);
+    expect([stale.message, stale.extra]).toEqual(['409 Some of these crops were cut again. Reload them.', { targets: [{ id: publicId(corpus) }] }]);
+    expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 0 });
+    expect(await post(`/atlas/characters/${publicId(local)}/reading`, body())).toMatchObject({ id: publicId(local), reading: { by: ['reader'] } });
+  });
+});
+
 describe('a batch of form picks', () => {
   it('claims one value on every crop at once, names its form once, and is undone by sending each replaced value back', async () => {
     const { db, env, tools, local, corpus, version, post } = setup();
@@ -612,9 +855,9 @@ describe('a batch of form picks', () => {
 describe('a crop a claim names', () => {
   it('is read by public id, or by an old text id through the alias map; another text id asks for a reload', async () => {
     const { db, local, text, post, version } = setup();
-    const body = { id: crypto.randomUUID(), crop_version: version(local), word: W, method: 'ruby', form: 'certain' };
-    expect(await post(`/atlas/characters/${encodeURIComponent(text.local)}/word`, body)).toMatchObject({ id: publicId(local) });
-    const stale = await post(`/atlas/characters/${encodeURIComponent(text.unmapped)}/word`, { ...body, id: crypto.randomUUID() }) as Response;
+    const body = { id: crypto.randomUUID(), crop_version: version(local), run: ['計'], at: 0, reading: ['ばかり'], method: 'ruby' };
+    expect(await post(`/atlas/characters/${encodeURIComponent(text.local)}/reading`, body)).toMatchObject({ id: publicId(local) });
+    const stale = await post(`/atlas/characters/${encodeURIComponent(text.unmapped)}/reading`, { ...body, id: crypto.randomUUID() }) as Response;
     expect(stale.status).toBe(409);
     expect(await stale.json()).toEqual({ detail: 'This page is from before an update. Reload it.', code: 'reload' });
     expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual({ n: 1 });
@@ -624,17 +867,17 @@ describe('a crop a claim names', () => {
     const { db, page, post, version } = setup();
     const candidate = cropId(page, 4);
     db.exec(`INSERT INTO crops(id,kind,book,state,quiz,shuffle) VALUES(${candidate},2,1,0,1,3)`);
-    await expect(post(`/atlas/characters/${publicId(candidate)}/word`, { id: crypto.randomUUID(), crop_version: version(candidate), word: W, method: 'ruby', form: 'certain' }))
+    await expect(post(`/atlas/characters/${publicId(candidate)}/reading`, { id: crypto.randomUUID(), crop_version: version(candidate), run: ['計'], at: 0, reading: ['ばかり'], method: 'ruby' }))
       .rejects.toThrow('404 This character is not in the published collection.');
   });
 
   it('retired in favour of another answers with that crop, as the old site did', async () => {
     const { retired, gone, local, post, version } = setup();
-    const body = { id: crypto.randomUUID(), crop_version: version(local), word: W, method: 'ruby', form: 'certain' };
-    const refused = await post(`/atlas/characters/${publicId(retired)}/word`, body).catch(e => e);
+    const body = { id: crypto.randomUUID(), crop_version: version(local), run: ['計'], at: 0, reading: ['ばかり'], method: 'ruby' };
+    const refused = await post(`/atlas/characters/${publicId(retired)}/reading`, body).catch(e => e);
     expect([refused.message, refused.extra]).toEqual(['404 This crop was replaced.', { replaced_by: publicId(local) }]);
-    await expect(post(`/atlas/characters/${publicId(gone)}/word`, body)).rejects.toThrow('404 This character is not in the published collection.');
-    await expect(post('/atlas/characters/0/word', body)).rejects.toThrow('404 This character is not in the published collection.');
+    await expect(post(`/atlas/characters/${publicId(gone)}/reading`, body)).rejects.toThrow('404 This character is not in the published collection.');
+    await expect(post('/atlas/characters/0/reading', body)).rejects.toThrow('404 This character is not in the published collection.');
   });
 
   it('as a corpus glyph is recorded as written the first time, once', async () => {
@@ -653,10 +896,10 @@ describe('a crop a claim names', () => {
     expect(await wordOfCrop(env, local)).toBeNull();
     const subject = (db.query('SELECT subject FROM assertions').get() as { subject: string }).subject;
     await env.ATLAS.batch(resolveSlots(env, [[subject, 'writes_word', '', '']]));
-    expect(db.query('SELECT count(*) AS n FROM current_claims').get()).toEqual({ n: 0 });
+    expect(db.query("SELECT count(*) AS n FROM current_claims WHERE predicate='writes_word'").get()).toEqual({ n: 0 });
     db.exec("UPDATE assertions SET cut=1; UPDATE assertion_evidence SET cut=1");
     await env.ATLAS.batch(resolveSlots(env, [[subject, 'writes_word', '', '']]));
-    expect(db.query('SELECT crop,cut,status FROM current_claims').get()).toEqual({ crop: local, cut: 1, status: 'asserted' });
+    expect(db.query("SELECT crop,cut,status FROM current_claims WHERE predicate='writes_word'").get()).toEqual({ crop: local, cut: 1, status: 'asserted' });
   });
 });
 
@@ -666,7 +909,7 @@ describe('a saved submission', () => {
     const first = input(), named = publicId(local);
     db.query('INSERT INTO ledger_submissions VALUES(?,?,?,?,?)').run('reader:' + first.id, 'reader', JSON.stringify({ crop: named, input: first }),
       JSON.stringify({ submission: 'reader:' + first.id, subject: text.local, replaced: null, retracted: [] }), 't');
-    expect(await setWord(env, first, named, 'reader', tools)).toEqual({ id: named, word: null, replaced: null });
+    expect(await setForm(env, first, named, 'reader', tools)).toEqual({ id: named, form: null, replaced: null });
     const body = { id: crypto.randomUUID(), subject: named, predicate: 'writes_word', claims: [] };
     db.query('INSERT INTO ledger_submissions VALUES(?,?,?,?,?)').run('reader:' + body.id, 'reader', JSON.stringify(body),
       JSON.stringify({ submission: 'reader:' + body.id, subject: text.local, crop: local, cut: 0, assertions: ['cf:x'], retracted: [] }), 't');
@@ -686,7 +929,7 @@ describe('a pending redraw', () => {
     pending(db, local);
     expect(await wordOfCrop(env, local)).toBeNull();
     const redrawn = `${publicId(local)}@px@1,2,3,4`;
-    await expect(save({ crop_version: `${publicId(local)}@px@0,0,10,10` })).rejects.toThrow('409 This crop was cut again. Reload it.');
+    await expect(save({ crop_version: `${publicId(local)}@px@0,0,10,10` })).rejects.toThrow('409 Some of these crops were cut again. Reload them.');
     expect((await save({ crop_version: redrawn, word: OTHER })).word).toMatchObject({ status: 'asserted', values: [{ word: OTHER }], by: ['reader'] });
     expect(db.query("SELECT DISTINCT cut FROM assertion_evidence WHERE kind='crop' AND assertion IN (SELECT id FROM assertions WHERE asserted_by='reader')").all()).toEqual([{ cut: 1 }]);
     // The publication cuts the redrawn box: the crop takes cut 1 and the pending row goes.
@@ -757,15 +1000,16 @@ describe('the ledger queries', () => {
     const plans: [string, unknown[]][] = [
       [cropNowQuery(), [1]], [cropSlotsQuery('has_form'), ['[1]']], [cropSlotsQuery('writes_word'), ['[1]']], [formNamesQuery(), ['["fm:1"]']],
       [wordNamesQuery(), ['["w"]']], [wordMethodsQuery(), ['["a"]']], [ownClaimQuery('has_form', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']],
-      [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
+      [ownClaimQuery('writes_word', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [ownClaimQuery('built_as', '(SELECT key FROM actors WHERE user=\'u\')'), [1, 'u']], [currentCropClaimsQuery(), [1]], [currentClaimsQuery(), ['s']],
       [claimHistoryQuery('crop'), [1]], [claimHistoryQuery('subject'), ['s']], [ledgerClaimsQuery(), [0, 10]], [ledgerActionsQuery(), [0, 10]],
       [bookDatesQuery(), [1]], [bookKeyQuery(), ['k']], [bookDateClaimsQuery(), [1]], [resolveClearQuery(), ['[["s","p","",""]]']], [corpusRowQuery(), [1]],
       [structuresQuery(), ['fm:1']], [structureLabelsQuery(), ['["st:1"]']], [ownStructuresQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['fm:1', 'u']],
       [claimedStructuresQuery(), ['["fm:1"]']], [foldsQuery(), ['["st:1"]']], [ownFoldQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['st:1', 'u']],
+      [ownReadingsQuery('(SELECT key FROM actors WHERE user=\'u\')'), ['[1]', 'u']], [savedRunsQuery(), ['["k"]']],
     ];
     for (const [sql, args] of plans) {
       const detail = (db.query('EXPLAIN QUERY PLAN ' + sql).all(...(args as any[])) as { detail: string }[]).map(r => r.detail);
-      expect([sql, detail.filter(d => /^SCAN (a|c|k|e|x|f|r|p|crops|assertions|assertion_actions|assertion_evidence|current_claims|forms|representations|structures|s|words|book_dates|pages|reviews)\b/.test(d))])
+      expect([sql, detail.filter(d => /^SCAN (a|c|k|e|x|f|r|p|crops|assertions|assertion_actions|assertion_evidence|current_claims|forms|representations|structures|s|words|book_dates|pages|reviews|ledger_submissions)\b/.test(d))])
         .toEqual([sql, []]);
     }
   });

@@ -1,0 +1,92 @@
+id: guangyun-zecuntang
+name: 廣韻（澤存堂本）字頭表（nk2028 tshet-uinh-data）
+publisher: nk2028
+kind: transcription-corpus
+url: https://github.com/nk2028/tshet-uinh-data
+revision: 21585e22c8a730ca2fd175112f4d18e16d5ce578
+licence: CC0-1.0
+licence_evidence: https://github.com/nk2028/tshet-uinh-data/blob/21585e22c8a730ca2fd175112f4d18e16d5ce578/LICENSE
+attribution: "nk2028『tshet-uinh-data』韻書/廣韻.csv, src/字序表.csv (CC0 1.0)"
+access:
+  repository: https://github.com/nk2028/tshet-uinh-data
+format:
+  entries: "韻書/廣韻.csv: one row per headword of the 澤存堂本, corrected against 廣韻校本 and others; 小韻號, 小韻字號, 韻目原貌, 音韻地位, 反切, 直音, 字頭, 字頭說明, 釋義, 釋義參照"
+  order: "src/字序表.csv: 原書小韻號, 小韻字號, 字 and each entry's id in other tables; sbgy_id places it on the printed leaf"
+  sbgy_id: "w + volume (1 digit) + leaf (2) + side (a recto, b verso) + column (2, counted from the right) + position in the column (2), e.g. w107b0601; the ids are those of cjkvi-dict sbgy.xml"
+  headwords: "字頭 may carry collation marks: ［X］ a character to supply, ｛X｝ one to delete, A〈B〉 a printed A corrected to B"
+title: 廣韻（澤存堂本）
+# A volume's title: work, volume, then the printing with whose copy or photographs these are (`of`).
+work: 廣韻
+printing: 澤存堂本
+volumes: {"1": 卷一　上平聲, "2": 卷二　下平聲, "3": 卷三　上聲, "4": 卷四　去聲, "5": 卷五　入聲}
+register: kanbun
+copies:
+  # Each copy of the printing the headwords are cut from. `offset`: an opening's number less the
+  # leaf whose verso it shows on the right (leaf = number - offset). `comb`: the scan is flat, so its columns
+  # are found as one evenly spaced row.
+  - id: photographs
+    of: 韻典網照片
+    title: 廣韻 五卷（張氏澤存堂刊本）
+    kind: directory
+    repository: https://github.com/nk2028/tshet-uinh-images
+    revision: 54ebf944fb7cb73eaafe563a68fc77f2d6740b24
+    path: 廣韻/澤存堂本
+    holder: null
+    attribution: nk2028『tshet-uinh-images』廣韻/澤存堂本（韻典網）
+    licence: unknown
+    image_kind: flat-reproduction
+    enlarge: 1
+    scale: 0.8
+    fit: 0.45
+    volumes:
+      - {volume: "1", label: 上平聲卷第一, files: volume1, offset: 9}
+      - {volume: "2", label: 下平聲卷第二, files: volume2, offset: 3}
+      - {volume: "3", label: 上聲卷第三, files: volume3, offset: 3}
+      - {volume: "4", label: 去聲卷第四, files: volume4, offset: 4}
+      - {volume: "5", label: 入聲卷第五, files: volume5, offset: 3}
+  - id: ioc
+    of: 東京大學藏
+    title: 廣韻 五卷 康熙四十三年序張氏澤存堂刊本（倉石文庫）
+    kind: commons-pdf
+    repository: https://commons.wikimedia.org/wiki/Category:廣韻
+    holder: 東京大學東洋文化研究所
+    shelfmark: 倉石文庫 10505
+    attribution: 東京大学東洋文化研究所所蔵漢籍善本全文影像資料庫（Wikimedia Commons IOC.UTokyo-000146–000150）
+    licence: PD
+    licence_evidence: https://commons.wikimedia.org/wiki/File:IOC.UTokyo-000146_廣韻五卷康熙四十三年序張氏澤存堂刊本_卷一.pdf
+    image_kind: flat-reproduction
+    comb: true
+    enlarge: 2
+    scale: 0.8
+    # A bitonal scan with a reader's notes in the margins: only columns a reader anchors, fitting closely.
+    fit: 0.3
+    anchored: true
+    # One read headword bears a half-leaf out, since every kept column needs one of its own; the scan's
+    # pages run off the leaf count in places, so an opening is tried up to three leaves either way.
+    confirm: 1
+    search: 3
+    dating:
+      - literal: 康熙四十三年序
+        start: 1704
+        end: 1704
+        kind: unknown
+        evidence: https://kanseki.ioc.u-tokyo.ac.jp/user/query_detail_im.php?nu=148400
+    volumes:
+      - {volume: "1", label: 上平聲卷第一, files: "IOC.UTokyo-000146 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷一.pdf", offset: -4}
+      - {volume: "2", label: 下平聲卷第二, files: "IOC.UTokyo-000147 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷二.pdf", offset: 3}
+      - {volume: "3", label: 上聲卷第三, files: "IOC.UTokyo-000148 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷三.pdf", offset: 4}
+      - {volume: "4", label: 去聲卷第四, files: "IOC.UTokyo-000149 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷四.pdf", offset: 2}
+      - {volume: "5", label: 入聲卷第五, files: "IOC.UTokyo-000150 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷五.pdf", offset: 2}
+dating:
+  - literal: 大中祥符元年六月五日勅
+    start: 1008
+    end: 1008
+    kind: composition
+    evidence: 澤存堂本卷首 大中祥符元年六月五日牒（東京大學東洋文化研究所 倉石文庫10505）
+notes:
+  - "The work's date is the edict printed in its front matter: 又準大中祥符元年六月五日勅 … 宜改爲大宋重修廣韻牒至準勅故牒, after one of 景德四年十一月十五日 (read on the 東文研 copy's 卷首, Wikimedia Commons IOC.UTokyo-000145, PDF pages 9 and 10). The 四庫全書總目提要 dates the book's completion otherwise, 大中祥符四年書成 (Kanripo KR1j0055, WYG, commit 73c10150ef3adc3e429e31605b15758df8f96406); that date is not recorded as a claim."
+  - The 東文研 catalogue gives its copy as 康熙四十三年序 張氏澤存堂 刊本, in one record with its 大廣益會玉篇三十卷 (148400, 1函4冊, read 2026-11-24). 1704 is the year of a preface, and no source read states when this copy was printed; 朱彝尊's preface in the 廣韻 itself is dated 康熙四十有三年六月. The date's kind is left to its wording.
+  - The photographs are 2592 px openings, one leaf's verso on the right and the next leaf's recto on the left. The repository names 韻典網 as their source and neither a holding library nor terms. They reproduce flat pages of a print older than 1900, so docs/licensing.md's rule records them as public domain and keeps `unknown` as the holder's terms.
+  - The photographs carry only the work's date: nothing states which impression of the 澤存堂 printing that copy is.
+  - The photographs' volume offsets were found by fitting (2026-11-20), each confirmed by the readers on six openings of its volume.
+  - The 東文研 copy is a bitonal scan at 1415 px an opening, with a reader's handwritten notes; Commons marks the files public domain. Its pages run off the leaf count in places (volume 2 opens one leaf from where its middle stands), so each volume's offset is where the search starts: those of volumes 1, 2, 3 and 5 were found on one or two openings each (2026-11-20), and volume 4's on four openings (2026-11-23).

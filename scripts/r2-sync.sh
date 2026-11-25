@@ -7,6 +7,7 @@
 # run that dies halfway leaves no worse state than a run that never started.
 #
 #   r2-sync.sh restore collections   # archive -> work/
+#   r2-sync.sh mirror collections    # archive -> work/, dropping what the archive no longer holds
 #   r2-sync.sh save collections      # work/ -> archive
 #
 # Credentials come from R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and
@@ -25,8 +26,8 @@ export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
 export RCLONE_CONFIG_R2_ACL=private
 
 bucket="${R2_BUCKET:-glyph-atlas-harvest}"
-action="${1:?usage: r2-sync.sh restore|save <group>}"
-group="${2:?usage: r2-sync.sh restore|save <group>}"
+action="${1:?usage: r2-sync.sh restore|mirror|save <group>}"
+group="${2:?usage: r2-sync.sh restore|mirror|save <group>}"
 
 # Each group is a local directory and its key under the bucket.
 case "$group" in
@@ -92,6 +93,14 @@ for pair in "${pairs[@]}"; do
       echo "restoring r2:$bucket/$remote -> $local"
       checkpoint "$local"
       rclone copy "r2:$bucket/$remote" "$local" \
+        "${parallel[@]}" "${compare[@]}" "${exclude[@]}"
+      ;;
+    mirror)
+      # For a store carried over from an earlier run: a dataset the archive dropped since then would
+      # otherwise ride back into it on the next save.
+      echo "mirroring r2:$bucket/$remote -> $local"
+      checkpoint "$local"
+      rclone sync "r2:$bucket/$remote" "$local" \
         "${parallel[@]}" "${compare[@]}" "${exclude[@]}"
       ;;
     save)

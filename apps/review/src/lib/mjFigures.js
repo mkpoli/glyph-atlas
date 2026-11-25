@@ -17,15 +17,16 @@ async function fileOf(char) {
 export const isFigure = text => { const chars = [...text]; return chars.length === 2 && SELECTOR.test(chars[1]) }
 
 const figures = new Map()
-/** The registered sequences of `char`, as `{ char, mj, default }`, the default figure (the one the
- *  font draws for `char` alone) marked; empty for a character with one figure or none. */
+/** The registered sequences of `char`, as `{ char, mj, default, ids }`, the default figure (the one
+ *  the font draws for `char` alone) marked, and `ids` the figure's description where the IVD
+ *  descriptions give one; empty for a character with one figure or none. */
 export async function figuresOf(char) {
   if ([...char].length !== 1) return []
   const file = await fileOf(char)
   if (!file) return []
   const [name] = file
   if (!figures.has(name)) figures.set(name, read(`/fonts/mj/${name}.json`).catch(error => { figures.delete(name); throw error }))
-  return ((await figures.get(name))[char] ?? []).map(([text, mj, isDefault]) => ({ char: text, mj, default: isDefault }))
+  return ((await figures.get(name))[char] ?? []).map(([text, mj, isDefault, ids]) => ({ char: text, mj, default: isDefault, ids }))
 }
 
 const faces = new Map()

@@ -50,6 +50,15 @@ def test_compatibility_keeps_only_decompositions_to_one_unified_ideograph():
     assert {(e.a, e.b) for e in variants.compatibility_edges(text)} == {(chr(0xF900), "豈"), ("⼀", "一")}
 
 
+def test_seal_sources_relate_a_seal_character_to_its_modern_equivalent():
+    text = "# SealSources\nU+3D005\tkSEAL_THXSrc\tTH-00006\nU+3D005\tkSEAL_MCJK\t53D3\nU+3D005\tkSEAL_Rad\t1.3D000\nU+3D000\tkSEAL_MCJK\t4E00\n"
+    assert rows(variants.seal_edges(text)) == {
+        ("叓", "\U0003D005", "small-seal", "unicode-ucd", "\U0003D005→叓 kSEAL_MCJK"),
+        ("一", "\U0003D000", "small-seal", "unicode-ucd", "\U0003D000→一 kSEAL_MCJK"),
+    }
+    assert "small-seal" not in variants.SYMMETRIC
+
+
 def test_yitizi_csv_applies_its_exclusions_and_keeps_overlap_groups():
     text = "#字,全等,語義交疊,簡體,繁體\n仿,,倣髣,,\n蒙,懞,,,\n乾,干,,,\n傾,,,倾,\n"
     got = rows(variants.yitizi_edges("ytenx/JihThex.csv", text))
@@ -214,3 +223,12 @@ def test_the_committed_table_keeps_its_promises():
     assert {source: int(count) for source, count in counts.items()} == seen
     for source in variants.SOURCE_IDS:
         assert (ROOT / "data" / "sources" / f"{source}.yaml").exists()
+
+
+def test_the_committed_table_gives_every_seal_character_one_equivalent():
+    body = [line.split("\t") for line in TABLE.read_text(encoding="utf-8").splitlines() if not line.startswith("#")][1:]
+    seals = [(a, b) for a, b, relation, source, _detail in body if relation == "small-seal"]
+    assert len(seals) == len({b for _a, b in seals}) == 0x3FC40 - 0x3D000
+    assert all(0x3D000 <= ord(b) < 0x3FC40 and not 0x3D000 <= ord(a) < 0x3FC40 for a, b in seals)
+    assert ("叓", "\U0003D005") in seals
+    assert not [row for row in body if row[2] != "small-seal" and any(0x3D000 <= ord(c) < 0x3FC40 for c in row[:2])]

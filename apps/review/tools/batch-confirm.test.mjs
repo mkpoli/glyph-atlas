@@ -1,7 +1,7 @@
 // Selecting tiles in the collection view and confirming them all with "Looks right": the selection's
 // toggles, ranges and arrow moves, and the confirmation's batches, bodies and per-crop report.
 import { describe, expect, it } from 'bun:test'
-import { arrowTarget, toggled, withRange } from '../src/lib/selection.js'
+import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../src/lib/selection.js'
 import { chosenCrops, confirmationBatches, confirmationBody, confirmationOutcome, confirmationPlan, confirmedCharacter, reportByReason, sendBatches } from '../src/lib/corrections.js'
 import { ROUND_MAX } from '../../cloudflare/src/rounds.ts'
 
@@ -19,6 +19,25 @@ describe('selecting tiles', () => {
     expect([...withRange(new Set(['x']), order, 1, 3)]).toEqual(['x', 'b', 'c', 'd'])
     expect([...withRange(new Set(), order, 4, 2)]).toEqual(['c', 'd', 'e'])
     expect([...withRange(new Set(), order, 0, 4, item => item.id !== 'c')]).toEqual(['a', 'b', 'd', 'e'])
+  })
+})
+
+describe('a section’s box', () => {
+  const tiles = ['a', 'b', 'c'].map(id => ({ id })), offered = tiles.slice(0, 2)
+  it('is on when every tile it takes is chosen, and between when any of its tiles is', () => {
+    expect(sectionChosen(new Set(['x']), tiles, offered)).toBe('none')
+    expect(sectionChosen(new Set(['a']), tiles, offered)).toBe('some')
+    expect(sectionChosen(new Set(['c']), tiles, offered)).toBe('some')
+    expect(sectionChosen(new Set(['a', 'b']), tiles, offered)).toBe('all')
+    expect(sectionChosen(new Set(['c']), tiles, [])).toBe('some')
+    expect(sectionChosen(new Set(), [], [])).toBe('none')
+  })
+  it('takes what it offers and leaves other sections’ tiles, then gives up every tile of the section', () => {
+    const chosen = withSection(new Set(['x', 'c']), tiles, offered)
+    expect([...chosen]).toEqual(['x', 'c', 'a', 'b'])
+    expect([...withSection(chosen, tiles, offered)]).toEqual(['x'])
+    expect([...withSection(new Set(['x', 'a']), tiles, offered)]).toEqual(['x', 'a', 'b'])
+    expect([...withSection(new Set(['x', 'a']), tiles, [])]).toEqual(['x'])
   })
 })
 

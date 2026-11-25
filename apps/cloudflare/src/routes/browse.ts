@@ -1,17 +1,19 @@
 // The catalogue, the homepage and the site's status on the new storage layout (decision record 0005):
-// `/atlas` (the browse page, the review rounds and the Flagged view), `/atlas/corpus/characters`,
+// `/atlas` (the browse page, the review rounds and the Flagged view), `/atlas/graphemes/counts`,
 // `/layers/gallery`, `/atlas/dates/stats`, `/atlas/groups/stats`, `/atlas/collection/status`, `/layers/summary` and
 // `/health`. Counts come from the publication's answers plus the reviews since (`atlas3Answers.ts`);
 // listings deal crops in shuffle order from the indexes of migration 0011.
 import { codeNames, cropOf, publicId, type Entry } from '../atlas3';
-import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, galleryIndex, galleryShard, productionKeys, tallyDeltas, type SampleEntry } from '../atlas3Answers';
-import { filedClaims } from '../atlas3Gallery';
+import { answer, bookCounts, codePoints, collectedCounts, corpusCounts, currentPointer, filedCounted, galleryIndex, galleryShard, productionKeys, tallyDeltas, type CharInfo, type SampleEntry } from '../atlas3Answers';
+import { filedClaimsKept, type FiledAt } from '../atlas3Gallery';
+import { addCrops, crops, fileClaims, type Rows, type Under } from '../graphemeTotals';
 import { listingItems, marksOf, suspectOf } from '../atlas3Listing';
 import { catalogueKey, catalogueStamps, publicationKey, type CatalogueStamps } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { categoryOf } from '../category';
+import { categoryOf, isSeal } from '../category';
 import { tallyDates } from '../dating';
 import { compose, graphemeKey, graphemeText, integer, literal, text } from '../input';
+import { digest } from '../representation';
 import { ROUND_MAX } from '../rounds';
 import { Timing } from '../timing';
 
@@ -105,7 +107,7 @@ export async function dateStats(env: Env, ctx: ExecutionContext, url: URL): Prom
 
 // ---- Crop counts by script group.
 
-const SCRIPT_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'] as const;
+const SCRIPT_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other'] as const;
 type ScriptGroup = typeof SCRIPT_GROUPS[number];
 const GROUP_ORDER = ['all', ...SCRIPT_GROUPS] as const;
 type GroupKey = typeof GROUP_ORDER[number];
@@ -125,7 +127,7 @@ function summarizeScope(s: ScopeCounts) {
 }
 
 // Collected crops (`facets.json.gz` + `tally`) and corpus glyphs (`corpus.json.gz` + `unread.json.gz` + `tally`)
-// grouped by script (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `other`) with review state counts.
+// grouped by script (`all`, `kana`, `kanji`, `hangul`, `gugyeol`, `tangut`, `seal`, `other`) with review state counts.
 export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
   const [{ pub, through_gen }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
   const version = catalogueKey(stamps);
@@ -189,42 +191,36 @@ export async function groupStats(env: Env, ctx: ExecutionContext, url: URL): Pro
   return body;
 }
 
-// ---- Corpus glyphs by character.
+// ---- Crops by character and grapheme.
 
-// Corpus glyphs by character in the material asked for, with the grapheme each is filed under: what
-// the grapheme browser counts beside the collection's own crops, so a character the site holds only as
-// corpus glyphs (債) is listed too. A glyph a grapheme claim reads as another grapheme counts under that
-// grapheme's family, as the family's gallery lists it (`filedClaims`). A claim holds on its crop's
-// effective cut, which a redrawn box moves, so the edge keeps one copy per publication and catalogue
-// stamps (reviews and ledger writes among them) and material.
-export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL): Promise<Json> {
-  const production = url.searchParams.get('production') || 'all';
-  if (!validScope(production)) throw new Problem(400, 'Invalid production scope.');
-  const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]);
-  const key = new Request(`${url.origin}/atlas/corpus/characters?production=${encodeURIComponent(production)}&v=${
-    encodeURIComponent(`${pub}:${catalogueKey(stamps)}`)}`);
+// Every crop and corpus glyph the site holds, by character and the grapheme it is filed under
+// (`graphemeTotals.ts`): what the grapheme browser, its cards and a tile's caption count, withheld crops
+// among them. `['', grapheme, …]` are the crops with no character that name it, and a row ends in 1 where
+// a claim moved some of its crops. It is the same for anyone who asks in the same minute of a
+// publication (`keptFor`), so the edge keeps it, and as of its write for a browser that wrote lately, kept
+// under the catalogue key. The browser asks each time, and by the tag of its copy is told that it still
+// stands. The tag is the rows' own, in the order of their labels, so the same counts have the same tag.
+export async function graphemeCounts(env: Env, ctx: ExecutionContext, url: URL): Promise<{ text: string; tag: string }> {
+  const [{ pub }, stamps] = await Promise.all([currentPointer(env), catalogueStamps(env)]), version = catalogueKey(stamps);
+  const span = keptFor(env, stamps, pub);
+  const key = new Request(`${url.origin}/atlas/graphemes/counts?s=2&v=${encodeURIComponent(span ?? `${pub}:${version}`)}`);
   const cached = await caches.default.match(key);
-  if (cached) return cached.json();
-  const [{ cells, chars }, claims] = await Promise.all([corpusCounts(env, null), filedClaims(env)]);
-  const keys = await productionKeys(env, [...cells.map(c => c.production), ...claims.map(r => r.production ?? -1)]);
-  const scoped = (id: number | null) => inScope(production, keys.get(id ?? -1) ?? 'unknown');
-  // [label, grapheme, glyphs], one per character and the grapheme its glyphs are filed under.
-  const totals = new Map<string, [string, string, number]>();
-  const add = (text: string, grapheme: string, n: number) => {
-    const at = `${text} ${grapheme}`, found = totals.get(at);
-    if (found) found[2] += n; else totals.set(at, [text, grapheme, n]);
-  };
-  for (const c of cells) if (scoped(c.production) && chars.has(c.char)) add(chars.get(c.char)!.text, chars.get(c.char)!.grapheme, c.n);
-  for (const r of claims) {
-    const info = r.kind === 1 && r.char !== null ? chars.get(r.char) : undefined;
-    if (!info || info.grapheme === r.head || !scoped(r.production) || !(totals.get(`${info.text} ${info.grapheme}`)?.[2])) continue;
-    add(info.text, info.grapheme, -1);
-    add(info.text, r.head, 1);
-  }
-  const items = [...totals.values()].filter(([, , n]) => n > 0).sort((a, b) => byCodePoint(a[0], b[0]) || byCodePoint(a[1], b[1]));
-  const body = { items };
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': 'public, max-age=3600' } })));
-  return body;
+  if (cached) return { text: await cached.text(), tag: cached.headers.get('etag')! };
+  const [collected, corpus, filed, claims] = await Promise.all([collectedCounts(env, version), corpusCounts(env, version), filedCounted(env, version),
+    filedClaimsKept(env, version)]);
+  const place = (chars: Map<number, CharInfo>, char: number) => { const info = chars.get(char); return info ? { label: info.text, grapheme: info.grapheme } : null };
+  const rows: Rows = new Map();
+  const add = (at: Under | null, kind: number, n: number) => { if (at) addCrops(rows, at, kind, n) };
+  for (const c of collected.cells) if (c.char !== -1) add(place(collected.chars, c.char), 0, c.n);
+  for (const c of corpus.cells) add(place(corpus.chars, c.char), 1, c.n);
+  const family = (id: number) => { const at = place(filed.chars, id); return at && { label: '', grapheme: at.grapheme } };
+  for (const c of filed.cells) add(family(c.family), c.kind, c.n);
+  fileClaims(rows, claims, r => r.char !== null ? place(collected.chars, r.char) ?? place(corpus.chars, r.char) : r.family !== null ? family(r.family) : null);
+  const items = [...rows.values()].filter(row => crops(row) > 0).map(row => [row.label, row.grapheme, row.collected, row.corpus, ...(row.claimed ? [1] : [])]);
+  items.sort((a, b) => byCodePoint(a[0] as string, b[0] as string) || byCodePoint(a[1] as string, b[1] as string));
+  const text = JSON.stringify({ items }), tag = `W/"${await digest(text)}"`;
+  ctx.waitUntil(caches.default.put(key, new Response(text, { headers: { 'content-type': 'application/json', etag: tag, 'cache-control': `public, max-age=${span ? KEPT_SECONDS : 3600}` } })));
+  return { text, tag };
 }
 
 // ---- The homepage gallery.
@@ -235,7 +231,9 @@ export async function corpusCharacters(env: Env, ctx: ExecutionContext, url: URL
 // holds few glyphs of have pools of their own (WHOLE_GROUPS), up to 32 glyphs of each character, so
 // their seed's point falls anywhere in the shuffle range. A glyph a review has relabelled shows its
 // row's values, and leaves a group it no longer belongs to.
-const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut'];
+const GALLERY_GROUPS = ['kana', 'kanji', 'hangul', 'gugyeol', 'tangut', 'seal', 'other'], WHOLE_GROUPS = ['hangul', 'gugyeol', 'tangut', 'seal'];
+// A publication made before a group had a pool of its own names none for it.
+const NO_POOL = { range: 2 ** 31, shards: 1, glyphs: 0, categories: {} };
 export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParams, timing = new Timing()): Promise<Json> {
   const group = q.get('group') && q.get('group') !== 'all' ? q.get('group')! : null;
   if (group && !GALLERY_GROUPS.includes(group)) throw new Problem(400, 'Invalid group.');
@@ -249,7 +247,7 @@ export async function gallery(env: Env, ctx: ExecutionContext, q: URLSearchParam
   timing.step('stamps');
   const kept = keptKey ? await caches.default.match(keptKey) : undefined;
   if (kept) { timing.step('sample-hit'); return await kept.json(); }
-  const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name];
+  const name = group && WHOLE_GROUPS.includes(group) ? group : 'sample', pool = (await galleryIndex(env, pub))[name] ?? NO_POOL;
   const start = seed % pool.range, first = Math.floor(start * pool.shards / pool.range);
   const wanted = (entry: SampleEntry) => name !== 'sample' || !group || entry[2] === group;
   // From the seed's point up through the shards and round to it again: the glyphs of the seed's own
@@ -289,7 +287,7 @@ const FACETS_TTL = 3600;
 // review and quiz mark, too often for answers kept under it to be met again, so another visitor sees a
 // review once the minute ends, as an isolate's lag already lets them. The key names the publication's
 // pointer as well as its stamps: a publication moves its stamps before its answers are up. A writer,
-// whose requests come with the lag at 0, reads afresh and keeps nothing.
+// whose requests come with the lag at 0, is answered under the catalogue key its write moved.
 export const KEPT_SECONDS = 60;
 export function keptFor(env: Env, stamps: CatalogueStamps | null, pub: string, now = Date.now()): string | null {
   if (!(Number(env.CATALOGUE_LAG) > 0)) return null;
@@ -324,20 +322,49 @@ function conditions(f: Filter, skip: { chars?: boolean; book?: boolean; category
   return { sql: where.map(w => ` AND ${w}`).join(''), values };
 }
 
+// How many corpus glyphs of a book a filter keeps. The publication counts a book's glyphs, but not by
+// state, character or withheld flag, so they are counted from the book's own index range: its first
+// `BOOK_ROWS` rows are read and no more, whatever the filter, so a book larger than that is not counted
+// this way (`glyphsOf`).
+export const BOOK_ROWS = 40000;
+export function bookGlyphsQuery(f: Filter) {
+  const rest = conditions(f, { book: true });
+  return { sql: `SELECT count(*) AS n FROM (SELECT kind,char,category,state,quiz,production FROM crops INDEXED BY crop_book WHERE book=? AND kind<2 LIMIT ${BOOK_ROWS}) WHERE kind=1${rest.sql}`,
+    values: [f.book!, ...rest.values] };
+}
+/** The corpus glyphs of a book that a browse filter keeps: counted where the book is small enough to read,
+ *  else no more than the publication counts in it and, for the characters named, in the whole corpus. */
+async function glyphsOf(env: Env, f: Filter, [collected, corpus]: [number, number], version: string): Promise<number> {
+  if (collected + corpus <= BOOK_ROWS) {
+    const counting = bookGlyphsQuery(f);
+    return (await env.ATLAS.prepare(counting.sql).bind(...counting.values).first<{ n: number }>())?.n ?? 0;
+  }
+  if (f.chars === null) return corpus;
+  let named = 0;
+  for (const c of (await corpusCounts(env, version)).cells) if (matches({ ...f, book: null, category: null }, { ...c, book: -1, category: null })) named += c.n;
+  return Math.min(corpus, named);
+}
+
 // One index range of a listing, in shuffle order: one per character and priority named, else the book's,
 // else one per script category. `priorities` narrows a range with no character to one priority, which
 // the crops' row then gives.
 export type Range = { from: string; values: (number | string)[] };
-export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false): Range[] {
+/** Which of its characters' crops a round's range holds: those marked suspect under their character's text, or the rest. */
+export type Doubt = { marked: boolean; texts: ReadonlyMap<number, string> };
+export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false, glyphs = false, doubt: Doubt | null = null): Range[] {
   if (f.chars !== null) {
     const rest = conditions(f, { chars: true });
-    return [...f.chars].sort((a, b) => a - b).flatMap(char => priorities.map(priority => ({
-      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}`, values: [char, kind, priority, ...rest.values] })));
+    // Browsing a book by character deals its corpus glyphs of that character after its collected crops.
+    return [...f.chars].sort((a, b) => a - b).flatMap(char => (glyphs ? [0, 1] : [kind]).flatMap(k => priorities.map(priority => ({
+      from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}${doubt
+        ? ` AND ${doubt.marked ? '' : 'NOT '}EXISTS (SELECT 1 FROM suspects s WHERE s.crop=crops.id AND s.label=?)` : ''}`,
+      values: [char, k, priority, ...rest.values, ...(doubt ? [doubt.texts.get(char) ?? ''] : [])] }))));
   }
   const only = tier ? { sql: ' AND priority=?', values: priorities } : { sql: '', values: [] };
   if (f.book !== null) {
     const rest = conditions(f, { book: true });
-    return [{ from: `crops INDEXED BY crop_book WHERE book=? AND kind<2 AND kind=0${rest.sql}${only.sql}`, values: [f.book, ...rest.values, ...only.values] }];
+    // Browsing a book shows its corpus glyphs with its collected crops (`glyphs`); a round deals the collected ones.
+    return [{ from: `crops INDEXED BY crop_book WHERE book=? AND kind<2${glyphs ? '' : ' AND kind=0'}${rest.sql}${only.sql}`, values: [f.book, ...rest.values, ...only.values] }];
   }
   const rest = conditions(f, { category: true });
   return (f.category !== null ? [f.category] : [...categories, -1]).map(code => ({
@@ -414,20 +441,21 @@ export async function page(env: Env, stages: Stage[], start: number, cursor: str
 }
 
 // The members of a grapheme a round names, by the grapheme table: は's family is は, ハ and its
-// hentaigana. A key that names no family is its own text alone; a key that names a family's member
-// rather than the family is refused. The head comes first, then the members by id.
+// hentaigana. A key that names no family is its own text alone, and so is one that names a family's
+// member: its round is that member's. The head comes first, then the members by id, the small seal
+// characters after every other: the interface's number keys follow the list.
 export const graphemeQuery = () => 'SELECT id,text,head FROM graphemes WHERE text=?';
 export const membersQuery = () => 'SELECT id,text FROM graphemes WHERE head=? ORDER BY id';
+// The family of the grapheme a key's text is filed under: its head, and each character filed under it.
+export const familyQuery = () => `SELECT g.id AS own,h.id AS head,h.text,m.id AS member FROM graphemes g JOIN graphemes h ON h.id=coalesce(g.head,g.id)
+  LEFT JOIN graphemes m ON m.head=h.id WHERE g.text=?`;
 export async function graphemeMembers(env: Env, key: string): Promise<{ ids: number[]; texts: string[] }> {
   const own = compose(graphemeText(key));
   const row = await env.ATLAS.prepare(graphemeQuery()).bind(own).first<{ id: number; text: string; head: number | null }>();
   if (!row) return { ids: [], texts: [own] };
-  if (row.head !== null && row.head !== row.id) {
-    const head = await env.ATLAS.prepare('SELECT text FROM graphemes WHERE id=?').bind(row.head).first<{ text: string }>();
-    throw new Problem(422, `${graphemeText(key)} is filed under ${head?.text}.`);
-  }
-  const members = (await env.ATLAS.prepare(membersQuery()).bind(row.id).all<{ id: number; text: string }>()).results;
-  const all = [{ id: row.id, text: row.text }, ...members.filter(m => m.id !== row.id)];
+  if (row.head !== null && row.head !== row.id) return { ids: [row.id], texts: [row.text] };
+  const members = (await env.ATLAS.prepare(membersQuery()).bind(row.id).all<{ id: number; text: string }>()).results.filter(m => m.id !== row.id);
+  const all = [{ id: row.id, text: row.text }, ...members.filter(m => !isSeal(m.text)), ...members.filter(m => isSeal(m.text))];
   return { ids: all.map(m => m.id), texts: all.map(m => m.text) };
 }
 
@@ -496,6 +524,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const scoped = review && grapheme !== null;
   const members = scoped ? await graphemeMembers(env, grapheme) : null;
   const stateParam = q.get('state') || 'all';
+  const doubting = review && stateParam === 'pending' && q.get('suspects') === 'only';
   // The Flagged view shows every crop waiting for a person, withheld or not.
   const flaggedView = ['flagged', 'attention'].includes(stateParam);
   // A round deals only crops it may show, whatever `withheld` asks.
@@ -533,13 +562,23 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const productions = scopeIds(production, keys);
 
   // The characters a listing names: a round's grapheme members, a browse page's family (every character
-  // filed under the grapheme), a character, a search. A name the site holds no crop of names none.
+  // filed under the grapheme), a character, a search. A member's key, the key a head had before a table filed
+  // it under another among them, lists the family it is a member of; a small seal character's lists that
+  // character alone. A family is as the tables stand, whatever graphemes the publication counted its
+  // characters under (`familyQuery`). A name the site holds no crop of names none.
   const byText = new Map([...chars].map(([id, info]) => [info.text, id]));
   let named: Set<number> | null = null, written: Set<number> | null = null;
   const narrow = (ids: Iterable<number>) => { const next = new Set(ids); named = named === null ? next : new Set([...named].filter(id => next.has(id))); };
   if (members) narrow(members.ids);
-  const family = grapheme && !scoped ? new Set([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id)) : null;
-  if (family) narrow(family);
+  let head = grapheme, family: Set<number> | null = null, member: number | undefined;
+  if (grapheme && !scoped) {
+    const own = compose(graphemeText(grapheme));
+    const rows = (await env.ATLAS.prepare(familyQuery()).bind(own).all<{ own: number; head: number; text: string; member: number | null }>()).results;
+    if (rows.length && rows[0].own !== rows[0].head && isSeal(own)) member = rows[0].own;
+    else if (rows.length) head = codePoints(rows[0].text);
+    family = new Set((member !== undefined ? [member] : rows.flatMap(row => [row.head, row.member ?? row.head])).filter(id => chars.has(id)));
+    narrow(family);
+  }
   for (const value of [character, searched]) if (value) {
     const id = byText.get(value) ?? (await env.ATLAS.prepare(graphemeQuery()).bind(value).first<{ id: number }>())?.id;
     const ids = id === undefined ? [] : [id];
@@ -547,15 +586,15 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     written = written === null ? new Set(ids) : new Set(ids.filter(i => written!.has(i)));
   }
   // The crops grapheme claims file, read once a request (`countFacets` reads them too).
-  let filing: ReturnType<typeof filedClaims> | null = null;
-  const claimsRead = () => filing ??= filedClaims(env);
+  let filing: Promise<FiledAt[]> | null = null;
+  const claimsRead = () => filing ??= filedClaimsKept(env, version);
   // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
-  // characters a claim files under another family is not, as the family's gallery lists them; a
-  // character or a search narrows those as it narrows the rest. A crop with no character is counted
-  // under none, and is listed by none.
-  const claims = family ? await claimsRead() : [];
-  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== grapheme).map(r => r.id));
-  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
+  // characters a claim files under another family is not, as the family's gallery lists them; a small seal
+  // character alone lists its crops, whatever claims file them under. A character or a search narrows
+  // either as it narrows the rest. A crop with no character is counted under none, and is listed by none.
+  const claims = family && member === undefined ? await claimsRead() : [];
+  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== head).map(r => r.id));
+  const here = claims.filter(r => r.kind === 0 && r.head === head && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
     && r.state !== null && r.quiz !== null).map(r => ({ ...r, char: r.char!, state: r.state!, quiz: r.quiz! }));
   // -2 matches nothing: a book, script or state the site does not know.
   const book = documentKey ? (await env.ATLAS.prepare(bookQuery()).bind(documentKey).first<{ id: number }>())?.id ?? -2 : null;
@@ -573,18 +612,21 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     withheld ? 'show' : 'hide'}&v=${encodeURIComponent(version)}`);
   const hit = facetsKey ? await caches.default.match(facetsKey) : undefined;
   const facets: { counts: Record<StateName, number>; categories: Category[]; documents: Book[] } = hit ? await hit.json()
-    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review, claims: review ? [] : await claimsRead() });
+    : await countFacets(env, { cells, chars, glyphs, own, counted, stateOf, review, claims: review ? [] : await claimsRead(),
+      books: review ? null : (await bookCounts(env)).books });
   timing.step(hit ? 'facets-hit' : 'facets');
   if (facetsKey && !hit) ctx.waitUntil(caches.default.put(facetsKey, Response.json(facets, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
 
   // The listing.
   const filter: Filter = { chars: named, book, category, state: wantedState, withheld, productions, named: review };
   const listedCount = (f: Filter) => cells.reduce((n, c) => n + (matches(f, c) ? c.n : 0), 0);
-  const exclude = new Set<number>(own.map(row => row.id));
+  // A page reads past the crops it leaves out, so a round's are those of its own characters.
+  const inRound = members && new Set(members.ids);
+  const exclude = new Set<number>(own.filter(row => !inRound || (row.char !== null && inRound.has(row.char))).map(row => row.id));
   const wantsRows = limit > 0;
   // The review priorities a crop may hold (`review_priority` gives 0 to 2), and any other a count names.
   const priorities = [...new Set([0, 1, 2, ...cells.flatMap(c => c.priority === null ? [] : [c.priority])])].sort((a, b) => a - b);
-  let stages: Stage[], total: number, reportedCount = 0;
+  let stages: Stage[], total: number | null, reportedCount = 0;
   if (flaggedView) {
     // `attention` is every crop waiting for a person, flagged or hard to read; `flagged` the flagged ones.
     // The Flagged view hides crops already looked at in the inspector on `reported=hide`, and counts them.
@@ -604,14 +646,18 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     total = mine.length;
   } else {
     // A grapheme's round of pending crops deals its corpus glyphs after its collected crops. Corpus
-    // glyphs belong to no book of the collection, so a round narrowed to one deals none.
-    const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched
-      && (category === null || members!.texts.every(member => categoryOf(member) === groupParam));
-    const corpusFilter: Filter = { ...filter, state: 0, category: null };
+    // glyphs belong to no book of the collection, so a round narrowed to one deals none. A corpus glyph
+    // has no category of its own, so a round narrowed to a script deals those of the members it holds: a
+    // kanji round of 春 leaves out its small seal character.
+    const inScript = scoped && category !== null ? new Set(members!.ids.filter((_, i) => categoryOf(members!.texts[i]) === groupParam)) : null;
+    const corpus = scoped && !character && book === null && (wantedState === null || wantedState === 0) && !searched && inScript?.size !== 0;
+    const corpusFilter: Filter = { ...filter, state: 0, category: null, ...(inScript ? { chars: inScript } : {}) };
     // A round deals what another reviewer skipped first, then the collected crops, then the corpus
     // glyphs, each crop once. Four seeds in five deal the collected crops by priority, each priority in
-    // turn from the seed's point; the fifth deals them all together.
-    const head = review && wantsRows ? (await othersSkips(env, reviewer, version))
+    // turn from the seed's point, and a grapheme's pending crops the classifier doubts before the rest of
+    // either list; the fifth deals them all together. `suspects=only` deals the doubted alone, uncounted.
+    const only = scoped && doubting;
+    const head = review && wantsRows && !only ? (await othersSkips(env, reviewer, version))
       .filter(row => !exclude.has(row.id) && (row.kind === 0 ? matches(filter, row) : corpus && matches(corpusFilter, row)))
       .sort((a, b) => (a.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE - (b.shuffle - start(seed) + SHUFFLE_RANGE) % SHUFFLE_RANGE || a.id - b.id) : [];
     for (const row of head) exclude.add(row.id);
@@ -621,16 +667,24 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
       && matches(filter, { ...row, state: row.state, quiz: row.quiz })).length;
     for (const id of [...away, ...claimed.map(row => row.id)]) exclude.add(id);
     const tiered = review && seed % 5 !== 0;
-    stages = [{ ids: head.map(row => row.id) },
-      ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true) }))
-        : [{ list: ranges(filter, 0, categoryCodes, priorities) }]),
-      ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities) }] : []),
+    const texts = scoped && wantedState === 0 && (tiered || only) ? new Map(members!.ids.map((id, i) => [id, members!.texts[i]])) : null;
+    const doubted = texts && { marked: true, texts }, trusted = texts && { marked: false, texts };
+    // A book's corpus glyphs are browsed with its collected crops, where the publication counts it any.
+    const inBook = !review && book !== null ? (await bookCounts(env)).books.get(book) ?? null : null;
+    const bookGlyphs = inBook !== null && inBook[1] > 0;
+    const marked = doubted ? [{ list: ranges(filter, 0, categoryCodes, priorities, false, false, doubted) }] : [];
+    const markedCorpus = doubted && corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities, false, false, doubted) }] : [];
+    stages = only ? [...marked, ...markedCorpus] : [{ ids: head.map(row => row.id) }, ...marked,
+      ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true, false, trusted) }))
+        : [{ list: ranges(filter, 0, categoryCodes, priorities, false, bookGlyphs) }]),
+      ...markedCorpus, ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities, false, false, trusted) }] : []),
       // Last, so a claim saved between two pages leaves every earlier stage where its cursor names it.
       ...(claimed.length ? [{ ids: claimed.map(row => row.id) }] : [])];
     const skippedOrHead = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;
     let glyphTotal = 0;
     if (corpus) for (const c of glyphs!.cells) if (matches(corpusFilter, { ...c, book: -1, category: null })) glyphTotal += c.n;
-    total = head.length + claimed.length + listedCount(filter) - left - skippedOrHead(0, filter) + (corpus ? glyphTotal - skippedOrHead(1, corpusFilter) : 0);
+    if (bookGlyphs) glyphTotal += await glyphsOf(env, filter, inBook!, version);
+    total = only ? null : head.length + claimed.length + listedCount(filter) - left - skippedOrHead(0, filter) + (corpus ? glyphTotal - skippedOrHead(1, corpusFilter) : bookGlyphs ? glyphTotal : 0);
   }
   const dealt = wantsRows ? await page(env, stages, start(seed), cursor, limit, exclude) : { ids: [], next: null };
   timing.step('page');
@@ -647,15 +701,40 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     ? listedCount({ chars: named, book, category: null, state: null, withheld: true, productions, named: false })
       - listedCount({ chars: named, book, category: null, state: null, withheld: false, productions, named: false })
     : null;
+  // Dealing suspects alone, a round's characters are those with any, each counting the crops the classifier doubts.
+  let categories = facets.categories;
+  if (doubting && q.get('facets') !== 'counts') {
+    const by = new Map<string, number>();
+    for (const row of await doubtedCounts(env, ctx, url.origin)) {
+      const found = chars.get(row.char) ?? glyphs!.chars.get(row.char);
+      if (found && (productions === null || productions.has(row.production))) by.set(`${found.text} ${found.grapheme}`, (by.get(`${found.text} ${found.grapheme}`) ?? 0) + row.n);
+    }
+    categories = facets.categories.flatMap(c => { const n = Math.min(by.get(`${c.label} ${c.grapheme}`) ?? 0, c.pending); return n ? [{ ...c, pending: n }] : [] });
+  }
   const body = { total, next: dealt.next, has_more: dealt.next !== null, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
-    query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
+    query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : head ? { head } : {}),
     // `facets=counts` leaves out the counts by character and by work, a few hundred kilobytes a page that
     // shows its rows first and reads them after (`limit=0`) does not wait for.
-    ...(q.get('facets') === 'counts' ? { categories: [], documents: [] } : { categories: facets.categories, documents: facets.documents }),
+    ...(q.get('facets') === 'counts' ? { categories: [], documents: [] } : { categories, documents: facets.documents }),
     reported_count: reportedCount, withheld_count: withheldCount, items };
   if (listingKey && whole) ctx.waitUntil(caches.default.put(listingKey, Response.json(body, { headers: { 'cache-control': `public, max-age=${KEPT_SECONDS}` } })));
   return body;
+}
+
+// The pending crops the classifier doubts under the character they hold, counted by character, production and
+// kind. The marks number some tens of thousands and change with a publication's load, so the edge keeps one
+// count an hour of a publication; a round reads its own crops from D1.
+export const doubtedQuery = () => `SELECT c.char,coalesce(c.production,-1) AS production,c.kind,count(*) AS n FROM suspects s CROSS JOIN crops c ON c.id=s.crop
+  CROSS JOIN graphemes g ON g.id=c.char WHERE c.kind<2 AND c.state=0 AND c.quiz=1 AND g.text=s.label GROUP BY 1,2,3`;
+type Doubted = { char: number; production: number; kind: number; n: number };
+async function doubtedCounts(env: Env, ctx: ExecutionContext, origin: string): Promise<Doubted[]> {
+  const key = new Request(`${origin}/atlas/doubted?v=${encodeURIComponent((await currentPointer(env)).pub)}&h=${Math.floor(Date.now() / 3_600_000)}`);
+  const hit = await caches.default.match(key);
+  if (hit) return await hit.json();
+  const rows = (await env.ATLAS.prepare(doubtedQuery()).all<Doubted>()).results;
+  ctx.waitUntil(caches.default.put(key, Response.json(rows, { headers: { 'cache-control': 'public, max-age=3600' } })));
+  return rows;
 }
 
 // Counts by character and state, and for browsing by book as well, with each book's key and title. A
@@ -663,10 +742,11 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
 // glyphs nothing has decided, as pending, under the grapheme its family files it under. Browsing, a
 // crop a grapheme claim reads as another grapheme counts with its character under that grapheme's
 // family, as the family's gallery lists it (`filedClaims`); a round deals by character, and counts so.
-async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims }: {
+async function countFacets(env: Env, { cells, chars, glyphs, own, counted, stateOf, review, claims, books }: {
   cells: Awaited<ReturnType<typeof collectedCounts>>['cells']; chars: Awaited<ReturnType<typeof collectedCounts>>['chars'];
   glyphs: Awaited<ReturnType<typeof corpusCounts>> | null; own: (Row & { id: number; kind: number })[]; counted: Filter;
-  stateOf: Map<number, StateName>; review: boolean; claims: Awaited<ReturnType<typeof filedClaims>> }) {
+  stateOf: Map<number, StateName>; review: boolean; claims: FiledAt[];
+  books: Map<number, [number, number]> | null }) {
   const counts = Object.fromEntries(STATE_NAMES.map(s => [s, 0])) as Record<StateName, number>;
   const categories = new Map<string, Category>(), documents = new Map<number, Book>();
   const info = (char: number) => chars.get(char) ?? glyphs?.chars.get(char) ?? null;
@@ -719,6 +799,13 @@ async function countFacets(env: Env, { cells, chars, glyphs, own, counted, state
     if (!((categories.get(`${found.text} ${found.grapheme}`)?.[state] ?? 0) > 0)) continue;
     count(found.text, found.grapheme, state, -1);
     count(found.text, r.head, state, 1);
+  }
+  // Every book is listed: one of corpus glyphs counts those, which the publication counts by book alone,
+  // so they add to its total and to no state. Under a choice of material the count is not known by
+  // book, and the books of corpus glyphs are left out.
+  if (books && counted.productions === null) for (const [book, [, corpus]] of books) if (corpus > 0) {
+    const entry = documents.get(book) ?? { id: '', title: null, ...empty() };
+    entry.total += corpus; documents.set(book, entry);
   }
   for (const [at, entry] of categories) if (entry.total <= 0) categories.delete(at);
   if (documents.size) for (const row of (await env.ATLAS.prepare(booksQuery()).bind(JSON.stringify([...documents.keys()]))

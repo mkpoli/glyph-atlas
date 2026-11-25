@@ -140,6 +140,10 @@ ID_FAMILIES = {
     "hdic-krm": "hdic-krm",
     "hdic-ktb": "hdic-ktb",
     "hdic-tsj": "hdic-tsj",
+    "guangyun-photographs": "guangyun-photographs",
+    "guangyun-ioc": "guangyun-ioc",
+    "longkan-song": "longkan-song",
+    "codh-tensho": "codh-tensho",
     "nogeoldae-eonhae": "nogeoldae-eonhae",
     "wikisource-ko-glyphs": "wikisource-ko-glyphs",
 }
@@ -208,6 +212,27 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "hdic-tsj",
         "note": "天治本新撰字鏡 headwords on the NDL 六合館 edition (1916), labelled from HDIC's TSJ database "
                 "(scripts/cut_hdic_headwords.py).",
+    },
+    {
+        "name": "guangyun-photographs",
+        "note": "澤存堂本廣韻 headwords on nk2028's photographs of the printing, labelled from nk2028's 廣韻 tables "
+                "(scripts/cut_guangyun_headwords.py). The photographs name 韻典網 as their source and no holder; the pages are flat reproductions "
+                "of a pre-1900 print, recorded as public domain.",
+    },
+    {
+        "name": "guangyun-ioc",
+        "note": "澤存堂本廣韻 headwords on 東京大學東洋文化研究所's scanned copy (倉石文庫), labelled from nk2028's 廣韻 "
+                "tables (scripts/cut_guangyun_headwords.py).",
+    },
+    {
+        "name": "longkan-song",
+        "note": "龍龕手鏡 headwords on the 宋刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), labelled "
+                "from 青雀古籍's table of the book (scripts/cut_longkan_headwords.py). A label is the table's headword; the print may show a variant of it.",
+    },
+    {
+        "name": "codh-tensho",
+        "note": "CODH's 篆書字体データセット: seal forms of 説文解字, 新撰篆書字典 and 聯珠篆文 on their holders' pages, on "
+                "a small seal character or on the 親字 CODH files them under (`atlas import tensho`).",
     },
     {
         "name": "nogeoldae-eonhae",

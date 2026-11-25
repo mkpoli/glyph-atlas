@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { cardTargets, cardTiers } from '../src/lib/cardTiers.js'
+import { cardTargets, cardTiers, galleryCount, inferred, isSeal, sealsLast, structureForms } from '../src/lib/cardTiers.js'
 
 // The card the site serves for 說 (U+8AAA), cut to what the target list reads.
 const card = {
@@ -50,5 +50,75 @@ describe("a character card's 字体", () => {
     const tiers = cardTiers({ char: '練', code_point: 'U+7DF4', variants: {
       items: [{ char: '\uf996', code_point: 'U+F996' }, { char: '练', code_point: 'U+7EC3' }], related: [{ char: '\ufa57', code_point: 'U+FA57' }] } })
     expect([chars(tiers.written), chars(tiers.related)]).toEqual([['练'], []])
+  })
+})
+
+describe('a small seal character of the grapheme', () => {
+  // 萅's card: 𽌇 is a member of 春's family, and the pair's own row is still in the variants.
+  const SEAL = '\u{3D307}', pair = char => ({ char, code_point: 'U+' + char.codePointAt(0).toString(16).toUpperCase(), written: false,
+    relations: [{ relation: 'small-seal', source: 'unicode-ucd', detail: `${SEAL}→萅 kSEAL_MCJK` }] })
+  const grapheme = { char: '春', code_point: 'U+6625', members: [{ char: '春', code_point: 'U+6625' }, { char: SEAL, code_point: 'U+3D307' },
+    { char: '萅', code_point: 'U+8405' }] }
+  const chun = { char: '萅', code_point: 'U+8405', grapheme, variants: { items: [], related: [pair(SEAL)] } }
+  it('is one of its 字体, after every other form, and is listed once', () => {
+    // 萶 is written for 春 outside the grapheme, and a described form joins it.
+    const { members, seals, written, related } = cardTiers({ ...chun, variants: { ...chun.variants, items: [{ char: '萶', code_point: 'U+8436' }] } })
+    expect([members, seals, written].map(list => list.map(v => v.char))).toEqual([['春', '萅'], [SEAL], ['萶']])
+    expect(related).toEqual([])
+    const targets = cardTargets({ ...chun, variants: { ...chun.variants, items: [{ char: '萶', code_point: 'U+8436' }], forms: [{ char: '⿱𡗗日', form: 'fm:1' }] } })
+    expect(targets.map(target => target.char)).toEqual(['春', '萅', '萶', '⿱𡗗日', SEAL])
+  })
+  it("has its Han characters as its own card's 字体", () => {
+    const { members, seals, related, grapheme: head } = cardTiers({ char: SEAL, code_point: 'U+3D307', grapheme, variants: { items: [], related: [pair('萅')] } })
+    expect([head.char, members.map(v => v.char), seals.map(v => v.char), related]).toEqual(['春', ['春', '萅'], [SEAL], []])
+  })
+  it("is in the 構形 row once, a member or still a related character of the reference data the card was read from", () => {
+    const row = card => structureForms(cardTiers(card)).map(v => v.char)
+    expect(row(chun)).toEqual(['春', '萅', SEAL])
+    const before = { ...chun, grapheme: { ...grapheme, members: grapheme.members.filter(v => v.char !== SEAL) } }
+    expect(row(before)).toEqual(['春', '萅', SEAL])
+    expect(cardTiers(before).related.map(v => v.char)).toEqual([SEAL])
+    // A seal character alone until the load, and one a pair is only inferred for, name no other.
+    expect(row({ char: SEAL, code_point: 'U+3D307', variants: { related: [pair('萅')] } })).toEqual([SEAL])
+    const li = { char: '吏', code_point: 'U+540F', variants: { related: [{ ...pair('\u{3D005}'), relations: [{ relation: 'small-seal', source: 'seal-chain' }] }] } }
+    expect(row(li)).toEqual(['吏'])
+  })
+  it('follows every other form, each part in its own order', () => {
+    expect(sealsLast([{ char: SEAL }, { char: '春' }, { char: '\u{3D000}' }, { char: '旾' }]).map(v => v.char)).toEqual(['春', '旾', SEAL, '\u{3D000}'])
+  })
+})
+
+describe('an inferred small seal pair', () => {
+  // 吏's card: 叓 by sources, and the seal character through 叓, which no source states.
+  const li = { char: '吏', code_point: 'U+540F', variants: { items: [], related: [
+    { char: '叓', code_point: 'U+53D3', written: true, relations: [{ relation: 'shuowen', source: 'opencc', detail: 'SealVariants' }] },
+    { char: '\u{3D005}', code_point: 'U+3D005', written: false, relations: [{ relation: 'small-seal', source: 'seal-chain', detail: '吏→叓 SealVariants (opencc) + \u{3D005}→叓 kSEAL_MCJK (unicode-ucd)' }] },
+  ] } }
+  it('is a related character and never a form of the Han character', () => {
+    const { written, related } = cardTiers(li)
+    expect(written.map(v => v.char)).toEqual(['叓'])
+    expect(related.map(v => v.code_point)).toEqual(['U+3D005'])
+    expect(cardTargets(li).map(target => target.code_point)).not.toContain('U+3D005')
+  })
+  it('is marked inferred only when no source states it', () => {
+    expect(li.variants.related.map(inferred)).toEqual([false, true])
+    expect(inferred({ relations: [{ source: 'seal-chain' }, { source: 'unicode-ucd' }] })).toBe(false)
+    expect(inferred({ relations: [] })).toBe(false)
+  })
+  it('is told from a Han character by its block', () => {
+    expect(['\u{3D000}', '\u{3FC3F}', '叓', '\u{3FC40}', undefined].map(isSeal)).toEqual([true, true, false, false, false])
+  })
+})
+
+describe('the count of a page', () => {
+  const ka = { code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EEE', char: '仮', count: 69, corpus_count: 144,
+    members: [{ code_point: 'U+4EEE', char: '仮', count: 63, corpus_count: 7 }, { code_point: 'U+5047', char: '假', count: 4, corpus_count: 48 }] },
+    variants: { items: [{ char: '叚', count: 2, corpus_count: 1 }, { char: '嘏' }] } }
+  it('is its subject\'s: the grapheme\'s total, the character\'s, or the character\'s with its variants', () => {
+    expect(['grapheme', 'none', 'variants'].map(expand => galleryCount(ka, expand))).toEqual([213, 52, 55])
+  })
+  it('is unknown where the card counts none', () => {
+    expect(galleryCount({ code_point: 'U+5047', char: '假' }, 'none')).toBe(null)
+    expect(galleryCount({ code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EEE', members: [] } }, 'grapheme')).toBe(null)
   })
 })

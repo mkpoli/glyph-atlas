@@ -44,6 +44,7 @@ export function approveCropRequest(crop, submissionId) {
       revision: crop.revision,
       ...cropPixels(crop),
       verdict: 'match',
+      ...(crop.origin === 'corpus' && crop.written_character ? { shown: crop.written_character } : {}),
       issue: null,
     },
   }

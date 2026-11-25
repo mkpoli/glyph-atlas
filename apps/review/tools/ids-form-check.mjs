@@ -135,6 +135,32 @@ try {
   await browser.evaluate('document.querySelector("dialog[open] .form-compose").click()')
   await browser.waitFor(`document.querySelector('dialog[open] .ids-field input')?.value === '⿰𠤕⿱龴疋'`, 20000)
   console.log('PASS the editor starts from 疑\'s own description')
+
+  // Loading another existing character replaces the draft with its IDS, offers its regional shapes
+  // when it has more than one, and can be undone; an atomic character leaves the draft intact.
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-start input'); i.focus(); i.value = '骨'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.waitFor(`!document.querySelector('dialog[open] .ids-start-load').disabled`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-start-load').click()`)
+  await browser.waitFor(`document.querySelectorAll('dialog[open] .ids-shape').length >= 2`, 20000)
+  const firstShape = await value()
+  const secondShape = await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-shape .ids-shape-text')[1].textContent`)
+  assert(firstShape !== '⿰𠤕⿱龴疋' && firstShape !== secondShape, `骨 did not load distinct shapes: ${firstShape} vs ${secondShape}`)
+  assert(!await browser.evaluate(`!!document.querySelector('dialog[open] .ids-start .candidate-list')`), 'the character search dropdown stayed open after Load')
+  await shoot('ids-start-from-char', '.ids-composer')
+  await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-shape')[1].click()`)
+  await becomes(secondShape)
+  assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-shape')[1].getAttribute('aria-pressed')`) === 'true', 'the chosen shape is not marked pressed')
+  // An atomic character reports no smaller parts and leaves the draft untouched.
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-start input'); i.focus(); i.value = '口'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-start-load').click()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-start-note')?.textContent.includes('口')`, 20000)
+  assert(await value() === secondShape, `an atomic character wiped the draft: ${await value()}`)
+  // Undo steps back to 疑's description.
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-undo').click()`)
+  await becomes(firstShape)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-undo').click()`)
+  await becomes('⿰𠤕⿱龴疋')
+  console.log('PASS start from any existing character loads its IDS, offers regional shapes, keeps draft on atomic chars, and undoes')
   if (exported) {
     // The first drawing, its data still loading: placeholders where the layout puts each part.
     await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'loading'
@@ -165,13 +191,27 @@ try {
   await typeSequence('LR木UD口')
   await becomes('⿰木⿱口⬚')
   assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-part.empty').length`) === 1, 'the missing part is not an empty slot')
-  // A character typed on the empty slot goes to the part field; Enter puts it in the slot.
+  // A character typed on the empty slot goes to the part field; both Enter and the Apply button put it in the slot.
   await focusPath('1.1')
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply is enabled on an empty part field')
   await browser.key('日')
   assert(await browser.evaluate(`document.activeElement === document.querySelector('dialog[open] .ids-slot input')`), 'typing on a slot does not reach the part field')
+  assert(!await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply stayed disabled after typing a part')
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').click()`)
+  await becomes('⿰木⿱口日')
+  // Editing the chosen slot (still selected after Apply) can also be confirmed with Enter, and the primary Use button sits above the operators.
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply is enabled when the part field matches the slot')
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-slot input'); i.focus(); i.value = '月'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  assert(!await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply stayed disabled after editing the part field')
+  const aboveOps = await browser.evaluate(`document.querySelector('dialog[open] .ids-use').getBoundingClientRect().top < document.querySelector('dialog[open] .ids-operators').getBoundingClientRect().top`)
+  assert(aboveOps, 'the primary Use button is not positioned above the operators')
+  await shoot('ids-confirm-buttons', '.ids-composer')
+  await browser.key('Enter')
+  await becomes('⿰木⿱口月')
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-slot input'); i.focus(); i.value = '日'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await browser.key('Enter')
   await becomes('⿰木⿱口日')
-  console.log('PASS ASCII names are read as operators, and a part typed on a slot fills it')
+  console.log('PASS ASCII names are read as operators, a part typed on a slot applies by button or Enter, and Use is above the fold')
 
   // An operator key on an operator swaps it, keeping its parts and padding with an empty slot; back
   // to two parts the empty one goes; a swap that would drop a filled part is refused.

@@ -43,8 +43,8 @@ SCHEMA = CF / "migrations-atlas"
 # Tables in the order their rows load: who and which request first, then what names them. The
 # translation's `suspects` and `shapes` are not among them: quiz_marks.py owns those tables.
 TABLES = ("actors", "submissions", "events", "seen", "skips", "favourites", "actor_stats",
-          "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "current_claims",
-          "ledger_submissions", "rejections", "representations", "forms", "form_decisions", "corpus_follow", "form_bases", "written_forms", "corpus_rows",
+          "assertions", "assertion_actions", "assertion_evidence", "assertion_premises", "representations", "forms", "current_claims",
+          "ledger_submissions", "rejections", "form_decisions", "corpus_follow", "form_bases", "written_forms", "corpus_rows",
           "corpus_flags")
 # Each migration the translated rows need, in order, and a query that finds it in the local copy.
 MIGRATIONS = (("0003", "0003_history.sql", "SELECT 1 FROM sqlite_master WHERE name='actors'"),

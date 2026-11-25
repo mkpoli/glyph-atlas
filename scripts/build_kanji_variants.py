@@ -24,6 +24,11 @@ row reads "b is the <relation> of a".
                         jp-old-style with its variation selectors removed)
 `regional`              directed: b is the form a regional standard writes for a (OpenCC TW/HKVariants)
 `shuowen`               directed: b is the 說文解字 隸定字 of a (OpenCC SealVariants)
+`small-seal`            another script's form of one grapheme; directed: b is the small seal character (小篆)
+                        whose modern CJK equivalent Unicode gives as a (SealSources.txt kSEAL_MCJK), and the
+                        character table puts b under a's grapheme. No gallery widens by it. The
+                        equivalent can follow the structure of the seal form, so a may be the 隸定字 and
+                        not the character now written: 𽀅 has 叓, which `shuowen` gives for 吏
 `reduction`             directed: an MJ figure of a reduces to b (MJ縮退マップ; detail names the table)
 `compatibility`         directed: a is a compatibility character whose decomposition is b (UnicodeData)
 `borrowed`              not a variant: characters of like sound written for one another (cjkvi 漢語大字典
@@ -73,6 +78,7 @@ MJ_KANJI = ROOT / "data" / "vocab" / "mj-kanji.tsv"
 UNICODE_VERSION = "18.0.0"
 UNIHAN_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/Unihan.zip"
 UNICODEDATA_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/UnicodeData.txt"
+SEAL_SOURCES_URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/SealSources.txt"
 OPENCC_REVISION = "2939943bd6f4d459b46d7fdcf07a885ab3f01761"
 OPENCC_URL = "https://raw.githubusercontent.com/BYVoid/OpenCC/{revision}/data/dictionary/{name}"
 YITIZI_REVISION = "60e232c40d6076af07679151c008349363e699ae"
@@ -180,6 +186,7 @@ RELATIONS = [
     "shuowen",
     "reduction",
     "compatibility",
+    "small-seal",
     "borrowed",
     "substitute",
     "non-cognate",
@@ -268,6 +275,25 @@ def compatibility_edges(text: str) -> list[Edge]:
         rows.append(
             edge(chr(int(fields[0], 16)), chr(int(target, 16)), "compatibility", "unicode-ucd", fields[5])
         )
+    return [row for row in rows if row]
+
+
+def seal_edges(text: str) -> list[Edge]:
+    """SealSources.txt lines `U+3D005<TAB>kSEAL_MCJK<TAB>53D3`: the seal character of a Han character.
+
+    The detail keeps the line's own direction, from the seal character to its equivalent.
+    """
+    rows = []
+    for line in text.splitlines():
+        if not line.startswith("U+"):
+            continue
+        code_point, field, value = line.split("\t")
+        if field != "kSEAL_MCJK":
+            continue
+        seal = scalar(code_point)
+        for target in value.split():
+            han = chr(int(target, 16))
+            rows.append(edge(han, seal, "small-seal", "unicode-ucd", f"{seal}→{han} kSEAL_MCJK"))
     return [row for row in rows if row]
 
 
@@ -528,6 +554,7 @@ def provenance(paths: dict[str, Path], counts: dict[str, int], fetched: str) -> 
     lines += [
         f"#   unihan: {UNIHAN_URL} sha256:{digest(paths['unihan'])}",
         f"#   unicode-ucd: {UNICODEDATA_URL} sha256:{digest(paths['ucd'])}",
+        f"#   unicode-ucd: {SEAL_SOURCES_URL} sha256:{digest(paths['seal'])}",
         f"#   wikidata: P5475 query at {WIKIDATA_ENDPOINT}, fetched {fetched}, sha256:{digest(paths['wikidata'])}",
         f"#   cjkvi-variants: {CJKVI_URL.format(revision=CJKVI_REVISION, name='…')} ({len(CJKVI_FILES) + 1} files)",
         f"#   yitizi: {YITIZI_URL.format(revision=YITIZI_REVISION, name='…')} ({', '.join(YITIZI_FILES)})",
@@ -558,6 +585,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = {
         "unihan": fetch(UNIHAN_URL, cache / UNICODE_VERSION / "Unihan.zip", "zip"),
         "ucd": fetch(UNICODEDATA_URL, cache / UNICODE_VERSION / "UnicodeData.txt"),
+        "seal": fetch(SEAL_SOURCES_URL, cache / UNICODE_VERSION / "SealSources.txt"),
         "shrink": fetch(SHRINK_MAP_URL, args.cache / "moji" / SHRINK_MAP_URL.rsplit("/", 1)[-1], "json"),
         "hng": fetch(HNG_URL.format(revision=HNG_REVISION, name=HNG_INDEX), cache / "hng" / HNG_INDEX),
     }
@@ -574,6 +602,7 @@ def main(argv: list[str] | None = None) -> int:
         unihan_text = archive.read("Unihan_Variants.txt").decode("utf-8")
     rows = unihan_edges(unihan_text)
     rows += compatibility_edges(paths["ucd"].read_text(encoding="utf-8"))
+    rows += seal_edges(paths["seal"].read_text(encoding="utf-8"))
     rows += wikidata_edges(json.loads(wikidata.read_text(encoding="utf-8")))
     for name in CJKVI_FILES:
         path = fetch(CJKVI_URL.format(revision=CJKVI_REVISION, name=name), cache / "cjkvi" / name)

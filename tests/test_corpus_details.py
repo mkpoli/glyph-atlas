@@ -921,6 +921,9 @@ class TestLookupIsRoutedNotBudgeted:
         assert UNIT_ID_PREFIXES["krm:"] == "hdic-krm"
         assert UNIT_ID_PREFIXES["ktb:"] == "hdic-ktb"
         assert UNIT_ID_PREFIXES["tsj:"] == "hdic-tsj"
+        assert UNIT_ID_PREFIXES["gy-ioc:"] == "guangyun-ioc"
+        assert UNIT_ID_PREFIXES["lk-song:"] == "longkan-song"
+        assert UNIT_ID_PREFIXES["gy-photographs:"] == "guangyun-photographs"
         assert UNIT_ID_PREFIXES["eo:"] == "nogeoldae-eonhae"
         assert UNIT_ID_PREFIXES["ks:"] == "wikisource-ko-glyphs"
 

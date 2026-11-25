@@ -5,12 +5,12 @@
 // A card's `data` is in the summary shard of its family head. A list reads the name list and the
 // summary shards of the families the query names; the kanji of a kana reading come with their families
 // in the reading's shard, and the 異体字 of a one-character query with theirs in its card's object.
-import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, type NameIndex } from '../atlas3Reference';
+import { characterObject, characterIds, componentMatches, familyCards, familySummaries, nameIndex, readingKanji as readingObject, structureSource, type NameIndex, type Structure } from '../atlas3Reference';
 import { compatibility, structureKey, written } from '../representation';
-import { claimedStructures, foldsOf } from './claims';
+import { claimedStructures, foldsOf, standingOf } from './claims';
 import { catalogueVersion } from '../atlas3Stamps';
 import { Problem } from '../busy';
-import { idsCharacter } from '../category';
+import { idsCharacter, isSeal } from '../category';
 import { componentTerm } from '../components';
 import { hira } from '../index';
 import { integer, literal } from '../input';
@@ -56,14 +56,21 @@ async function aliasHits(env: Env, index: NameIndex, term: string, limit: number
 }
 
 // The `data` of the cards of each family the codes file under, by code point: the cards held already,
-// and one summary shard per family of the rest.
+// and one summary shard per family of the rest. While a reference load lands, `graphemes` can file a
+// character under a family whose shard does not hold it yet, or a shard held here can be the one from
+// before: such a character's card is read from its own object, which every load keeps under one key.
 async function cardsOf(env: Env, codes: string[], held: Map<string, Json>, ctx?: ExecutionContext): Promise<Map<string, Json>> {
   const wanted = [...new Set(codes)].filter(code => !held.has(code));
   if (!wanted.length) return held;
   const rows = (await env.ATLAS.prepare(headsQuery()).bind(JSON.stringify(wanted.map(textOf)))
     .all<{ text: string; head: string | null }>()).results;
   const heads = new Map(rows.map(row => [cp(row.text), row.head === null ? cp(row.text) : cp(row.head)]));
-  return new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
+  const cards = new Map([...held, ...await familySummaries(env, wanted.map(code => heads.get(code) ?? code), ctx)]);
+  await Promise.all(wanted.filter(code => !cards.has(code)).map(async code => {
+    const card = await characterObject(env, code, ctx);
+    if (card) cards.set(code, card.data);
+  }));
+  return cards;
 }
 
 // The kanji a kana query is a Japanese reading of (scripts/build_kanji_readings.py), after the kana it
@@ -120,13 +127,16 @@ export function byGrapheme(found: Json[], members: Map<string, Json>) {
     return [...group, ...rest];
   });
 }
-// A list shows at most GRAPHEME_MEMBERS forms it did not find. A grapheme's forms file under its
-// family, so their cards are in the shards the list has read.
+// A list shows at most GRAPHEME_MEMBERS forms it did not find, small seal characters after every other
+// so they take no place of one. A grapheme's forms file under its family, so their cards are in the
+// shards the list has read.
 const GRAPHEME_MEMBERS = 48;
-function unlistedForms(found: Json[], cards: Map<string, Json>) {
+export function unlistedForms(found: Json[], cards: Map<string, Json>) {
   const listed = new Set(found.map(item => item.code_point));
-  const wanted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
-    .filter(code => !listed.has(code)).slice(0, GRAPHEME_MEMBERS);
+  const unlisted = [...new Set(found.flatMap(item => (item.grapheme?.members ?? []).map((m: Json) => m.code_point as string)))]
+    .filter(code => !listed.has(code));
+  const seals = unlisted.filter(code => isSeal(textOf(code)));
+  const wanted = [...unlisted.filter(code => !isSeal(textOf(code))), ...seals].slice(0, GRAPHEME_MEMBERS);
   return new Map(wanted.filter(code => cards.has(code)).map(code => [code, cards.get(code)]));
 }
 
@@ -189,8 +199,8 @@ export async function idsOf(env: Env, ctx: ExecutionContext, origin: string, cha
   if (cached) return await cached.json();
   const described = await characterIds(env, char, ctx);
   const sequences: string[] = described?.sequences ?? [];
-  // A shape whose 構形 is not the character's carries its own, or null for none.
-  const shapes: { text: string; regions: string; structure?: { id: string; label: string } | null }[] = described?.shapes ?? [];
+  // A shape another character encodes again names it in `chars` (臭's ⿱自大 is 𦤀).
+  const shapes: { text: string; regions: string; chars?: string[] }[] = described?.shapes ?? [];
   const parts = [...new Set(sequences.flatMap(text => [...text].filter(c => !IDS_OPERATOR.test(c))))].slice(0, STRUCTURE_PARTS);
   const rows = parts.length ? (await env.ATLAS.prepare(substitutesQuery(parts.length)).bind(...parts, ...parts)
     .all<{ a: string; b: string; count: number }>()).results : [];
@@ -215,9 +225,11 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
 /** The 構形 of each character or description named, as groups of those that share one (峰 and 峯 are two
  *  groups, 說 and 説 one, and ⿰月兊 joins 脫), in the order named. A name stands under the structure
  *  readers filed its form under, the one most of them name, and `claimed` names who says so; with no
- *  claim it stands under the one its description gives, a regional shape of `of` under the one that
- *  character's descriptions give it. A structure a reader folded into another stands under that one:
- *  `folded` lists each such structure of the group with who folded it and the names built as it. A
+ *  claim it stands under the one its description gives, a regional shape of one of the characters `of`
+ *  under the one that character's descriptions give it. A structure a reader folded into another stands under that one:
+ *  `folded` lists each such structure of the group with who folded it and the names built as it. So
+ *  does a structure that is another layout of one (⿰辵禺 of ⿺辶禺), with nobody in `by`, unless
+ *  a reader folded that one under it. A
  *  name with no structure is in no group. `filed` lists, for a name readers filed under several
  *  structures, the others with who says so and, for one that is folded, where it stands (`head`). What the descriptions give is kept at the edge by the
  *  catalogue version; the claims and folds are read each time, and an answer that could not read
@@ -225,22 +237,23 @@ type Group = { id: string; label: string; chars: string[]; claimed?: Record<stri
 export async function structuresOf(env: Env, ctx: ExecutionContext, origin: string, chars: string, of = '') {
   const named = [...new Set(written(chars))].slice(0, STRUCTURE_CHARS);
   if (!named.length) throw new Problem(422, 'Name a character.');
-  const whole = written(of), shaped = whole.length === 1 && [...whole[0]].length === 1 ? whole[0] : '';
+  const shaped = [...new Set(written(of))].filter(char => [...char].length === 1).slice(0, STRUCTURE_CHARS);
   const unread = <T>(empty: T) => (error: unknown) => { console.log(JSON.stringify({ event: 'structure_claims_unread', message: String(error) })); return empty };
   const [derived, claimed] = await Promise.all([derivedStructures(env, ctx, origin, named, shaped),
     claimedStructures(env, named).catch(unread(new Map() as Awaited<ReturnType<typeof claimedStructures>>))]);
   const built = new Map(named.flatMap(char => { const structure = claimed.get(char)?.[0] ?? derived[char]; return structure ? [[char, structure] as const] : [] }));
   const others = named.flatMap(char => (claimed.get(char) ?? []).slice(1));
-  const folds = await foldsOf(env, [...built.values(), ...others].map(structure => structure.id)).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>));
+  const standing = await standingOf([...built.values(), ...others], () => structureSource(env, ctx),
+    ids => foldsOf(env, ids).catch(unread(new Map() as Awaited<ReturnType<typeof foldsOf>>)));
   const groups = new Map<string, Group>();
   const filed: Record<string, { id: string; label: string; by: string[]; head?: string }[]> = {};
   for (const [char, structure] of built) {
-    const fold = folds.get(structure.id), head = fold?.head ?? structure;
+    const fold = standing(structure), head = fold?.head ?? structure;
     const group = groups.get(head.id) ?? { id: head.id, label: head.label, chars: [] };
     group.chars.push(char);
     const [claim, ...rest] = claimed.get(char) ?? [];
     if (claim) group.claimed = { ...group.claimed, [char]: claim.by };
-    if (rest.length) filed[char] = rest.map(other => folds.has(other.id) ? { ...other, head: folds.get(other.id)!.head.id } : other);
+    if (rest.length) filed[char] = rest.map(other => { const under = standing(other); return under ? { ...other, head: under.head.id } : other });
     if (fold) {
       group.folded ??= [];
       let part = group.folded.find(one => one.id === structure.id);
@@ -251,18 +264,21 @@ export async function structuresOf(env: Env, ctx: ExecutionContext, origin: stri
   }
   return { items: [...groups.values()], ...(Object.keys(filed).length ? { filed } : {}) };
 }
+// Raised when derivedStructures answers differently for the same catalogue, so no older answer is served.
+const DERIVED_SHAPE = 2;
 // The structure each name's description gives, by name; a name with none is left out. A name that is
-// a regional shape of `of` has the structure that character's shard gives the shape.
-async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[], of: string): Promise<Record<string, { id: string; label: string }>> {
-  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of)}&v=${encodeURIComponent(await catalogueVersion(env))}`);
+// a regional shape of one of the characters `of` has that character's structure.
+async function derivedStructures(env: Env, ctx: ExecutionContext, origin: string, named: string[], of: string[]): Promise<Record<string, { id: string; label: string }>> {
+  const key = new Request(`${origin}/layers/structures/derived?c=${encodeURIComponent(named.join(''))}&of=${encodeURIComponent(of.join(''))}&v=${encodeURIComponent(`${DERIVED_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);
   if (cached) return await cached.json();
-  const [whole, ...described] = await Promise.all([of ? characterIds(env, structureKey(of), ctx) : null,
-    ...named.map(name => characterIds(env, structureKey(name), ctx))]);
-  const shapes = new Map((whole?.shapes ?? []).map(shape => [shape.text as string, ('structure' in shape ? shape.structure : whole!.structure) as { id: string; label: string } | null]));
+  const read = (name: string) => characterIds(env, structureKey(name), ctx);
+  const [wholes, described] = await Promise.all([Promise.all(of.map(read)), Promise.all(named.map(read))]);
+  // A shape two of them share is neither's.
+  const shapes = new Map<string, Structure | null>();
+  for (const whole of wholes) for (const { text } of whole?.shapes ?? []) shapes.set(text, shapes.has(text) ? null : whole!.structure);
   const found = Object.fromEntries(named.flatMap((char, i) => {
-    // A shape's own structure, as a save that names the shape finds it.
-    const structure = shapes.has(char) ? shapes.get(char) : described[i]?.structure;
+    const structure = shapes.get(char) ?? described[i]?.structure;
     return structure ? [[char, structure]] : [];
   }));
   ctx.waitUntil(caches.default.put(key, Response.json(found, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));

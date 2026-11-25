@@ -11,6 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from conftest import Scripted
 
 from glyph_atlas import reconcile, rights, tables
@@ -535,6 +536,24 @@ def test_attribution_names_every_source_and_holder(tmp_path, monkeypatch):
     assert "No conditions. The record keeps the public-domain mark" in text
     assert text.count("Material unchanged:") == 4
     assert text.count("Material modified:") == 4
+
+
+@pytest.mark.parametrize(("source", "licence", "said"), [
+    ("shuowen", "Apache-2.0", ("Version 2.0, January 2004", "4. Redistribution.", "limitations under the License.")),
+    ("opencc", "Apache-2.0", ("Version 2.0, January 2004",)),
+    ("unihan", "Unicode-3.0", ("UNICODE LICENSE V3", "Copyright © 1991-2026 Unicode, Inc.", "authorization of the copyright holder.")),
+    ("guangyun-zecuntang", None, ()),
+])
+def test_attribution_carries_the_text_of_a_licence_that_asks_for_it(tmp_path, source, licence, said):
+    directory = dataset(tmp_path / "ds", [document("hl:a", holder="例書館", refs={source: "a"}), document("hl:b", holder="例書館", refs={source: "b"})])
+
+    text = reconcile.attribution(directory)
+
+    assert text.count("## Licence texts") == (licence is not None)
+    for part in said:
+        assert text.count(part) == 1
+    if licence:
+        assert text.index("## Holders") < text.index(f"({licence})\n\n```text")
 
 
 def test_attribution_marks_a_holder_with_no_statement(tmp_path, monkeypatch):

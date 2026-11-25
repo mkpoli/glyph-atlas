@@ -20,7 +20,8 @@
   import { number } from '../lib/client.js'
   import { suggest } from '../lib/layers.js'
   import { t, around, localize } from '../lib/i18n.svelte.js'
-  import { characterAddress } from '../lib/gallery.js'
+  import { graphemeAddress } from '../lib/addresses.js'
+  import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import { originTitle } from '../lib/origin.js'
 
   // The family the address names; none, the first of the list. `onshow` is told each family shown.
@@ -369,7 +370,7 @@
     if (key === 'z' || key === 'y') { event.preventDefault(); takeBack(key === 'y' || event.shiftKey); return true }
     return false
   }
-  const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: current.char })
+  const clusterIssue = issue => issue === 'mixed' ? t('forms.mixed') : issue === 'crop' ? t('forms.cluster.crop') : t('forms.cluster.character', { char: graphemeLabel(current.char) })
   function leaveReview(index) { reviewing = false; active = Math.min(index, current.items.length - 1); scrollActive() }
   function keydown(event) {
     // The inspector's keys are its own while it is open over the page.
@@ -452,7 +453,7 @@
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(c.count)}</span>
         {#if compact}{#if unnamed(c)}<span class="cluster-open">{t('forms.unnamed', { count: number(unnamed(c)) })}</span>{/if}
-        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
+        {:else if c.assigned}<span class="cluster-open">{around('forms.haveForm', 'glyph', { count: c.assigned })[0]}<span class="inline-glyph"><FormText text={c.majority} inline /></span>{around('forms.haveForm', 'glyph', { count: c.assigned })[1]}</span>
         {:else}<span class="cluster-open">{t('corpus.unassigned')}</span>{/if}
       </span>
       <span class="cluster-samples">{#each c.representatives as r (r.id)}{#if r.image}<Glyph item={r} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: r.id, pin: false }))} />{/if}{/each}</span>
@@ -476,7 +477,7 @@
     <button class="cluster-select" onclick={event => choose(i, event)} ondblclick={() => show(i)}>
       <span class="cluster-head">
         <strong lang="ja">{c.label}</strong><span>{number(stray.count)}</span>
-        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} /></span></span>
+        <span class="cluster-open"><span class="inline-glyph"><FormText text={groupOf(c)} inline /></span></span>
       </span>
       <span class="cluster-samples">{#each stray.glyphs as g (g.id)}{#if g.image}<Glyph item={g} alt="" class="glyph-image cluster-crop" {@attach fromAction(showsContext, () => ({ id: g.id, pin: false }))} />{/if}{/each}</span>
     </button>
@@ -502,7 +503,7 @@
         {#if !list.length && !error}{#each Array(12) as _, i (i)}<li class="family-skeleton" aria-hidden="true"><span class="shimmer"></span><span class="shimmer"></span></li>{/each}{/if}
         {#each rows.items as f, k (f.code_point)}
           <li aria-posinset={rows.from + k + 1} aria-setsize={shown.length}><button class:current={f.code_point === code} onclick={() => pick(f.code_point)}>
-            <span class="family-char"><ScriptText text={f.char} /></span>
+            <span class="family-char" class:pair={labelSize(f.char) === 2} class:trio={labelSize(f.char) === 3}><ScriptText {...labelParts(f.char)} /></span>
             <span class="family-meta"><span>{number(f.count)}</span><small>{t('forms.clusters.count', { count: f.clusters })}</small></span>
             <span class="family-progress" aria-label={t('forms.percentDone', { count: f.assigned + f.rejected ? Math.max(1, Math.round(100 * (f.assigned + f.rejected) / f.count)) : 0 })}><i style={`width:${100 * f.assigned / f.count}%`}></i><i class="rejected" style={`width:${100 * f.rejected / f.count}%`}></i></span>
           </button></li>
@@ -522,7 +523,7 @@
     {:else if current}
       <div class="family-panel">
         <div class="family-title">
-          <h2><a class="family-link" href={localize(characterAddress(current.code_point))} aria-label={t('chips.showCharacter', { char: current.char })}><ScriptText text={current.char} /></a></h2>
+          <h2><a class="family-link" href={localize(graphemeAddress(current.code_point, current.char))} aria-label={t('chips.showCharacter', { char: graphemeLabel(current.char) })}><ScriptText {...labelParts(current.char)} /></a></h2>
           <p><strong>{number(current.count)}</strong> {t('forms.glyphsLabel')} · {number(current.clusters)} {t('forms.clustersLabel')} · <strong>{number(current.assigned)}</strong> {t('forms.assignedLabel')}{#if current.rejected}{' · '}<strong>{number(current.rejected)}</strong> {t('forms.rejectedLabel')}{/if}</p>
           <span class="history-actions">
             <button disabled={busy || history.busy || !history.done.length} onclick={() => takeBack(false)} title={t('forms.undo.title')}>↶ {t('forms.undo')}</button>
@@ -586,7 +587,7 @@
                     <input bind:value={correction} maxlength="4" placeholder={t('forms.actual.placeholder')} aria-label={t('forms.actual.aria')} />
                     <button disabled={busy}>{t('forms.report')}</button>
                   </form>
-                {:else}<button disabled={busy || !cluster} onclick={() => correcting = true}>{t('forms.cluster.character', { char: current.char })}…</button>{/if}
+                {:else}<button disabled={busy || !cluster} onclick={() => correcting = true}>{t('forms.cluster.character', { char: graphemeLabel(current.char) })}…</button>{/if}
                 <button disabled={busy || !(cluster?.form || cluster?.issue)} onclick={() => apply(null)}>{t('forms.clearCluster')} <kbd>⌫</kbd></button>
               {/if}
             </div>
@@ -688,6 +689,8 @@
   .family-list button{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto 3px;align-content:center;gap:4px 10px;width:100%;height:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 6px;text-align:left}
   .family-list button.current{background:var(--accent-light)}
   .family-char{grid-row:1/3;font-size:24px;line-height:1.3;font-family:var(--char-font)}
+  .family-char.pair{font-size:19px;line-height:1.65;white-space:nowrap}
+  .family-char.trio{font-size:13px;line-height:2.4;white-space:nowrap}
   .family-meta{display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums}
   .family-meta small{font-size:10px;color:var(--muted)}
   .family-progress{display:flex;background:light-dark(#ececef, #2e2e35);border-radius:2px;overflow:hidden}.family-progress i{display:block;height:100%;background:var(--accent)}.family-progress i.rejected{background:var(--wrong);opacity:.55}

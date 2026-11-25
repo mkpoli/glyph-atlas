@@ -8,6 +8,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { createDrawer } from '../src/lib/composer/client.js'
+import { Composer } from '../src/lib/composer/compose.js'
+import { variantFile } from '../src/lib/composer/variants.js'
 import { LIMITS, compose, createSource, size, sketch, svgBox, tooLarge } from '../src/lib/composer/index.js'
 import { badge, placeholder } from '../src/lib/composer/preview.js'
 
@@ -207,5 +209,40 @@ describe('an empty slot', () => {
     const p = placeholder([100, 100, 400, 800], 80)
     expect(p).toMatchObject({ x: 140, y: 140, width: 320, height: 720 })
     expect(p.gap).toBeGreaterThan(p.dot)
+  })
+})
+
+describe('a part with a variation selector', () => {
+  const key = '口\u{E0101}'
+  const crossed = [[120, -40, 180, 760], [820, -40, 880, 760], [120, 700, 880, 760], [0, 300, 300, 420]]
+  const cut = (h, boxes) => { const { G, ink } = character(h, boxes); return { h, op: '⿰', ok: ['木'], si: ink, d: 0, j: 1, v: 1, b: G.b, p: G.p } }
+  const hosts = { 'R\t口': [cut('杏', [[120, -40, 880, 20], [120, 700, 880, 760], [120, -40, 180, 760], [820, -40, 880, 760]]), cut('可', crossed)] }
+  const { k: _k, o: _o, ...outline } = character(key, crossed)
+  const base = { ...records.口, f: [1, 2], s: '⿱一一', P: ['R'] }
+  const composer = new Composer({ manifest: { constants, spelled: [] }, layout, rec: k => k === '口' ? base : records[k] ?? null,
+    hosts: (k, place) => hosts[`${place}\t${k}`] ?? [], places: () => [], variant: k => k === key ? outline : null })
+
+  it('is laid out as its base in its own outline, without the description of its base', () => {
+    expect(composer.rec(key)).toMatchObject({ f: [1, 2], G: outline.G, o: 4 })
+    expect(composer.rec(key).s).toBeUndefined()
+    expect(composer.rec('口\u{E0102}')).toBeNull()
+  })
+  it('takes no cut of its base, which may draw another shape', () => {
+    expect(composer.hostsOf('口', 'R').map(h => h.h)).toEqual(['杏', '可'])
+    expect(composer.hostsOf(key, 'R')).toEqual([])
+  })
+  it('is drawn where the export has no record of its base', async () => {
+    const orphan = '帰\u{E0101}', read = async name => { const body = files[name]; return body === undefined ? null : new Uint8Array(Buffer.from(body)).buffer }
+    const variants = async name => name === variantFile(orphan) ? new Uint8Array(gzipSync(JSON.stringify({ [orphan]: outline }))).buffer : null
+    expect((await compose(createSource(read, { variants }), '⿰木' + orphan)).origins).toEqual(['glyph 木', 'glyph ' + orphan])
+  })
+  it('reads its outline from the export of the variation sequences, and draws nothing without one', async () => {
+    const asked = [], read = async name => { const body = files[name]; return body === undefined ? null : new Uint8Array(Buffer.from(body)).buffer }
+    const variants = async name => { asked.push(name); return name === variantFile(key) ? new Uint8Array(gzipSync(JSON.stringify({ [key]: outline }))).buffer : null }
+    const drawn = await compose(createSource(read, { variants }), '⿰木' + key)
+    expect(drawn.origins).toEqual(['glyph 木', `glyph ${key}`])
+    expect(new Set(asked)).toEqual(new Set([variantFile(key)]))
+    await expect(compose(createSource(read), '⿰木' + key)).rejects.toThrow('No glyph or sequence draws')
+    await compose(createSource(read, { variants: () => { throw new Error('asked') } }), '⿰木口')
   })
 })
