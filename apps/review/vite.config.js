@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { sveltekit } from '@sveltejs/kit/vite'
 import { defineConfig } from 'vite'
 
@@ -17,8 +19,50 @@ const externalWasm = {
   },
 }
 
+// han-compose's bundled outline files (Bopomofo, Tangut, Small Seal, Jurchen, Shuishu, New Korean,
+// palette parts, custom forms, and Unicode fallback shards): emitted as static assets in the client
+// build and served under `/composer-data/` in dev, then passed to the worker via `loaders`.
+const COMPOSER_DATA = fileURLToPath(new URL('./node_modules/han-compose/data/', import.meta.url))
+const COMPOSER_OUTLINES = [
+  ...['tangut', 'bopomofo', 'new-korean', 'small-seal', 'shuishu', 'jurchen', 'palette'].map(name => `sources/${name}/outlines.json.gz`),
+  'numbered-sans-outlines.json.gz',
+  'custom-forms.json.gz',
+  ...readdirSync(join(COMPOSER_DATA, 'unicode/outlines')).map(file => `unicode/outlines/${file}`),
+]
+const COMPOSER_SET = new Set(COMPOSER_OUTLINES)
+const COMPOSER_MODULE = '\0composer-outlines'
+const COMPOSER_PREFIX = '/composer-data/'
+
+function composerOutlines() {
+  let emitted = false
+  return {
+    name: 'composer-outlines',
+    resolveId: id => id === 'composer-outlines' ? COMPOSER_MODULE : null,
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const path = decodeURIComponent((request.url ?? '').split('?')[0])
+        if (!path.startsWith(COMPOSER_PREFIX)) return next()
+        const name = path.slice(COMPOSER_PREFIX.length)
+        if (!COMPOSER_SET.has(name)) return next()
+        response.setHeader('content-type', 'application/octet-stream')
+        response.end(readFileSync(join(COMPOSER_DATA, name)))
+      })
+    },
+    load(id) {
+      if (id !== COMPOSER_MODULE) return null
+      if (!emitted && this.environment?.name === 'client' && this.meta && !this.meta.watchMode) {
+        emitted = true
+        for (const path of COMPOSER_OUTLINES) {
+          this.emitFile({ type: 'asset', fileName: `composer-data/${path}`, source: readFileSync(join(COMPOSER_DATA, path)) })
+        }
+      }
+      return `export default ${JSON.stringify(Object.fromEntries(COMPOSER_OUTLINES.map(path => [path, `${COMPOSER_PREFIX}${path}`])))}`
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [externalWasm, sveltekit()],
+  plugins: [externalWasm, composerOutlines(), sveltekit()],
   define: { __ORT_VERSION__: JSON.stringify(ort.version) },
   build: { target: 'es2022', sourcemap: false },
   worker: { format: 'es' },

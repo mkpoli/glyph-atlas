@@ -2,7 +2,7 @@
 // current composer export draws (`han-compose/variants`). A sequence its list lacks is not offered,
 // since a description holding it could not be drawn.
 import { variationSequences } from 'han-compose/variants'
-import { composerBase } from './composer/config.js'
+import { composerBase } from './composer/base.js'
 import { figuresOf } from './mjFigures.js'
 
 const SELECTOR = /^[\u{E0100}-\u{E01EF}]$/u

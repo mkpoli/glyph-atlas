@@ -106,11 +106,12 @@ describe('the drawer and painter', () => {
   })
   it('queues painted drawings on one worker without cancelling earlier ones', async () => {
     FakeWorker.made = []
-    const painter = createPainter(() => new FakeWorker(), 'https://glyphatlas.org/atlas/composer/v')
+    const loaders = { 'sources/bopomofo/outlines.json.gz': 'https://glyphatlas.org/composer-data/sources/bopomofo/outlines.json.gz' }
+    const painter = createPainter(() => new FakeWorker(), 'https://glyphatlas.org/atlas/composer/v', { loaders })
     const a = painter.paint('⿰木口'), b = painter.paint('⿱木口')
     expect(FakeWorker.made).toHaveLength(1)
     const [w] = FakeWorker.made
-    expect(w.posted[0]).toMatchObject({ sequence: '⿰木口', base: 'https://glyphatlas.org/atlas/composer/v/' })
+    expect(w.posted[0]).toMatchObject({ sequence: '⿰木口', base: 'https://glyphatlas.org/atlas/composer/v/', loaders })
     w.answer({ id: w.posted[0].id, sketch: [] })
     w.answer({ id: w.posted[1].id, drawn: { d: 'M2 2Z' } })
     w.answer({ id: w.posted[0].id, drawn: { d: 'M1 1Z' } })

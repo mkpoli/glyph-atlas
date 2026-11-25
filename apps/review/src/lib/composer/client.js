@@ -8,8 +8,9 @@ export { createDrawer } from 'han-compose'
  * it cannot draw it. A worker that fails answers null for all it held, and the next request starts
  * another.
  */
-export function createPainter(makeWorker, base) {
+export function createPainter(makeWorker, base, config = {}) {
   if (!base.endsWith('/')) base = `${base}/`
+  const loaders = config.loaders ?? {}
   let worker = null, next = 0
   const pending = new Map()
   function start() {
@@ -32,7 +33,7 @@ export function createPainter(makeWorker, base) {
     paint(sequence) {
       if (!worker) start()
       const id = ++next
-      return new Promise(resolve => { pending.set(id, resolve); worker.postMessage({ id, sequence, base }) })
+      return new Promise(resolve => { pending.set(id, resolve); worker.postMessage({ id, sequence, base, loaders }) })
     },
   }
 }

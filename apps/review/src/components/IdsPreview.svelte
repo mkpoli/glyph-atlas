@@ -45,7 +45,7 @@
       composerDrawer().draw(text, sketch => { if (live) sketched = { text, leaves: sketch } }).then(answer => {
         if (!live || final) return
         if (answer.status === 'composed') { shown = { key: ++shownCount, drawn: answer.drawn, text }; step = 'composed' }
-        else if (answer.status === 'failed') { shown = null; step = 'failed' }
+        else { shown = null; step = 'failed' }
       })
     }, 150)
     return () => { live = false; clearTimeout(timer); composerDrawer().cancel() }
