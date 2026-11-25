@@ -165,6 +165,46 @@ describe('preview room messages', () => {
       { name: 'reader', body: '謝謝', at: 600_000 },
     ]);
   });
+
+  it('ignores replacement events from a different sender than the original message', async () => {
+    serving([
+      {
+        event_id: '$spoof', type: 'm.room.message', sender: '@mallory:matrix.org', origin_server_ts: 3000,
+        content: {
+          msgtype: 'm.text', body: '* spoofed',
+          'm.new_content': { msgtype: 'm.text', body: 'spoofed' },
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$orig' },
+        },
+      },
+      {
+        event_id: '$edit', type: 'm.room.message', sender: '@alice:matrix.org', origin_server_ts: 2000,
+        content: {
+          msgtype: 'm.text', body: '* real edit',
+          'm.new_content': { msgtype: 'm.text', body: 'real edit' },
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$orig' },
+        },
+      },
+      { event_id: '$orig', type: 'm.room.message', sender: '@alice:matrix.org', origin_server_ts: 1000, content: { msgtype: 'm.text', body: 'original' } },
+    ]);
+    expect(await messages()).toEqual([{ name: 'alice', body: 'real edit', at: 1000 }]);
+  });
+
+  it('keeps short replies from distinct native users within a minute and distinct long messages sharing a 400-char prefix', async () => {
+    const prefix = '字'.repeat(400);
+    serving([
+      event('@discord_1:glyphatlas.org', `${prefix}乙`, 4000),
+      event('@discord_1:glyphatlas.org', `${prefix}甲`, 3000),
+      event('@bob:matrix.org', 'Yes', 2000),
+      event('@alice:matrix.org', 'Yes', 1000),
+    ]);
+    const found = await messages();
+    expect(found.map(m => [m.name, m.at])).toEqual([
+      ['alice', 1000],
+      ['bob', 2000],
+      ['Discord', 3000],
+      ['Discord', 4000],
+    ]);
+  });
 });
 
 describe('preview sender names', () => {

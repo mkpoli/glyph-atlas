@@ -50,8 +50,7 @@ const JOIN = /^\*?\s*(joined|left|was invited|invited|kicked|banned)\b/i;
 // Only text-bearing message types belong in a text preview; `m.image` and `m.file` carry bare filenames.
 const TEXT_MSGTYPES = new Set(['m.text', 'm.emote', 'm.notice']);
 
-/** One message's text, or null for events that carry none (membership, media, reactions, redactions, notices). */
-export function messageText(content: Record<string, unknown>, sender = ''): string | null {
+function rawMessageText(content: Record<string, unknown>, sender = ''): string | null {
   // An edit carries the new text in `m.new_content`; showing the original would read as a mistake.
   const replacement = content?.['m.new_content'] as Record<string, unknown> | undefined;
   const effective = replacement && typeof replacement.body === 'string' ? replacement : content;
@@ -65,7 +64,17 @@ export function messageText(content: Record<string, unknown>, sender = ''): stri
   if (BRIDGE_BOT.test(sender)) return null;
   // A puppet's notice or emote saying someone joined is the bridge announcing a member, not conversation.
   if (PUPPET.test(sender) && (msgtype === 'm.notice' || msgtype === 'm.emote') && JOIN.test(trimmed)) return null;
-  return trimmed.length > MAX_BODY ? `${trimmed.slice(0, MAX_BODY).trimEnd()}…` : trimmed;
+  return trimmed;
+}
+
+function truncateText(text: string): string {
+  return text.length > MAX_BODY ? `${text.slice(0, MAX_BODY).trimEnd()}…` : text;
+}
+
+/** One message's text, or null for events that carry none (membership, media, reactions, redactions, notices). */
+export function messageText(content: Record<string, unknown>, sender = ''): string | null {
+  const raw = rawMessageText(content, sender);
+  return raw === null ? null : truncateText(raw);
 }
 
 type RawMessageEvent = {
@@ -102,35 +111,43 @@ export async function roomMessages(env: PreviewEnv, alias: string, signal?: Abor
   );
   if (!response.ok) return [];
   const chunk = (await response.json() as { chunk?: RawMessageEvent[] }).chunk ?? [];
-  // Chunk is newest-first: record the latest `m.replace` edit for each target event so edits update their
-  // original message in place instead of appearing beside it.
+  // Chunk is newest-first: record the latest `m.replace` edit keyed by `(sender, target)` so an edit
+  // only replaces a message sent by the same account, as required by the Matrix spec.
   const replacements = new Map<string, string | null>();
   for (const item of chunk) {
     if (item.type !== 'm.room.message' || typeof item.sender !== 'string') continue;
     const target = replacementTarget(item.content);
-    if (target && !replacements.has(target)) {
-      replacements.set(target, messageText(item.content ?? {}, item.sender));
+    if (!target) continue;
+    const key = `${item.sender}\0${target}`;
+    if (!replacements.has(key)) {
+      replacements.set(key, rawMessageText(item.content ?? {}, item.sender));
     }
   }
   // Walk oldest-first so when a bridge echoes an earlier message with the same text, the original sender wins.
-  // Short replies repeated minutes apart stay; identical long messages or echoes within a minute are folded.
+  // Deduplicate on the full normalized text before truncation, and only when the duplicate is a bridge puppet
+  // echo or repeated by the same sender — two native users giving the same short reply both stay.
   const ECHO_WINDOW_MS = 60_000;
   const LONG_DUPLICATE = 40;
   const messages: PreviewMessage[] = [];
-  const lastSeen = new Map<string, number>();
+  const lastSeen = new Map<string, { at: number; sender: string }>();
   for (let i = chunk.length - 1; i >= 0; i--) {
     const item = chunk[i];
     if (item.type !== 'm.room.message' || typeof item.sender !== 'string') continue;
     if (replacementTarget(item.content)) continue;
-    const text = item.event_id && replacements.has(item.event_id)
-      ? replacements.get(item.event_id)!
-      : messageText(item.content ?? {}, item.sender);
-    if (text === null) continue;
+    const replaceKey = item.event_id ? `${item.sender}\0${item.event_id}` : null;
+    const raw = replaceKey && replacements.has(replaceKey)
+      ? replacements.get(replaceKey)!
+      : rawMessageText(item.content ?? {}, item.sender);
+    if (raw === null) continue;
     const at = item.origin_server_ts ?? 0;
-    const prev = lastSeen.get(text);
-    if (prev !== undefined && (text.length >= LONG_DUPLICATE || Math.abs(at - prev) < ECHO_WINDOW_MS)) continue;
-    lastSeen.set(text, at);
-    messages.push({ name: senderName(item.sender), body: text, at });
+    const prev = lastSeen.get(raw);
+    const duplicate = prev !== undefined && (
+      (prev.sender === item.sender && (raw.length >= LONG_DUPLICATE || Math.abs(at - prev.at) < ECHO_WINDOW_MS))
+      || (PUPPET.test(item.sender) && (raw.length >= LONG_DUPLICATE || (!PUPPET.test(prev.sender) && Math.abs(at - prev.at) < 15_000)))
+    );
+    if (duplicate) continue;
+    lastSeen.set(raw, { at, sender: item.sender });
+    messages.push({ name: senderName(item.sender), body: truncateText(raw), at });
   }
   return messages.slice(-LIMIT);
 }
