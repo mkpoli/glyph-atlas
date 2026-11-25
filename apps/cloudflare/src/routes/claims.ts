@@ -744,9 +744,10 @@ export const savedRunsQuery = () => 'SELECT response FROM ledger_submissions WHE
 type OwnReading = { id: string; crop: number; subject: string; predicate: string; submission: string };
 /** Set how a crop is read at its place: the run of characters it stands in (`run`, with the crop at
  *  `at`), the reading over each or over all of them, what it rests on (`method`) and, as the page writes
- *  it, the `ruby`. The other crops of the run (`others`, each with its place and the version its reader
- *  saw) are claimed in the same write. A save replaces the reader's earlier runs wherever they meet the
- *  new one, whole; with `run` null it only takes the reader's run on this crop back. Saved or refused whole. */
+ *  them, the `ruby` and the 左訓 (`left`). The other crops of the run (`others`, each with its place and the
+ *  version its reader saw) are claimed in the same write. A save replaces the reader's earlier runs wherever
+ *  they meet the new one, whole; with `run` null it only takes the reader's run on this crop back. Saved or
+ *  refused whole. */
 export async function setReading(env: Env, input: Json, named: string, actor: string, tools: ClaimTools, ctx?: ExecutionContext) {
   const ledger = ledgerTools(env, tools, ctx);
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ crop: named, input });
@@ -761,7 +762,8 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   // What each crop of the run is claimed as, checked before any crop is read.
   const claims = clear ? [] : places.map(place => [
     { predicate: 'read_as', method: input.method as string | null, member: member({ run: input.run, at: place, reading: input.reading }) },
-    ...(input.ruby == null ? [] : [{ predicate: 'bears_ruby', method: null, member: member({ run: input.run, at: place, ruby: input.ruby }) }])]);
+    ...([['bears_ruby', input.ruby], ['bears_left_ruby', input.left]] as const).flatMap(([predicate, ruby]) =>
+      ruby == null ? [] : [{ predicate, method: null, member: member({ run: input.run, at: place, ruby }) }])]);
   for (const each of claims.flat()) checkClaims(each.predicate, [each.member], {}, tools.fail, each.method);
   if (!clear && input.ruby != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
   if (new Set(places).size !== places.length) tools.fail(422, 'Each place of the run is one crop.');

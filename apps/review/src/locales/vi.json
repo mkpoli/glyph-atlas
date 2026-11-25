@@ -735,6 +735,8 @@
   "reading.whole": "Đọc cả từ",
   "reading.ruby": "Chữ ghi cách đọc trong nguyên bản",
   "reading.rubyOf": "Chữ ghi cách đọc của {char}",
+  "reading.left": "Chữ ghi bên trái",
+  "reading.leftOf": "Chữ ghi bên trái của {char}",
   "reading.letters": "Các dạng của chữ này",
   "reading.jibo": "Chữ gốc {char}",
   "reading.needed": "Hãy ghi cách đọc.",

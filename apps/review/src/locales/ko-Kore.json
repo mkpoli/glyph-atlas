@@ -55,6 +55,8 @@
   "reading.whole": "한 單語로 읽기",
   "reading.ruby": "후리가나 表記",
   "reading.rubyOf": "{char}의 후리가나",
+  "reading.left": "左訓",
+  "reading.leftOf": "{char}의 左訓",
   "reading.letters": "이 가나의 字體",
   "reading.jibo": "由來 漢字 {char}",
   "reading.needed": "읽기를 入力하세요.",

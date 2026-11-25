@@ -450,7 +450,7 @@ describe('the crop routes\' queries', () => {
     expect(plan(db, recordQuery(), 1)).toEqual([]);
     expect(plan(db, listedCropsQuery(), '[1]')).toEqual([]);
     expect(plan(db, cropSlotsQuery(), '[1]', 'has_form')).toEqual([]);
-    expect(plan(db, cropSlotsQuery(2), '[1]', 'read_as', 'bears_ruby')).toEqual([]);
+    expect(plan(db, cropSlotsQuery(3), '[1]', 'read_as', 'bears_ruby', 'bears_left_ruby')).toEqual([]);
     expect(plan(db, formNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordMethodsQuery(), '[]')).toEqual([]);

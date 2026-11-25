@@ -729,6 +729,8 @@
   "reading.whole": "合讀",
   "reading.ruby": "旁注",
   "reading.rubyOf": "「{char}」之旁注",
+  "reading.left": "左訓",
+  "reading.leftOf": "「{char}」之左訓",
   "reading.letters": "假名字體",
   "reading.jibo": "字母{char}",
   "reading.needed": "未書其讀。",
