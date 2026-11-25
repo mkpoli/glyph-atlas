@@ -247,7 +247,7 @@
   let variantMenu = $state(null), variantMenuEl = $state(null)
   const variantPart = $derived(variantMenu ? partAt(tree, variantMenu.path) : undefined)
   const variantForms = $derived(variantMenu ? formsFor(variantPart) : [])
-  async function openVariants(path, anchor) {
+  async function openVariants(path, anchor, { keyboard = false } = {}) {
     if (disabled) return
     const part = partAt(tree, path)
     if (typeof part !== 'string') return
@@ -257,7 +257,7 @@
     const r = anchor.getBoundingClientRect()
     const cols = Math.min(Math.max(list.length, 3), 6), rows = Math.ceil(list.length / 6)
     const W = cols * 42 + 16, H = 30 + rows * 42 + 10
-    const x = Math.max(8, Math.min(r.left, innerWidth - W - 8))
+    const x = Math.max(8, Math.min(r.right - W, innerWidth - W - 8))
     const y = r.bottom + 4 + H > innerHeight - 8 ? Math.max(8, r.top - H - 4) : r.bottom + 4
     variantMenu = { path, x, y }
     choose(path, { toggle: false })
@@ -265,7 +265,8 @@
     if (variantMenuEl) {
       if (variantMenuEl.matches(':popover-open')) variantMenuEl.hidePopover()
       try { variantMenuEl.showPopover({ source: anchor }) } catch { variantMenuEl.showPopover() }
-      ;(variantMenuEl.querySelector('[aria-checked="true"]') ?? variantMenuEl.querySelector('[role="menuitemradio"]'))?.focus()
+      if (keyboard) (variantMenuEl.querySelector('[aria-checked="true"]') ?? variantMenuEl.querySelector('[role="menuitemradio"]'))?.focus()
+      else variantMenuEl.focus({ preventScroll: true })
     }
   }
   function closeVariants({ refocus = true } = {}) {
@@ -331,14 +332,19 @@
     const op = event.shiftKey ? null : CODES[event.code] ?? KEYS[event.key]
     if (op) { event.preventDefault(); operator(op); focusChosen(); return }
     if (event.key === 'Tab' && event.target.closest('.ids-tree') && tree !== null) {
-      // From the part that has the focus, else the chosen one.
-      const from = event.target.closest('[data-path]')?.dataset.path
-      const all = paths(tree), at = all.findIndex(path => from !== undefined ? pathKey(path) === from : samePath(path, chosen))
+      // Step through tree parts and corner variant toggles in DOM order.
+      const stops = [...(root?.querySelectorAll('.ids-tree [data-path], .ids-tree .ids-forms-toggle') ?? [])]
+        .filter(el => !el.disabled)
+      const at = stops.indexOf(event.target.closest('[data-path], .ids-forms-toggle'))
       const next = at + (event.shiftKey ? -1 : 1)
-      if (next < 0 || next >= all.length) return
+      if (at < 0 || next < 0 || next >= stops.length) return
       event.preventDefault()
-      choose(all[next])
-      focusChosen()
+      const dest = stops[next]
+      if (dest.dataset.path !== undefined) {
+        const path = dest.dataset.path === '' ? [] : dest.dataset.path.split('.').map(Number)
+        choose(path, { toggle: false })
+      }
+      dest.focus()
       return
     }
     if (event.key === 'Backspace' || event.key === 'Delete') { event.preventDefault(); empty(target()); focusChosen(); return }
@@ -400,9 +406,9 @@
         title={t('form.ids.variants.label', { part: lookupChar(part) })}
         onkeydown={event => {
           if (event.key === 'Backspace' || event.key === 'Delete') event.stopPropagation()
-          if (event.key === 'ArrowDown' && !isOpen) { event.preventDefault(); openVariants(path, event.currentTarget) }
+          if (event.key === 'ArrowDown' && !isOpen) { event.preventDefault(); openVariants(path, event.currentTarget, { keyboard: true }) }
         }}
-        onclick={event => { if (isOpen) closeVariants(); else openVariants(path, event.currentTarget) }}>
+        onclick={event => { if (isOpen) closeVariants(); else openVariants(path, event.currentTarget, { keyboard: event.detail === 0 }) }}>
         <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
     {/if}
@@ -647,7 +653,7 @@
     border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px var(--shadow-menu)}
   .ids-forms-menu:popover-open{display:flex;flex-direction:column;gap:4px}
   @supports (position-area: block-end){
-    .ids-forms-menu{inset:auto;margin:4px 0 0;position-area:block-end span-inline-end;
+    .ids-forms-menu{inset:auto;margin:4px 0 0;position-area:block-end span-inline-start;
       position-try-fallbacks:flip-block,flip-inline,flip-block flip-inline}
   }
   @supports not (position-area: block-end){
