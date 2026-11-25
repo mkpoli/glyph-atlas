@@ -36,7 +36,8 @@ def test_a_headword_the_table_makes_doubtful_is_named():
         return longkan.Entry(row, field, "", "1", "車", "去聲", 1, note)
 
     pages = {1: [entry(1, "轎"), entry(2, "𨏥"), entry(3, "𨏥"), entry(5, "軌"), entry(6, "菕菕"), entry(9, "軌"),
-                 entry(12, "惘", "①〔Kimi〕字頭原空，據參考本《龍龕手鏡》補「惘」。"), entry(15, "鏒", "①〔Kimi〕「令」為孤立")]}
+                 entry(12, "惘", "①〔Kimi〕字頭原空，據參考本《龍龕手鏡》補「惘」。"), entry(15, "鏒", "①〔Kimi〕「令」為孤立"),
+                 entry(18, "鈞", "①〔Kimi〕「决」當作「決」，據參考本該字頭引文正作「決」改。②〔Kimi〕注文疑誤，待核。")]}
     assert longkan.unsettled(pages) == {(2, 0), (3, 0), (6, 0), (6, 1), (12, 0)}, "a repeat within two rows or one field, and a filled headword"
 
 
@@ -45,5 +46,6 @@ def test_a_headword_without_its_sections_radical_is_named():
         return longkan.Entry(row, field, "", "1", section, "去聲", 1)
 
     rows = [(1, "呻"), (5, "唷"), (9, "聴"), (13, "彊𠼢"), (17, "咩"), (21, "哞")]
-    pages = {1: [entry(row, field, "口") for row, field in rows] + [entry(30, "菕", "雜"), entry(34, "坳", "雜"), entry(38, "荃", "草")]}
-    assert longkan.unsettled(pages) == {(9, 0), (13, 0)}, "聴 and 彊 hold no 口; 雜 names no radical; 草 is written 艹"
+    grass = [(40, "荃"), (44, "荷"), (48, "葉"), (52, "姜")]
+    pages = {1: [entry(row, field, "口") for row, field in rows] + [entry(30, "菕", "雜"), entry(34, "坳", "雜")] + [entry(row, field, "草") for row, field in grass]}
+    assert longkan.unsettled(pages) == {(9, 0), (13, 0), (52, 0)}, "聴 and 彊 hold no 口; 雜 names no radical; 草 is written 艹, which 姜 lacks"

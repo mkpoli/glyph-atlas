@@ -28,6 +28,9 @@ WRITTEN = {"草": "艹", "四": "罒", "𠕀": "罒", "系": "糹", "䖝": "虫"
            "氣": "气", "凢": "凡"}
 #: A section is tested for its radical when this share of its headwords hold it.
 TESTED = 2 / 3
+#: A note's items are numbered ①②…; one that names the headword and says either of these fills it in or doubts it.
+_ITEMS = re.compile(r"[①-⑳]")
+_DOUBT = ("原空", "原錄", "疑", "待核")
 #: How many rows before and after a headword a second one written with the same character makes it doubtful.
 NEAR = 2
 #: A section title 某部第幾 is printed at about this many gloss characters' length; a tone header in its own cartouche.
@@ -99,6 +102,11 @@ def _holds(char: str, section: str) -> bool:
     return char in names or bool(names & han_components.direct(char))
 
 
+def _doubted(note: str) -> bool:
+    """Whether a note says the headword was filled in or is in doubt; one about the gloss alone does not."""
+    return any("字頭" in item and any(word in item for word in _DOUBT) for item in _ITEMS.split(note))
+
+
 def unsettled(pages: dict[int, list[Entry]]) -> set[tuple[int, int]]:
     """The headwords, as row and place in it, whose character is no sure reading of what the print shows.
 
@@ -118,7 +126,7 @@ def unsettled(pages: dict[int, list[Entry]]) -> set[tuple[int, int]]:
     for row, entry in entries.items():
         own = [c for c in heads[row] if c]
         near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ()) if c}
-        doubted = len(set(own)) < len(own) or bool(near & set(own)) or "字頭" in entry.note
+        doubted = len(set(own)) < len(own) or bool(near & set(own)) or _doubted(entry.note)
         for sub, char in enumerate(heads[row]):
             foreign = char is not None and len(char) == 1 and entry.section in tested and not _holds(char, entry.section)
             if doubted or foreign:
