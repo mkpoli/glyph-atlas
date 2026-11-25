@@ -140,3 +140,11 @@ def test_headwords_that_would_overlap_are_divided_at_the_blank_between_them():
     assert upper.y + upper.h <= 205 and lower.y >= 191
     other = [(0.0, 0, Box(x=160, y=110, w=60, h=50)), (9.0, 1, Box(x=160, y=130, w=60, h=50))]
     assert tape.apart(other, np.zeros((600, 400), bool), page) == other, "different columns are left alone"
+
+
+def test_a_part_of_a_headword_is_dropped_and_not_cut_off_from_it():
+    page = SimpleNamespace(pitch=90.0, middle=lambda c, y: 195.0)
+    whole = (0.0, 0, Box(x=150, y=100, w=90, h=180))
+    part = (90.0, 0, Box(x=150, y=190, w=90, h=90))
+    other = (400.0, 1, Box(x=150, y=190, w=90, h=90))
+    assert tape.apart([whole, part, other], np.zeros((600, 400), bool), page) == [whole, other]

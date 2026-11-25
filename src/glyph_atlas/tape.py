@@ -34,8 +34,12 @@ MEETS = 0.6
 #: The widest a headword's crop is taken, in half-column pitches either side of the column's middle.
 SPAN = 0.9
 #: How far a box's ink is followed past the box, of its height, and the blank rows that end it.
-FOLLOW = 0.3
-BLANK = 5
+FOLLOW = 0.15
+BLANK = 4
+#: A row holds ink when this share of the column's width does.
+INK = 0.04
+#: A box is a part of another of its column when this share of its rows lies in it, and a divided box keeps this share of its height.
+PART, KEPT = 0.6, 0.4
 #: A missed headword costs as much as this many gloss rows of gap error.
 MISSED = 1.0
 #: The most headwords a pairing may pass over, and the largest gap error it may have, in gloss rows.
@@ -147,14 +151,25 @@ def half(boxes: Sequence[Box], lowest: float, highest: float) -> Half | None:
 
 
 def apart(boxes: list[tuple[float, int, Box]], ink: np.ndarray, page: Half) -> list[tuple[float, int, Box]]:
-    """Boxes of one column that overlap, divided at the row between their middles that holds the least ink."""
-    out = list(boxes)
+    """Boxes of one column that overlap: one whose rows lie mostly in another's is a part of the same headword and is
+    dropped, and two that share fewer rows are divided at the row between their middles that holds the least ink."""
+    out: list[tuple[float, int, Box] | None] = list(boxes)
     by_column: dict[int, list[int]] = {}
-    for n, (_, column, _) in enumerate(out):
+    for n, (_, column, _) in enumerate(boxes):
         by_column.setdefault(column, []).append(n)
     for members in by_column.values():
-        members.sort(key=lambda n: out[n][2].y + out[n][2].h / 2)
-        for upper, lower in pairwise(members):
+        for n in sorted(members, key=lambda m: boxes[m][2].h):
+            small = out[n][2] if out[n] else None
+            for m in members:
+                if small is None or m == n or out[m] is None:
+                    continue
+                large = out[m][2]
+                shared = min(small.y + small.h, large.y + large.h) - max(small.y, large.y)
+                if large.h >= small.h and shared >= PART * small.h:
+                    out[n] = None
+                    small = None
+        rest = sorted((m for m in members if out[m] is not None), key=lambda m: out[m][2].y + out[m][2].h / 2)
+        for upper, lower in pairwise(rest):
             a, b = out[upper][2], out[lower][2]
             if a.y + a.h <= b.y:
                 continue
@@ -164,11 +179,11 @@ def apart(boxes: list[tuple[float, int, Box]], ink: np.ndarray, page: Half) -> l
             if last - first < 4 or not 0 <= first < ink.shape[0]:
                 continue
             row = first + int(np.argmin(ink[first:last, x0:x1].sum(1)))
-            if row - a.y < 0.4 * a.h or b.y + b.h - row < 0.4 * b.h:
+            if row - a.y < KEPT * a.h or b.y + b.h - row < KEPT * b.h:
                 continue
             out[upper] = (*out[upper][:2], Box(x=a.x, y=a.y, w=a.w, h=row - a.y))
             out[lower] = (*out[lower][:2], Box(x=b.x, y=row, w=b.w, h=b.y + b.h - row))
-    return out
+    return [o for o in out if o is not None]
 
 
 def recut(image: Image.Image, page: Half) -> list[tuple[float, int, Box]]:
@@ -181,7 +196,7 @@ def recut(image: Image.Image, page: Half) -> list[tuple[float, int, Box]]:
         middle = page.middle(column, box.y + box.h / 2)
         x0, x1 = int(max(0, middle - SPAN * page.pitch)), int(min(ink.shape[1], middle + SPAN * page.pitch))
         first, last = int(max(0, box.y - 0.35 * box.h)), int(min(ink.shape[0], box.y + 1.35 * box.h))
-        rows = ink[first:last, x0:x1].sum(1) > 1
+        rows = ink[first:last, x0:x1].sum(1) > max(1.0, INK * (x1 - x0))  # a speck is no ink
         if len(rows) < 4:
             out.append((place, column, box))
             continue
