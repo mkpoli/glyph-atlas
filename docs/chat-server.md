@@ -470,7 +470,10 @@ and a quiet day pays for it. A call sets $0.05 aside before it is sent and is se
 midnight JST. Her unasked visits have
 their own part of it, let out as people write through the day by the hours of the last two weeks. The last
 $0.35 is kept for people who call her: below it she makes no visits and no digest, reads 15 lines and one
-picture, and leaves bystanders in a conversation alone; with none left she tells a room that calls her, once a day. A
+picture, and leaves bystanders in a conversation alone; with none left she tells a room that calls her, once
+a day, and keeps the call. Once there is money again, or the model answers again after a failure, she
+answers everything missed in a room in one reply, one room at a time while the chat is still; a missed
+call is kept 18 hours. A
 client without a purse sends nothing at all, and only the process systemd runs as `fish-bot.service`
 may call a model: nothing that costs money is ever tested, by anyone or any agent. The last week is
 printed by
