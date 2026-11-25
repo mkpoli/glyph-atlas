@@ -443,7 +443,7 @@
 
 <style>
   /* The reading and the style it is written in sit on one line; either wraps when the inspector is narrow. */
-  .inspector-words{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px}
+  .inspector-words{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-bottom:10px}
   .unassigned-title{font-size:28px}
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .unassigned-title :global(.copy-value){vertical-align:middle;margin-left:4px}
