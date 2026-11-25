@@ -34,7 +34,7 @@ import { OPEN, opened } from './open';
 import { sendContact } from './contact';
 import { communityCounts } from './community';
 import { communityPreview } from './preview';
-import { bookGallery, cards, characterCard, characterPage, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
+import { bookGallery, cards, characterCard, characterPage, graphemeForms, chronology, citeCharacter, corpusOccurrences, decades, occurrences, type CharacterTools } from './routes/character';
 import * as browse from './routes/browse';
 export { claimHistoryQuery, currentClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery, resolveWriteQuery } from './ledger';
 type Json = Record<string, any>;
@@ -227,6 +227,8 @@ const routes = {
       if(path==='/layers/books')return json(await bookGallery(env,ctx,url,characterTools));
       if(path==='/layers/chronology')return json(await chronology(env,ctx,url,characterTools));
       if(path==='/layers/summary')return json(await browse.siteValue(env,'corpus_index'));
+      const formed=path.match(/^\/layers\/graphemes\/([^/]+)\/forms$/);
+      if(formed)return json(await graphemeForms(env,ctx,url,decodeURIComponent(formed[1]),characterTools));
       if(path==='/layers/graphemes'||path==='/layers/ligatures')return json(await cards(env,path.endsWith('ligatures')?'ligatures':'graphemes',q,ctx));
       if(path==='/atlas/corpus/reviews')return json(await flaggedCorpus(env,listingItems));
       if(path.startsWith('/atlas/forms/')){const formed=await formsRoute(env,request,path,q,formTools,ctx);

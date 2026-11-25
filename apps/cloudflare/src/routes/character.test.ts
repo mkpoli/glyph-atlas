@@ -1,15 +1,16 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
+import { IDS_DIGITS, referenceShard } from '../atlas3Reference';
 import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { currentPointer } from '../atlas3Answers';
 import { SHARDS, phasesOf, rangeCountQuery, rangeQuery, type GalleryQuery, type Phase, type Source } from '../atlas3Gallery';
 import { corpusFormsQuery, datingQuery } from '../atlas3Listing';
 import { cropSlotsQuery } from '../cropPanels';
-import { bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, copyOf, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
-  wordSpellingsQuery, writtenFormsQuery, writtenFormUseQuery, writtenVariants } from './character';
+import { carriedFormsQuery, bookCellsQuery, bookCropsQuery, booksOfQuery, composedCountQuery, composedQuery, chronologyQueries, copyOf, graphemeIdsQuery, groupKeysQuery, membersQuery, productionsQuery, visualQuery, writeFamiliesQuery,
+  wordSpellingsQuery, writtenVariants } from './character';
 import { publish } from './browse.fixture.test';
 import worker from '../index';
 
@@ -218,7 +219,7 @@ describe('a character page', () => {
     // The 字体 row counts each form's images, the 字種 row its grapheme's: 時's family bills 7 crops and
     // 2 corpus glyphs, and 呆, with no grapheme row, reads as unused rather than failing the card.
     expect(body.grapheme.members.map((m: any) => [m.char, m.count, m.corpus_count]))
-      .toEqual([['時', 5, 2], ['时', 1, 0], ['旹', 1, 0], ['呆', 0, 0]]);
+      .toEqual([['時', 5, 2], ['时', 1, 0], ['旹', 1, 0], ['呆', 0, 0], ['\u{F0003}', 0, 0], ['\u{F0004}', 0, 0]]);
     expect([body.grapheme.count, body.grapheme.corpus_count]).toEqual([7, 2]);
     // 峕 heads its own family row, so its one crop is counted once, not twice.
     expect(body.variants.writes.map((w: any) => [w.char, w.count, w.corpus_count])).toEqual([['旹', 1, 0], ['峕', 1, 0]]);
@@ -238,31 +239,58 @@ describe('a character page', () => {
     expect([status, body.char]).toEqual([200, '⿰日寺']);
   });
 
-  it('lists a described form a reviewer said is written for the grapheme, counted by the family\'s crops', async () => {
-    const form = 'fm:' + '1'.repeat(32), representation = 'rp:' + '2'.repeat(32);
-    const derivedForm = 'fm:' + '3'.repeat(32), derivedRepresentation = 'rp:' + '4'.repeat(32);
-    // A registered figure, 時 with a variation selector, and a second code point, which is no such form.
-    const figure = 'fm:' + '5'.repeat(32), figureRepresentation = 'rp:' + '6'.repeat(32);
-    const encoded = 'fm:' + '7'.repeat(32), encodedRepresentation = 'rp:' + '8'.repeat(32);
-    db.exec(`INSERT INTO forms(id,anchor,created_by,created_at) VALUES
-        ('${form}','${representation}','reader','now'),('${derivedForm}','${derivedRepresentation}','reader','now'),
-        ('${figure}','${figureRepresentation}','reader','now'),('${encoded}','${encodedRepresentation}','reader','now');
-      INSERT INTO representations(id,scheme,value,namespace,version) VALUES
-        ('${representation}','ids','⿰木木',NULL,NULL),('${derivedRepresentation}','ids','⿰日寺',NULL,NULL),
-        ('${figureRepresentation}','ivs','時\u{E0101}',NULL,NULL),('${encodedRepresentation}','unicode','旹',NULL,NULL);`);
-    for (const [written, value] of [[form, '⿰木木'], [derivedForm, '⿰日寺'], [figure, '時\u{E0101}'], [encoded, '旹']])
-      db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
-        VALUES(?,'written_for','',?,NULL,NULL,'asserted',?,'[{"object":"U+6642","assertion":"a"}]','[]','[]','r','now')`)
-        .run(written, 'U+6642', 'U+6642');
-    const target = cropId(PAGE_A, 0);
-    db.prepare(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
-      VALUES(?,'has_form','','',?,0,'asserted',?,'[]','[]','[]','r','now')`).run(publicId(target), target, form);
-    const { body } = await get('/layers/characters/U+6642');
-    // The derived form is one of the family's 字体 by the claim, and derived no more.
-    expect(body.variants.derived).toEqual([]);
-    expect(body.variants.forms).toEqual([{ char: '⿰木木', code_point: null, form, scheme: 'ids', count: 1, corpus_count: 0 },
-      { char: '⿰日寺', code_point: null, form: derivedForm, scheme: 'ids', count: 0, corpus_count: 0 },
-      { char: '時\u{E0101}', code_point: null, form: figure, scheme: 'ivs', count: 0, corpus_count: 0 }]);
+  it('lists the described forms and figures the family\'s crops are claimed to have, counted by them', async () => {
+    const forms: Record<string, [string, string, string]> = {};
+    const named = (digit: string, scheme: string, value: string) => {
+      forms[value] = ['fm:' + digit.repeat(32), 'rp:' + digit.repeat(32), scheme];
+      db.query('INSERT INTO representations(id,scheme,value) VALUES(?,?,?)').run(forms[value][1], scheme, value);
+      db.query("INSERT INTO forms(id,anchor,created_by,created_at) VALUES(?,?,'reader','now')").run(forms[value][0], forms[value][1]);
+    };
+    named('1', 'ids', '⿰木木'); named('3', 'ids', '⿰日寺'); named('5', 'ivs', '時\u{E0101}'); named('7', 'unicode', '旹');
+    const claim = (page: number, slot: number, value: string, status = 'asserted', cut = 0) => {
+      const target = cropId(page, slot);
+      db.query("DELETE FROM current_claims WHERE subject=? AND predicate='has_form'").run(publicId(target));
+      db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+        VALUES(?,'has_form','','',?,?,?,?,'[]','[]','[]','r','now')`).run(publicId(target), target, cut, status, forms[value][0]);
+    };
+    let version = 0;
+    // A claim is saved with its submission, which moves the catalogue's version.
+    const listed = async (code = 'U+6642') => {
+      db.query("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,'reader','','','now')").run(`carried-${++version}`);
+      return (await get('/layers/characters/' + code)).body.variants;
+    };
+    const row = (value: string, count: number, corpus_count = 0) => ({ char: value, code_point: null, form: forms[value][0], scheme: forms[value][2], count, corpus_count });
+    claim(PAGE_A, 0, '⿰木木'); claim(PAGE_B, 0, '⿰木木'); claim(PAGE_C, 0, '時\u{E0101}'); claim(PAGE_A, 1, '⿰日寺');
+    // A code point of its own is no such form; nor is one people dispute, or one claimed on an earlier cut.
+    claim(PAGE_A, 2, '旹'); claim(PAGE_B, 2, '⿰日寺', 'disputed'); claim(PAGE_B, 3, '⿰日寺', 'asserted', -1);
+    const found = await listed();
+    expect(found.forms).toEqual([row('⿰木木', 2), row('⿰日寺', 1), row('時\u{E0101}', 0, 1)]);
+    // The derived form is one of the family's 字体 by the crop that has it, and derived no more.
+    expect(found.derived).toEqual([]);
+    // Taken back on its crop, it is derived again.
+    db.query("DELETE FROM current_claims WHERE subject=? AND predicate='has_form'").run(publicId(cropId(PAGE_A, 1)));
+    const back = await listed();
+    expect([back.forms.map((f: any) => f.char), back.derived.map((v: any) => v.char)]).toEqual([['⿰木木', '時\u{E0101}'], ['⿰日寺']]);
+    // A crop given another character takes its form along, and back.
+    const moved = cropId(PAGE_A, 0);
+    db.query('UPDATE crops SET char=? WHERE id=?').run(G.峕, moved);
+    expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([1, [row('⿰木木', 1)]]);
+    db.query('UPDATE crops SET char=? WHERE id=?').run(G.時, moved);
+    expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([2, []]);
+    // A crop withdrawn and put back under another character takes it there.
+    const held = db.query('SELECT * FROM crops WHERE id=?').get(moved) as Record<string, number>;
+    db.query('DELETE FROM crops WHERE id=?').run(moved);
+    expect((await listed()).forms[0].count).toBe(1);
+    const put = { ...held, char: G.峕 };
+    db.query(`INSERT INTO crops(${Object.keys(put).join(',')}) VALUES(${Object.keys(put).map(() => '?').join(',')})`).run(...Object.values(put));
+    expect((await listed('U+5CD5')).forms).toEqual([row('⿰木木', 1)]);
+    db.query('UPDATE crops SET char=? WHERE id=?').run(G.時, moved);
+    // So does one a reader files under another grapheme.
+    db.query(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      VALUES(?,'has_grapheme','','',?,0,'asserted','U+5CD5','[]','[]','[]','r','now')`).run(publicId(moved), moved);
+    expect([(await listed()).forms[0].count, (await listed('U+5CD5')).forms]).toEqual([1, [row('⿰木木', 1)]]);
+    db.exec("DELETE FROM current_claims WHERE predicate IN ('has_form','has_grapheme')");
+    expect(db.query('SELECT count(*) AS n FROM carried_forms').get()).toEqual({ n: 0 });
   });
 
   it('lists the drawn forms of a grapheme among its members, and gives each a page under that grapheme', async () => {
@@ -817,8 +845,7 @@ describe('every query of the character routes', () => {
       [visualQuery(), [1], 'crop_visual'], [composedQuery(), [], 'book_date_axis'], [graphemeIdsQuery(), ['["時"]'], 'sqlite_autoindex_graphemes'], [writeFamiliesQuery(), ['[302]'], 'grapheme_head'],
       [corpusFormsQuery(), ['[1]'], 'INTEGER PRIMARY KEY'], [datingQuery(), ['["a"]'], 'PRIMARY KEY'], [cropSlotsQuery(), ['[1]', 'has_form'], 'current_claim_crop'],
       [wordSpellingsQuery(), ['時'], 'word_spelling_spelling'], [productionsQuery(), ['printed', 8, 'printed/'], 'SCAN productions'],
-      [writtenFormsQuery(), ['U+6642'], 'current_claim_object'],
-      [writtenFormUseQuery(), ['["fm:1"]', '[300,301,302]'], 'current_claim_object']] as [string, unknown[], string][]) {
+      [carriedFormsQuery(), ['[300,301,302]', '[]', '[1]'], 'carried_form_grapheme']] as [string, unknown[], string][]) {
       const found = plan(sql, values);
       expect(found).toContain(index);
       // The productions are a few dozen rows; every other table is read by key or index.
@@ -859,3 +886,107 @@ describe('a review of a glyph filed under its family', () => {
   });
 });
 
+describe('the forms of a whole grapheme', () => {
+  const point = (char: string) => 'U+' + char.codePointAt(0)!.toString(16).toUpperCase();
+  const T = 951, TU = 952;
+  async function family() {
+    db.exec(`INSERT OR IGNORE INTO graphemes(id,text,head) VALUES(${T},'図',${T}),(${TU},'圖',${T}),(953,'圗',${T}),(954,'图',${T})`);
+    const members = ['図', '圖', '圗', '图', '\uFA44'].map(char => ({ code_point: point(char), char }));
+    const edges: Record<string, unknown[]> = { 図: [['圖', 'shinjitai', 's', '', 1, 1]],
+      圖: [['図', 'shinjitai', 's', '', 1, 1], ['啚', 'variant', 's', '', 0, 1], ['度', 'non-cognate', 's', '', 0, 0], ['谋', 'variant', 's', '', 0, 1]], 图: [['啚', 'variant', 's', '', 0, 1], ['徒', 'borrowed', 's', '', 0, 0]] };
+    for (const [i, { char }] of members.slice(0, 4).entries()) objects.set(`v3/reference/char/${point(char)}.json.gz`, json({ grapheme: T + i, data: card(char, { grapheme: { code_point: 'U+56F3', char: '図' } }),
+      detail: card(char, { grapheme: { code_point: 'U+56F3', char: '図', members } }), variants: edges[char] ?? [], derived: char === '図' ? [['⿰日寺', [[['日', '目']]]]] : [],
+      substitutions: char === '図' ? [['日', '目', 4, [{ a: '昨', b: '眲', sources: ['src3'] }]]] : [], writes: char === '圖' ? [['谋', 1]] : [], writers: char === '图' ? [['团', 1]] : [], ids: { 図: T, 圖: TU } }));
+    const shapes: Record<string, unknown> = { 図: [['⿴囗乂'], [{ text: '⿴囗乂', regions: 'J' }, { text: '⿴囗丷', regions: 'G' }], null], 圖: [['⿴囗啚'], [{ text: '⿴囗啚', regions: 'GJ' }, { text: '⿴囗口㐭', regions: 'H' }], null],
+      圗: [['⿱口回'], [{ text: '⿱口回', regions: 'G' }, { text: '⿴囗丷', regions: 'T' }], null] };
+    const shards = new Map<string, Record<string, unknown>>();
+    for (const [char, value] of Object.entries(shapes)) { const name = `v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`; shards.set(name, { ...shards.get(name), [char]: value }); }
+    for (const [name, shard] of shards) objects.set(name, json(shard));
+  }
+  const forms = async (char: string, as: Env = env) => (await (await worker.fetch(new Request(`https://glyphatlas.org/layers/graphemes/${encodeURIComponent(point(char))}/forms`), as, ctx)).json()) as any;
+  it('are every member with its shapes, each shape of one member alone its own, and the variants of any', async () => {
+    await family();
+    const found = await forms('図');
+    expect([found.head, found.members.map((m: any) => m.char)]).toEqual(['図', ['図', '圖', '圗', '图']]);
+    expect(found.members.map((m: any) => m.shapes.map((shape: any) => [shape.text, shape.base]))).toEqual([
+      [['⿴囗乂', '図'], ['⿴囗丷', null]], [['⿴囗啚', '圖'], ['⿴囗口㐭', '圖']], [['⿱口回', '圗'], ['⿴囗丷', null]], []]);
+    expect(found.variants.map((v: any) => [v.char, v.via])).toEqual([['啚', ['圖', '图']]]);
+    // 谋 is another grapheme 圖 writes; 度 and 徒 are no variants, and neither is listed as a member.
+    expect(found.related.map((v: any) => [v.char, v.via])).toEqual([['谋', ['圖']], ['度', ['圖']], ['徒', ['图']]]);
+    expect(found.derived).toEqual([{ char: '⿰日寺', code_point: null, encoded: false, via: ['図'], route: [['日', '目']] }]);
+  });
+  it('are the same from any member, and kept, what the crops carry apart', async () => {
+    await family();
+    edge.clear();
+    const read: string[] = [], get = env.MEDIA.get.bind(env.MEDIA);
+    const counting = { ...env, MEDIA: { ...env.MEDIA, get: async (name: string, options?: any) => { read.push(name); return get(name, options); } } } as unknown as Env;
+    const first = await forms('圖', counting);
+    expect(first.forms).toEqual([]);
+    const crop = id(CROPS.find(c => c.char === '凡' && c.kind === 0)!);
+    db.exec(`INSERT INTO representations(id,scheme,value) VALUES('rp:t','ids','⿴囗斗'); INSERT INTO forms(id,anchor,created_by,created_at) VALUES('fm:t','rp:t','u','t');
+      INSERT INTO carried_forms(crop,grapheme,form,cut) VALUES(${crop},${TU},'fm:t',0); INSERT INTO ledger_submissions VALUES('carried','u','{}','{}','t')`);
+    try {
+      read.length = 0;
+      const second = await forms('図', counting);
+      expect({ ...second, forms: [] }).toEqual(first);
+      expect(second.forms.map((f: any) => [f.char, f.count])).toEqual([['⿴囗斗', 1]]);
+      expect(read.filter(name => name.includes('/reference/ids/'))).toEqual([]);
+    } finally { db.exec(`DELETE FROM carried_forms; DELETE FROM ledger_submissions WHERE id='carried'`); }
+  });
+  // 隆 in two shapes, the first 𨺓's only description; 逸 in two, the second encoded again as 𨓜.
+  async function owned(second = '⿰阝⿳夂一生') {
+    const families: [string, string[], Record<string, unknown>][] = [['隆', ['隆', '𨺓'], { 隆: [['⿰阝⿱夂生', second], [{ text: '⿰阝⿱夂生', regions: 'J' }, { text: second, regions: 'G' }], null], 𨺓: [['⿰阝⿱夂生'], null, null] }],
+      ['逸', ['逸', '𨓜'], { 逸: [['⿺辶兔', '⿺辶免'], [{ text: '⿺辶兔', regions: 'GT' }, { text: '⿺辶免', regions: 'J', chars: ['𨓜'] }], null] }]];
+    for (const [i, [head, chars, ids]] of families.entries()) {
+      db.exec(chars.map((char, j) => `INSERT OR IGNORE INTO graphemes(id,text,head) VALUES(${960 + i * 10 + j},'${char}',${960 + i * 10});`).join(''));
+      const grapheme = { code_point: point(head), char: head, members: chars.map(char => ({ code_point: point(char), char })) };
+      for (const char of chars) objects.set(`v3/reference/char/${point(char)}.json.gz`, json({ grapheme: 960, data: card(char, { grapheme: { code_point: point(head), char: head } }),
+        detail: card(char, { grapheme }), variants: [], derived: [], substitutions: [], writes: [], writers: [], ids: {} }));
+      for (const [char, value] of Object.entries(ids)) objects.set(`v3/reference/ids/${await referenceShard(char, IDS_DIGITS)}.json.gz`, json({ [char]: value }));
+    }
+  }
+  const bases = (found: any) => found.members.map((m: any) => m.shapes.map((shape: any) => [shape.text, shape.base]));
+  it('name no member for a shape another is described by, though it has that shape alone or is encoded for it', async () => {
+    await owned();
+    expect(bases(await forms('隆'))).toEqual([[['⿰阝⿱夂生', null], ['⿰阝⿳夂一生', '隆']], []]);
+    expect(bases(await forms('逸'))).toEqual([[['⿺辶兔', '逸'], ['⿺辶免', null]], []]);
+  });
+  it('are kept as long as the objects they were read from', async () => {
+    const start = Date.now() + 3_600_000, kept = () => Number(/max-age=(\d+)/.exec([...edge].find(([url]) => url.includes('grapheme-forms?'))![1].headers.get('cache-control')!)![1]);
+    const drop = (part: string) => { for (const url of [...edge.keys()]) if (url.includes(part)) edge.delete(url) };
+    try {
+      setSystemTime(start);
+      await owned();
+      const before = bases(await forms('隆'));
+      expect(kept()).toBe(300);
+      // The reference data changes, and 200 seconds on an answer is made from what is still held.
+      await owned('⿰阝⿱夊生');
+      setSystemTime(start + 200_000);
+      drop('grapheme-forms');
+      db.exec("INSERT INTO imports(stamp,at) VALUES('reference-forms',1)");
+      expect(bases(await forms('隆'))).toEqual(before);
+      expect(kept()).toBe(100);
+      setSystemTime(start + 300_001);
+      drop('grapheme-forms');
+      expect(bases(await forms('隆'))[0]).toContainEqual(['⿰阝⿱夊生', '隆']);
+    } finally { setSystemTime(); db.exec("DELETE FROM imports WHERE stamp='reference-forms'"); edge.clear() }
+  });
+  it('are kept no longer than a shard read without a member of theirs', async () => {
+    const start = Date.now() + 7_200_000, name = `v3/reference/ids/${await referenceShard('𨺓', IDS_DIGITS)}.json.gz`;
+    try {
+      setSystemTime(start);
+      await owned();
+      objects.set(name, json({}));
+      await get('/layers/ids?c=𨺓');
+      // The rest is read afresh: the answer is due when the shard held since the start is.
+      setSystemTime(start + 250_000);
+      for (const url of [...edge.keys()]) if (!url.endsWith(name)) edge.delete(url);
+      expect(bases(await forms('隆'))[0][0]).toEqual(['⿰阝⿱夂生', '隆']);
+      expect(/max-age=(\d+)/.exec([...edge].find(([url]) => url.includes('grapheme-forms?'))![1].headers.get('cache-control')!)![1]).toBe('50');
+    } finally { setSystemTime(); edge.clear() }
+  });
+  it('are a kana’s members, and none for a character with no card', async () => {
+    expect((await forms('𛂒')).members.map((m: any) => [m.char, m.shapes])).toEqual([['ね', []], ['𛂒', []]]);
+    expect((await worker.fetch(new Request('https://glyphatlas.org/layers/graphemes/U%2B4E00/forms'), env, ctx)).status).toBe(404);
+  });
+});

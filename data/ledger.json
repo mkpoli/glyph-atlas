@@ -8,7 +8,7 @@
   "[subject, predicate, scope, slot] keys. Lines starting with -- are comments.",
   "A `date_*` predicate dates a document: its value is a date as `glyph_atlas.dates` reads it ({of, text, start, end, precision, qualifier, uncertain, day, calendar, conversion, note}), and it lists no `values` because only a publication writes one, from a data/sources record (`scripts/export_dates_cloudflare.py`).",
   "`writes_word` says which word a crop writes at its place in the text (decision 0004): its object is a word of data/vocab/words.tsv, or its value a `{\"gloss\": …}` where no word row fits yet. `method` names the strongest evidence for the sense, from `methods`, strongest first; each item of it is an evidence row (a ruby as `source` `rubies:<id>`, a note or a parallel witness as `page`). Its confidence, in the `form` scheme of `confidence`, says how sure the reader is that the crop is the character it is filed under. Disputed is never asserted: it is what the resolver finds when standing claims differ.",
-  "`read_as` says how a crop is read at its place: {run, at, reading}, the characters read together in order, which of them the crop is (from 0), and the reading of each, or one reading of the whole run (村落 ざいご). `bears_ruby` gives the ruby beside the same run as the page writes it, hentaigana included: {run, at, ruby}, split as the reading is."
+  "`read_as` says how a crop is read at its place: {run, at, reading}, the characters read together in order, which of them the crop is (from 0), and the reading of each, or one reading of the whole run (村落 ざいご). `bears_ruby` gives the ruby beside the same run as the page writes it, hentaigana included: {run, at, ruby}, split as the reading is. `bears_left_ruby` gives the 左訓 on the left of the run the same way, split as the page splits it or whole."
  ],
  "resolver": "ledger-r1",
  "tiers": [
@@ -107,7 +107,16 @@
    ]
   },
   "bears_ruby": {
-   "label": "the 振り仮名 written beside the run a crop stands in, in the kana the page writes",
+   "label": "the 振り仮名 written beside the run a crop stands in, on the right of a vertical line, in the kana the page writes",
+   "subject": "crop",
+   "objects": [],
+   "values": [],
+   "value_shape": "ruby",
+   "cardinality": "one",
+   "alternatives": false
+  },
+  "bears_left_ruby": {
+   "label": "the 左訓 written on the left of the run a crop stands in, in the kana the page writes",
    "subject": "crop",
    "objects": [],
    "values": [],

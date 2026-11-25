@@ -48,6 +48,21 @@ export function cropLine(crop, neighbours = []) {
   return here < 0 ? { parts: [own], at: 0, also: [] } : { parts: line.map(one => one.offset === 0 ? own : composed(one.label)), at: here, also: [] }
 }
 
+const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.stringify(b.run)
+/**
+ * What the editor opens with, for a reader: the reading and the rubies they hold, or, holding none, the
+ * ones nobody disputes. A ruby beside another run says nothing of this one. `value` names the run.
+ */
+export function opening(slot, user) {
+  const mine = value => Boolean(user && value.by?.includes(user))
+  const readings = slot?.values ?? [], rubies = slot?.ruby?.values ?? [], lefts = slot?.left?.values ?? []
+  const holds = [...readings, ...rubies, ...lefts].some(mine)
+  const from = (values, status) => holds ? values.find(mine) : status === 'disputed' ? undefined : values[0]
+  const reading = from(readings, slot?.status), ruby = from(rubies, slot?.ruby?.status), left = from(lefts, slot?.left?.status)
+  const value = reading ?? ruby ?? left ?? null, beside = one => value && one && together(value, one) ? one.ruby : []
+  return { value, reading: reading?.reading ?? [], ruby: beside(ruby), left: beside(left), method: reading?.methods?.[0] ?? null }
+}
+
 /** The places a run around `at` can reach: the characters up to the punctuation either side of it. */
 export function stretch(parts, at) {
   let from = at, to = at
@@ -75,17 +90,19 @@ async function send(crop, value) {
       { id: submissions.get(key), crop_version: crop.crop_version, ...value })
   } catch (error) { if (error.status) submissions.delete(key); throw error }
   submissions.delete(key)
-  return { ...crop, reading: result.reading }
+  return { ...crop, reading: result.reading, word: result.word }
 }
 
 /**
  * Save how a crop is read: `run` with the crop at `at`, the `reading` over each character or over all of
- * them, what it rests on and the ruby as the page writes it, or null. The published crops of the run (`crops`, by place in it)
+ * them, what it rests on and the ruby and the 左訓 (`left`) as the page writes them, or null. The published crops of the run (`crops`, by place in it)
  * are saved with it, each at the version it is shown at.
+ * `word` ({ id, form, method }) names the dictionary word the run writes, null takes the reader's back, and without it the word the reader holds goes with the run.
  */
-export function setReading(crop, { run, at, reading, ruby = null, method, crops = new Map() }) {
+export function setReading(crop, { run, at, reading, ruby = null, left = null, method, word, crops = new Map() }) {
   const others = [...crops].map(([place, one]) => ({ id: one.id, crop_version: one.crop_version, at: place }))
-  return send(crop, { run, at, reading, ruby, method, others })
+  return send(crop, { run, at, reading, ruby, left, method, others, ...(word === undefined ? {} : { word }) })
 }
 
-export const clearReading = crop => send(crop, { run: null })
+/** Take back the reader's run on a crop and, with `word`, the word it writes. */
+export const clearReading = (crop, { word = false } = {}) => send(crop, { run: null, ...(word ? { word: null } : {}) })

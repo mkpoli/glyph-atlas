@@ -135,6 +135,32 @@ try {
   await browser.evaluate('document.querySelector("dialog[open] .form-compose").click()')
   await browser.waitFor(`document.querySelector('dialog[open] .ids-field input')?.value === '⿰𠤕⿱龴疋'`, 20000)
   console.log('PASS the editor starts from 疑\'s own description')
+
+  // Loading another existing character replaces the draft with its IDS, offers its regional shapes
+  // when it has more than one, and can be undone; an atomic character leaves the draft intact.
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-start input'); i.focus(); i.value = '骨'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.waitFor(`!document.querySelector('dialog[open] .ids-start-load').disabled`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-start-load').click()`)
+  await browser.waitFor(`document.querySelectorAll('dialog[open] .ids-shape').length >= 2`, 20000)
+  const firstShape = await value()
+  const secondShape = await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-shape .ids-shape-text')[1].textContent`)
+  assert(firstShape !== '⿰𠤕⿱龴疋' && firstShape !== secondShape, `骨 did not load distinct shapes: ${firstShape} vs ${secondShape}`)
+  assert(!await browser.evaluate(`!!document.querySelector('dialog[open] .ids-start .candidate-list')`), 'the character search dropdown stayed open after Load')
+  await shoot('ids-start-from-char', '.ids-composer')
+  await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-shape')[1].click()`)
+  await becomes(secondShape)
+  assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-shape')[1].getAttribute('aria-pressed')`) === 'true', 'the chosen shape is not marked pressed')
+  // An atomic character reports no smaller parts and leaves the draft untouched.
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-start input'); i.focus(); i.value = '口'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-start-load').click()`)
+  await browser.waitFor(`document.querySelector('dialog[open] .ids-start-note')?.textContent.includes('口')`, 20000)
+  assert(await value() === secondShape, `an atomic character wiped the draft: ${await value()}`)
+  // Undo steps back to 疑's description.
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-undo').click()`)
+  await becomes(firstShape)
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-undo').click()`)
+  await becomes('⿰𠤕⿱龴疋')
+  console.log('PASS start from any existing character loads its IDS, offers regional shapes, keeps draft on atomic chars, and undoes')
   if (exported) {
     // The first drawing, its data still loading: placeholders where the layout puts each part.
     await browser.waitFor(`document.querySelector('dialog[open] .ids-preview')?.dataset.step === 'loading'

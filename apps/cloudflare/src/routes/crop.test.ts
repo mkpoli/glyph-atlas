@@ -164,6 +164,18 @@ describe('a crop\'s record', () => {
     expect(await response.json()).toEqual(want);
   });
 
+  it('names its character\'s grapheme beside the one a claim files it under', async () => {
+    const { db, get, ids, text } = setup();
+    const claim = (crop: number, subject: string, grapheme: string) => db.exec(`INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at)
+      SELECT '${subject}','has_grapheme','','',id,cut,'asserted','${grapheme}','[{"object":"${grapheme}","assertion":"g"}]','["g"]','[{"asserted_by":"x","members":[{"assertion":"g","object":"${grapheme}"}]}]','r','t' FROM crops WHERE id=${crop}`);
+    claim(ids.a, text.a, 'U+56DB');
+    expect(await (await get(`/atlas/characters/${publicId(ids.a)}`)).json()).toMatchObject({ grapheme: 'U+56DB', own_grapheme: 'U+4E00' });
+    // ム is filed under む: a claim of its own character reads it as no other grapheme.
+    claim(ids.c, text.c, 'U+30E0');
+    expect(await (await get(`/atlas/characters/${publicId(ids.c)}`)).json()).toMatchObject({ grapheme: 'U+30E0', own_grapheme: 'U+30E0' });
+    expect(await (await get(`/atlas/characters/${publicId(ids.d)}`)).json()).not.toHaveProperty('own_grapheme');
+  });
+
   it('carries the style its row is listed under', async () => {
     const { db, get, ids } = setup();
     db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',90,'regular'); UPDATE crops SET style=90 WHERE id IN (${ids.a},${ids.glyph})`);
@@ -450,7 +462,7 @@ describe('the crop routes\' queries', () => {
     expect(plan(db, recordQuery(), 1)).toEqual([]);
     expect(plan(db, listedCropsQuery(), '[1]')).toEqual([]);
     expect(plan(db, cropSlotsQuery(), '[1]', 'has_form')).toEqual([]);
-    expect(plan(db, cropSlotsQuery(2), '[1]', 'read_as', 'bears_ruby')).toEqual([]);
+    expect(plan(db, cropSlotsQuery(3), '[1]', 'read_as', 'bears_ruby', 'bears_left_ruby')).toEqual([]);
     expect(plan(db, formNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordNamesQuery(), '[]')).toEqual([]);
     expect(plan(db, wordMethodsQuery(), '[]')).toEqual([]);

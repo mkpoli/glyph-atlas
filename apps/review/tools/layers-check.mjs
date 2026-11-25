@@ -46,9 +46,9 @@ try {
 
   await step('the search box offers candidates for a typed kana', async () => {
     await setQuery('あ')
-    await browser.waitFor('document.querySelectorAll(".candidate").length > 0', 4000)
-    const rows = await browser.evaluate(`Array.from(document.querySelectorAll('.candidate')).map(b => b.innerText)`)
-    assert(rows.length > 0, 'no candidate rows')
+    await browser.waitFor('document.querySelectorAll(".search-card li button").length > 0', 4000)
+    const rows = await browser.evaluate(`Array.from(document.querySelectorAll('.search-card')).map(b => b.innerText)`)
+    assert(rows.length > 0, 'no candidate cards')
     return rows[0].replace(/\n/g, ' · ')
   })
 
@@ -65,7 +65,7 @@ try {
   })
 
   await step('choosing a candidate opens its own gallery', async () => {
-    const point = await browser.centre('.candidate')
+    const point = await browser.centre('.search-card li button')
     await browser.click(point.x, point.y)
     // The fixture's service reads its character layers on first use.
     await browser.waitFor('document.querySelector(".character-layers") !== null', 40000)
@@ -96,9 +96,9 @@ try {
     await browser.key('Escape').catch(() => {})
     await browser.evaluate(`document.querySelector('input[role=combobox]')?.dispatchEvent(new FocusEvent('focus'))`)
     await setQuery('ネ')
-    await browser.waitFor('document.querySelectorAll(".candidate").length > 0', 4000)
-    const row = await browser.centre('.candidate')
-    await browser.click(row.x, row.y)
+    const form = `[...document.querySelectorAll('.search-card li button')].find(b => b.textContent.includes('ネ'))`
+    await browser.waitFor(`${form} !== undefined`, 4000)
+    await browser.evaluate(`${form}.click()`)
     await browser.waitFor('document.querySelector(".character-layers") !== null', 4000)
     await new Promise(resolve => setTimeout(resolve, 600))
     const card = await browser.evaluate(`document.querySelector('.character-layers')?.innerText.split(String.fromCharCode(10)).join(' · ') ?? null`)
@@ -114,8 +114,8 @@ try {
     await browser.waitFor(`location.pathname === '/en/grapheme/U+306D' && ${current} === 'SPAN variant ね'`, 15000)
     await browser.waitFor('document.querySelector(".glyph-grid")?.getAttribute("aria-busy") === "false"', 6000)
     assert(await browser.evaluate('document.querySelectorAll(".glyph-grid .glyph-tile").length') > 0, 'the grapheme\'s gallery is empty')
-    const form = await browser.centre('.character-layers a.member[href$="/character/U+30CD"]')
-    await browser.click(form.x, form.y)
+    const own = await browser.centre('.character-layers a.member[href$="/character/U+30CD"]')
+    await browser.click(own.x, own.y)
     await browser.waitFor(`location.pathname === ${JSON.stringify(at)} && ${current} === 'SPAN member ネ'`, 15000)
     assert(!errors.length, `an exception was thrown between the pages: ${errors.join(' | ').slice(0, 300)}`)
     return card
@@ -131,10 +131,10 @@ try {
 
   await step('a fast typist is answered by the last query only', async () => {
     await setQuery('あ'); await setQuery('シ')
-    await browser.waitFor('document.querySelectorAll(".candidate").length > 0', 4000)
+    await browser.waitFor('document.querySelectorAll(".search-card").length > 0', 4000)
     await new Promise(resolve => setTimeout(resolve, 900))
-    const labels = await browser.evaluate(`Array.from(document.querySelectorAll('.candidate .candidate-char')).map(b => b.textContent)`)
-    assert(labels.length > 0, 'no rows for the second query')
+    const labels = await browser.evaluate(`Array.from(document.querySelectorAll('.search-card li button')).map(b => b.innerText.split('\\n')[0])`)
+    assert(labels.length > 0, 'no cards for the second query')
     return labels.join(' ')
   })
 

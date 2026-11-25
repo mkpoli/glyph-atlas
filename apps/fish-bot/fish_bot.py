@@ -238,6 +238,10 @@ DEEPSEEK_CACHE_MISS = 0.15
 DEEPSEEK_OUTPUT = 0.60
 DEEPSEEK_PEAK = ((1, 4), (6, 10))
 MEMORY_TEMPERATURE = 1.0
+# Paid calls are sent only by the process systemd runs as this unit. A script, a test or a shell that
+# loads this file has no way to spend, whatever key it holds.
+SERVICE = "fish-bot.service"
+CGROUP = Path("/proc/self/cgroup")
 # Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
 # may pass the day's limit by the difference, once.
 CALL_RESERVE = 0.05
@@ -556,10 +560,9 @@ class Config:
     lookup_per_hour: int = 120
     retention_days: int = 180
     daily_usd: float = 0.75
-    dry_run: bool = False
 
     @classmethod
-    def load(cls, path: Path, *, dry_run: bool = False) -> Config:
+    def load(cls, path: Path) -> Config:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
         matrix = raw.get("matrix") or {}
         gemini = raw.get("gemini") or {}
@@ -677,7 +680,6 @@ class Config:
             lookup_per_hour=max(0, min(10_000, int(field(lookup, "per_hour", cls.lookup_per_hour)))),
             retention_days=max(1, min(3650, int(field(limits, "retention_days", cls.retention_days)))),
             daily_usd=_clamp(_finite(field(budget, "daily_usd", cls.daily_usd), cls.daily_usd), 0.0, 20.0),
-            dry_run=dry_run,
         )
 
 
@@ -2380,6 +2382,19 @@ def _interaction_citations(answer: dict[str, Any]) -> list[tuple[str, str]]:
     return sources
 
 
+def in_service() -> bool:
+    """Whether this process is the running bot."""
+    try:
+        return any(line.rpartition(":")[2] == f"/system.slice/{SERVICE}" for line in CGROUP.read_text().splitlines())
+    except OSError:
+        return False
+
+
+def _require_service() -> None:
+    if not in_service():
+        raise SpendError(f"only {SERVICE} calls a model; nothing that costs money is tested")
+
+
 class Purse:
     """One day's money for model calls, kept in a database so that every process using it shares the
     limit. A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at
@@ -2474,6 +2489,7 @@ class Model:
         tokens and cost; a call already paid for is never lost to a failed settlement."""
         if self.purse is None:
             raise SpendError("no purse: this client makes no paid call")
+        _require_service()
         day = self.purse.reserve(kind)
         try:
             answer = self._send(body, timeout=timeout)
@@ -2499,6 +2515,7 @@ class Model:
             log.exception("charging %s", kind)
 
     def _send(self, body: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
+        _require_service()
         request = urllib.request.Request(
             self.url,
             data=json.dumps(body).encode(),
@@ -3637,7 +3654,7 @@ def issue_body(decision: Decision, room_id: str, room_name: str, events: list[sq
     return body[:MAX_BODY]
 
 
-def reply_for(decision: Decision, issue: IssueRef | None, *, dry_run: bool, prefix: str = "") -> str:
+def reply_for(decision: Decision, issue: IssueRef | None, *, prefix: str = "") -> str:
     """The chat answer, with the issue link kept whole when one was filed."""
     text = decision.reply.strip()
     if issue is not None:
@@ -3646,8 +3663,6 @@ def reply_for(decision: Decision, issue: IssueRef | None, *, dry_run: bool, pref
             text = text[:max(0, MAX_REPLY - len(link))].rstrip() + link
         else:
             text = f"Filed #{issue.number}: {issue.url}"
-    if dry_run:
-        text = "[dry run] " + text
     if prefix:
         text = prefix + text
     return text[:MAX_REPLY]
@@ -4446,24 +4461,21 @@ class Bot:
                 return None
         return self._aliases[target]
 
-    def post_recap(self, room_id: str, *, reply_to: str | None = None, request: str = "",
-                   language: str = "the language of the request, or the room's language when there is none") -> str:
-        """Post a catch-up on everything she remembers from every room; with a request, as a reply in
-        its language."""
+    def post_recap(self, room_id: str, *, reply_to: str, request: str = "") -> None:
+        """Answer a request with a catch-up on everything she remembers from every room, in its
+        language."""
         episodes, notes = self.store.recap_material(self.active_rooms)
         material = [{"room": self._room(str(row["room_id"]))[0] or "a room", "date": local_day(int(row["end_ts"])),
                      "summary": str(row["summary"])} for row in episodes]
         if not material:
-            if reply_to:
-                self._post(room_id, EMPTY_RECAP, f"fish-e-{hashlib.sha256(reply_to.encode()).hexdigest()[:36]}", reply_to=reply_to)
-                self.store.mark_handled(reply_to, "chatted")
-            return ""
-        text = self.gemini.recap(language, material, [str(row["text"]) for row in notes], request)
-        if reply_to:
-            self.store.mark_handled(reply_to, "recapped")
-        key = hashlib.sha256(f"{room_id}{reply_to or now_ms()}".encode()).hexdigest()[:36]
+            self._post(room_id, EMPTY_RECAP, f"fish-e-{hashlib.sha256(reply_to.encode()).hexdigest()[:36]}", reply_to=reply_to)
+            self.store.mark_handled(reply_to, "chatted")
+            return
+        text = self.gemini.recap("the language of the request, or the room's language when there is none", material,
+                                 [str(row["text"]) for row in notes], request)
+        self.store.mark_handled(reply_to, "recapped")
+        key = hashlib.sha256(f"{room_id}{reply_to}".encode()).hexdigest()[:36]
         self._post(room_id, text, f"fish-c-{key}", reply_to=reply_to)
-        return text
 
     @staticmethod
     def _request(events: list[sqlite3.Row], trigger: int | None) -> str:
@@ -4815,9 +4827,6 @@ class Bot:
                        "Reply `!fish issue` to file it.")
             self.store.mark_handled(event_id, "low-confidence")
             return
-        if self.config.dry_run:
-            self._file(room_id, event_id, decision, events, names)
-            return
         if self.github is None:
             self.store.set_pending(room_id, decision, event_id)
             self._tell(room_id, event_id,
@@ -4837,7 +4846,7 @@ class Bot:
 
     def _file_pending(self, room_id: str, event_id: str, decision: Decision,
                       original_event_id: str, created_at: int) -> None:
-        if self.github is None and not self.config.dry_run:
+        if self.github is None:
             self._tell(room_id, event_id, "Issue creation is not configured.")
             self.store.mark_handled(event_id, "no-github")
             return
@@ -4868,18 +4877,12 @@ class Bot:
         room_name, _ = self._room(room_id)
         body = issue_body(decision, room_id, room_name, events, names, day or today,
                           bot_user_id=self.user_id)
-        if self.config.dry_run:
-            self.store.clear_pending(room_id)
-            self._tell(room_id, event_id,
-                       f"[dry run] Would file: {decision.title}\n\n{decision.reason}")
-            self.store.mark_handled(event_id, "dry-run")
-            return
         assert self.github is not None
         issue = self.github.create_issue(decision.title, body, decision.labels)
         self.github._issues = []
         self.store.add_issue(self.github.repo, issue.number, issue.title, issue.url, room_id, event_id)
         self.store.clear_pending(room_id)
-        self._tell(room_id, event_id, reply_for(decision, issue, dry_run=False))
+        self._tell(room_id, event_id, reply_for(decision, issue))
         self.store.mark_handled(event_id, "opened")
 
     def _tell(self, room_id: str, event_id: str, text: str) -> None:
@@ -4986,11 +4989,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--config", type=Path, default=Path("/etc/fish-bot/config.toml"))
     parser.add_argument("--db", type=Path, default=Path("/var/lib/fish-bot/chat.sqlite3"))
     parser.add_argument("--state", type=Path, default=Path("/var/lib/fish-bot/state.json"))
-    parser.add_argument("--dry-run", action="store_true", help="decide and answer, but file nothing")
     parser.add_argument("--check", action="store_true", help="check the homeserver, model and GitHub")
-    parser.add_argument("--once", action="store_true", help="read one sync batch and exit")
-    parser.add_argument("--recap", metavar="ROOM", help="post a catch-up on everything discussed to ROOM (an alias or ID) and exit")
-    parser.add_argument("--language", default="English", help="the catch-up's language, with --recap")
     parser.add_argument("--usage", action="store_true", help="print the last week's model and tool calls, failures and cost, and exit")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -5004,7 +5003,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     try:
-        config = Config.load(args.config, dry_run=args.dry_run)
+        config = Config.load(args.config)
         matrix = Matrix(config.homeserver, _secret(config.token_file))
         gemini = Gemini(_secret(config.gemini_key_file), config.gemini_model, config.gemini_url,
                         config.github_repo)
@@ -5028,42 +5027,15 @@ def main(argv: list[str] | None = None) -> None:
         except (MatrixError, ModelError, GitHubError) as error:
             raise SystemExit(str(error)) from None
         return
+    if not in_service():
+        # Before it reads a room: a bot that cannot answer must not take calls from the one that can.
+        raise SystemExit(f"start it as {SERVICE}; nothing that costs money is tested")
     store = Store(args.db)
     github = None
     if config.github_token_file and config.github_token_file.exists():
         github = GitHub(_secret(config.github_token_file), config.github_repo)
     bot = Bot(config, store, matrix, gemini, github, State(args.state), deepseek)
     try:
-        if args.recap:
-            try:
-                if matrix.whoami() != config.user_id:
-                    raise SystemExit("the token belongs to another account")
-                bot.active_rooms = set(config.room_ids) or set(matrix.public_rooms())
-                room_id = bot._room_of(args.recap)
-                if room_id is None or room_id not in bot.active_rooms:
-                    raise SystemExit(f"{args.recap} is not a public room the bot reads")
-                text = bot.post_recap(room_id, language=args.language)
-            except (MatrixError, ModelError) as error:
-                raise SystemExit(str(error)) from None
-            if not text:
-                raise SystemExit("nothing is remembered yet, so nothing was posted")
-            print(text)
-            return
-        if args.once:
-            whoami = matrix.whoami()
-            if whoami != config.user_id:
-                raise SystemExit(f"the token belongs to {whoami}, not {config.user_id}")
-            bot.join_rooms()
-            since = bot.state.load()
-            if since is None:
-                since = bot.initial_sync()
-                bot.backfill()
-            else:
-                response = matrix.sync(since, timeout_ms=0)
-                bot.process(response)
-                bot.deliver_all(everything=True)
-                bot.state.save(bot._token(response))
-            return
         # systemd stops the bot with SIGTERM: what she is still typing goes out before it exits.
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         try:

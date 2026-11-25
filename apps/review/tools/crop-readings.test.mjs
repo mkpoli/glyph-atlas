@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -59,6 +59,37 @@ it('a press grows the run to a character outside it, and leaves one inside it ou
   expect(pressed({ from: 20, to: 20 }, 20, 0)).toEqual({ from: 9, to: 20 })
 })
 
+describe('what the editor opens with', () => {
+  const run = { run: ['諸', '器'], at: 1 }, alone = { run: ['器'], at: 0 }
+  const theirs = { ...run, reading: ['しょ', 'き'], by: ['a'], methods: ['ruby'] }, mine = { ...alone, reading: ['うつわ'], by: ['me', 'b'], methods: ['context'] }
+  it('is the reading the reader holds, beside another they do not', () => {
+    expect(opening({ status: 'disputed', values: [theirs, mine] }, 'me')).toEqual({ value: mine, reading: ['うつわ'], ruby: [], left: [], method: 'context' })
+  })
+  it('never fills in another reader\'s ruby beside the reader\'s own reading', () => {
+    const slot = { status: 'asserted', values: [{ ...theirs, by: ['a', 'me'] }], ruby: { status: 'asserted', values: [{ ...run, ruby: ['𛁈よ', 'き'], by: ['a'] }] } }
+    expect(opening(slot, 'me')).toMatchObject({ reading: ['しょ', 'き'], ruby: [] })
+    slot.ruby.values.push({ ...run, ruby: ['しよ', 'き'], by: ['me'] }); slot.ruby.status = 'disputed'
+    expect(opening(slot, 'me').ruby).toEqual(['しよ', 'き'])
+  })
+  it('is, for a reader who holds nothing, what nobody disputes', () => {
+    const slot = { status: 'asserted', values: [theirs], ruby: { status: 'asserted', values: [{ ...run, ruby: ['𛁈よ', 'き'], by: ['a'] }] } }
+    for (const user of ['me', undefined]) expect(opening(slot, user)).toMatchObject({ value: theirs, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'], method: 'ruby' })
+    expect(opening({ status: 'disputed', values: [theirs, { ...mine, by: ['b'] }] }, 'me')).toEqual({ value: null, reading: [], ruby: [], left: [], method: null })
+    expect(opening(null, 'me')).toEqual({ value: null, reading: [], ruby: [], left: [], method: null })
+  })
+  it('opens with the 左訓 of the same run', () => {
+    const left = { status: 'asserted', values: [{ ...run, ruby: ['もろもろのうつわ'], by: ['a'] }] }
+    expect(opening({ status: 'asserted', values: [theirs], left }, 'me').left).toEqual(['もろもろのうつわ'])
+    expect(opening({ status: 'asserted', values: [{ ...theirs, by: ['me'] }], left }, 'me').left).toEqual([])
+    expect(opening({ status: null, values: [], left }, 'me')).toMatchObject({ value: { at: 1 }, left: ['もろもろのうつわ'] })
+  })
+  it('leaves out a ruby beside another run, and opens with a ruby alone', () => {
+    const ruby = { ...alone, ruby: ['き'], by: ['a'] }
+    expect(opening({ status: 'asserted', values: [theirs], ruby: { status: 'asserted', values: [ruby] } }, 'me').ruby).toEqual([])
+    expect(opening({ status: null, values: [], ruby: { status: 'asserted', values: [ruby] } }, 'me')).toMatchObject({ value: ruby, ruby: ['き'] })
+  })
+})
+
 describe('hentaigana', () => {
   it('are read as the kana they are letters of', () => {
     expect(plainKana('𛁈よき')).toBe('しよき')
@@ -97,11 +128,11 @@ describe('the letters of a kana in a ruby', () => {
 })
 
 describe('the reading client', () => {
-  const value = { run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'], method: 'ruby' }
+  const value = { run: ['諸', '器'], at: 1, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'], left: ['うつわ'], method: 'ruby' }
   it('names the other crops of the run at the version they are shown at', async () => {
     const item = crop(), slot = { status: 'asserted' }
-    request.mockResolvedValue({ reading: slot })
-    expect(await setReading(item, { ...value, crops: new Map([[0, { id: 'other', crop_version: 'other@shown' }]]) })).toEqual({ ...item, reading: slot })
+    request.mockResolvedValue({ reading: slot, word: null })
+    expect(await setReading(item, { ...value, crops: new Map([[0, { id: 'other', crop_version: 'other@shown' }]]) })).toEqual({ ...item, reading: slot, word: null })
     expect(request.mock.calls[0]).toEqual([`/atlas/characters/${item.id}/reading`,
       { id: expect.any(String), crop_version: 'v', ...value, others: [{ id: 'other', crop_version: 'other@shown', at: 0 }] }])
   })
@@ -116,5 +147,12 @@ describe('the reading client', () => {
     expect(new Set(ids).size).toBe(3)
     await clearReading(item)
     expect(request.mock.calls.at(-1)[1]).toEqual({ id: expect.any(String), crop_version: 'v', run: null })
+    await clearReading(item, { word: true })
+    expect(request.mock.calls.at(-1)[1]).toMatchObject({ run: null, word: null })
+  })
+  it('names a word only when it is given one, null to take it back', async () => {
+    request.mockResolvedValue({ reading: null, word: null })
+    for (const word of [undefined, null, { id: 'ja/のみ/副助詞', form: 'certain', method: 'ruby' }]) await setReading(crop(), { ...value, word })
+    expect(request.mock.calls.map(([, body]) => 'word' in body ? body.word : 'none')).toEqual(['none', null, { id: 'ja/のみ/副助詞', form: 'certain', method: 'ruby' }])
   })
 })

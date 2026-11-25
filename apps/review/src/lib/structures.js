@@ -25,7 +25,7 @@ export function structureTarget(group, block, structureOf, of) {
   const ranked = [], standing = group.blocks.flatMap(each => each.forms.map(form => [form, structureOf.get(form.char)])).filter(([, stands]) => stands)
   for (const [form, stands] of standing) {
     if (stands.by) continue
-    const [rank, target] = form.regions ? [1, { char: form.char, of }] : isSeal(form.char) ? [2, { char: form.char }] : isDescription(form.char) ? [3, { char: form.char }] : [4, { char: form.char }]
+    const [rank, target] = form.regions ? [1, { char: form.char, of: form.of ?? of }] : isSeal(form.char) ? [2, { char: form.char }] : isDescription(form.char) ? [3, { char: form.char }] : [4, { char: form.char }]
     const head = headTarget(stands, target)
     if ((stands.part ?? stands).id === block.id) ranked.push([rank, target])
     else if (stands.id === block.id && head) ranked.push([rank / 10, head])
@@ -59,7 +59,7 @@ export async function cardStructures(char, names) {
  * The 構形 each written value stands under, by its text: `{ id, label, by, others, part }`, `by` who
  * filed it there (none for one its description gives), `others` the other 構形 readers filed it under
  * (each with the `head` it is folded into) and `part` the 構形 it is built as when that
- * one stands under this. `of` is the character whose regional shapes are among the names. Requests ask
+ * one stands under this. `of` are the characters whose regional shapes are among the names. Requests ask
  * at most NAMES values at a time; a value the site knows no structure of has none here. What is asked
  * again replaces what was `known` of those names.
  */

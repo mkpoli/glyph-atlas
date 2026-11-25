@@ -298,6 +298,16 @@ describe('the ranking', () => {
     expect(after).toMatchSnapshot();
     expect(after.map(r => [r.name, r.total])).toEqual([['Ada', 6], ['anon-00aa11', 3], [null, 1]]);
   });
+  it('counts a form claimed by the review that names its character as that review', async () => {
+    const { atlas, env, subId } = setup();
+    ledger(atlas);
+    const totals = async () => (await rankingRows(env)).map(r => [r.name, r.total]);
+    const before = await totals();
+    atlas.exec(`INSERT INTO submissions(id,key,actor,request,response,at) VALUES(${subId.size + 1},'u2:both',3,'{}','{}',${ms(1)});
+      INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES('u2:both','u2','{}','{}','${minute(1)}');
+      INSERT INTO assertions(id,submission,subject,predicate,object,tier,asserted_by,asserted_at) VALUES('b1','u2:both','t9','has_form','fm:1','observed','u2','${minute(1)}')`);
+    expect(await totals()).toEqual(before);
+  });
   it('reads each table by index, the reviews from the running totals', () => {
     const { atlas } = setup();
     const details = plan(atlas, rankingQuery());

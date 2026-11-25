@@ -318,6 +318,7 @@ def test_a_reading_names_its_run_and_the_crops_place_in_it(conn):
     ledger.check("read_as", [Claim(value={**run, "reading": ["しょ", "き"]})], method="ruby")
     ledger.check("read_as", [Claim(value={**run, "reading": ["しょき"]})], method="context")
     ledger.check("bears_ruby", [Claim(value={**run, "ruby": ["𛁈よ", "き"]})])
+    ledger.check("bears_left_ruby", [Claim(value={**run, "ruby": ["もろもろのうつわ"]})])
     for reading in ([], ["", ""], ["し", "よ", "き"], ["し よ", "き"], ["𛁈よ", "き"]):
         refused("read_as", {**run, "reading": reading}, "ruby")
     refused("read_as", {"run": ["諸", "器"], "at": 2, "reading": ["き"]}, "ruby")

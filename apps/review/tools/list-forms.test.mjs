@@ -18,15 +18,15 @@ const shapes = {
   器: [{ text: '⿳吅犬吅', regions: 'GHTKPV' }, { text: '⿳吅大吅', regions: 'J', chars: ['𠾖'] }],
   逸: [{ text: '⿺辶兔', regions: 'GHTV' }, { text: '⿺辶免', regions: 'J', chars: ['𨓜'] }, { text: '⿺辶⿷免丶', regions: 'KP' }],
 }
-mock.module('../src/lib/layers.js', () => ({ character: async code => cards[code], ids: async char => ({ shapes: shapes[char] ?? [] }) }))
+mock.module('../src/lib/layers.js', () => ({ graphemeForms: async () => ({ head: '図', members: [{ char: '図', code_point: 'U+56F3', shapes: [] }, { char: '圖', code_point: 'U+5716', shapes: [] }], variants: [], related: [], derived: [], forms: [] }), character: async code => cards[code], ids: async char => ({ shapes: shapes[char] ?? [] }) }))
 const figures = { 器: [['器\u{E0102}', 'MJ008683', true, '⿳吅大吅'], ['器\u{E0103}', 'MJ030252', false, '⿳吅犬吅'],
   ['器\u{E0104}', 'MJ057164', false, '⿱⿱𫩏大𫩏'], ['器\u{E0105}', 'MJ058033', false, '⿳𫩏犬𫩏']] }
-mock.module('../src/lib/mjFigures.js', () => ({ drawFigure: async () => {},
+mock.module('../src/lib/mjFigures.js', () => ({ drawFigure: async () => {}, isFigure: text => /^.[\u{E0100}-\u{E01EF}]$/u.test(text),
   figuresOf: async char => (figures[char] ?? []).map(([text, mj, isDefault, ids]) => ({ char: text, mj, default: isDefault, ids })) }))
 const sent = []
 mock.module('../src/lib/client.js', () => ({ request: async (path, body) => { sent.push({ path, body }); return { form: null } },
   character: async id => ({ id, crop_version: 'v2' }), cropPixels: () => ({}) }))
-const { listForms, setForm } = await import('../src/lib/cropForms.js')
+const { baseOf, formOf, formSaved, listForms, listGrapheme, setForm } = await import('../src/lib/cropForms.js')
 const chars = list => list.map(form => form.char)
 
 describe('a character that encodes the J shape again', () => {
@@ -42,13 +42,10 @@ describe('a character that encodes the J shape again', () => {
     expect(chars(found.alike)).toEqual(['器\u{E0102}', '⿳吅犬吅', '⿳吅大吅', '𠾖'])
   })
 
-  it('names the crop when chosen as a form, from either of the two', async () => {
-    for (const [written, form] of [['逸', '𨓜'], ['𨓜', '逸']]) {
-      sent.length = 0
-      const { reviewed } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: written }, form)
-      expect(reviewed).toBe(true)
-      expect(sent[0].body).toMatchObject({ verdict: 'wrong', issue: 'character', character: form })
-    }
+  it('is the character choosing it names, from either of the two', async () => {
+    for (const [written, form] of [['逸', '𨓜'], ['𨓜', '逸']]) expect(baseOf(form, await listForms(written))).toBe(form)
+    // A variant of another grapheme, a shape and a figure name no character.
+    for (const form of ['氣', '噐', '⿳吅大吅', '器\u{E0103}']) expect(baseOf(form, await listForms('器'))).toBe(null)
   })
 
   it('leaves the bar as a member of the grapheme', async () => {
@@ -62,11 +59,8 @@ describe('a character that encodes the J shape again', () => {
 })
 
 describe('a small seal character of the grapheme', () => {
-  it('names the crop when chosen as a form, as any member does', async () => {
-    sent.length = 0
-    const { reviewed } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: '萅' }, '\u{3D307}')
-    expect(reviewed).toBe(true)
-    expect(sent[0].body).toMatchObject({ verdict: 'wrong', issue: 'character', character: '\u{3D307}' })
+  it('is the character choosing it names, as any member is', async () => {
+    expect(baseOf('\u{3D307}', await listForms('萅'))).toBe('\u{3D307}')
   })
   it('is a member, after the Han forms, and is not offered again as related', async () => {
     const found = await listForms('萅')
@@ -75,5 +69,49 @@ describe('a small seal character of the grapheme', () => {
   it("offers its Han characters as its grapheme's forms", async () => {
     const found = await listForms('\u{3D307}')
     expect([chars(found.members), chars(found.related)]).toEqual([['春', '萅', '\u{3D307}'], []])
+  })
+})
+
+describe('a form claimed alone', () => {
+  it('is one request on the version the reader saw, and no read before it', async () => {
+    sent.length = 0
+    const { crop } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: '器' }, '噐')
+    expect(sent.map(({ path, body }) => [path, body.crop_version, body.form, Object.keys(body).sort().join()])).toEqual([['/atlas/characters/x/form', 'v1', '噐', 'crop_version,form,id']])
+    expect(crop).toMatchObject({ crop_version: 'v1', form: null })
+    await setForm({ id: 'x', crop_version: 'v1', revision: 1 }, { target: { char: '器' } })
+    expect(sent[1]).toMatchObject({ path: '/atlas/characters/x/structure', body: { crop_version: 'v1', char: '器' } })
+  })
+  it('is a new claim each time it is chosen', async () => {
+    sent.length = 0
+    const crop = { id: 'x', crop_version: 'v1', revision: 1, written_character: '器' }
+    for (const form of ['噐', null, '噐']) await setForm(crop, form)
+    expect(new Set(sent.map(({ body }) => body.id)).size).toBe(3)
+  })
+})
+
+describe('the forms read of a grapheme', () => {
+  const had = text => ({ id: 'x', crop_version: 'v1', form: { status: 'asserted', values: [{ form: 'f', text }] } })
+  it('are read again once a save takes a described form from a crop, whatever it claims instead', async () => {
+    const first = listForms('器')
+    formSaved(had('噐'), '器')
+    expect(listForms('器')).toBe(first)
+    formSaved(had('⿴囗啚'), '器')
+    const second = listForms('器')
+    expect(second).not.toBe(first)
+    await setForm(had('⿴囗啚'), '噐')
+    expect(listForms('器')).not.toBe(second)
+  })
+})
+
+describe('a crop of a known grapheme with no character', () => {
+  it('has no form of its own until one is claimed', () => {
+    const crop = { id: 'x', label: '図', written_character: null, identity_status: 'unassigned' }
+    expect([formOf(crop), formOf({ ...crop, identity_status: 'assigned', written_character: '圖' })]).toEqual(['', '圖'])
+    expect(formOf({ ...crop, form: { status: 'asserted', values: [{ form: 'f', text: '⿴囗啚' }] } })).toBe('⿴囗啚')
+  })
+  it('is offered its grapheme as the site answers it, from the character its source names first', async () => {
+    const found = await listGrapheme('図', ['圖'])
+    expect([found.of, chars(found.chips), found.focal]).toEqual(['図', ['圖', '図'], ['圖', '図']])
+    expect([baseOf('圖', found), baseOf('啚', found)]).toEqual(['圖', null])
   })
 })

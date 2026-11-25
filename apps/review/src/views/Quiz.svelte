@@ -85,8 +85,7 @@
   $effect(() => {
     // Never while an error is showing: a failed batch would otherwise be retried at once, forever,
     // and an error from another action would be cleared before anyone could read it.
-    // Showing only suspects, a round may show nothing for many batches, so more crops wait to be asked for.
-    if (nearEnd && hasMore && !onlySuspects && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
+    if (nearEnd && hasMore && !error && !loading && !saving && !loadingMore && items.length < roundLimit) loadMore()
   })
   const roundLimit = $derived(data?.review_limit ?? 4096)
   // The scopes a round can be dealt from, in the order the material menu lists them.
@@ -109,19 +108,24 @@
   let step = $state('select'), at = $state(0)
   let suggestionsElement = $state(null)
   const keys = 'qwertyasdfgh'.split('')
-  // The crops the classifier doubts (`suspect`), shown alone when the reader asks. The rest of the round
-  // stays dealt but off screen: a crop never shown is not recorded as seen, and a later round shows it
-  // again. A crop the reader skipped while it was shown stays skipped.
-  let onlySuspects = $state(stored('atlas.quiz.suspects-only', false) === true)
-  const shown = $derived(onlySuspects ? items.filter(i => i.suspect) : items)
-  function toggleSuspects() {
+  // The crops the classifier doubts (`suspect`), dealt alone when the reader asks. Each round keeps which way
+  // it was dealt, since its cursor goes on in the same list. A visit that names no round takes the last choice.
+  let onlySuspects = $state(false)
+  const suspectsParam = only => only ? { suspects: 'only' } : {}
+  // Turning the choice leaves the round as any way out does, its crops recorded; Back returns to it.
+  async function toggleSuspects() {
     if (saving || loading || selection.length || step !== 'select') return
-    onlySuspects = !onlySuspects; remember('atlas.quiz.suspects-only', onlySuspects)
+    if (!(await record())) return
+    const only = !onlySuspects
+    await load({ target: grapheme || null, only })
+    if (onlySuspects === only) remember('atlas.quiz.suspects-only', only)
   }
   const selection = $derived(Object.keys(selected).filter(id => selected[id]))
   // A crop skipped in the review step stays selected so the reader can go back to it, but it is no
   // longer a problem to decide: whether the round still has one, and what moving on records, ask this.
   const openSelection = $derived(selection.filter(id => !skipped[id]))
+  // A form marks the crops still to decide; one already given an answer keeps it.
+  const markable = $derived(openSelection.filter(id => !choices[id]))
   const selectedItems = $derived(selection.map(id => items.find(i => i.id === id))
     .filter(item => item && !failed[item.id]))
   const queue = $derived(selectedItems)
@@ -138,10 +142,10 @@
   // A selected crop still needs an explicit issue before it can be saved.
   const undecided = $derived(remaining.filter(i => selected[i.id] && !choices[i.id] && !skipped[i.id]).length)
   // Unavailable and skipped images cannot carry a decision.
-  const remaining = $derived(shown.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && !decidedHere(i.id)))
-  const settled = $derived(shown.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
-  const ready = $derived(shown.length > 0 && settled && remaining.length > 0)
-  const exhausted = $derived(shown.length > 0 && settled && !remaining.length)
+  const remaining = $derived(items.filter(i => loaded[i.id] && !failed[i.id] && !skipped[i.id] && !decidedHere(i.id)))
+  const settled = $derived(items.every(i => skipped[i.id] || failed[i.id] || (loaded[i.id] && !failed[i.id])))
+  const ready = $derived(items.length > 0 && settled && remaining.length > 0)
+  const exhausted = $derived(items.length > 0 && settled && !remaining.length)
   const rounds = $derived(roundGraphemes(data?.categories ?? []))
   const categories = $derived(rounds.filter(c => c.pending > 0 && (!search || c.members.some(m => m.label.includes(search)))))
 
@@ -153,7 +157,7 @@
   const canNext = $derived(rounds.some(c => c.pending > 0 && c.label !== grapheme))
   function snapshot() {
     return $state.snapshot({ grapheme, members, items, choices, selected, skipped, recorded, keptHere, markedAs, suggestions, contextSuggestions,
-      roundId, roundSeed, hasMore, nextCursor, production, summary: data, entry })
+      roundId, roundSeed, hasMore, nextCursor, onlySuspects, production, summary: data, entry })
   }
   function checkpoint() {
     if (historyIndex >= 0) history[historyIndex] = snapshot()
@@ -162,7 +166,7 @@
     production = round.production; data = round.summary
     grapheme = round.grapheme; members = round.members; items = round.items; choices = round.choices; selected = round.selected
     skipped = round.skipped; recorded = round.recorded ?? {}; keptHere = round.keptHere ?? {}; markedAs = round.markedAs ?? {}; suggestions = round.suggestions; contextSuggestions = round.contextSuggestions
-    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null
+    roundId = round.roundId; roundSeed = round.roundSeed; hasMore = round.hasMore; nextCursor = round.nextCursor ?? null; onlySuspects = round.onlySuspects ?? false
     entry = round.entry ?? null
     loaded = {}; failed = {}; viewed = {}; step = 'select'; at = 0; error = ''; errorStatus = 0; categoryOpen = false
     anchor = null; formDone = null; formError = ''
@@ -185,9 +189,9 @@
   function address(how) {
     // Back or Forward came while this round was being dealt or saved: the page follows that entry instead.
     if (page.state !== followedState) return
-    const state = { round: { entry, grapheme, production } }
+    const state = { round: { entry, grapheme, production, suspects: onlySuspects } }
     followedState = state
-    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production)), state)
+    ;(how === 'push' && addressed ? pushState : replaceState)(localize(roundAddress(grapheme, production, onlySuspects)), state)
     addressed = true
   }
   // Back and Forward bring the entry's round back, once nothing is being dealt or saved: from this page's
@@ -201,34 +205,38 @@
   })
   function locationRound() {
     const { path } = delocalize(location.pathname), key = path.startsWith('/review/') ? unslug(path.slice(8)) : null
-    return { entry: null, grapheme: key ?? '', production: new URLSearchParams(location.search).get('production') ?? '' }
+    const query = new URLSearchParams(location.search)
+    return { entry: null, grapheme: key ?? '', production: query.get('production') ?? '',
+      suspects: query.get('suspects') === 'only' || !key && stored('atlas.quiz.suspects-only', false) === true }
   }
   function follow(round) {
     if (round.entry && round.entry === entry) return
     const index = round.entry ? history.findIndex(each => each.entry === round.entry)
-      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production))
+      : history.findLastIndex(each => each.grapheme === round.grapheme && each.production === materialOf(round.production)
+        && each.onlySuspects === Boolean(round.suspects))
     if (index >= 0 && index === historyIndex) address('replace')
     else if (index >= 0) visit(index, { followed: true })
-    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' })
+    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) })
   }
   async function chooseCategory(target) {
     categoryOpen = false
     if (target === grapheme || saving) return
     if (!(await record())) return
-    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production)
+    const previous = history.findLastIndex(round => round.grapheme === target && round.production === production && round.onlySuspects === onlySuspects)
     if (previous >= 0) visit(previous)
     else load({ target })
   }
-  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push' } = {}) {
+  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push', only = onlySuspects } = {}) {
     checkpoint()
     // A round dealt again in place keeps its history entry.
     const kept = replace ? entry : null
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending' })
+      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending', ...suspectsParam(only) })
       if (closed || id !== requestId) return
-      data = summary
+      // A summary of suspects alone counts for a round it deals, and not for the one on screen.
+      if (!only || !grapheme) data = summary
       const epochKey = 'atlas.review-epoch'
       if (stored(epochKey, null) !== (summary.review_epoch ?? null)) {
         last = null; completed = 0; history = []; historyIndex = -1
@@ -244,22 +252,24 @@
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
         result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
-          ...(cursor ? { cursor } : {}) }), away)
+          ...suspectsParam(only), ...(cursor ? { cursor } : {}) }), away)
         if (closed || id !== requestId) return
         if (result.items.length) break
         available = available.filter(c => c.label !== chosen)
         chosen = null
       }
+      // Opened on suspects alone, or taken to a material, with none to deal, a round deals the rest.
+      if (!chosen && only && (!grapheme || scope !== production)) return await load({ target, replace, scope, seed: dealt, how, only: false })
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ grapheme: '', members: [], items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
             contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: randomSeed(), hasMore: false,
-            production: scope, summary })
+            onlySuspects: only, production: scope, summary })
           historyIndex = -1
           address(how)
         } else {
           if (!grapheme) items = []
-          else { error = t('quiz.noOtherCharacters'); errorStatus = 0 }
+          else { error = t(only ? 'quiz.suspect.none' : 'quiz.noOtherCharacters'); errorStatus = 0 }
           // Asked for by an address, the address now names the round still on screen.
           if (how === 'replace') address('replace')
         }
@@ -267,7 +277,7 @@
       }
       restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
-        hasMore: Boolean(result.next), nextCursor: result.next ?? null,
+        hasMore: Boolean(result.next), nextCursor: result.next ?? null, onlySuspects: only,
         production: scope, summary })
       entry = kept ?? crypto.randomUUID()
       address(how)
@@ -294,7 +304,7 @@
       // A page asks for no more than the batch has room for, since the cursor moves past every crop dealt.
       while (additions.length < batchLimit && cursor) {
         const room = batchLimit - additions.length
-        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed })
+        const result = await catalogue({ purpose: 'review', production, grapheme, state: 'pending', limit: room, cursor, seed: roundSeed, ...suspectsParam(onlySuspects) })
         if (closed || id !== requestId || round !== roundId) return
         const fresh = unique(result.items).filter(item => !seen.has(item.id))
         additions.push(...fresh)
@@ -335,10 +345,10 @@
   const selectable = id => loaded[id] && !failed[id] && !decidedHere(id) && !skipped[id]
   function toggle(id, event) {
     if (saving || loading || !loaded[id] || failed[id] || decidedHere(id)) return
-    const index = shown.findIndex(i => i.id === id)
+    const index = items.findIndex(i => i.id === id)
     if (event?.shiftKey && anchor !== null && index >= 0) {
       const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
-      const range = shown.slice(from, to + 1).map(i => i.id).filter(selectable)
+      const range = items.slice(from, to + 1).map(i => i.id).filter(selectable)
       selected = { ...selected, ...Object.fromEntries(range.map(each => [each, true])) }
       anchor = index; at = 0; return
     }
@@ -462,7 +472,7 @@
    *  crop first. */
   async function markSelection(form) {
     if (saving || loading || step !== 'select') return
-    const chosen = openSelection.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
+    const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
     if (members.includes(form)) return assignForm(form, chosen)
     // A character found by search is what the crops are written as, as in the collection view's bar.
     if (!isDescription(form)) return assignForm(form, chosen, {}, true)
@@ -552,6 +562,38 @@
     if (pressed === next[0] && offersSuggestions(pressed)) suggest(items.find(i => i.id === id))
     error = ''; errorStatus = 0
   }
+  /** The classifier's reading taken as what a doubted crop is written as: the crop is chosen as a wrong character
+   *  with that one, and pressed again it is neither. */
+  const reading = item => item.suspect?.reads_as ?? null
+  const taken = item => reading(item) !== null && choices[item.id]?.character === reading(item)
+  async function takeReading(item, button) {
+    if (saving || loading || step !== 'select' || !selectable(item.id)) return
+    const { id } = item
+    anchor = items.findIndex(i => i.id === id); at = 0
+    const chosen = chosenIssues(choices[id]), bad = chosen.includes('crop')
+    if (taken(item)) {
+      if (bad) choices = { ...choices, [id]: { verdict: 'wrong', character: null, correction: null, noneSelected: false, ...issueFields(['crop']) } }
+      else { choices = without(choices, [id]); selected = { ...selected, [id]: false } }
+    } else {
+      selected = { ...selected, [id]: true }
+      choices = { ...choices, [id]: { verdict: 'wrong', character: reading(item), correction: null, noneSelected: false, ...issueFields(bad ? ['character', 'crop'] : ['character']) } }
+    }
+    error = ''; errorStatus = 0
+    // A tile dealt among the others has its reading only while it is selected.
+    await tick()
+    if (!button.isConnected) document.querySelector(`.quiz-tile[data-unit="${CSS.escape(id)}"] .quiz-choice`)?.focus({ preventScroll: true })
+  }
+  /** Any other character: the crop's own step, with its candidates open under the wrong-character card. A crop with a
+   *  main problem opens as it stands, and one left without a character is given no answer. */
+  let opened = null
+  async function correctOne(item) {
+    if (saving || loading || step !== 'select' || !selected[item.id]) return
+    const { id } = item, chosen = chosenIssues(choices[id])
+    if (!chosen.some(issue => issue !== 'crop')) { assign(id, 'character'); opened = id }
+    jump(queue.findIndex(i => i.id === id))
+    await tick()
+    if (current?.id === id) greetSuggestions(suggestionsElement, { focus: true })
+  }
   /** Choose the current crop's issue. The candidates, when the issue has any, open under the cards. */
   async function assignCurrent(issue) {
     if (!current) return
@@ -618,7 +660,7 @@
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
   function inspectChoice(item, opening = null) {
-    inspect(item.id, shown, inspected, opening)
+    inspect(item.id, items, inspected, opening)
   }
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
@@ -672,6 +714,9 @@
     jump(0)
   }
   function back() {
+    const left = choices[opened]
+    if (left?.issue === 'character' && !left.character && !left.noneSelected) assign(opened, 'character')
+    opened = null
     step = 'select'
     at = Math.min(at, Math.max(queue.length - 1, 0))
     error = ''; errorStatus = 0
@@ -689,7 +734,7 @@
   function primary() {
     if (saving || loading || loadingMore) return
     if (!openSelection.length) { pass(); return }
-    if (step === 'select') { reviewSelected(); return }
+    if (step === 'select') { if (answered) submit(); else reviewSelected(); return }
     if (!current || !(choices[current.id] || skipped[current.id])) return
     if (focusIndex < queue.length - 1) { move(1); return }
     if (!answered) { jump(selectedItems.findIndex(i => !choices[i.id] && !skipped[i.id])); return }
@@ -717,7 +762,7 @@
   const CARRIED = 'atlas.quiz.carried'
   function reloadKeepingRound() {
     try {
-      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, seed: roundSeed,
+      sessionStorage.setItem(CARRIED, JSON.stringify({ at: Date.now(), grapheme, production, suspects: onlySuspects, seed: roundSeed,
         ...$state.snapshot({ choices, selected, skipped }) }))
     } catch { /* The page reloads without the choices. */ }
     location.reload()
@@ -729,7 +774,7 @@
     catch { return null }
   }
   async function resume(round) {
-    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace' })
+    await load({ target: round.grapheme || null, scope: materialOf(round.production), seed: round.seed, how: 'replace', only: Boolean(round.suspects) })
     if (grapheme !== round.grapheme) return
     // Only the crops dealt again: a crop decided elsewhere meanwhile has left the round.
     const dealt = new Set(items.map(item => item.id))
@@ -747,7 +792,6 @@
   }
   async function submit() {
     if (saving || loadingMore || !ready) return
-    if (step === 'select') return
     if (selection.length && !answered) { error = t('quiz.giveEachProblem'); errorStatus = 0; return }
     // Build an atomic request from explicit problems only; UI choice state never enters the API.
     const marked = new Set(selection)
@@ -765,7 +809,7 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, answers, seen, skipped: passed }))
-      last = { id: roundId, count: answers.length, grapheme, production }
+      last = { id: roundId, count: answers.length, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last); completed += answers.length
       if (!kept) announceSaved(answers.length + seen.length + passed.length, graphemeName)
       markRecorded(answers, 'flagged'); markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
@@ -787,7 +831,7 @@
     saving = true; error = ''; errorStatus = 0
     try {
       const kept = await keptWhilePaused(request('/atlas/rounds', { id: roundId, grapheme, seen, skipped: passed }))
-      last = { id: roundId, count: 0, grapheme, production }
+      last = { id: roundId, count: 0, grapheme, production, suspects: onlySuspects }
       remember('atlas.last-round', last)
       if (!kept) announceSaved(seen.length + passed.length, graphemeName)
       markRecorded(seen, 'seen'); markRecorded(passed, 'skip')
@@ -810,9 +854,9 @@
       // Crops a publication changed since stay as published; the round keeps its count for them.
       const { refused } = kept ? { refused: 0 } : undoOutcome(await sent)
       // A round stored by an older version may name a scope the menu no longer offers.
-      const target = last.grapheme, scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
+      const target = last.grapheme, only = Boolean(last.suspects), scope = MATERIALS.some(([value]) => value === last.production) ? last.production : production
       completed = Math.max(0, completed - Math.max(0, last.count - refused)); last = null
-      remember('atlas.last-round', null); await load({ target, scope })
+      remember('atlas.last-round', null); await load({ target, scope, only })
       if (refused) error = t('review.undoRefused', { count: refused })
     } catch (e) { error = e.message; errorStatus = e.status ?? 0 }
     finally { saving = false }
@@ -828,10 +872,10 @@
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())
-      if (index >= 0 && shown[index] && !control) { e.preventDefault(); toggle(shown[index].id) }
+      if (index >= 0 && items[index] && !control) { e.preventDefault(); toggle(items[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
       const form = members['1234567890'.indexOf(e.key)]
-      if (/^[0-9]$/.test(e.key) && form && openSelection.length) { e.preventDefault(); markSelection(form) }
+      if (/^[0-9]$/.test(e.key) && form && markable.length) { e.preventDefault(); markSelection(form) }
       if (e.key === 'Escape') clearSelection()
       return
     }
@@ -858,7 +902,8 @@
     last = stored('atlas.last-round', null)
     const kept = carried(), round = page.state.round
     if (kept) resume(kept)
-    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace' } : { target: initialGrapheme || null, how: 'replace' })
+    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
+      : { target: initialGrapheme || null, how: 'replace', only: locationRound().suspects })
     return () => { closed = true }
   })
 </script>
@@ -888,16 +933,15 @@
     <div class="stage-toolbar"><strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
     {#key roundId}<div class="quiz-grid" aria-label={t('quiz.grid.label')} aria-busy={loading}>
       {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
-      {:else}{#each shown as item, i (item.id)}
+      {:else}{#each items as item, i (item.id)}
         <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
           <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
           <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if onlySuspects && item.suspect}<span class="suspect-badge" lang={item.suspect.reads_as ? 'ja' : undefined}>{item.suspect.reads_as ? t('quiz.suspect.readsAs', { character: item.suspect.reads_as }) : t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span><button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if choices[item.id]?.character && !taken(item)}<span class="quiz-written">→ <ScriptText text={choices[item.id].character} /></span>{/if}{#if onlySuspects && item.suspect && !reading(item)}<span class="suspect-badge">{t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}{#if reading(item) && (onlySuspects || selected[item.id]) && !failed[item.id] && !skipped[item.id]}<button class="reading-choice" aria-pressed={taken(item)} aria-label={t('quiz.suspect.readsAs', { character: reading(item) }) + ' · ' + (i + 1)} disabled={saving || !selectable(item.id)} title={t('quiz.suspect.readsAs', { character: reading(item) })} onclick={event => takeReading(item, event.currentTarget)}>{#if selected[item.id]}{taken(item) ? '→ ' : ''}<span lang="ja">{reading(item)}</span>{taken(item) ? '' : '?'}{:else}{@const [before, after] = around('quiz.suspect.readsAs', 'character')}{before}<span lang="ja">{reading(item)}</span>{after}{/if}</button>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span>{#if selected[item.id] && !skipped[item.id] && !failed[item.id]}<button class="correct-choice" aria-label={t('quiz.correctCharacter', { number: i + 1 })} title={t('quiz.correct')} disabled={saving} onclick={() => correctOne(item)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4.5L16.5 4l3.5 3.5L8.5 19z" /></svg></button>{/if}<button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
         </div>
       {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
     </div>
     {/key}
-    {#if !loading && items.length && !shown.length}<p class="no-suspects" role="status">{t('quiz.suspect.none', { count: items.length })}</p>{/if}
     <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
          A button remains for the case scrolling cannot trigger (a failed batch waits for a retry). -->
     {#if items.length}<div class="load-more-row" use:watchEnd role="status">
@@ -933,11 +977,12 @@
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
-  {:else}<div class="quiz-actionbar">{#if step === 'select' && (openSelection.length || formDone || formError)}<FormBar count={openSelection.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone}
+  {:else}<div class="quiz-actionbar">{#if step === 'select' && (markable.length || formDone || formError)}<FormBar count={markable.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone}
     onassign={markSelection} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (offersSuggestions(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>
+    {:else if step === 'select' && answered}<button class="quiet-link review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })}</button><button class="primary save-round" disabled={loading || saving || loadingMore || !ready} onclick={submit}>{saving ? t('common.saving') : t('quiz.saveIssues')} <span>✓</span></button>
     {:else if step === 'select'}<button class="primary review-selected" disabled={loading || saving || loadingMore || !ready} onclick={reviewSelected}>{t('quiz.reviewSelected', { count: selection.length })} <span>→</span></button>
     {:else if focusIndex < queue.length - 1}<button class="primary next-crop" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.nextCrop')} <span>→</span></button>
     {:else if !answered}<button class="primary finish-issues" disabled={loading || saving || !(choices[current?.id] || skipped[current?.id])} onclick={primary}>{t('quiz.reviewRemaining')} <span>→</span></button>
@@ -1000,8 +1045,16 @@
   .recorded-badge { font-size:9px; color:var(--muted); white-space:nowrap; }
   .recorded-badge.refused { color:var(--wrong); }
   .suspect-badge { font-size:9px; color:var(--wrong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* The reading is pressed to take it, among the tile's tools: the details that open over a tile leave those clear. */
+  .quiz-tile-tools .reading-choice { flex:none; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:1px 8px; border:1px solid var(--wrong); border-radius:999px; color:var(--wrong); font-size:11px; line-height:1.2; }
+  .reading-choice + .choice-label { min-width:0; }
+  .quiz-tile-tools .reading-choice:hover:not(:disabled) { background:var(--wrong-light); color:var(--wrong); }
+  .quiz-tile-tools .reading-choice[aria-pressed="true"] { background:var(--wrong-light); font-weight:600; }
+  .quiz-tile-tools .correct-choice { display:inline-flex; align-items:center; justify-content:center; padding:0; }
+  .correct-choice svg { width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linejoin:round; }
+  /* A narrow tile keeps the reading on a line of its own, chosen or not. */
+  @media(max-width:740px) { .quiz-tile-tools:has(.reading-choice) { flex-wrap:wrap; height:auto; } .quiz-tile-tools .reading-choice { order:-1; flex:1 0 100%; } }
   .suspect-toggle[aria-pressed="true"] { color:var(--wrong); }
-  .no-suspects { margin:18px 0 0; font-size:13px; color:var(--muted); text-align:center; }
   .quiz-tile.recorded .quiz-choice { opacity:.72; }
   .quiz-tile.assigned { border-color:var(--good); }
   /* The form bar sits over the actions, on a row of its own. */

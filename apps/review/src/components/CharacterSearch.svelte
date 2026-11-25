@@ -11,10 +11,11 @@
   //
   // A page may give the box a `browse` snippet, shown while the box is empty and focused, and a
   // `token`: the grapheme that snippet chose, by its head, shown in the box until the reader removes it or types.
-  // A page that knows its graphemes gives `groupOf`: the candidates a query names then show as the
-  // same grapheme cards its browser shows, and the characters it holds none of fold away beneath them.
+  // A page whose candidates open pages gives `groupOf`, the grapheme it holds a candidate's crops under: the
+  // candidates then show as the grapheme cards the collection's browser shows, each leading to its grapheme's
+  // page, and the characters it holds none of fold away beneath them in cards of their own.
   // A `lead` snippet is a row the page puts above the candidates while the list is open.
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { graphemeLabel, labelParts } from '$worker/graphemeLabel.ts'
   import ScriptText from './ScriptText.svelte'
@@ -72,8 +73,19 @@
     for (const item of items) { const group = groupOf(item); if (group && !seen.has(group.key)) seen.set(group.key, group) }
     return [...seen.values()]
   })
-  const others = $derived(groupOf ? items.map((item, index) => ({ item, index })).filter(({ item }) => !groupOf(item)) : [])
-  const carded = $derived(cards.length > 0)
+  const others = $derived(groupOf ? items.filter(item => !groupOf(item)) : [])
+  // Those in cards of their own, each of the forms the query found; what its grapheme holds in all is not said.
+  const unheld = $derived.by(() => {
+    const found = new Map()
+    for (const item of others) {
+      const { code_point: key, char, character_count: forms = 1 } = item.grapheme ?? item
+      const card = found.get(key) ?? { key, char: char ?? item.char, alone: false, forms, count: null, members: [] }
+      found.set(key, card)
+      card.members.push({ label: item.char, count: countOf(item.char) ?? null })
+    }
+    return [...found.values()]
+  })
+  const carded = $derived(Boolean(groupOf))
   // The rows in the graphemes they belong to: the service lists a grapheme's forms together, the ones
   // the query found first, so 时 shows 時 = 时 = 旹 under one heading.
   const blocks = $derived.by(() => {
@@ -103,6 +115,7 @@
     generation += 1
     items = []; answer = null; active = -1; loading = false; failed = false; open = false
   }
+  export function close() { reset() }
 
   function seek(text) {
     clearTimeout(timer)
@@ -167,8 +180,10 @@
     input?.focus()
   }
 
-  // Enter in the box opens the first candidate, with or without cards: トモ still opens 𪜈.
-  function choose(index = active) {
+  // Enter in the box opens the first candidate, with or without cards: トモ still opens 𪜈. Over cards it is the
+  // first candidate a card shows, unless every candidate is folded away.
+  const shownFirst = $derived(cards.length ? Math.max(0, items.findIndex(item => groupOf(item))) : 0)
+  function choose(index = carded ? shownFirst : active) {
     if (loading || index < 0) return
     const item = items[index]
     if (!item) return
@@ -214,7 +229,9 @@
 
   const browsing = $derived(open && Boolean(browse) && !value.trim())
 
+  // What a closed fold holds takes no focus, so the arrows pass over it to what follows.
   const focusable = () => [...(list?.querySelectorAll('a[href], button:not(:disabled), summary') ?? [])]
+    .filter(element => !element.closest('details:not([open])') || element.matches('details > summary'))
   /** Arrow keys among the cards' buttons; Escape, or an arrow past either end, returns to the box. */
   function walk(event) {
     if (event.key === 'Escape') { event.preventDefault(); done(); return }
@@ -298,6 +315,13 @@
     }
   })
 
+  // Cards drawn again (the site's counts arrive, a further page is read) take the focus of the one the arrows
+  // stood on with them: it goes back to the box, where the arrows start again.
+  $effect(() => {
+    void cards; void unheld
+    tick().then(() => { if (open && carded && document.activeElement === document.body) { quiet = true; input?.focus(); quiet = false } })
+  })
+
   onMount(() => {
     if (autofocus) input?.focus()
     return () => { closed = true; clearTimeout(timer); pending?.abort() }
@@ -305,10 +329,10 @@
 </script>
 
 {#snippet row(item, index, grouped = false)}
-  <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role={carded ? undefined : 'option'}
+  <div class="candidate-row"><button type="button" class="candidate" id={`${listId}-${index}`} role="option"
           bind:this={options[index]}
-          aria-selected={carded ? undefined : index === active} class:active={!carded && index === active}
-          onpointerenter={() => { if (!carded) active = index }} onclick={() => choose(index)}
+          aria-selected={index === active} class:active={index === active}
+          onpointerenter={() => { active = index }} onclick={() => choose(index)}
           title={[item.name, item.reason].filter(Boolean).join(' · ')}>
     <ReferenceGlyph char={item.char} code_point={item.code_point} script={item.script} size="lg" />
     <span class="candidate-body">
@@ -321,6 +345,10 @@
       <span class="candidate-counts">{rowCount(item)}{#if !grouped && item.grapheme?.character_count > 1}<span> · <ScriptText {...labelParts(item.grapheme.char)} /></span>{/if}</span>
     </span>
   </button></div>
+{/snippet}
+
+{#snippet unheldCards()}
+  {#each unheld as group (group.key)}<div class="search-card"><GraphemeCard {group} onform={form => chose(onform, form)} /></div>{/each}
 {/snippet}
 
 <div class="character-search" class:compact class:flipped style={room == null ? undefined : `--candidate-room:${room}px`} bind:this={root} onfocusout={blurred}>
@@ -350,8 +378,9 @@
     <div class="candidate-list browse-panel" id={listId} onmousedown={e => e.preventDefault()}
          onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); done() } }}>{@render browse(done)}</div>
   {:else if open}
+    <!-- Pressing a link keeps focus in the box, as in the panel above, until its page opens. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="candidate-list" class:carded bind:this={list} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
+    <div class="candidate-list" class:carded bind:this={list} onmousedown={e => { if (e.target.closest('a')) e.preventDefault() }} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
       {#if lead}<div class="candidate-lead">{@render lead()}</div>{/if}
       <div id={listId} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
@@ -360,11 +389,9 @@
         {#each cards as group (group.key)}
           <div class="search-card"><GraphemeCard {group} onform={form => chose(onform, form)} /></div>
         {/each}
-        {#if others.length}
-          <details class="candidate-others"><summary>{t('search.others', { count: others.length })}</summary>
-            {#each others as { item, index } (item.code_point)}{@render row(item, index)}{/each}
-          </details>
-        {/if}
+        {#if cards.length && others.length}
+          <details class="candidate-others"><summary>{t('search.others', { count: others.length })}</summary>{@render unheldCards()}</details>
+        {:else}{@render unheldCards()}{/if}
       {:else}
         {#each blocks as block (`${block.key}:${block.entries[0].index}`)}
           {#if block.grapheme?.character_count > 1}
@@ -401,11 +428,12 @@
   .candidate-row .candidate{flex:1;min-width:0}
   .candidate-legend{padding:10px 14px;border-top:1px solid var(--line)}
   .candidate-list.carded{padding:8px}
+  .carded .candidate-legend{margin-top:8px}
   .search-card{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:12px}
-  .search-card + .search-card{margin-top:8px}
+  .search-card + .search-card,:global(.search-card) + .candidate-others{margin-top:8px}
   .candidate-others{margin-top:8px;color:var(--muted)}
   .candidate-others summary{cursor:pointer;padding:8px 6px;font-size:12px}
-  .candidate-others .candidate-row{opacity:.8}
+  .candidate-others .search-card{opacity:.8}
   .candidate-grapheme{margin:4px 6px;border:1px solid var(--line);border-radius:9px}
   .candidate-grapheme-head{margin:0;padding:6px 10px 2px;font-size:12px;color:var(--muted)}
 </style>
