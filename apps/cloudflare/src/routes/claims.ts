@@ -718,7 +718,7 @@ type OwnReading = { id: string; crop: number; subject: string; predicate: string
 /** Set what stands beside a crop at its place: the run of characters it stands in (`run`, with the crop at
  *  `at`), the `ruby` and the 左訓 (`left`) as the page writes them, and the reader's note of how the run is
  *  read (`reading`, over each character or over all of them) with what it rests on (`method`). Any of the
- *  three may be left out, and one is given. The other crops of the run (`others`, each with its place and the
+ *  three may be left out, and one is given, or a word. The other crops of the run (`others`, each with its place and the
  *  version its reader saw) are claimed in the same write. `word` ({id, form, method}) names the dictionary word
  *  the run writes, on each of its crops (decision 0004): null takes the reader's back, and one without a method
  *  keeps the method the reader gave it. Without `word`, the word the reader holds on the crop goes with the run
@@ -739,7 +739,8 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   const member = (value: unknown): Member => ({ object: null, value, confidence: null, confidence_scheme: null });
   // What each crop of the run is claimed as, checked before any crop is read.
   type Claimed = { predicate: string; method: string | null; members: Member[] };
-  if (!clear && input.reading == null && input.ruby == null && input.left == null) bad();
+  if (!clear && (!Array.isArray(input.run) || input.run.length > RUN_MAX || places.some(place => !Number.isSafeInteger(place) || place < 0 || place >= input.run.length))) bad();
+  if (!clear && input.reading == null && input.ruby == null && input.left == null && input.word == null) bad();
   const claims: Claimed[][] = clear ? [] : places.map(place => [
     ...(input.reading == null ? [] : [{ predicate: 'read_as', method: input.method as string | null, members: [member({ run: input.run, at: place, reading: input.reading })] }]),
     ...([['bears_ruby', input.ruby], ['bears_left_ruby', input.left]] as const).flatMap(([predicate, ruby]) =>

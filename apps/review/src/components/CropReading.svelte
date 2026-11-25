@@ -152,11 +152,8 @@
     return !text ? null : text === leftWas.join('') && (leftWas.length === 1 || leftWas.length === run.length) ? leftWas : [text]
   }
   function openLeft() { leftOpen = true; tick().then(() => root?.querySelector('.reading-left')?.focus({ preventScroll: true })) }
-  function pick(choice) {
-    touched = true
-    chosen = picked === choice.id ? null : choice.id
-    if (chosen && !reads) { whole = places.length > 1; if (whole) wholeReading = choice.reading; else readings[from] = choice.reading }
-  }
+  // A word is a claim of its own: it writes no note of the reading, and leaves the page's letters as they are split.
+  function pick(choice) { touched = true; error = ''; chosen = picked === choice.id ? null : choice.id }
 
   $effect(() => {
     if (!editing) return
@@ -176,7 +173,7 @@
   }
   async function save() {
     if (busy) return
-    if (!reads && !ruby.some(Boolean) && !left.trim()) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
+    if (!reads && !ruby.some(Boolean) && !left.trim() && !picked) { error = t('reading.needed'); root?.querySelector('.reading-over input')?.focus(); return }
     pending = true; working?.(true); error = ''
     try {
       await arriving

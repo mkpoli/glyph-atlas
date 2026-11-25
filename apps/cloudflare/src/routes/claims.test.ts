@@ -162,6 +162,17 @@ describe('the word of a run', () => {
     expect([await wordOfCrop(env, local), await wordOfCrop(env, corpus)]).toEqual([null, null]);
   });
 
+  it('is saved with the page\'s letters and no note, or alone', async () => {
+    const { env, tools, local, corpus, version, input } = setup();
+    const word = { id: W, form: 'certain', method: 'context' }, others = [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }];
+    const save = (value: object) => setReading(env, { ...input(), run: ['村', '落'], reading: null, others, word, ...value }, publicId(local), 'reader', tools);
+    expect(await save({ ruby: ['ざい', 'ご'] })).toMatchObject({ word: { values: [{ word: W }] }, reading: { values: [], ruby: { values: [{ ruby: ['ざい', 'ご'] }] } } });
+    expect(await save({})).toMatchObject({ word: { values: [{ word: W }] }, reading: null });
+    expect((await wordOfCrop(env, corpus))?.values).toMatchObject([{ word: W }]);
+    for (const none of [null, undefined]) await expect(save({ word: none })).rejects.toThrow('422');
+    await expect(save({ run: [] })).rejects.toThrow('422');
+  });
+
   it('recognises an earlier actor key belonging to the same reader', async () => {
     const { save } = setup();
     await save({}, 'old-reader');
