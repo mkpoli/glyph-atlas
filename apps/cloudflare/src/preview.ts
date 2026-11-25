@@ -17,6 +17,8 @@ const MAX_AGE = 60, RETRY_AGE = 30;
 const TIMEOUT = 5000;
 // Enough for a look at a room without turning the panel into an archive.
 const LIMIT = 6;
+// Read enough history to fill `LIMIT` messages after edits, media attachments and bridge echoes are folded.
+const FETCH_LIMIT = LIMIT * 5;
 // The longest message body kept; a longer one is cut with an ellipsis.
 const MAX_BODY = 400;
 
@@ -45,20 +47,38 @@ export function senderName(sender: string): string {
 const BRIDGE_BOT = /^@(telegrambot|discordbot|heisenbridge|qqbot|inbox|ops):glyphatlas\.org$/;
 const JOIN = /^\*?\s*(joined|left|was invited|invited|kicked|banned)\b/i;
 
-/** One message's text, or null for events that carry none (membership, reactions, redactions, edits, notices). */
+// Only text-bearing message types belong in a text preview; `m.image` and `m.file` carry bare filenames.
+const TEXT_MSGTYPES = new Set(['m.text', 'm.emote', 'm.notice']);
+
+/** One message's text, or null for events that carry none (membership, media, reactions, redactions, notices). */
 export function messageText(content: Record<string, unknown>, sender = ''): string | null {
-  const body = content?.body;
-  if (typeof body !== 'string') return null;
   // An edit carries the new text in `m.new_content`; showing the original would read as a mistake.
-  const replacement = (content['m.new_content'] as Record<string, unknown> | undefined)?.body;
-  const text = typeof replacement === 'string' ? replacement : body;
-  const trimmed = text.trim();
+  const replacement = content?.['m.new_content'] as Record<string, unknown> | undefined;
+  const effective = replacement && typeof replacement.body === 'string' ? replacement : content;
+  const msgtype = effective?.msgtype ?? content?.msgtype;
+  if (typeof msgtype === 'string' && !TEXT_MSGTYPES.has(msgtype)) return null;
+  const body = effective?.body;
+  if (typeof body !== 'string') return null;
+  const trimmed = body.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   if (!trimmed) return null;
   // A bridge bot speaks for the bridge, not for a person; its warnings and status lines stay out.
   if (BRIDGE_BOT.test(sender)) return null;
   // A puppet's notice or emote saying someone joined is the bridge announcing a member, not conversation.
-  if (PUPPET.test(sender) && (content.msgtype === 'm.notice' || content.msgtype === 'm.emote') && JOIN.test(trimmed)) return null;
+  if (PUPPET.test(sender) && (msgtype === 'm.notice' || msgtype === 'm.emote') && JOIN.test(trimmed)) return null;
   return trimmed.length > MAX_BODY ? `${trimmed.slice(0, MAX_BODY).trimEnd()}…` : trimmed;
+}
+
+type RawMessageEvent = {
+  event_id?: string;
+  type?: string;
+  sender?: string;
+  origin_server_ts?: number;
+  content?: Record<string, unknown>;
+};
+
+function replacementTarget(content: Record<string, unknown> | undefined): string | null {
+  const relates = content?.['m.relates_to'] as { rel_type?: unknown; event_id?: unknown } | undefined;
+  return relates?.rel_type === 'm.replace' && typeof relates.event_id === 'string' ? relates.event_id : null;
 }
 
 /** The room ID an alias points at, or null when the alias is unknown or the server will not say. */
@@ -70,28 +90,49 @@ export async function resolveAlias(env: PreviewEnv, alias: string, signal?: Abor
   return typeof room === 'string' ? room : null;
 }
 
-/** The room's recent messages, oldest first, with the events that carry no text left out. */
+/** The room's recent messages, oldest first, with edits folded and media or bridge echoes left out. */
 export async function roomMessages(env: PreviewEnv, alias: string, signal?: AbortSignal): Promise<PreviewMessage[]> {
   // `/messages` reads a room by ID only, so the alias is resolved first; one this account cannot resolve
   // counts as a room with nothing to show.
   const id = await resolveAlias(env, alias, signal);
   if (id === null) return [];
   const response = await fetch(
-    `${env.MATRIX_HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(id)}/messages?dir=b&limit=${LIMIT * 3}`,
+    `${env.MATRIX_HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(id)}/messages?dir=b&limit=${FETCH_LIMIT}`,
     { headers: { authorization: `Bearer ${env.MATRIX_INBOX_TOKEN}` }, signal },
   );
   if (!response.ok) return [];
-  const chunk = (await response.json() as { chunk?: unknown[] }).chunk ?? [];
-  const messages: PreviewMessage[] = [];
-  for (const event of chunk) {
-    const item = event as { type?: string; sender?: string; origin_server_ts?: number; content?: Record<string, unknown> };
+  const chunk = (await response.json() as { chunk?: RawMessageEvent[] }).chunk ?? [];
+  // Chunk is newest-first: record the latest `m.replace` edit for each target event so edits update their
+  // original message in place instead of appearing beside it.
+  const replacements = new Map<string, string | null>();
+  for (const item of chunk) {
     if (item.type !== 'm.room.message' || typeof item.sender !== 'string') continue;
-    const text = messageText(item.content ?? {}, item.sender);
-    if (text === null) continue;
-    messages.push({ name: senderName(item.sender), body: text, at: item.origin_server_ts ?? 0 });
-    if (messages.length === LIMIT) break;
+    const target = replacementTarget(item.content);
+    if (target && !replacements.has(target)) {
+      replacements.set(target, messageText(item.content ?? {}, item.sender));
+    }
   }
-  return messages.reverse();
+  // Walk oldest-first so when a bridge echoes an earlier message with the same text, the original sender wins.
+  // Short replies repeated minutes apart stay; identical long messages or echoes within a minute are folded.
+  const ECHO_WINDOW_MS = 60_000;
+  const LONG_DUPLICATE = 40;
+  const messages: PreviewMessage[] = [];
+  const lastSeen = new Map<string, number>();
+  for (let i = chunk.length - 1; i >= 0; i--) {
+    const item = chunk[i];
+    if (item.type !== 'm.room.message' || typeof item.sender !== 'string') continue;
+    if (replacementTarget(item.content)) continue;
+    const text = item.event_id && replacements.has(item.event_id)
+      ? replacements.get(item.event_id)!
+      : messageText(item.content ?? {}, item.sender);
+    if (text === null) continue;
+    const at = item.origin_server_ts ?? 0;
+    const prev = lastSeen.get(text);
+    if (prev !== undefined && (text.length >= LONG_DUPLICATE || Math.abs(at - prev) < ECHO_WINDOW_MS)) continue;
+    lastSeen.set(text, at);
+    messages.push({ name: senderName(item.sender), body: text, at });
+  }
+  return messages.slice(-LIMIT);
 }
 
 export async function preview(env: PreviewEnv): Promise<PreviewRoom[]> {

@@ -39,6 +39,17 @@ describe('preview message text', () => {
     expect(cut).toHaveLength(401);
     expect(cut!.endsWith('…')).toBe(true);
   });
+
+  it('drops non-text media events whose body is only a filename', () => {
+    expect(messageText({ msgtype: 'm.image', body: 'yi.png' }, '@discord_1:glyphatlas.org')).toBeNull();
+    expect(messageText({ msgtype: 'm.file', body: 'paper.pdf' }, '@reader:matrix.org')).toBeNull();
+    expect(messageText({ msgtype: 'm.video', body: 'clip.mp4' }, '@reader:matrix.org')).toBeNull();
+    expect(messageText({ msgtype: 'm.audio', body: 'voice.ogg' }, '@reader:matrix.org')).toBeNull();
+  });
+
+  it('collapses runs of blank lines while keeping paragraph breaks', () => {
+    expect(messageText({ msgtype: 'm.text', body: 'a\r\n\r\n\r\n\r\nb' })).toBe('a\n\nb');
+  });
 });
 
 describe('preview alias resolution', () => {
@@ -106,6 +117,53 @@ describe('preview room messages', () => {
     });
     const rooms = await preview(env);
     expect(rooms.map(room => room.alias)).toEqual(['#welcome:glyphatlas.org']);
+  });
+
+  it('folds Matrix edits into the original message instead of showing both', async () => {
+    serving([
+      {
+        event_id: '$edit2', type: 'm.room.message', sender: '@discord_1:glyphatlas.org', origin_server_ts: 3000,
+        content: {
+          msgtype: 'm.text', body: '* latest',
+          'm.new_content': { msgtype: 'm.text', body: 'latest' },
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$orig' },
+        },
+      },
+      {
+        event_id: '$edit1', type: 'm.room.message', sender: '@discord_1:glyphatlas.org', origin_server_ts: 2000,
+        content: {
+          msgtype: 'm.text', body: '* middle',
+          'm.new_content': { msgtype: 'm.text', body: 'middle' },
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$orig' },
+        },
+      },
+      { event_id: '$orig', type: 'm.room.message', sender: '@discord_1:glyphatlas.org', origin_server_ts: 1000, content: { msgtype: 'm.text', body: 'first' } },
+    ]);
+    expect(await messages()).toEqual([{ name: 'Discord', body: 'latest', at: 1000 }]);
+  });
+
+  it('drops bridge echoes with identical text and keeps the original sender', async () => {
+    serving([
+      event('@discord_1:glyphatlas.org', 'Hello digest', 3000),
+      event('@discord_1:glyphatlas.org', 'Hello digest', 2000),
+      event('@bigfatfish:glyphatlas.org', 'Hello digest', 1000),
+    ]);
+    expect(await messages()).toEqual([{ name: 'bigfatfish', body: 'Hello digest', at: 1000 }]);
+  });
+
+  it('keeps identical short replies minutes apart while still folding replayed long digests', async () => {
+    const digest = 'Hello everyone, Big Fat Fish here with today’s community digest!';
+    serving([
+      event('@discord_1:glyphatlas.org', digest, 900_000),
+      event('@reader:matrix.org', '謝謝', 600_000),
+      event('@mkpoli:glyphatlas.org', '謝謝', 1000),
+      event('@bigfatfish:glyphatlas.org', digest, 500),
+    ]);
+    expect(await messages()).toEqual([
+      { name: 'bigfatfish', body: digest, at: 500 },
+      { name: 'mkpoli', body: '謝謝', at: 1000 },
+      { name: 'reader', body: '謝謝', at: 600_000 },
+    ]);
   });
 });
 
