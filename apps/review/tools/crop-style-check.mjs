@@ -12,7 +12,7 @@ const APP = join(import.meta.dir, '..')
 const fail = message => { throw new Error(message) }
 const port = () => { const s = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } }); const { port } = s; s.stop(true); return port }
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC', 'base64')
-let crop, sent = [], refuse = false
+let crop, sent = [], refuse = false, slow = false
 const fresh = () => ({ id: '2r3g0001', source_id: 'a', origin: 'local', label: '華', char: '華', written_character: '華', script: 'han', code_point: 'U+83EF', grapheme: 'U+83EF',
   state: 'pending', issue: null, revision: 0, image: '/images/crop.png', image_sha256: 'sha', context: true, context_image: '/images/context.png',
   context_box: { x: 0, y: 0, w: 400, h: 400 }, crop_box: { x: 140, y: 60, w: 70, h: 70 }, source_scale: [1, 1], crop_version: 'v', crop_editable: false, dating: {}, source: {},
@@ -27,6 +27,7 @@ const api = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(req) {
   if (path.startsWith('/atlas/characters/2r3g0001') && req.method === 'POST') {
     const body = await req.json(); sent.push({ path, body })
     if (refuse && path.endsWith('/style')) return Response.json({ detail: 'Refused.' }, { status: 422 })
+    if (path.endsWith('/form') && slow) await Bun.sleep(1200)
     if (path.endsWith('/form')) return Response.json({ form: crop.form })
     if (body.revision !== crop.revision) return Response.json({ detail: 'This character changed.' }, { status: 409 })
     crop.revision++
@@ -89,6 +90,14 @@ try {
   refuse = false
   await save(); await settle(3)
   same([sent.slice(2).map(s => s.path.split('/').at(-1)), crop.style], [['style'], 'seal'], 'saving again sends the style alone')
+
+  await open()
+  slow = true
+  await press('Seal'); await browser.evaluate(`document.querySelector('.form-chip')?.click()`); await Bun.sleep(200)
+  await save(); await Bun.sleep(150)
+  await browser.evaluate(`document.querySelector('dialog[open]').dispatchEvent(new Event('cancel', { cancelable: true }))`); await settle(2)
+  slow = false
+  same([sent.map(s => s.path.split('/').at(-1)), crop.style], [['form', 'style'], 'seal'], 'closing while the form is saved keeps the style')
 
   await open()
   Object.assign(crop, { style: 'regular', style_basis: 'unit' })

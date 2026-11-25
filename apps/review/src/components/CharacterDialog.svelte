@@ -315,7 +315,11 @@
       try {
         const formed = await setForm(data, form)
         changed?.(target, formed.crop, data)
-        if (closed || current !== generation) { busy = false; return }
+        if (closed || current !== generation) {
+          if (wanted != null) fieldSaved(await setStyle(formed.crop, wanted), was)
+          busy = false
+          return
+        }
         data = { ...data, ...formed.crop }; form = null
         // A crop with no character, or read as a grapheme that has none of its own, has none to confirm.
         if ((unassigned || apart) && !issue) { await finish(target, formed.crop, was, { decided, wanted, current }); busy = false; return }
@@ -370,7 +374,11 @@
         if (!here()) return
         error = e.message
         const record = await readCrop(target).catch(() => null)
-        if (here() && record) { data = record; form = null; box = null; kept = standing(record) }
+        if (here() && record) {
+          data = record; form = null; box = null; kept = standing(record)
+          issues = decided.issues; correction = decided.correction; noneSelected = decided.noneSelected
+          written = decided.written ?? charOf(record); writtenDirty = decided.written != null
+        }
         return
       }
     }
