@@ -2028,6 +2028,7 @@ def test_a_crop_shows_its_style_and_where_it_comes_from(dataset, tmp_path, monke
     saved = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body)
     assert saved.status_code == 200, saved.text
     assert (saved.json()["style"], saved.json()["style_basis"]) == ("regular", "unit")
+    assert (detail["style_inherited"], saved.json()["style_inherited"]) == ("cursive", "cursive")
     assert saved.json()["revision"] == detail["revision"] + 1
     assert client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json=body).json()["style"] == "regular"
     replayed = client.post(f"/atlas/characters/{quote(unit, safe='')}/style", json={**body, "style": "running"})

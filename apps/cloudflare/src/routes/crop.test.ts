@@ -152,7 +152,7 @@ describe('a crop\'s record', () => {
     const pub = publicId(ids.a);
     const want = { ...withoutNulls(records.a), id: pub, source_id: records.a.id, crop_version: `${pub}@${hash}@10,10,20,30`, crop_editable: true,
       // The style it is listed under, which a reviewer may change.
-      style: 'unassessed', style_basis: 'none', style_editable: true, style_choices: [],
+      style: 'unassessed', style_basis: 'none', style_editable: true, style_inherited: 'unassessed', style_choices: [],
       grapheme_claim: null, form: { status: 'single', values: [{ form: 'form:1', scheme: 'unicode', text: '弌', confidence: null }], supporting: ['f1'], by: ['x'] },
       reading: null, structure: null,
       word: { status: 'single', values: [{ word: 'ja/いち', reading: 'いち', class: 'noun', form: null }], methods: ['ruby'], supporting: ['w1'], by: ['x'] },
@@ -180,7 +180,7 @@ describe('a crop\'s record', () => {
     const { db, get, ids } = setup();
     db.exec(`INSERT OR IGNORE INTO codes(field,code,key) VALUES('style',90,'regular'); UPDATE crops SET style=90 WHERE id IN (${ids.a},${ids.glyph})`);
     for (const path of [`/atlas/characters/${publicId(ids.a)}`, `/atlas/characters/${publicId(ids.glyph)}`])
-      expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none' });
+      expect(await (await get(path)).json()).toMatchObject({ style: 'regular', style_basis: 'none', style_inherited: 'regular' });
   });
 
   it('names no style the vocabulary lacks', async () => {
