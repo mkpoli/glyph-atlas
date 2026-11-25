@@ -77,11 +77,11 @@ when
    (`STANDALONE`: 价, 广, 愿): it is a character in use beside the one it simplifies;
 2. its full forms are of several families (发 for 發 and 髮, 弁 for 辨, 瓣 and 辯), or Unihan, OpenCC or
    the 新字体 tables give it a further one of another family: one the table prints as its 异体字 (枪 槍［鎗］), one
-   no source calls a variant of the first (录 for 錄 and 彔, 钥 for 鑰 and 鈅), or one both dictionaries of 4
-   hold apart from it (闲 for 閑 and 閒). A further form that is the same character as a full form the table
+   no source calls a variant of the first (录 for 錄 and 彔, 钥 for 鑰 and 鈅), or one both dictionaries of 4 or a
+   source in the sense of 5 hold apart from it (闲 for 閑 and 閒). A further form that is the same character as a full form the table
    prints is joined to it first, and the form joins both (骂 with 駡 and 罵, 鉴 with 鑒 and 鑑): two sources call
-   the two variants, no dictionary reads both and only apart, no source calls them different in the sense of 5,
-   neither has another standard form or is a variant of another full form (鈡 of 鍾 and 鐘), they are not each an
+   the two variants (a reduction shown for want of a glyph is no such word), a dictionary reads both alike or the
+   說文解字 gives one under the other, no source calls them different in the sense of 5, neither has another standard form or is a variant of another full form (鈡 of 鍾 and 鐘), they are not each an
    entry of the 常用漢字表 (個 and 箇), and the members they bring together are different in neither sense. So 叹 stays apart (嘆 and 歎: an entry each in the 說文解字, 歎 rewritten as 嘆 in the
    Japanese list of substitutes), as do 夹 (夾 and 袷: one source alone) and 赞 (贊 and 讚: one source alone);
 3. the table lists its full form too, so the simplification is partial (着 and 著, 了 and 瞭, 乾 and 干);
@@ -102,14 +102,18 @@ when
 6. the family of its full form is headed by another character of the table that no curated family
    states one with the full form (铀: 鈾 stands under 宙, its 古文);
 7. what it would bring along is different from the family in one of the senses of 5, the two are curated, or it
-   would part what `graphemes.yaml` states one.
+   would part what `graphemes.yaml` states one, or a pair this pass has joined. Each join is made with the families
+   as the joins before it left them.
    A member it would bring that both dictionaries read, and neither with a reading in common, stays behind with
    what hangs on it alone (𦬕, 陟宮切 in the 說文解字, when 茧 joins 繭 古典切), and counts for nothing above. What
    stays is as many families as its ties hold together.
 
+A form an earlier pass joined to its full form is held to the same rules, and parted from it, with what hangs on it
+alone, where one of them says so; a curated pair stays.
+
 A ruling of `data/vocab/grapheme-rulings.tsv` settles a pair before these rules do: `one` joins the form to the
-full form named, the only one it then has, and `two` keeps them apart; of two full forms it says whether rule 2
-joins them. What 7 says of the rest of the form's family still holds.
+full form named, the only one it then has, and `two` keeps the form out of every family that character is in; of two
+full forms it says whether rule 2 joins them. What 7 says of the rest of the form's family still holds.
 
 A form the second pass put elsewhere leaves that family with what hangs on it alone (备 under 留, 壳 under
 売), and a form that heads its own takes the whole of it along (黄). The joined family keeps the head of
@@ -368,6 +372,8 @@ class Decision:
     full: frozenset[str]
     edges: list[Edge]
     reasons: list[str] = field(default_factory=list)
+    #: The characters ruled two with the form: it joins no family one of them is in.
+    barred: frozenset[str] = frozenset()
 
 
 def standard_forms(rows: Iterable[Mapping[str, str]], listed: Mapping[str, int]) -> dict[str, StandardForm]:
@@ -724,19 +730,24 @@ def _join_standard_forms(
                 new, _, old = claim.split()[0].partition("→")
                 joyo.setdefault(new, set()).add(old)
 
+    #: What this pass has joined: no later move parts it.
+    accepted: list[frozenset[str]] = []
+
     def unit(char: str) -> Family:
         return group.setdefault(char, Family(char, {char}))
 
     def one_character(a: str, b: str) -> bool:
-        """Whether two full forms are one character: two sources call them variants, no dictionary that reads both reads
-        them apart only, and no source calls them different (rule 2)."""
+        """Whether two full forms are one character: two sources call them variants, a dictionary reads both alike or the
+        說文解字 gives one under the other, and no source calls them different (rule 2)."""
         rows, shared = between.get(frozenset((a, b)), ()), headwords.compared({a}, {b})
-        return (len({row["source"] for row in rows if row["relation"] in VARIANT}) > 1
-                and (not shared or any(shared.values()) or headwords.one_entry({a}, {b}))
+        return (len({row["source"] for row in rows if _states_variant(row)}) > 1
+                and (any(shared.values()) or headwords.one_entry({a}, {b}))
                 and _is_different(unit(a).members, unit(b).members, rows, headwords) is None)
 
     def related(a: str, b: str) -> bool:
-        return not headwords.two(a, b) and any(row["relation"] in VARIANT for row in between.get(frozenset((a, b)), ()))
+        rows = between.get(frozenset((a, b)), ())
+        return (not headwords.two(a, b) and any(map(_states_variant, rows))
+                and _is_different(unit(a).members, unit(b).members, rows, headwords) is None)
 
     def join_full(a: str, b: str) -> None:
         one, other = unit(a), unit(b)
@@ -755,6 +766,60 @@ def _join_standard_forms(
                                     for row in between.get(frozenset((a, b)), ()) if row["relation"] in VARIANT]
         for char in keep.members:
             group[char] = keep
+        accepted.append(frozenset({a, b}))
+
+    def against(form: str, full: set[str], further: set[str], table: StandardForm | None, own: set[str]) -> list[str]:
+        """What keeps a form apart from its full forms; `own` is what goes with the form."""
+        found: list[str] = []
+        families = {id(unit(char)) for char in full}
+        if table is not None and table.full and table.itself:
+            found.append("the table gives it for itself too")
+        if form in standalone and table is not None:
+            found.append("OpenCC gives it for itself too")
+        if len(families) > 1:
+            found.append("several characters: " + "".join(sorted(full)))
+        outside = sorted(char for char in further - full - {form} if char in ideographs and unit(char) is not unit(form)
+                         and id(unit(char)) not in families
+                         and (table is not None and char in table.others or not any(related(char, one) for one in full)))
+        if outside:
+            found.append("a further character: " + "".join(outside))
+        listed = sorted(char for char in full if char in standard and table is not None)
+        if listed:
+            found.append("the table lists the full form too: " + "".join(listed))
+        members = set().union(*(unit(char).members for char in full)) - own - {form}
+        if table is not None and not headwords.one_entry({form}, members):
+            found += [f"a headword of the {name} with another reading" for name in headwords.parted(form, full, members)]
+            if other := headwords.writes(form):
+                found.append(f"a 重文 of another character: {other}")
+        for char in sorted(full):
+            if why := _is_different(own, unit(char).members - own | {char}, between.get(frozenset((form, char)), ()), headwords):
+                found.append(why)
+        if len(families) == 1 and table is not None:
+            target = unit(min(full))
+            # Out of a family both are in, the rest has a head of its own.
+            rest = Family(target.head, target.members - own, [edge for edge in target.edges if not {edge.a, edge.b} & own])
+            head = _head(target, familiarity) if target.curated or not target.members & own else head_of(rest, familiarity)
+            if head in standard and head != form and head not in full and not any(char in target.stated for char in full):
+                found.append(f"its full form is of the grapheme of {head}, another character of the table")
+        return found
+
+    def part_with(form: str, full: set[str]) -> set[str]:
+        """What goes with a form out of the family it shares with its full form: what is tied to that without it stays."""
+        family = unit(form)
+        return set(family.members) - _reached(min(full), _ties(family, family.members - {form}))
+
+    def separate(form: str, full: set[str], further: set[str], table: StandardForm | None) -> None:
+        """Part a form from its full form where an earlier pass joined them and the table would not (rules 1 to 6)."""
+        family = unit(form)
+        ruled = {char: rulings[form, char] for char in (full | further) & family.members if (form, char) in rulings}
+        if {id(unit(char)) for char in full} != {id(family)} or {form, *full} <= family.stated:
+            return
+        settled.update((form, char) for char in ruled)
+        own = part_with(form, full)
+        if any(ruling.one for ruling in ruled.values()) or own & family.stated and family.stated - own:
+            return
+        if ruled or against(form, full, further, table, own):
+            _leave(family, own, group)
 
     def decide(form: str, full: set[str], further: set[str], edges: list[Edge], table: StandardForm | None) -> Decision | None:
         ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
@@ -767,39 +832,13 @@ def _join_standard_forms(
                   for char in sorted(full) for row in between.get(frozenset((form, char)), ())
                   if row["b"] == form and row["relation"] in REDUCED_FORM or "joyo/variant" in row["detail"]]
         found = Decision(form, frozenset(full), edges)
-        if table is not None and table.full and table.itself:
-            found.reasons.append("the table gives it for itself too")
-        if form in standalone and table is not None:
-            found.reasons.append("OpenCC gives it for itself too")
-        if len(families) > 1:
-            found.reasons.append("several characters: " + "".join(sorted(full)))
-        outside = sorted(char for char in further - full - {form} if char in ideographs and unit(char) is not unit(form)
-                         and id(unit(char)) not in families
-                         and (table is not None and char in table.others or not any(related(char, one) for one in full)))
-        if outside:
-            found.reasons.append("a further character: " + "".join(outside))
-        listed = sorted(char for char in full if char in standard and table is not None)
-        if listed:
-            found.reasons.append("the table lists the full form too: " + "".join(listed))
-        members = set().union(*(unit(char).members for char in full)) - {form}
-        if table is not None and not headwords.one_entry({form}, members):
-            found.reasons += [f"a headword of the {name} with another reading" for name in headwords.parted(form, full, members)]
-            if other := headwords.writes(form):
-                found.reasons.append(f"a 重文 of another character: {other}")
-        for char in sorted(full):
-            if why := _is_different(_part_of(form, unit(form), familiarity), unit(char).members, between.get(frozenset((form, char)), ()), headwords):
-                found.reasons.append(why)
-        if len(families) == 1:
-            target = unit(min(full))
-            head = _head(target, familiarity)
-            curated = any(char in target.stated for char in full)
-            if table is not None and head in standard and head != form and head not in full and not curated:
-                found.reasons.append(f"its full form is of the grapheme of {head}, another character of the table")
-        if any(ruling.one for ruling in ruled.values()) and len(families) == 1:
-            found.reasons.clear()
-        found.reasons += [f"ruled two characters: {char}, {ruling.by} {ruling.date}"
-                          for char, ruling in sorted(ruled.items()) if not ruling.one and char in full]
+        if not (any(ruling.one for ruling in ruled.values()) and len(families) == 1):
+            found.reasons += against(form, full, further, table, _part_of(form, unit(form), familiarity))
+        # A ruling keeps the form from every family the ruled character is in.
+        found.reasons += [f"ruled two characters: {char}, {ruling.by} {ruling.date}" for char, ruling in sorted(ruled.items())
+                          if not ruling.one and (char in full or any(unit(char) is unit(one) for one in full))]
         found.full = frozenset(full - unit(form).members)
+        found.barred = frozenset(char for char, ruling in ruled.items() if not ruling.one)
         return found
 
     # What each form is given for: its full forms, those the sources add, and the edges that state them.
@@ -828,6 +867,8 @@ def _join_standard_forms(
         for char in (form, *table.full):
             forms.setdefault(char, set()).add(form)
     for form, full, further, _, table in given:
+        separate(form, full, further, table)
+    for form, full, further, _, table in given:
         for one in sorted(full) if table is not None else ():
             for other in sorted(further - full - {form}):
                 printed = one in table.full or {one, other} <= table.others
@@ -844,11 +885,20 @@ def _join_standard_forms(
             decided.append(found)
     for found in decided:
         edge = found.edges[0]
+        # The families are those the joins before it have left.
+        if not found.reasons and len({id(unit(char)) for char in found.full}) > 1:
+            found.reasons.append("several characters: " + "".join(sorted(found.full)))
+        if not found.reasons and (barred := sorted(char for char in found.barred if unit(char) is unit(min(found.full)))):
+            found.reasons += [f"ruled two characters: {char}, {rulings[found.form, char].by} {rulings[found.form, char].date}" for char in barred]
         if found.reasons:
             refuse("a standard form: " + found.reasons[0].partition(":")[0], edge)
-        elif why := _take_in(found, group, between, headwords, familiarity):
+        elif why := _take_in(found, group, between, headwords, familiarity, accepted):
             found.reasons.append(why)
             refuse("a standard form: " + why, edge)
+        else:
+            accepted.append(frozenset({found.form, *found.full}))
+    if parted := [pair for pair in accepted if len({id(unit(char)) for char in pair}) > 1]:
+        raise ValueError("joined and parted again: " + ", ".join("".join(sorted(pair)) for pair in parted))
     return decided
 
 
@@ -869,6 +919,18 @@ def _ties(family: Family, among: set[str]) -> list[tuple[str, str]]:
     which no edge of it need say."""
     stated = sorted(family.stated & among)
     return [(edge.a, edge.b) for edge in family.edges if edge.a in among and edge.b in among] + list(itertools.pairwise(stated))
+
+
+def _leave(family: Family, gone: set[str], group: dict[str, Family]) -> None:
+    """Part `gone` from a family: each side is as many families as its ties hold together, a curated one the family it was."""
+    edges, kept_head = family.edges, family.kept_head
+    for side in (gone, family.members - gone):
+        for part in _parts(side, _ties(family, side)):
+            kept = family if part & family.stated else Family(min(part), part)
+            kept.members, kept.edges = part, [edge for edge in edges if edge.a in part and edge.b in part]
+            kept.kept_head = kept_head if kept_head in part else None
+            for char in part:
+                group[char] = kept
 
 
 def _parts(members: set[str], pairs: Iterable[tuple[str, str]]) -> list[set[str]]:
@@ -893,6 +955,11 @@ def _reached(start: str, pairs: Iterable[tuple[str, str]]) -> set[str]:
     return found
 
 
+def _states_variant(row: Mapping[str, str]) -> bool:
+    """Whether a row calls two characters variants: a reduction shown for want of a glyph (a fallback) does not."""
+    return row["relation"] in VARIANT and any(refs._counts(row["relation"], claim) for claim in row["detail"].split(" | "))
+
+
 def _kept_apart(
     a: str, b: str, chars: Iterable[str], others: Iterable[str],
     between: Mapping[frozenset[str], list[Mapping[str, str]]], headwords: Headwords,
@@ -904,9 +971,10 @@ def _kept_apart(
 
 def _take_in(
     found: Decision, group: dict[str, Family], between: Mapping[frozenset[str], list[Mapping[str, str]]],
-    headwords: Headwords, familiarity: Mapping[str, int],
+    headwords: Headwords, familiarity: Mapping[str, int], accepted: Iterable[frozenset[str]] = (),
 ) -> str | None:
-    """Join one standard form to the family of its full form, or say why what it brings along cannot."""
+    """Join one standard form to the family of its full form, or say why what it brings along cannot. `accepted` are the
+    joins a move does not part."""
     form = found.form
     source = group.get(form) or Family(form, {form})
     target = group.get(min(found.full)) or Family(min(found.full), {min(found.full)})
@@ -926,6 +994,9 @@ def _take_in(
     curated = bool(moved & source.stated)
     if curated and (target.curated or not source.stated <= moved):
         return "two curated families" if target.curated else "it would leave part of a curated family behind"
+    for pair in accepted:
+        if pair & moved and pair & (source.members - moved):
+            return f"it would part {''.join(sorted(pair & moved))} from {''.join(sorted(pair - moved))}, joined before it"
     heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
     stays, stated_edges = source.members - moved, source.edges
     taken = [edge for edge in stated_edges if edge.a in moved and edge.b in moved]
@@ -937,8 +1008,10 @@ def _take_in(
         for char in part:
             group[char] = kept
     keep = source if curated else target
-    keep.members, keep.edges = moved | target.members, (
-        [*taken, *target.edges, *found.edges] if curated else [*target.edges, *taken, *found.edges])
+    keep.members = moved | target.members
+    # The sources of a decision may state other full forms of it too, of other families.
+    stated = [edge for edge in found.edges if edge.a in keep.members and edge.b in keep.members]
+    keep.edges = [*taken, *target.edges, *stated] if curated else [*target.edges, *taken, *stated]
     if not keep.curated:
         # The full form's family keeps its head, unless the form's is one a Japanese reader knows better, or as
         # well and the 新字体 of the pair (遥 for 遙; 憐 stays over 怜).

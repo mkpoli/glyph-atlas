@@ -84,10 +84,11 @@ standards' own tables, with Unihan and OpenCC, and 423 of the 608 forms outside 
 several characters (发, 历, 弁, 枪, 个), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its
 full form (着, 了), or is a loan for it.
 
-Two full forms of one form that two sources call variants, and nothing holds apart, are one character too and join
-with it (駡 and 罵 with 骂). A dictionary holds two apart by the readings it gives both. Where none reads both there is
-nothing to compare, and the join rests on the two sources: 駡, 鈎 and 綉 are later shapes neither dictionary heads an
-entry with, while 罵, 鉤 and 繡 are headwords, and asking for a shared reading would part every such pair. A non-cognate
+Two full forms of one form that two sources call variants, that a dictionary reads alike, and nothing holds apart, are one
+character too and join with it (鉴 with 鑒 and 鑑). Where no dictionary reads both, the two join by a ruling: 駡, 鈎 and 綉 are
+later shapes neither dictionary heads an entry with, while 罵, 鉤 and 繡 are headwords, and
+`data/vocab/grapheme-rulings.tsv` names each such pair with its sources. It also names ten pairs that were one grapheme before
+and that these rules would part (细 and 細: the 說文解字 data has 细 for another headword), each with the reason. A non-cognate
 tag of cjkvi's is no word of two characters where its own database also calls the pair 異体字: 奬 and 獎 are tagged so and
 are 異体字 in its hydzd, dypytz, twedu and 戸籍 tables, as 状 and 狀 are, and the list it comes from also holds shapes ISO/IEC
 10646 encodes apart. Two entries of the 常用漢字表 are two characters (個 and 箇), and so is a pair called a loan whose forms

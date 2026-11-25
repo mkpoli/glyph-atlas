@@ -25,7 +25,9 @@ def table(name: str) -> list[dict[str, str]]:
 
 
 def same(a: str, b: str) -> bool:
-    return refs.grapheme(refs.to_code_point(a)) == refs.grapheme(refs.to_code_point(b))
+    one, other = refs.grapheme(refs.to_code_point(a)), refs.grapheme(refs.to_code_point(b))
+    assert one and other, f"{a} {b}: in no table"
+    return one == other
 
 
 # --- the rule, on small tables ------------------------------------------------------------------------
@@ -78,9 +80,8 @@ def test_a_ruling_settles_a_pair_whatever_the_rules_say_of_it():
 def test_a_ruling_that_settles_nothing_stops_the_build():
     with pytest.raises(ValueError, match="动甲"):
         decided(DONG, forms(动=[("動", "")]), hand=ruled(("动", "甲", "two")))
-    # A pair an earlier pass joined is none of this one's.
-    with pytest.raises(ValueError, match="动動"):
-        decided([edge("動", "动")], forms(动=[("動", "")]), hand=ruled(("动", "動", "two")))
+    with pytest.raises(ValueError, match="动乙"):
+        decided(DONG, forms(动=[("動", "")]), hand=ruled(("动", "乙", "one")))
     with pytest.raises(ValueError, match="once a pair"):
         ruled(("动", "動", "perhaps"))
 
@@ -134,7 +135,8 @@ def test_a_form_stays_apart(variants, standard, words, reason):
     others = [edge(form, "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
     found, reasons = decided([*variants, *others], standard, words=words, familiar=familiar)
     assert reason in reasons[form]
-    assert not any(form in members and one.full & set(members) for members in found.values() for one in [standard[form]])
+    full = {char for row in variants if row["relation"] == "simplified" and row["b"] == form for char in row["a"]}
+    assert full and not any(form in members and full & set(members) for members in found.values())
 
 
 #: 骂 is for 駡, 罵 is printed beside it, and other tables relate 骂 to 甲.
@@ -149,9 +151,29 @@ def apart_in_both(*chars: str) -> list[tuple[str, str, str, str]]:
     return [(book, f"{book}{char}", char, char) for book in ("shuowen", "guangyun") for char in chars]
 
 
+def read_alike(*chars: str) -> list[tuple[str, str, str, str]]:
+    return [("guangyun", f"1.{n}", char, "明") for n, char in enumerate(chars)]
+
+
 def test_the_full_forms_of_one_form_join_where_they_are_one_character():
-    found, reasons = decided([*MA, *SAME], forms(骂=MA_TABLE), familiar="罵")
+    found, reasons = decided([*MA, *SAME], forms(骂=MA_TABLE), familiar="罵", words=headwords(*read_alike("駡", "罵")))
     assert found["罵"] == "罵駡骂" and reasons == {"骂": []}
+
+
+def test_full_forms_no_dictionary_reads_both_of_join_by_a_ruling_alone():
+    rows, table = [*MA, *SAME], forms(骂=MA_TABLE)
+    for words in (None, headwords(*read_alike("駡")), headwords(*read_alike("駡"), ("shuowen", "1", "罵", "莫駕"))):
+        assert decided(rows, table, words=words)[1]["骂"] == ["a further character: 罵"]
+        assert decided(rows, table, words=words, hand=ruled(("駡", "罵", "one")))[1]["骂"] == []
+
+
+def test_a_reduction_shown_for_want_of_a_glyph_is_no_second_source():
+    table, words = forms(骂=MA_TABLE), headwords(*read_alike("駡", "罵"))
+    shown = edge("駡", "罵", "reduction", "mj-shrink-map", "MJ1: 読み・字形による類推, ホップ数 1")
+    stated = {**shown, "detail": "MJ1: 法務省戸籍法関連通達・通知, 種別 戸籍統一文字情報 親字・正字, ホップ数 1"}
+    rows = [*MA, *(row for row in SAME if row["relation"] != "semantic")]
+    assert decided([*rows, shown], table, words=words)[1]["骂"] == ["a further character: 罵"]
+    assert decided([*rows, stated], table, words=words)[1]["骂"] == []
 
 
 @pytest.mark.parametrize(("rows", "standard", "words"), [
@@ -163,7 +185,7 @@ def test_the_full_forms_of_one_form_join_where_they_are_one_character():
     (SAME, forms(骂=MA_TABLE, 罵=[]), None),
 ])
 def test_a_form_stays_apart_from_the_full_forms_that_are_two(rows, standard, words):
-    found, reasons = decided([*MA, *rows], standard, words=headwords(*words) if words else None)
+    found, reasons = decided([*MA, *rows], standard, words=headwords(*(words or read_alike("駡", "罵"))))
     assert "a further character: 罵" in reasons["骂"]
     assert not any({"駡", "罵"} <= set(members) or {"骂", "駡"} <= set(members) for members in found.values())
 
@@ -180,19 +202,20 @@ def test_a_form_the_table_gives_for_two_characters_joins_neither_to_the_other():
 def test_full_forms_do_not_join_over_a_member_held_apart():
     """The members each full form brings are compared, not the two alone."""
     rows = [*MA, *SAME, edge("駡", "庚", "z"), edge("罵", "辛", "z")]
-    assert "庚" in next(members for members in decided(rows, forms(骂=MA_TABLE), familiar="罵")[0].values() if "罵" in members)
-    found, reasons = decided(rows, forms(骂=MA_TABLE), words=headwords(*apart_in_both("庚", "辛")))
+    alike = read_alike("駡", "罵")
+    assert "庚" in next(members for members in decided(rows, forms(骂=MA_TABLE), familiar="罵", words=headwords(*alike))[0].values() if "罵" in members)
+    found, reasons = decided(rows, forms(骂=MA_TABLE), words=headwords(*alike, *apart_in_both("庚", "辛")))
     assert not any({"駡", "罵"} <= set(members) for members in found.values()) and reasons["骂"] == ["a further character: 罵"]
 
 
 def test_two_entries_of_the_jouyou_table_are_two_characters():
     """個 and 箇 are an entry each; 罵 alone is one of the two full forms of 骂."""
-    table, rows = forms(骂=MA_TABLE), [*MA, *SAME]
-    assert decided(rows, table, familiar="罵")[1]["骂"] == []
-    assert decided(rows, table, familiar="罵駡")[1]["骂"] == ["a further character: 罵"]
+    table, rows, words = forms(骂=MA_TABLE), [*MA, *SAME], headwords(*read_alike("駡", "罵"))
+    assert decided(rows, table, familiar="罵", words=words)[1]["骂"] == []
+    assert decided(rows, table, familiar="罵駡", words=words)[1]["骂"] == ["a further character: 罵"]
     # An entry among the members each brings, too; a ruling settles it all the same.
-    assert decided([*rows, edge("駡", "庚", "z")], table, familiar="罵庚")[1]["骂"] == ["a further character: 罵"]
-    assert decided(rows, table, familiar="罵駡", hand=ruled(("駡", "罵", "one")))[1]["骂"] == []
+    assert decided([*rows, edge("駡", "庚", "z")], table, familiar="罵庚", words=words)[1]["骂"] == ["a further character: 罵"]
+    assert decided(rows, table, familiar="罵駡", words=words, hand=ruled(("駡", "罵", "one")))[1]["骂"] == []
 
 
 def test_the_entries_of_two_characters_are_those_of_their_other_forms_too():
@@ -202,10 +225,12 @@ def test_the_entries_of_two_characters_are_those_of_their_other_forms_too():
             edge("蕩", "盪", "borrowed", "cjkvi-variants", "蕩→盪 hydcd/borrowed"), edge("蕩", "丙", "variant", "wikidata"),
             edge("盪", "丁", "variant", "wikidata"), edge("丙", "戊", "variant", "wikidata"), edge("丁", "己", "variant", "wikidata")]
     table = forms(荡=[("蕩", "蕩"), ("蕩", "盪")])
-    assert decided(rows, table, words=headwords(("shuowen", "1", "盪", "x")))[1]["荡"] == []
-    assert decided(rows, table, words=headwords(("shuowen", "1", "盪", "x"), ("shuowen", "2", "𣿴", "x")))[1]["荡"] == ["a further character: 盪"]
+    alike = read_alike("蕩", "盪")
+    assert decided(rows, table, words=headwords(*alike, ("shuowen", "1", "盪", "x")))[1]["荡"] == []
+    assert decided(rows, table, words=headwords(*alike, ("shuowen", "1", "盪", "x"), ("shuowen", "2", "𣿴", "x")))[1]["荡"] == ["a further character: 盪"]
     # One entry that holds both is one character.
-    one = Headwords([{"dictionary": "shuowen", "entry": "1", "char": char, "role": role, "reading": "x"} for char, role in (("盪", "head"), ("𣿴", "form"))])
+    one = Headwords([{"dictionary": "shuowen", "entry": "1", "char": char, "role": role, "reading": "x"} for char, role in (("盪", "head"), ("𣿴", "form"))]
+                    + [{"dictionary": d, "entry": e, "char": c, "role": "head", "reading": r} for d, e, c, r in alike])
     assert decided(rows, table, words=one)[1]["荡"] == []
 
 
@@ -315,6 +340,64 @@ def test_a_ruling_on_two_full_forms_settles_whether_they_join():
     assert any({"骂", "駡", "罵"} <= set(members) for members in found.values()) and reasons["骂"] == []
 
 
+def test_a_form_ruled_two_with_one_full_form_joins_no_family_that_holds_it():
+    """駡 and 罵 are one by the rules, and 骂 is ruled no form of 罵."""
+    rows, table, words = [*MA, *SAME], forms(骂=MA_TABLE), headwords(*read_alike("駡", "罵"))
+    found, reasons = decided(rows, table, words=words, familiar="罵", hand=ruled(("骂", "罵", "two")))
+    assert reasons["骂"] == ["ruled two characters: 罵, owner 2026-11-25"] and not any("骂" in members for members in found.values())
+    # Held by another family, it bars nothing.
+    found, reasons = decided([*MA, *SAME[1:]], table, words=words, hand=ruled(("骂", "罵", "two"), ("骂", "駡", "one")))
+    assert reasons["骂"] == [] and any({"骂", "駡"} <= set(members) for members in found.values())
+
+
+def test_a_family_holds_the_edges_of_its_own_members_alone():
+    several = forms(发=[("發", "發"), ("髮", "髮")])
+    rows = [edge("發", "发"), edge("髮", "发")]
+    chars = {"發", "髮", "发"}
+    joined, = [one for one in families(rows, (), chars, {}, set(), standard=several, rulings=ruled(("发", "發", "one"))) if "发" in one.members]
+    assert joined.members == {"发", "發"} and {char for edge in joined.edges for char in (edge.a, edge.b)} == {"发", "發"}
+
+
+def test_what_an_earlier_pass_joined_is_held_to_the_rules_of_the_table():
+    """Unihan alone gives 后 for 後, and the 異寫字 pass joins them; the table prints 后 for itself too."""
+    rows, table = [edge("後", "后")], forms(后=[("后", "后"), ("後", "後")])
+    assert {frozenset(one.members) for one in families(rows, (), {"後", "后"}, {}, set())} == {frozenset("後后")}
+    assert decided(rows, table) == ({}, {"后": ["the table gives it for itself too"]})
+    # A pair it has nothing against stays, a curated one whatever it says, and a ruling holds over both.
+    assert "".join(decided([edge("動", "动")], forms(动=[("動", "動")]))[0].values()) == "动動"
+    assert "".join(decided(rows, table, curated={"後": ["後", "后"]})[0].values()) == "后後"
+    assert "".join(decided(rows, table, hand=ruled(("后", "後", "one")))[0].values()) == "后後"
+    assert decided([edge("動", "动")], forms(动=[("動", "動")]), hand=ruled(("动", "動", "two"))) == ({}, {"动": ["ruled two characters: 動, owner 2026-11-25"]})
+
+
+def test_what_hangs_on_a_form_parts_with_it():
+    """𠂡 hangs on 后, and 𢔏 on 後."""
+    rows = [edge("後", "后"), edge("后", "𠂡", "z"), edge("後", "𢔏", "z")]
+    found, reasons = decided(rows, forms(后=[("后", "后"), ("後", "後")]))
+    assert {frozenset(members) for members in found.values()} == {frozenset("后𠂡"), frozenset("後𢔏")} and reasons["后"] == ["the table gives it for itself too"]
+
+
+def test_a_join_is_made_with_the_families_as_the_joins_before_it_left_them():
+    """丙 is for 甲 and 乙, which are one until 甲 goes to 丁."""
+    rows = [*LEAVING, edge("乙", "甲", "z"), *(edge("丙", full, "variant", "cjkvi-variants", f"丙→{full} joyo/variant") for full in "甲乙"),
+            edge("丙", "壬", "variant", "wikidata"), edge("壬", "癸", "variant", "wikidata")]
+    groups, reasons = groups_of(rows, forms(甲=[("丁", "丁")]), familiar="乙丁")
+    assert reasons == {"甲": [], "丙": ["several characters: 乙甲"]} and frozenset("甲丁") in groups and not any("丙" in group and "壬" not in group for group in groups)
+    groups, reasons = groups_of([row for row in rows if row != edge("丁", "甲")], {}, familiar="乙")
+    assert reasons["丙"] == [] and any(set("甲乙丙") <= group for group in groups)
+
+
+def test_a_join_is_parted_by_no_later_one():
+    """乙 is joined to 甲; 甲 would go to 丁, from which both dictionaries hold 乙 apart."""
+    rows = [edge(new, old, "variant", "cjkvi-variants", f"{new}→{old} joyo/variant") for new, old in ("乙甲", "甲丁")]
+    for char, others in (("乙", "戊己"), ("甲", "庚辛"), ("丁", "壬癸")):
+        rows += [edge(char, others[0], "variant", "wikidata"), edge(*others, "variant", "wikidata")]
+    groups, reasons = groups_of(rows, {}, familiar="甲", words=headwords(*apart_in_both("乙", "丁")))
+    assert reasons == {"乙": [], "甲": ["it would part 甲 from 乙, joined before it"]} and any(set("乙甲") <= group for group in groups)
+    groups, reasons = groups_of(rows, {}, familiar="甲")
+    assert reasons == {"乙": [], "甲": []} and any(set("乙甲丁") <= group for group in groups)
+
+
 def test_a_further_form_the_table_does_not_print_is_none_where_a_source_calls_it_a_variant():
     """Unihan gives 葯 for 药, which the table prints for 藥 alone; 閒 is a headword apart from 閑."""
     rows = [edge("藥", "药"), edge("葯", "药"), edge("药", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
@@ -322,6 +405,8 @@ def test_a_further_form_the_table_does_not_print_is_none_where_a_source_calls_it
     rows.append(edge("藥", "葯", "variant", "wikidata"))
     assert decided(rows, forms(药=[("藥", "藥")]))[1].get("药", []) == []
     assert decided(rows, forms(药=[("藥", "藥")]), words=headwords(*apart_in_both("藥", "葯")))[1] == {"药": ["a further character: 葯"]}
+    for said in (edge("藥", "葯", "non-cognate", "hydzd", "藥→葯 hydzd/non-cognate"), edge("葯", "藥", "borrowed", "hydzd", "葯→藥 hydzd/borrowed")):
+        assert decided([*rows, said], forms(药=[("藥", "藥")]))[1] == {"药": ["a further character: 葯"]}
 
 
 def test_a_reading_of_a_third_character_carries_no_join():
@@ -372,9 +457,12 @@ def test_the_same_tables_always_give_the_same_families():
 
 
 def test_a_form_the_shuowen_gives_under_the_full_form_is_that_character():
-    words = headwords(("shuowen", "7", "達", "徒葛"), ("shuowen", "7", "达", "徒葛"), ("guangyun", "1", "达", "透"), ("guangyun", "2", "達", "定"))
+    made = [{"dictionary": d, "entry": e, "char": c, "role": role, "reading": r} for d, e, c, role, r in (
+        ("shuowen", "7", "達", "head", "徒葛"), ("guangyun", "1", "达", "head", "透"), ("guangyun", "2", "達", "head", "定"),
+        ("shuowen", "7", "达", "form", "徒葛"))]
     rows = [edge("達", "达"), edge("达", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata")]
-    assert decided(rows, forms(达=[("達", "達")]), words=words)[1] == {"达": []}
+    assert decided(rows, forms(达=[("達", "達")]), words=Headwords(made))[1] == {"达": []}
+    assert decided(rows, forms(达=[("達", "達")]), words=Headwords(made[:3]))[1] == {"达": ["a headword of the guangyun with another reading"]}
 
 
 def test_a_form_the_shuowen_gives_under_another_character_and_the_guangyun_reads_so_stays_apart():
@@ -494,7 +582,7 @@ def test_the_forms_joined_and_the_forms_apart_are_pinned():
     assert (len(joined), len(apart)) == (355, 185)
     assert Counter(reason.partition(":")[0].partition(" of ")[0] for row in apart for reason in row["reasons"].split(" | ")) == {
         "a headword": 114, "OpenCC gives it for itself too": 96, "the table gives it for itself too": 71, "several characters": 29,
-        "a loan or a substitute": 15, "the table lists the full form too": 14, "a further character": 29, "its full form is": 6, "a 重文": 5}
+        "a loan or a substitute": 15, "the table lists the full form too": 14, "a further character": 31, "its full form is": 6, "a 重文": 5}
 
 
 def test_every_form_the_rule_names_stays_apart():
