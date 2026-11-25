@@ -6,6 +6,7 @@ import { bundle, publicId, pageOf, slotOf, type Entry } from './atlas3';
 import { readRecords, recordKey } from './records';
 import { formed, type UnitForm } from './forms';
 import { categoryOf, isGugyeol, isSeal } from './category';
+import { keyHeads } from './ledger';
 import { drawnForm } from './representation';
 
 type Json = Record<string, any>;
@@ -116,11 +117,19 @@ export function writtenRecord(record: Json, written: string, head: string | null
     grapheme: codePoints(head ?? written), visual_group: null, category: categoryOf(written) };
 }
 
-/** A record that names a grapheme, under the head its crop's character is filed under now: a record keeps the one
- *  its publication, or a forms decision, gave it, and a later table may file the character elsewhere. A crop
- *  with no character keeps the grapheme its record names. */
-export const underHead = (record: Json, char: string | null, head: string | null): Json =>
-  char !== null && record.grapheme != null ? { ...record, grapheme: codePoints(head ?? char) } : record;
+/** Records that name a grapheme, each under the head it is filed under now: a record keeps the one its publication, or a
+ *  forms decision, gave it, and a later table may file it elsewhere. A record written with its row's character is under
+ *  that character's head (`head`, null for a row with none yet). Any other is under the head of the grapheme it names: a
+ *  crop with no character, a form no table files (a description, a character named since the last reference load), and a
+ *  crop whose row keeps another character than its form's. Those are looked up together, one read for all. */
+export async function underHeads(env: Env, found: { record: Json; char: string | null; head: string | null }[]): Promise<Json[]> {
+  const written = (record: Json) => record.written_character !== undefined ? record.written_character : record.char ?? record.label;
+  const names = ({ record }: { record: Json }) => typeof record.grapheme === 'string';
+  const own = (f: { record: Json; char: string | null; head: string | null }) => f.head !== null && f.char !== null && written(f.record) === f.char;
+  const asked = found.filter(f => names(f) && !own(f)).map(f => f.record.grapheme as string);
+  const heads = asked.length ? await keyHeads(env, asked) : new Map<string, string>();
+  return found.map(f => !names(f) ? f.record : { ...f.record, grapheme: own(f) ? codePoints(f.head!) : heads.get(f.record.grapheme) });
+}
 
 /** The record of a crop from its row and the published fields (`base`: the bundle entry, or the corpus
  *  glyph's published record). `source_id` is the id the crop had before the cutover, which listings carry
@@ -139,7 +148,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);
-  record = row.written && row.char ? writtenRecord(record, row.char, row.head) : underHead(record, row.char, row.head);
+  if (row.written && row.char) record = writtenRecord(record, row.char, row.head);
   // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
   if (row.x !== null) Object.assign(record, { box: { x: row.x, y: row.y, w: row.w, h: row.h }, box_pending: true });
   return { ...record, crop_version: cropVersion(record.id, record), crop_editable: Boolean(redrawLimits(record)) };
@@ -162,7 +171,9 @@ export async function foundCrop(env: Env, id: number): Promise<FoundCrop | null>
     const pointer = { object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] };
     base = (await readRecords(env, [pointer])).get(recordKey(pointer));
   }
-  return base ? { row, entry, base, record: cropRecord(row, base, entry.id) } : null;
+  if (!base) return null;
+  const record = cropRecord(row, base, entry.id);
+  return { row, entry, base, record: row.written && row.char ? record : (await underHeads(env, [{ record, char: row.char, head: row.head }]))[0] };
 }
 
 /** A crop's current evidence version as its record shows it, with its effective cut (`effectiveCut`), its kind and the source id its

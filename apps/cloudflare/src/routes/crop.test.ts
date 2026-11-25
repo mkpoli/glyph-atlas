@@ -239,11 +239,43 @@ describe('a crop\'s record', () => {
     expect(await named()).toBe('U+56DB');
     db.exec('UPDATE graphemes SET head=6 WHERE id=6');
     expect(await named()).toBe('U+7FC1');
-    // A glyph with no character is of the grapheme its record names.
-    db.exec(`UPDATE crops SET char=NULL,cluster=NULL WHERE id=${ids.glyph}; UPDATE graphemes SET head=5 WHERE id=6`);
+    // A glyph with no character is under the head of the grapheme its record names.
+    db.exec(`UPDATE crops SET char=NULL,cluster=NULL WHERE id=${ids.glyph}`);
     expect(await named()).toBe('U+7FC1');
+    db.exec('UPDATE graphemes SET head=5 WHERE id=6');
+    expect(await named()).toBe('U+56DB');
     // A collected crop's record names none, and gains none.
     expect((await (await get(`/atlas/characters/${publicId(ids.b)}`)).json() as any).grapheme).toBeUndefined();
+  });
+
+  it('keeps the grapheme of a form no table files, under the head it is filed under now', async () => {
+    const { get, ids, db } = setup();
+    const named = async () => { const r = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any; return [r.written_character, r.grapheme]; };
+    // Decided as a description, or as a character no reference load has filed, within 翁's family: the row it takes has no head.
+    for (const form of ['⿰公羽', '𦐈']) {
+      db.exec(`UPDATE form_clusters SET form='${form}'; INSERT OR IGNORE INTO graphemes(text) VALUES('${form}');
+        UPDATE crops SET char=(SELECT id FROM graphemes WHERE text='${form}') WHERE id=${ids.glyph}`);
+      expect(await named()).toEqual([form, 'U+7FC1']);
+      db.exec('UPDATE graphemes SET head=5 WHERE id=6');
+      expect(await named()).toEqual([form, 'U+56DB']);
+      db.exec('UPDATE graphemes SET head=6 WHERE id=6');
+    }
+    // Once a load files it, it is under its own head.
+    db.exec(`UPDATE graphemes SET head=2 WHERE text='𦐈'`);
+    expect(await named()).toEqual(['𦐈', 'U+4E8C']);
+    // A reviewed glyph keeps its row's character while its form says another: 翁's, under 翁's head.
+    db.exec(`UPDATE crops SET char=1 WHERE id=${ids.glyph}; UPDATE graphemes SET head=1 WHERE id=1`);
+    expect(await named()).toEqual(['𦐈', 'U+7FC1']);
+  });
+
+  it('claims a described form’s grapheme over the one the form is of', async () => {
+    const { get, ids, db, text } = setup();
+    db.exec(`UPDATE form_clusters SET form='⿰公羽'; INSERT INTO graphemes(text) VALUES('⿰公羽');
+      UPDATE crops SET char=(SELECT id FROM graphemes WHERE text='⿰公羽') WHERE id=${ids.glyph};
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES
+        ('${text.glyph}','has_grapheme','','',${ids.glyph},0,'asserted','U+7FC1','[{"object":"U+7FC1","value":null,"confidence":null,"assertion":"g"}]','["g"]','[]','r','t')`);
+    const record = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any;
+    expect([record.grapheme, record.own_grapheme]).toEqual(['U+7FC1', 'U+7FC1']);
   });
 
   it('always marks corpus glyphs with origin even when a pack omits it', async () => {

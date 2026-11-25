@@ -1,4 +1,4 @@
-import { WRITTEN, underHead, writtenRecord } from './cropRecords';
+import { WRITTEN, underHeads, writtenRecord } from './cropRecords';
 import { cropForms } from './cropPanels';
 // Listing items on the new storage layout: each crop's bundle record under its row's values
 // (`cropItems`), with what the site has said of it since. A corpus glyph shows the form the forms tool
@@ -76,10 +76,11 @@ export async function listingItems(env: Env, ids: number[], reads: CropReads = {
   const since = new Map(reviewed.results.map(row => [row.crop, row]));
   let names = await codeNames(env);
   if (reviewed.results.some(row => row.issue !== null && !names.has(`issue:${row.issue}`))) names = await codeNames(env, true);
+  const shown = items.map((item, i) => item.origin === 'corpus' ? formed(item, forms.get(listed[i]) ?? null, { codePoints }) : item);
+  const filed = await underHeads(env, shown.map((record, i) => ({ record, char: since.get(listed[i])?.char ?? null, head: since.get(listed[i])?.head ?? null })));
   return items.map((item, i) => {
-    const id = listed[i], shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
-    const r = since.get(id);
-    return { ...(r?.written && r.char ? writtenRecord(shown, r.char, r.head) : r ? underHead(shown, r.char, r.head) : shown),
+    const id = listed[i], r = since.get(id);
+    return { ...(r?.written && r.char ? writtenRecord(shown[i], r.char, r.head) : filed[i]),
       ...(r && r.x !== null ? { box: { x: r.x, y: r.y, w: r.w, h: r.h }, box_pending: true } : {}),
       issue: item.state === 'flagged' && r?.issue != null ? issueName(names.get(`issue:${r.issue}`)) : null,
       form: claims.get(id) ?? null, dating: dating.get(item.document) ?? {} };

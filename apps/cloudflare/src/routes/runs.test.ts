@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { currentPointer } from '../atlas3Answers';
+import { keyHeadsQuery } from '../ledger';
 import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
 import { redrawLimits } from '../cropRecords';
@@ -312,6 +313,20 @@ describe('runs on the new layout', () => {
     f.atlas.exec(`UPDATE graphemes SET head=(SELECT id FROM graphemes WHERE text='し') WHERE id=(SELECT char FROM crops WHERE id=${crop})`);
     f.runsDb.exec(`UPDATE runs SET graphemes='しし' WHERE first=${crop}`);
     expect(await named()).toEqual(['U+3057', 'U+3057']);
+  });
+
+  it('looks up the graphemes of a page\'s glyphs no table files together, and none where their rows say', async () => {
+    const f = fixture(), glyphs = [f.at[6].id, f.at[7].id], asked: string[] = [];
+    f.atlas.exec(glyphs.map(crop => `INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
+      VALUES(${crop},'U+3093',NULL,'⿰ん${crop}',NULL,NULL,'U+3093','old');`).join(''));
+    const prepare = (f.newEnv as any).ATLAS.prepare.bind((f.newEnv as any).ATLAS);
+    (f.newEnv as any).ATLAS.prepare = (sql: string) => { asked.push(sql); return prepare(sql); };
+    expect((await listingItems(f.newEnv, glyphs)).map(item => item.grapheme)).toEqual(['U+3093', 'U+3093']);
+    expect(asked.filter(sql => sql === keyHeadsQuery()).length).toBe(1);
+    asked.length = 0;
+    f.atlas.exec(`DELETE FROM form_glyphs`);
+    await listingItems(f.newEnv, glyphs);
+    expect(asked.filter(sql => sql === keyHeadsQuery()).length).toBe(0);
   });
 
   it('does not add review revisions when a round mark is undone', async () => {
