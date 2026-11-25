@@ -6,6 +6,7 @@
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
   import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingChips, setReading, stretch } from '../lib/cropReadings.js'
+  import { toSource } from '../lib/cropBox.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
   import { t } from '../lib/i18n.svelte.js'
@@ -16,7 +17,7 @@
   import { otherPlaces, placesText, runPlaces } from '../lib/readingPlaces.js'
   import ScriptText from './ScriptText.svelte'
 
-  let { item, disabled = false, working = null, saved = null } = $props()
+  let { item, disabled = false, working = null, saved = null, outlined = null } = $props()
   const METHODS = ['ruby', 'gloss', 'note', 'parallel', 'context']
   // The line is shown this far either side of the crop, and past the run. It stays still as the run grows.
   const AROUND = 9
@@ -66,6 +67,13 @@
   const reads = $derived(reading.join(''))
   const kana = part => /^[\p{Script=Hiragana}\p{Script=Katakana}\p{M}ー]+$/u.test(part)
 
+  // The run's other crops, outlined on the page while the editor is open.
+  $effect(() => {
+    if (!editing || !line) return
+    const boxes = places.flatMap(place => place !== line.at && crops.get(place)?.box ? [toSource(item, crops.get(place).box)] : [])
+    untrack(() => outlined?.(boxes))
+    return () => outlined?.([])
+  })
   // What an earlier reading, or the kana of a run, already gives each place.
   function fill() {
     for (const place of places) if (readings[place] === undefined && kana(line.parts[place])) readings[place] = plainKana(line.parts[place])
