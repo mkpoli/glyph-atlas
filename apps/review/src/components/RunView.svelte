@@ -9,7 +9,7 @@
   // by that group or by work, and the sequences near it are one link away. The search box above it
   // goes on to the next search: a run found on a line opens its own page, anything else the collection's search.
   import { tick, untrack } from 'svelte'
-  import { goto, replaceState } from '$app/navigation'
+  import { beforeNavigate, goto, replaceState } from '$app/navigation'
   import CharacterSearch from './CharacterSearch.svelte'
   import RunCandidate from './RunCandidate.svelte'
   import RunImage from './RunImage.svelte'
@@ -95,6 +95,7 @@
   // A count that answers after the reader has chosen something else, or left the page, is dropped.
   let searchId = 0
   $effect(() => () => { searchId += 1 })
+  beforeNavigate(() => { searchId += 1 })
   async function search(value) {
     const term = value.trim(), id = ++searchId
     if (!term) return
@@ -104,7 +105,7 @@
     if (id !== searchId) return
     goto(localize(found?.total ? runAddress(term) : collectionAddress({ q: term })))
   }
-  function openCharacter(item) { searchId += 1; goto(localize(characterAddress(item.code_point))) }
+  function openCharacter(item) { goto(localize(characterAddress(item.code_point))) }
   const near = $derived([
     [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
     [() => t('run.near.longer'), related?.longer ?? []],
@@ -144,7 +145,7 @@
     <div class="run-top">
       <a class="quiet-link" href={localize(collectionAddress({ work }))}>← {t('nav.explore')}</a>
       {#snippet runLead()}{#key run}<RunCandidate text={run} />{/key}{/snippet}
-      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs lead={run ? runLead : null} />{/key}
+      {#key searchRound}<CharacterSearch bind:value={query} autofocus={searchRound > 0} onselect={openCharacter} onsubmit={search} runs linked lead={run ? runLead : null} />{/key}
     </div>
     <p><b class:vertical><ScriptText {text} /></b>{#if total !== null}<span>{more ? t('run.occurrences.more', { count: total }) : t('run.occurrences', { count: total })}</span>{/if}</p>
   </header>
