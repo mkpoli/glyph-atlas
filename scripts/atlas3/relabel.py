@@ -28,6 +28,7 @@ from build import OUT, PAGE
 from publish import SUSPECT, graphemes_of, logical_sql
 
 from glyph_atlas import refs
+from glyph_atlas.review.atlas import script_of_identity
 from glyph_atlas.schema import Script
 
 COLUMNS = ("id", "origin", "character", "family", "visual_group", "production", "category", "state", "revision",
@@ -36,6 +37,11 @@ BASED = ("id", "revision", "page_rev")
 RUNS = ("size", "graphemes", "text", "hand_order", "first", "second", "third", "document", "vertical")
 # The category of a crop filed under a character of each script, as an export gives it.
 CATEGORIES = {Script.HAN: "kanji", Script.HIRAGANA: "kana", Script.KATAKANA: "kana", Script.HENTAIGANA: "kana"}
+
+
+def script_of(character):
+    """The script of a character, that of its base whatever marks it carries (ツ゚)."""
+    return Script(script_of_identity(character))
 
 
 def entry_of(atlas, cid):
@@ -67,7 +73,7 @@ def unit(atlas, text, crop, to=None):
     data = {**entry, **page, "suspect": not to and bool(crop["flags"] & SUSPECT)}
     category = crop["category_key"]
     if to:
-        script, jibo = refs.script_of(to[0]), refs.jibo_of_unit(refs.to_code_point(to[0]))
+        script, jibo = script_of(to[0]), refs.jibo_of_unit(" ".join(refs.to_code_points(to[0])))
         data = {**{k: v for k, v in data.items() if k != "jibo"}, "label": to[0], "script": str(script), **({"jibo": jibo} if jibo else {})}
         category = CATEGORIES[script]
     character, family = to or (crop["character"], crop["family_text"])
@@ -101,7 +107,7 @@ def units(relabels, mirror, atlas):
             left[text] = f"is {crop['state_key']}"
         elif to is None:
             left[text] = f"the site holds no {other}"
-        elif refs.script_of(other) not in CATEGORIES:
+        elif script_of(other) not in CATEGORIES:
             left[text] = f"{other} is neither Han nor kana"
         elif styled(atlas, crop["id"]):
             left[text] = "has a reviewer's style"

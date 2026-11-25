@@ -81,20 +81,29 @@ def test_a_crop_the_site_holds_otherwise_is_left_out(layout, relabel, monkeypatc
         "ex:b1: the site holds no ゑ", "ex:none: not a collected crop on the site"]
     with pytest.raises(SystemExit):
         write(relabel, monkeypatch, path, ("ex:a1", "あ", "う"))
-    monkeypatch.setattr(relabel.refs, "script_of", lambda c: relabel.Script.HANGUL)
+    monkeypatch.setattr(relabel, "script_of", lambda c: relabel.Script.HANGUL)
     write(relabel, monkeypatch, tmp_path / "hangul.sqlite", ("ex:a1", "あ", "う"))
     assert "left out: ex:a1: う is neither Han nor kana" in capsys.readouterr().out
 
 
 def test_a_crop_takes_the_script_category_and_jibo_of_its_new_character(layout, relabel, monkeypatch, tmp_path):  # noqa: F811
-    root = layout[0]
     for script, category, jibo in ((relabel.Script.HAN, "kanji", None), (relabel.Script.HENTAIGANA, "kana", "宇")):
-        monkeypatch.setattr(relabel.refs, "script_of", lambda c, script=script: script)
+        monkeypatch.setattr(relabel, "script_of", lambda c, script=script: script)
         monkeypatch.setattr(relabel.refs, "jibo_of_unit", lambda c, jibo=jibo: jibo)
         path = write(relabel, monkeypatch, tmp_path / f"{category}.sqlite", ("ex:a1", "あ", "う"))
         found, data = sqlite3.connect(path).execute("SELECT category, data FROM units WHERE id='ex:a1'").fetchone()
         assert (found, json.loads(data)["script"], json.loads(data).get("jibo")) == (category, str(script), jibo)
-    assert "jibo" not in entry_of(root, "ex:a1")
+    # A 字母 the crop's published entry holds goes with the character it was of.
+    held = relabel.entry_of
+    monkeypatch.setattr(relabel, "entry_of", lambda atlas, cid: {**held(atlas, cid), "jibo": "安"})
+    monkeypatch.setattr(relabel.refs, "jibo_of_unit", lambda c: None)
+    path = write(relabel, monkeypatch, tmp_path / "none.sqlite", ("ex:a1", "あ", "う"))
+    assert "jibo" not in json.loads(sqlite3.connect(path).execute("SELECT data FROM units WHERE id='ex:a1'").fetchone()[0])
+
+
+def test_the_script_of_a_marked_kana_is_its_bases(relabel):
+    assert [relabel.script_of(c) for c in ("ツ゚", "か゚", "𛂙", "夷")] == [relabel.Script.KATAKANA, relabel.Script.HIRAGANA,
+                                                                      relabel.Script.HENTAIGANA, relabel.Script.HAN]
 
 
 def refused(publish, remote, monkeypatch, path):
