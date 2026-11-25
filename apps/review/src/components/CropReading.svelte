@@ -217,8 +217,7 @@
   <div class="reading-slot">
     <div class="reading-entries">
       {#each entries as entry}<ReadingEntry {entry} />{:else}<div class="reading-entry">{t('reading.label')}</div>{/each}
-      {#if words.length}<div class="reading-entry">{t('word.label')}
-        {#each words as value}<span><b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>{#if value.form === 'probable'}{' '}{t('word.probable')}{/if}</span>{/each}</div>{/if}
+      {#each words as value}<div class="reading-entry"><span>{t('word.label')} <b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b></span>{#if value.form === 'probable'}<span>{t('word.probable')}</span>{/if}</div>{/each}
     </div>
     {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-disputed">{t('reading.disputed')}</span>{/if}
     {#if !editing}<div class="reading-acts">
