@@ -402,6 +402,7 @@
       {@const isOpen = variantMenu !== null && samePath(variantMenu.path, path)}
       <button type="button" class="ids-forms-toggle" class:varied={isVaried(part)} {disabled}
         data-toggle-path={pathKey(path)} aria-haspopup="menu" aria-expanded={isOpen}
+        style:anchor-name={isOpen ? `--ids-forms-${uid.replace(/[^a-zA-Z0-9_-]/g, '_')}` : undefined}
         aria-label={t('form.ids.variants.label', { part: lookupChar(part) })}
         title={t('form.ids.variants.label', { part: lookupChar(part) })}
         onkeydown={event => {
@@ -469,6 +470,7 @@
   <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div class="ids-forms-menu" popover="auto" role="menu" tabindex="-1" bind:this={variantMenuEl}
     aria-label={variantForms.length ? t('form.ids.variants.label', { part: variantForms[0].char }) : ''}
+    style:position-anchor={variantMenu ? `--ids-forms-${uid.replace(/[^a-zA-Z0-9_-]/g, '_')}` : undefined}
     style:--menu-x={variantMenu ? `${variantMenu.x}px` : undefined}
     style:--menu-y={variantMenu ? `${variantMenu.y}px` : undefined}
     ontoggle={event => { if (event.newState === 'closed' && variantMenu) variantMenu = null }}
@@ -651,6 +653,7 @@
   /* Variant menu popover: CSS Anchor Positioning when supported, viewport-clamped fallback otherwise. */
   .ids-forms-menu{padding:6px;width:max-content;max-width:min(280px,calc(100vw - 16px));
     border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px var(--shadow-menu)}
+  .ids-forms-menu:focus{outline:none}
   .ids-forms-menu:popover-open{display:flex;flex-direction:column;gap:4px}
   @supports (position-area: block-end){
     .ids-forms-menu{inset:auto;margin:4px 0 0;position-area:block-end span-inline-start;
