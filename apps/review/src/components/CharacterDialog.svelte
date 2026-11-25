@@ -443,11 +443,11 @@
 
 <style>
   /* The reading and the style it is written in sit on one line; either wraps when the inspector is narrow. */
-  .inspector-words{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px}
+  .inspector-words{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;margin:12px 0 16px}
   .unassigned-title{font-size:28px}
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .unassigned-title :global(.copy-value){vertical-align:middle;margin-left:4px}
-  .corpus-source-label{font-size:12px;color:var(--muted);margin:-6px 0 18px}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
+  .corpus-source-label{font-size:12px;color:var(--muted);margin:4px 0 0}.corpus-source-label b{font-size:17px;color:var(--ink);margin-left:6px}
   .crop-keys{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 0;font-size:10px;color:var(--muted)}
   .crop-keys button{font-size:10px;padding:4px 8px}
 </style>

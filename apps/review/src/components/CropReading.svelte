@@ -296,8 +296,11 @@
   .reading-field{font-size:12px;color:var(--muted);display:grid;gap:8px;min-width:0}
   .reading-field.editing{flex:1 1 100%}
   .reading-slot,.reading-methods,.reading-words,.reading-actions{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+  .reading-slot{min-height:32px}
   b{color:var(--ink);font-weight:600}
   button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+  .reading-slot>button{min-height:32px}
+  @media(max-width:700px){.reading-slot,.reading-slot>button{min-height:36px}}
   button:hover:not(:disabled){border-color:var(--line-strong)}
   button:disabled{opacity:.5;cursor:default}
   button:focus-visible,input:focus-visible{outline:3px solid var(--focus-ring);outline-offset:1px}
