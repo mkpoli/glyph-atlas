@@ -26,7 +26,7 @@ mock.module('../src/lib/mjFigures.js', () => ({ drawFigure: async () => {},
 const sent = []
 mock.module('../src/lib/client.js', () => ({ request: async (path, body) => { sent.push({ path, body }); return { form: null } },
   character: async id => ({ id, crop_version: 'v2' }), cropPixels: () => ({}) }))
-const { listForms, setForm } = await import('../src/lib/cropForms.js')
+const { baseOf, formSaved, listForms, setForm } = await import('../src/lib/cropForms.js')
 const chars = list => list.map(form => form.char)
 
 describe('a character that encodes the J shape again', () => {
@@ -42,13 +42,10 @@ describe('a character that encodes the J shape again', () => {
     expect(chars(found.alike)).toEqual(['器\u{E0102}', '⿳吅犬吅', '⿳吅大吅', '𠾖'])
   })
 
-  it('names the crop when chosen as a form, from either of the two', async () => {
-    for (const [written, form] of [['逸', '𨓜'], ['𨓜', '逸']]) {
-      sent.length = 0
-      const { reviewed } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: written }, form)
-      expect(reviewed).toBe(true)
-      expect(sent[0].body).toMatchObject({ verdict: 'wrong', issue: 'character', character: form })
-    }
+  it('is the character choosing it names, from either of the two', async () => {
+    for (const [written, form] of [['逸', '𨓜'], ['𨓜', '逸']]) expect(baseOf(form, await listForms(written))).toBe(form)
+    // A variant of another grapheme, a shape and a figure name no character.
+    for (const form of ['氣', '噐', '⿳吅大吅', '器\u{E0103}']) expect(baseOf(form, await listForms('器'))).toBe(null)
   })
 
   it('leaves the bar as a member of the grapheme', async () => {
@@ -62,11 +59,8 @@ describe('a character that encodes the J shape again', () => {
 })
 
 describe('a small seal character of the grapheme', () => {
-  it('names the crop when chosen as a form, as any member does', async () => {
-    sent.length = 0
-    const { reviewed } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: '萅' }, '\u{3D307}')
-    expect(reviewed).toBe(true)
-    expect(sent[0].body).toMatchObject({ verdict: 'wrong', issue: 'character', character: '\u{3D307}' })
+  it('is the character choosing it names, as any member is', async () => {
+    expect(baseOf('\u{3D307}', await listForms('萅'))).toBe('\u{3D307}')
   })
   it('is a member, after the Han forms, and is not offered again as related', async () => {
     const found = await listForms('萅')
@@ -75,5 +69,36 @@ describe('a small seal character of the grapheme', () => {
   it("offers its Han characters as its grapheme's forms", async () => {
     const found = await listForms('\u{3D307}')
     expect([chars(found.members), chars(found.related)]).toEqual([['春', '萅', '\u{3D307}'], []])
+  })
+})
+
+describe('a form claimed alone', () => {
+  it('is one request on the version the reader saw, and no read before it', async () => {
+    sent.length = 0
+    const { crop } = await setForm({ id: 'x', crop_version: 'v1', revision: 1, written_character: '器' }, '噐')
+    expect(sent.map(({ path, body }) => [path, body.crop_version, body.form, Object.keys(body).sort().join()])).toEqual([['/atlas/characters/x/form', 'v1', '噐', 'crop_version,form,id']])
+    expect(crop).toMatchObject({ crop_version: 'v1', form: null })
+    await setForm({ id: 'x', crop_version: 'v1', revision: 1 }, { target: { char: '器' } })
+    expect(sent[1]).toMatchObject({ path: '/atlas/characters/x/structure', body: { crop_version: 'v1', char: '器' } })
+  })
+  it('is a new claim each time it is chosen', async () => {
+    sent.length = 0
+    const crop = { id: 'x', crop_version: 'v1', revision: 1, written_character: '器' }
+    for (const form of ['噐', null, '噐']) await setForm(crop, form)
+    expect(new Set(sent.map(({ body }) => body.id)).size).toBe(3)
+  })
+})
+
+describe('the forms read of a grapheme', () => {
+  const had = text => ({ id: 'x', crop_version: 'v1', form: { status: 'asserted', values: [{ form: 'f', text }] } })
+  it('are read again once a save takes a described form from a crop, whatever it claims instead', async () => {
+    const first = listForms('器')
+    formSaved(had('噐'), '器')
+    expect(listForms('器')).toBe(first)
+    formSaved(had('⿴囗啚'), '器')
+    const second = listForms('器')
+    expect(second).not.toBe(first)
+    await setForm(had('⿴囗啚'), '噐')
+    expect(listForms('器')).not.toBe(second)
   })
 })

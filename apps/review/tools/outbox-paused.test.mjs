@@ -298,3 +298,30 @@ test('a save kept while paused that the site later answers 409 reload is gone: r
   expect(keptState(key)).toBe('refused')
   expect(outbox.refused.some(r => r.key === key)).toBe(false)
 })
+
+test('a review that claims its form is one kept save, sent once as it was made', async () => {
+  me = { id: 'u1', anonymous: false }
+  answer = () => Response.json({ ok: true })
+  await drain()
+  answer = paused; posts.length = 0
+  const body = { id: 'named-1', revision: 3, source_revision: 'r', verdict: 'wrong', issue: 'character', character: '圖', form: '圖\u{E0100}', crop_version: 'v1' }
+  expect((await request('/layers/units/c7', body).catch(e => e)).kept).toBe(true)
+  expect([outbox.pending, posts]).toEqual([1, ['/layers/units/c7']])
+  const bodies = []
+  globalThis.fetch = async (path, init) => { posts.push(path); bodies.push(JSON.parse(init.body)); return Response.json({ results: [] }) }
+  posts.length = 0
+  await drain()
+  expect([posts, bodies, outbox.pending]).toEqual([['/layers/units/c7'], [body], 0])
+})
+
+test('one whose crop was cut again meanwhile is refused and shown, and nothing of it is sent again', async () => {
+  answer = paused; posts.length = 0
+  const body = { id: 'named-2', revision: 3, source_revision: 'r', verdict: 'wrong', issue: 'character', character: '圖', form: '⿴囗啚', crop_version: 'v1' }
+  await request('/layers/units/c8', body).catch(e => e)
+  answer = () => Response.json({ detail: 'This crop was cut again. Reload it.' }, { status: 409 })
+  posts.length = 0
+  await drain()
+  await drain()
+  expect([posts, outbox.pending]).toEqual([['/layers/units/c8'], 0])
+  expect(outbox.refused.find(r => r.key === keyOf('/layers/units/c8', body))?.message).toBe('This crop was cut again. Reload it.')
+})

@@ -143,6 +143,9 @@ rows and never rebuild the graph per request.
 4. Otherwise one standing value is current; several standing values make the slot `disputed`, and
    every claim stays; live claims that all fell to rejections make it `rejected`.
 5. A person's new claim in a single-valued slot retracts their own earlier one in the same write.
+6. Undoing a review retracts the form it claimed. The person's own claim it replaced comes back as a new
+   row of the submission that made it, with the verdicts on it and the first row as its premise
+   (`restores`), and the two count as one claim.
 
 ## Rules
 
