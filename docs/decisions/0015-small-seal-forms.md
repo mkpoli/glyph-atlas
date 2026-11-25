@@ -30,8 +30,8 @@ equivalent in `data/vocab/kanji-variants.tsv` (Unicode's `kSEAL_MCJK`). Its `scr
   other form: the Han and drawn members, and on a card and among a selection's targets the 異体字 and
   described forms outside the grapheme too. A list ordered by counts (Explore's tiles and their cards)
   keeps that order. On a form bar a seal character stands last in its 構形, in a block of its own there where it
-  is built as a layout of it (𽓻 `⿰辵禺` under 遇's `⿺辶禺`), and the number keys reach it after every
-  other form.
+  is built as a layout of it (𽓻 `⿰辵禺` under 遇's `⿺辶禺`), and the number keys follow the chips in
+  order.
 
 ## What a seal member leaves as it was
 
