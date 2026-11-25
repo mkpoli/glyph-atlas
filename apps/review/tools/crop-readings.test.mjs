@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, opening, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, readingLine, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -57,6 +57,22 @@ it('a press grows the run to a character outside it, and leaves one inside it ou
   expect(pressed({ from: 3, to: 5 }, 5, 3)).toEqual({ from: 4, to: 5 })
   expect(pressed({ from: 3, to: 5 }, 5, 5)).toEqual({ from: 3, to: 5 })
   expect(pressed({ from: 20, to: 20 }, 20, 0)).toEqual({ from: 9, to: 20 })
+})
+
+describe('a reading on its line', () => {
+  const value = { run: ['諸', '器'], at: 1, reading: ['しょ', 'き'] }
+  const on = (text, reading = { status: 'asserted', values: [value] }) => readingLine({ text, reading })
+  it('stands over the run the line holds', () => {
+    expect(on('緻密にして諸器に製す')).toEqual({ before: '緻密にして', value, after: 'に製す' })
+    expect(on('諸器')).toEqual({ before: '', value, after: '' })
+    expect(on('緻密にして諸器に製す', { status: 'accepted', values: [value] })?.after).toBe('に製す')
+  })
+  it('is left off while readers disagree, and where the line has the run twice or not at all', () => {
+    expect(on('諸器に製す', { status: 'disputed', values: [value, { ...value, reading: ['もろ', 'き'] }] })).toBeNull()
+    for (const text of ['諸器と諸器', '諸噐に製す', '諸', '', null]) expect(on(text)).toBeNull()
+    for (const reading of [null, undefined, { status: null, values: [] }]) expect(readingLine({ text: '諸器', reading })).toBeNull()
+    expect(readingLine(null)).toBeNull()
+  })
 })
 
 describe('what the editor opens with', () => {
