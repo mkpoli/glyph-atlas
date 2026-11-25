@@ -3181,3 +3181,56 @@ def test_a_called_answer_outside_the_service_is_refused(monkeypatch):
     monkeypatch.setattr(fish_bot, "in_service", lambda: False)
     with pytest.raises(fish_bot.SpendError):
         paid_gemini("key").act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
+
+
+def test_the_pace_follows_the_hours_people_write_in(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    evening = fish_bot.datetime.datetime.now(fish_bot.JST).replace(hour=20, minute=30, second=0, microsecond=0)
+    evening -= fish_bot.datetime.timedelta(days=1)
+    for number in range(2000):
+        store.add_event(f"$l{number}", ROOM, "@reader:example", int(evening.timestamp() * 1000) + number, "hi", "m.text", backfilled=False)
+    for number in range(500):
+        store.add_event(f"$m{number}", ROOM, USER, int(evening.replace(hour=9).timestamp() * 1000) + number, "hi", "m.text", backfilled=False)
+    noon = evening.replace(hour=12, minute=0)
+    bot._clock = lambda: noon
+    assert bot._day_passed() < 0.1
+    bot._clock = lambda: evening.replace(hour=21, minute=0)
+    assert bot._day_passed() > 0.9
+
+
+def test_without_a_log_the_pace_is_the_clock(tmp_path):
+    bot, _, _ = make_bot(tmp_path)
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, 30, tzinfo=fish_bot.JST)
+    bot._clock = lambda: noon
+    assert bot._day_passed() == pytest.approx(12.5 / 24)
+
+
+def test_the_hours_are_counted_again_the_next_day(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    counted = []
+    monkeypatch.setattr(store, "hours", lambda since, exclude: counted.append(since) or [0] * 24)
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, tzinfo=fish_bot.JST)
+    for day in (24, 24, 25):
+        bot._clock = lambda day=day: noon.replace(day=day)
+        bot._day_passed()
+    assert len(counted) == 2
+
+
+def test_hours_that_cannot_be_read_leave_the_clock(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+
+    def broken(since, exclude):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    read = store.hours
+    monkeypatch.setattr(store, "hours", broken)
+    bot._clock = lambda: fish_bot.datetime.datetime(2026, 11, 24, 6, tzinfo=fish_bot.JST)
+    assert bot._day_passed() == pytest.approx(0.25)
+    monkeypatch.setattr(store, "hours", read)
+    assert bot._day_passed() == pytest.approx(0.25) and bot._hours is not None
+
+
+def test_an_empty_exclusion_counts_everyone(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    store.add_event("$a", ROOM, "@reader:example", 3_600_000 * 24 * 400, "hi", "m.text", backfilled=False)
+    assert sum(store.hours(0, [])) == 1 and store.hours(0, [])[9] == 1

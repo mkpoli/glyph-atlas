@@ -252,10 +252,12 @@ SAVE_DAYS = 1.0
 BORROW_DAYS = 1.0
 # As the day's money goes she saves in this order, so that what is left answers people and one voice
 # does it: she opens no rooms unasked while the day's spending is ahead of its pace, which rises from
-# the first share at midnight (JST) to the second at the day's end, so evenings keep their visits; past
+# the first share at midnight (JST) to the second at the day's end as the rooms' own day passes, by
+# the hours people wrote in over the last two weeks, so the busy evening keeps its visits; past
 # THRIFT_SHORT she reads fewer lines and one picture, and leaves bystanders' lines in a conversation
 # alone; with nothing left she says so, once a day in a room that calls her.
 THRIFT_VISITS = (0.25, 0.80)
+ACTIVITY_DAYS = 14
 THRIFT_SHORT = 0.85
 THRIFT_CONTEXT = 15
 BROKE = {
@@ -1319,6 +1321,16 @@ class Store:
             "tokens_in=tokens_in+excluded.tokens_in, tokens_out=tokens_out+excluded.tokens_out, cost=cost+excluded.cost",
             (day or local_day(now_ms()), kind, calls, 1 if failed else 0, tokens_in, tokens_out, cost))
         self.db.commit()
+
+    def hours(self, since: int, exclude: Iterable[str]) -> list[int]:
+        """How many lines people wrote in each hour of the day (JST) since a time."""
+        left_out = sorted(set(exclude))
+        counts = [0] * 24
+        for row in self.db.execute(
+                f"SELECT (ts + 32400000) / 3600000 % 24 AS hour, COUNT(*) AS lines FROM events "
+                f"WHERE ts>=? AND sender NOT IN ({','.join('?' * len(left_out))}) GROUP BY hour", (since, *left_out)):
+            counts[int(row["hour"])] = int(row["lines"])
+        return counts
 
     def spent(self, day: str) -> float:
         return float(self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage WHERE day=?", (day,)).fetchone()[0])
@@ -3747,6 +3759,7 @@ class Bot:
         self._spoke_at: dict[str, float] = {}
         self._visits: list[float] = []
         self._told_broke: dict[str, str] = {}
+        self._hours: tuple[str, list[int]] | None = None
         self._random = random.random
         self._aliases: dict[str, str] = {}
         self._alias_failed: dict[str, float] = {}
@@ -4253,11 +4266,23 @@ class Bot:
             except Exception:
                 log.exception("following in %s", room_id)
 
+    def _day_passed(self) -> float:
+        """How much of the rooms' day is over: the share of their lines people write by this time. A
+        few lines an hour are added to what was counted, so a quiet log makes it the clock."""
+        now = self._clock()
+        today = now.strftime("%Y-%m-%d")
+        if self._hours is None or self._hours[0] != today:
+            try:
+                counts = self.store.hours(now_ms() - ACTIVITY_DAYS * 86_400_000, {self.user_id, *self.config.ignored_senders})
+                self._hours = (today, [count + ACTIVITY_DAYS for count in counts])
+            except sqlite3.Error:
+                log.exception("reading the hours people write in")
+        hours = self._hours[1] if self._hours is not None else [1] * 24
+        return (sum(hours[:now.hour]) + hours[now.hour] * now.minute / 60) / sum(hours)
+
     def _ahead_of_pace(self) -> bool:
         """Whether the day's spending leaves nothing for visits at this hour."""
-        now = self._clock()
-        day = (now.hour * 60 + now.minute) / 1440
-        return self.gemini.purse.share() >= THRIFT_VISITS[0] + (THRIFT_VISITS[1] - THRIFT_VISITS[0]) * day
+        return self.gemini.purse.share() >= THRIFT_VISITS[0] + (THRIFT_VISITS[1] - THRIFT_VISITS[0]) * self._day_passed()
 
     def visit(self) -> None:
         """Open the rooms whose time has come, and let the model decide whether to join in."""
