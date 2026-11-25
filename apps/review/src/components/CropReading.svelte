@@ -5,12 +5,13 @@
   // dictionary that the characters write can be named with it.
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
-  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, setReading, stretch } from '../lib/cropReadings.js'
+  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingChips, setReading, stretch } from '../lib/cropReadings.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
   import { t } from '../lib/i18n.svelte.js'
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
+  import ReadingRuby from './ReadingRuby.svelte'
   import ScriptText from './ScriptText.svelte'
 
   let { item, disabled = false, working = null, saved = null } = $props()
@@ -31,9 +32,7 @@
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
   let chosen = $state(undefined), probable = $state(false), changed = false
 
-  const values = $derived(item.reading?.values ?? [])
-  const rubyValues = $derived(item.reading?.ruby?.values ?? [])
-  const leftValues = $derived(item.reading?.left?.values ?? [])
+  const chips = $derived(readingChips(item.reading))
   const words = $derived(item.word?.values ?? [])
   // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
   const known = $derived(Object.hasOwn(item, 'reading'))
@@ -201,30 +200,25 @@
   }
 </script>
 
-{#snippet read(value, field)}
-  <ruby class="reading-run">{#if value[field].length === value.run.length}{#each value.run as part, i}<span class:here={i === value.at && value.run.length > 1}>{part}</span><rt>{value[field][i]}</rt>{/each}{:else}{#each value.run as part, i}<span class:here={i === value.at}>{part}</span>{/each}<rt>{value[field][0]}</rt>{/if}</ruby>
-{/snippet}
-
 <div class="reading-field" class:editing bind:this={root}>
   <div class="reading-slot">
     <span>{t('reading.label')}</span>
-    {#each values as value, i}
-      {#if i}<span>/</span>{/if}{@render read(value, 'reading')}
+    {#each chips as chip}
+      <span class="reading-chip">
+        {#if chip.reading}<ReadingRuby value={chip.reading} />{:else}<bdi class="reading-bare">{chip.run.run.join('')}</bdi>{/if}
+        {#if chip.reading?.methods?.[0] || chip.ruby.length || chip.left.length}<span class="reading-notes">
+          {#if chip.reading?.methods?.[0]}<span class="reading-badge" title={t('reading.method')}>{t(`reading.methods.${chip.reading.methods[0]}`)}</span>{/if}
+          {#each chip.ruby as text}<bdi class="reading-ruby" title={t('reading.ruby')}>{text}</bdi>{/each}
+          {#each chip.left as text}<span class="reading-badge">{t('reading.left')}</span><bdi class="reading-ruby">{text}</bdi>{/each}
+        </span>{/if}
+      </span>
     {/each}
-    {#if item.reading?.methods?.[0]}<span>{t(`reading.methods.${item.reading.methods[0]}`)}</span>{/if}
-    {#each rubyValues as value}<bdi class="reading-ruby" title={t('reading.ruby')}>{value.ruby.join('')}</bdi>{/each}
-    {#if leftValues.length}<span>{t('reading.left')}</span>{#each leftValues as value}<bdi class="reading-ruby">{value.ruby.join('')}</bdi>{/each}{/if}
-    {#if words.length}
-      <span>{t('word.label')}</span>
-      {#each words as value, i}
-        {#if i}<span>/</span>{/if}
-        <b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>
-        {#if value.form === 'probable'}<span>{t('word.probable')}</span>{/if}
-      {/each}
-    {/if}
-    {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span>{t('reading.disputed')}</span>{/if}
-    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{values.length || words.length ? t('reading.edit') : t('reading.add')}</button>
-      {#if own}<button type="button" disabled={busy} onclick={clear}>{t('reading.clear')}</button>{/if}{/if}
+    {#each words as value}
+      <span class="reading-chip"><span class="reading-badge">{t('word.label')}</span><b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>
+        {#if value.form === 'probable'}<span class="reading-badge">{t('word.probable')}</span>{/if}</span>
+    {/each}
+    {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-badge disputed">{t('reading.disputed')}</span>{/if}
+    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>{/if}
   </div>
   {#if editing && line}
     <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
@@ -284,6 +278,7 @@
         </div>
       {/if}
       <div class="reading-actions">
+        {#if own}<button type="button" class="reading-clear" disabled={busy} onclick={clear}>{t('reading.clear')}</button>{/if}
         {#if error}<span class="reading-error" role="alert">{error}</span>{/if}
         <button type="button" disabled={pending} onclick={leave}>{t('common.cancel')}</button>
         <button type="button" class="reading-save" disabled={busy} onclick={save}>{pending ? t('common.saving') : t('reading.save')}</button>
@@ -301,10 +296,13 @@
   button:hover:not(:disabled){border-color:var(--line-strong)}
   button:disabled{opacity:.5;cursor:default}
   button:focus-visible,input:focus-visible{outline:3px solid var(--focus-ring);outline-offset:1px}
-  .reading-run{font-family:var(--char-font);font-size:20px;line-height:1;color:var(--ink);ruby-position:over;padding-top:2px}
-  .reading-run rt{font-size:11px;color:var(--muted)}
-  .reading-run .here{color:var(--accent)}
-  .reading-ruby{font-family:var(--char-font);font-size:15px;color:var(--ink)}
+  .reading-chip{display:inline-flex;flex-wrap:wrap;gap:4px 10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--surface);color:var(--ink)}
+  .reading-chip :global(.reading-run),.reading-bare{font-family:var(--char-font);font-size:22px;line-height:1.25}
+  .reading-notes{display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+  .reading-badge{font-size:11px;color:var(--muted)}
+  .reading-badge.disputed{color:var(--wrong)}
+  .reading-ruby{font-family:var(--char-font);font-size:15px}
+  .reading-clear{margin-inline-end:auto}
   .reading-editor{display:grid;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface);min-width:0}
   .reading-line{display:flex;flex-wrap:wrap;row-gap:4px;font-family:var(--char-font);font-size:19px;line-height:1}
   .reading-line button{border:1px solid transparent;border-radius:0;background:none;color:var(--muted);padding:6px 4px;min-width:30px;min-height:34px;line-height:1}
@@ -339,5 +337,5 @@
   .reading-words button span{color:var(--muted)}
   .reading-actions{justify-content:flex-end}
   .reading-save{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff;padding:6px 16px}
-  .reading-error{color:var(--wrong);margin-inline-end:auto}
+  .reading-error{color:var(--wrong)}
 </style>

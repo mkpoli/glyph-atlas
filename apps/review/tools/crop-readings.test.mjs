@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, opening, pressed, readingLine, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, readingChips, readingLine, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -57,6 +57,17 @@ it('a press grows the run to a character outside it, and leaves one inside it ou
   expect(pressed({ from: 3, to: 5 }, 5, 3)).toEqual({ from: 4, to: 5 })
   expect(pressed({ from: 3, to: 5 }, 5, 5)).toEqual({ from: 3, to: 5 })
   expect(pressed({ from: 20, to: 20 }, 20, 0)).toEqual({ from: 9, to: 20 })
+})
+
+describe('the readings an inspector shows', () => {
+  const run = { run: ['諸', '器'], at: 1 }, alone = { run: ['器'], at: 0 }
+  it('are each with the rubies beside its run, a ruby nobody reads standing alone', () => {
+    const slot = { values: [{ ...run, reading: ['しょ', 'き'] }, { ...alone, reading: ['うつわ'] }],
+      ruby: { values: [{ ...run, ruby: ['𛁈よ', 'き'] }, { ...run, ruby: ['しよ', 'き'] }] }, left: { values: [{ run: ['器', 'に'], at: 0, ruby: ['うつわ'] }] } }
+    expect(readingChips(slot).map(chip => [chip.run.run.join(''), chip.reading?.reading.join('') ?? null, chip.ruby, chip.left])).toEqual([
+      ['諸器', 'しょき', ['𛁈よき', 'しよき'], []], ['器', 'うつわ', [], []], ['器に', null, [], ['うつわ']]])
+  })
+  it('are none for a crop with none', () => { expect([readingChips(null), readingChips({ values: [], ruby: null, left: null })]).toEqual([[], []]) })
 })
 
 describe('a reading on its line', () => {
