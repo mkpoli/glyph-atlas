@@ -14,12 +14,12 @@ Four readings are expected rather than suspicious, and are not marks:
 - a kana derived from the label, as 於 read as お or 太 read as た: in cursive the kanji and its kana
   are one shape. Hentaigana carry their 字母 in the character layer; the modern hiragana take theirs
   from `refs.kana_origins`;
-- the kanji a kana label derives from, as 𛂙 read as 乃 or や read as 也, for the same reason;
+- the kanji a hiragana or hentaigana label derives from, as 𛂙 read as 乃, や as 也 or が as 加, for the same reason;
 - a reading reviewers checked on sample crops and found to be the label, as 可 read as 一
   (`refs.suspect_forms`); a real swap between such a label and reading is then not marked either.
 
-A kana read as the 字母 of another kana of the same sound is written as that kana, and the mark names it: く read
-as 具 is 𛀰. Where the 字母 has several (と read as 登: 𛁺, 𛁻) the crop is marked and no character is named.
+A hiragana or hentaigana read as the 字母 of another kana of its sound (と read as 登) is marked, and the mark names no
+character: the crop is written as that kana, which the kanji does not name.
 
 How often a reviewer takes the character a mark names is measured in docs/reports/suspect-readings.md.
 
@@ -86,6 +86,11 @@ def _load(path: str, stamp: int, size: int) -> dict[str, dict]:
     return _CACHE[key]
 
 
+def unvoiced(label: str) -> str:
+    """A kana without its voicing mark: が gives か, 𛀙゙ gives 𛀙."""
+    return unicodedata.normalize("NFD", label).rstrip("\u3099\u309a") or label
+
+
 def kana(label: str) -> bool:
     """Whether a label is a kana, the script nearly all of the classifier's training crops are in."""
     name = unicodedata.name(label[0], "") if label else ""
@@ -114,14 +119,16 @@ class Labels:
                 self.kana[letter].update(row.readings or ())
         # The modern hiragana each kanji is the cursive form of: 太 gives た, the hiragana itself.
         self.cursive = refs.kana_origins()
-        # The kanji each kana derives from, and the kana of each sound each kanji is the 字母 of.
+        # The kanji each hiragana and hentaigana derives from, and those of any kana of each sound, under every
+        # character of the kanji's grapheme.
         self.parents: dict[str, set[str]] = defaultdict(set)
-        self.derived: dict[tuple[str, str], list[str]] = defaultdict(list)
+        self.sounds: dict[str, set[str]] = defaultdict(set)
         for row in refs.characters():
             for letter in row.jibo or ():
-                self.parents[row.char].add(letter)
+                family = {letter, *(member["char"] for member in (refs.grapheme_info(refs.to_code_point(letter)) or {}).get("members") or ())}
+                self.parents[row.char] |= family
                 for reading in row.readings or ():
-                    self.derived[letter, reading].append(row.char)
+                    self.sounds[reading] |= family
         for kanji, kanas in self.cursive.items():
             for letter in kanas:
                 self.parents[letter].add(kanji)
@@ -165,7 +172,7 @@ class Labels:
         from .atlas import kana_of
 
         if (frozenset((label, reads)) in self.lookalikes or reads in self.cursive.get(label, ())
-                or reads in self.parents.get(label, ()) or (label, reads) in self.forms):
+                or reads in self.parents.get(unvoiced(label), ()) or (label, reads) in self.forms):
             return True
         # A hentaigana of the label, or the hiragana one reads as. A katakana is a part of some
         # kanji, not the label's cursive, so one that only sounds like it (以 read as イ) is not.
@@ -175,12 +182,14 @@ class Labels:
         return bool(readings & self.kana.get(label, set()))
 
     def named(self, label: str, reads: str) -> str | None:
-        """The character a mark on `label` names where the classifier reads `reads`: for a 字母 of the label's sound
-        the kana it gives, or nothing where it gives several."""
+        """The character a mark on `label` names where the classifier reads `reads`: none for the 字母 of a kana of a
+        hiragana's or hentaigana's sound."""
         from .atlas import kana_of
 
-        found = self.derived.get((reads, kana_of(label) or label), []) if kana(label) else []
-        return reads if not found else found[0] if len(found) == 1 else None
+        plain = unvoiced(label)
+        if not kana(label) or "KATAKANA" in unicodedata.name(plain[0], ""):
+            return reads
+        return None if reads in self.sounds.get(kana_of(plain) or plain, ()) else reads
 
     def again(self, label: str, mark: dict) -> dict | None:
         """A mark made before, as this rule makes it, or `None` where it makes none."""
@@ -246,12 +255,13 @@ def rejudge(source: Path, target: Path) -> dict[str, Any]:
     The classifier is not run: a crop it did not mark stays unmarked.
     """
     document = json.loads(source.read_text())
+    target.parent.mkdir(parents=True, exist_ok=True)
     labels = Labels([])
     marks = {identity: labels.again(mark["label"], mark) for identity, mark in document["suspects"].items()}
     kept = {identity: mark for identity, mark in marks.items() if mark}
-    renamed = sum(mark["reads_as"] != document["suspects"][identity]["reads_as"] for identity, mark in kept.items())
+    unnamed = sum(mark["reads_as"] != document["suspects"][identity]["reads_as"] for identity, mark in kept.items())
     written = _write(target, kept, document["scored"], {"source": document["revision"]}, scored_ids=document.get("scored_ids"))
-    return {**written, "dropped": len(marks) - len(kept), "renamed": renamed}
+    return {**written, "dropped": len(marks) - len(kept), "unnamed": unnamed}
 
 
 def refs_table(name: str) -> Path:

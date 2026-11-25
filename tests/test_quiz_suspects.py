@@ -85,16 +85,14 @@ def test_a_kanji_read_as_the_kana_it_is_the_jibo_of_is_not_a_suspect(labels):
 
 def test_a_kana_read_as_the_kanji_it_derives_from_is_not_a_suspect():
     rule = quiz_suspects.Labels([])
-    assert all(rule.expected(label, reads) for label, reads in (("𛂙", "乃"), ("や", "也"), ("し", "之"), ("𛁈", "志")))
-    assert not any(rule.expected(label, reads) for label, reads in (("と", "登"), ("く", "具"), ("や", "乃"), ("タ", "太")))
+    assert all(rule.expected(label, reads) for label, reads in (("𛂙", "乃"), ("や", "也"), ("し", "之"), ("𛁈", "志"), ("が", "加"), ("𛀵", "気")))
+    assert not any(rule.expected(label, reads) for label, reads in (("と", "登"), ("く", "具"), ("や", "乃"), ("タ", "太"), ("ユ", "弓")))
 
 
-def test_a_kana_read_as_the_parent_of_another_kana_of_its_sound_names_that_kana():
+def test_a_kana_read_as_the_parent_of_another_kana_of_its_sound_names_no_character():
     rule = quiz_suspects.Labels([])
-    assert rule.named("く", "具") == "𛀰" and rule.named("ク", "具") == "𛀰"
-    # 登 gives two hentaigana of と.
-    assert rule.named("と", "登") is None
-    assert rule.named("く", "て") == "て" and rule.named("太", "具") == "具"
+    assert rule.named("く", "具") is rule.named("と", "登") is rule.named("ど", "登") is rule.named("ま", "満") is None
+    assert rule.named("く", "て") == "て" and rule.named("太", "具") == "具" and rule.named("ヰ", "井") == "井"
 
 
 def test_marks_made_before_are_judged_again_without_the_classifier(tmp_path):
@@ -105,9 +103,9 @@ def test_marks_made_before_are_judged_again_without_the_classifier(tmp_path):
     source.write_text(json.dumps({"revision": "r", "scored": 9, "scored_ids": ["a", "b", "c", "d", "e"], "suspects": {
         "a": mark("𛂙", "乃"), "b": mark("く", "具"), "c": mark("と", "登"), "d": mark("時", "日"), "e": mark("の", None)}}))
     result = quiz_suspects.rejudge(source, target)
-    assert {key: result[key] for key in ("scored", "suspects", "dropped", "renamed")} == {"scored": 9, "suspects": 4, "dropped": 1, "renamed": 2}
+    assert {key: result[key] for key in ("scored", "suspects", "dropped", "unnamed")} == {"scored": 9, "suspects": 4, "dropped": 1, "unnamed": 2}
     written = json.loads(target.read_text())
-    assert {identity: found["reads_as"] for identity, found in written["suspects"].items()} == {"b": "𛀰", "c": None, "d": "日", "e": None}
+    assert {identity: found["reads_as"] for identity, found in written["suspects"].items()} == {"b": None, "c": None, "d": "日", "e": None}
     assert written["scored_ids"] == ["a", "b", "c", "d", "e"]
 
 
