@@ -15,6 +15,7 @@
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
+  import FormText from '../components/FormText.svelte'
   import { graphemeLabel, labelParts, labelSize } from '$worker/graphemeLabel.ts'
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
@@ -24,7 +25,12 @@
   import { correctionBatches, sendBatches, sendEach } from '../lib/corrections.js'
   import { isDescription } from '../lib/ids.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
-  import { dealsFor, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress, ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences } from '../lib/reviewRounds.js'
+  import {
+    dealsFor, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress,
+    ROUND_BATCH, MORE_BATCH, REFERENCE_LIMIT, mergeReferences,
+    QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
+    normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
+  } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
   import { unslug } from '../lib/addresses.js'
   import { useSession } from '../lib/session.svelte.js'
@@ -275,7 +281,7 @@
         }
         return
       }
-      restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items))), choices: {}, selected: {}, skipped: {},
+      restoreRound({ grapheme: chosen, members: result.grapheme?.members ?? [graphemeText(chosen)], items: arranged(numbered(unique(result.items), 0, graphemeText(chosen))), choices: {}, selected: {}, skipped: {},
         suggestions: {}, contextSuggestions: {}, roundId: crypto.randomUUID(), roundSeed: seed,
         hasMore: Boolean(result.next), nextCursor: result.next ?? null, onlySuspects: only,
         production: scope, summary })
@@ -313,7 +319,7 @@
       }
       more = Boolean(cursor)
       // Added crops follow the ones already on screen, so nothing the reviewer is looking at moves.
-      items = [...items, ...arranged(numbered(additions, items.length))]; hasMore = more; nextCursor = cursor
+      items = [...items, ...arranged(numbered(additions, items.length, graphemeChar))]; hasMore = more; nextCursor = cursor
     } catch (e) { if (id === requestId) { error = e.message; errorStatus = e.status ?? 0; loadMoreFailed = true } }
     finally { if (id === requestId) loadingMore = false }
   }
@@ -340,19 +346,21 @@
 
   // Step one: choose the crops that are wrong, or that the form bar marks as one form. A selection is
   // not a verdict, so nothing is assigned here, and a crop taken out of the selection gives up the
-  // answer it had. Shift-click selects every crop from the last one clicked.
+  // answer it had. Shift-click selects every crop from the last one clicked (stored by id so loading
+  // more crops into an earlier form section never shifts the anchor).
   let anchor = null
   const selectable = id => loaded[id] && !failed[id] && !decidedHere(id) && !skipped[id]
   function toggle(id, event) {
     if (saving || loading || !loaded[id] || failed[id] || decidedHere(id)) return
-    const index = items.findIndex(i => i.id === id)
-    if (event?.shiftKey && anchor !== null && index >= 0) {
-      const [from, to] = anchor < index ? [anchor, index] : [index, anchor]
-      const range = items.slice(from, to + 1).map(i => i.id).filter(selectable)
+    const index = ordered.findIndex(i => i.id === id)
+    const anchorIndex = anchor ? ordered.findIndex(i => i.id === anchor) : -1
+    if (event?.shiftKey && anchorIndex >= 0 && index >= 0) {
+      const [from, to] = anchorIndex < index ? [anchorIndex, index] : [index, anchorIndex]
+      const range = ordered.slice(from, to + 1).map(i => i.id).filter(selectable)
       selected = { ...selected, ...Object.fromEntries(range.map(each => [each, true])) }
-      anchor = index; at = 0; return
+      anchor = id; at = 0; return
     }
-    anchor = index
+    anchor = id
     if (skipped[id]) { skipped = without(skipped, [id]); selected = { ...selected, [id]: true }; at = 0; return }
     if (selected[id]) {
       selected = { ...selected, [id]: false }
@@ -569,7 +577,7 @@
   async function takeReading(item, button) {
     if (saving || loading || step !== 'select' || !selectable(item.id)) return
     const { id } = item
-    anchor = items.findIndex(i => i.id === id); at = 0
+    anchor = id; at = 0
     const chosen = chosenIssues(choices[id]), bad = chosen.includes('crop')
     if (taken(item)) {
       if (bad) choices = { ...choices, [id]: { verdict: 'wrong', character: null, correction: null, noneSelected: false, ...issueFields(['crop']) } }
@@ -660,7 +668,7 @@
    * and a save decides the crop, which leaves the selection and the problems and shows as saved.
    */
   function inspectChoice(item, opening = null) {
-    inspect(item.id, items, inspected, opening)
+    inspect(item.id, ordered, inspected, opening)
   }
   async function inspected(id, result, how) {
     const item = items.find(i => i.id === id), round = roundId
@@ -872,7 +880,7 @@
     const control = e.target.closest('button, a, input, textarea, select, summary, [contenteditable="true"]')
     if (step === 'select') {
       const index = keys.indexOf(e.key.toLowerCase())
-      if (index >= 0 && items[index] && !control) { e.preventDefault(); toggle(items[index].id) }
+      if (index >= 0 && ordered[index] && !control) { e.preventDefault(); toggle(ordered[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
       const form = members['1234567890'.indexOf(e.key)]
       if (/^[0-9]$/.test(e.key) && form && markable.length) { e.preventDefault(); markSelection(form) }
@@ -887,19 +895,88 @@
   // A round is dealt as before; shown in shape order, the crops of one form sit together and a crop
   // unlike its neighbours stands out. `dealt` keeps the dealt order for switching back.
   let byShape = $state(stored('atlas.quiz.shape-order', true) !== false)
+  // View mode ('cards' or 'compact' thumbnails), tile width, and grouping by written form (字樣).
+  // Remembered in localStorage; restored on mount so server rendering matches initial client paint.
+  let view = $state('cards')
+  let tileSize = $state(QUIZ_CARDS_SIZE)
+  let cardsSize = QUIZ_CARDS_SIZE, compactSize = QUIZ_COMPACT_SIZE
+  let groupByForm = $state(true)
+  const compact = $derived(view === 'compact')
+  const sizeIndex = $derived(Math.max(0, QUIZ_TILE_SIZES.indexOf(tileSize)))
+  const gridGap = $derived(compact ? (tileSize <= 60 ? 5 : tileSize <= 96 ? 6 : 8) : (tileSize <= 124 ? 10 : 12))
+  const formSections = $derived(groupRoundByForm(items, members, graphemeChar))
+  const sectioned = $derived(groupByForm && formSections.length > 1)
+  const sections = $derived(sectioned ? formSections : [{ key: 'all', form: '', jibo: null, items }])
+  // Visual/DOM order of tiles, used by Shift-click range selection, keyboard picks and inspector stepping.
+  const ordered = $derived(sections.flatMap(section => section.items))
+  const indexById = $derived(new Map(ordered.map((item, i) => [item.id, i])))
+  function setView(next) {
+    const resolved = switchQuizView(next, { cardsSize, compactSize })
+    view = resolved.view; tileSize = resolved.size
+    remember('atlas.quiz.view', view)
+    remember('atlas.quiz.tileSize', tileSize)
+  }
+  function setTileSize(next) {
+    const resolved = resizeQuizTiles(next, view)
+    view = resolved.view; tileSize = resolved.size
+    if (view === 'compact') { compactSize = tileSize; remember('atlas.quiz.tileSize.compact', compactSize) }
+    else { cardsSize = tileSize; remember('atlas.quiz.tileSize.cards', cardsSize) }
+    remember('atlas.quiz.view', view)
+    remember('atlas.quiz.tileSize', tileSize)
+  }
+  function toggleGroupByForm() {
+    groupByForm = !groupByForm
+    anchor = null
+    remember('atlas.quiz.group-by-form', groupByForm)
+  }
+  function sectionStatus(section) {
+    const open = section.items.filter(i => selectable(i.id))
+    const picked = section.items.filter(i => selected[i.id])
+    const pickedOpen = open.filter(i => selected[i.id])
+    const state = !open.length ? (picked.length ? 'all' : 'none')
+      : pickedOpen.length === open.length ? 'all' : pickedOpen.length ? 'some' : 'none'
+    return { open, picked, state }
+  }
+  function toggleSection(section) {
+    if (saving || loading) return
+    const { open, picked, state } = sectionStatus(section)
+    if (state === 'all') {
+      const ids = picked.map(i => i.id)
+      if (!ids.length) return
+      choices = without(choices, ids)
+      selected = without(selected, ids)
+    } else if (open.length) {
+      selected = { ...selected, ...Object.fromEntries(open.map(i => [i.id, true])) }
+    }
+    anchor = null; at = 0
+  }
+  const compactTitle = item => {
+    const lines = cropDetails(item)
+    return [item.label, ...lines].filter(Boolean).join(' · ')
+  }
   // One tile per crop: the grid is keyed by id, and a repeated id would stop the round rendering.
   function unique(list) { const ids = new Set(); return list.filter(item => !ids.has(item.id) && ids.add(item.id)) }
-  function numbered(list, from = 0) { return list.map((item, i) => ({ ...item, dealt: item.dealt ?? from + i })) }
+  function numbered(list, from = 0, fallback = '') {
+    return list.map((item, i) => ({ ...item, dealt: item.dealt ?? from + i, dealtForm: item.dealtForm ?? cropSectionForm(item, fallback) }))
+  }
   function arranged(list) {
     return [...list].sort((a, b) => byShape
       ? (a.shape_order ?? Infinity) - (b.shape_order ?? Infinity) || a.dealt - b.dealt
       : a.dealt - b.dealt)
   }
-  function toggleShape() { byShape = !byShape; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
+  function toggleShape() { byShape = !byShape; anchor = null; remember('atlas.quiz.shape-order', byShape); items = arranged(items) }
   // A reload that kept its round deals it again; a page reached by Back after a reload carries the round its
   // entry named; otherwise the address names it. Each replaces the address with the round it deals.
   onMount(() => {
     last = stored('atlas.last-round', null)
+    const savedView = stored('atlas.quiz.view', 'cards') === 'compact' ? 'compact' : 'cards'
+    cardsSize = normalizeQuizTileSize(stored('atlas.quiz.tileSize.cards', QUIZ_CARDS_SIZE), QUIZ_CARDS_SIZE)
+    if (cardsSize < QUIZ_CARDS_MIN) cardsSize = QUIZ_CARDS_SIZE
+    compactSize = normalizeQuizTileSize(stored('atlas.quiz.tileSize.compact', QUIZ_COMPACT_SIZE), QUIZ_COMPACT_SIZE)
+    const savedSize = normalizeQuizTileSize(stored('atlas.quiz.tileSize', null), savedView === 'compact' ? compactSize : cardsSize)
+    const resolved = resizeQuizTiles(savedSize, savedView)
+    view = resolved.view; tileSize = resolved.size
+    groupByForm = stored('atlas.quiz.group-by-form', true) !== false
     const kept = carried(), round = page.state.round
     if (kept) resume(kept)
     else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
@@ -909,6 +986,17 @@
 </script>
 
 <svelte:window onkeydown={keydown} />
+
+{#snippet quizTile(item, i)}
+  <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
+    <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} title={compact ? compactTitle(item) : undefined} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
+    <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
+    {#if compact && (markedAs[item.id] || choices[item.id]?.character || (!sectioned && item.label !== graphemeChar) || recorded[item.id] || failed[item.id] || skipped[item.id])}
+      <span class="compact-tag" aria-hidden="true">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if choices[item.id]?.character}<span class="quiz-written" class:wrong-read={taken(item)}>→ <ScriptText text={choices[item.id].character} /></span>{:else if failed[item.id]}<span class="compact-status">{t('quiz.choiceLabel.unavailable')}</span>{:else if skipped[item.id]}<span class="compact-status">{t('quiz.choiceLabel.skipped')}</span>{:else if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{:else if !sectioned && item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}</span>
+    {/if}
+    <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if choices[item.id]?.character && !taken(item)}<span class="quiz-written">→ <ScriptText text={choices[item.id].character} /></span>{/if}{#if onlySuspects && item.suspect && !reading(item)}<span class="suspect-badge">{t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}{#if reading(item) && (onlySuspects || selected[item.id]) && !failed[item.id] && !skipped[item.id]}<button class="reading-choice" aria-pressed={taken(item)} aria-label={t('quiz.suspect.readsAs', { character: reading(item) }) + ' · ' + (i + 1)} disabled={saving || !selectable(item.id)} title={t('quiz.suspect.readsAs', { character: reading(item) })} onclick={event => takeReading(item, event.currentTarget)}>{#if selected[item.id] || compact}{taken(item) ? '→ ' : ''}<span lang="ja">{reading(item)}</span>{taken(item) ? '' : '?'}{:else}{@const [before, after] = around('quiz.suspect.readsAs', 'character')}{before}<span lang="ja">{reading(item)}</span>{after}{/if}</button>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span>{#if selected[item.id] && !skipped[item.id] && !failed[item.id]}<button class="correct-choice" aria-label={t('quiz.correctCharacter', { number: i + 1 })} title={t('quiz.correct')} disabled={saving} onclick={() => correctOne(item)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4.5L16.5 4l3.5 3.5L8.5 19z" /></svg></button>{/if}<button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+  </div>
+{/snippet}
 <section class="quiz-workspace">
   <div class="quiz-topline"><a href={localize('/')} class="quiet-link">{t('quiz.backToCollection')}</a><div class="round-count"><span class="live-dot"></span>{t('quiz.issuesSavedSession', { count: completed })}</div><button class="undo-round shape-toggle" aria-pressed={byShape} onclick={toggleShape}>{byShape ? t('quiz.shapeToggle.byShape') : t('quiz.shapeToggle.dealt')}</button><button class="undo-round suspect-toggle" aria-pressed={onlySuspects} disabled={saving || loading || selection.length > 0 || step !== 'select'} onclick={toggleSuspects}>{onlySuspects ? t('quiz.suspectToggle.only') : t('quiz.suspectToggle.all')}</button>{#if last}<button class="undo-round" disabled={saving} onclick={undo}>{t('quiz.undoLastRound')}</button>{/if}</div>
   <div class="quiz-heading"><div class="target-character" class:pair={labelSize(graphemeChar) === 2} class:trio={labelSize(graphemeChar) === 3} aria-label={t('quiz.targetGrapheme', { grapheme: graphemeName })}>{#if graphemeChar}<ScriptText {...labelParts(graphemeChar)} />{:else}<span lang="ja">字</span>{/if}</div><div class="quiz-title"><h1>{step === 'select' ? t('quiz.heading.select') : t('quiz.heading.issue')}</h1>{#if step === 'select'}<p>{around('quiz.selectHint', 'grapheme')[0]}<b>{#if graphemeChar}<ScriptText {...labelParts(graphemeChar)} />{:else}…{/if}</b>{around('quiz.selectHint', 'grapheme')[1]}</p>{/if}{#if members.length > 1}<p class="round-members">{#each members as member, i (i)}{#if i}{' '}{/if}<ScriptText text={member} />{/each}</p>{/if}</div><div class="round-switch"><button class="category-toggle" disabled={saving || loading} onclick={() => categoryOpen = !categoryOpen}>{t('quiz.changeCharacter')}</button><button class="quiet-link" disabled={saving || loading || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterArrow')}</button></div></div>
@@ -930,16 +1018,62 @@
   {#if error}<div class="error-message" role="alert"><span>{error}</span>{#if stale}<button disabled={saving} onclick={() => load({ target: grapheme, replace: true })}>{t('quiz.reloadRound')}</button>{/if}</div>{/if}
 
   {#if step === 'select'}
-    <div class="stage-toolbar"><strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong><button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button><button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button><span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span></div>
-    {#key roundId}<div class="quiz-grid" aria-label={t('quiz.grid.label')} aria-busy={loading}>
-      {#if loading}{#each Array(12) as _}<div class="quiz-skeleton"></div>{/each}
-      {:else}{#each items as item, i (item.id)}
-        <div class="quiz-tile" use:watchSeen={item.id} data-unit={item.id} class:selected={selected[item.id]} class:wrong={choices[item.id]?.verdict === 'wrong' || recorded[item.id] === 'flagged'} class:assigned={recorded[item.id] === 'assigned'} class:unavailable={failed[item.id]} class:skipped={skipped[item.id]} class:recorded={recorded[item.id]}>
-          <button class="quiz-choice" aria-label={t('quiz.selectCharacter', { number: i + 1 })} aria-pressed={!!selected[item.id]} disabled={saving || !loaded[item.id] || decidedHere(item.id)} onclick={event => toggle(item.id, event)}><Glyph {item} eager onload={id => loaded = { ...loaded, [id]: true }} onerror={id => { failed = { ...failed, [id]: true }; if (selected[id]) skip([id]) }} /><span class="choice-mark">{selected[item.id] ? '✓' : choices[item.id]?.verdict === 'wrong' ? '×' : ''}</span></button>
-          <span class="tile-details quiz-tile-details" aria-hidden="true">{#each cropDetails(item) as line}<span><ScriptLine {line} /></span>{/each}<CopyId id={item.id} inline /></span>
-          <div class="quiz-production">{#if markedAs[item.id]}<span class="quiz-written">→ <ScriptText text={markedAs[item.id]} /></span>{:else if item.label !== graphemeChar}<span class="quiz-written"><ScriptText text={item.label} /></span>{/if}<ProductionBadge {item} />{#if choices[item.id]?.character && !taken(item)}<span class="quiz-written">→ <ScriptText text={choices[item.id].character} /></span>{/if}{#if onlySuspects && item.suspect && !reading(item)}<span class="suspect-badge">{t('quiz.suspect.doubtful')}</span>{/if}{#if recorded[item.id]}<span class="recorded-badge" class:refused={keptHere[item.id] && keptState(keptHere[item.id]) === 'refused'}>{recordedLabel(item.id)}</span>{/if}{#if item.origin === 'corpus'}<span class="quiz-source" lang={item.source?.title ? 'ja' : undefined} title={item.source?.title}>{item.source?.title ?? t('quiz.corpusSource')}</span>{/if}</div><div class="quiz-tile-tools">{#if keys[i]}<kbd>{keys[i]}</kbd>{/if}{#if reading(item) && (onlySuspects || selected[item.id]) && !failed[item.id] && !skipped[item.id]}<button class="reading-choice" aria-pressed={taken(item)} aria-label={t('quiz.suspect.readsAs', { character: reading(item) }) + ' · ' + (i + 1)} disabled={saving || !selectable(item.id)} title={t('quiz.suspect.readsAs', { character: reading(item) })} onclick={event => takeReading(item, event.currentTarget)}>{#if selected[item.id]}{taken(item) ? '→ ' : ''}<span lang="ja">{reading(item)}</span>{taken(item) ? '' : '?'}{:else}{@const [before, after] = around('quiz.suspect.readsAs', 'character')}{before}<span lang="ja">{reading(item)}</span>{after}{/if}</button>{/if}<span class="choice-label">{failed[item.id] ? t('quiz.choiceLabel.unavailable') : skipped[item.id] ? t('quiz.choiceLabel.skipped') : ''}</span>{#if selected[item.id] && !skipped[item.id] && !failed[item.id]}<button class="correct-choice" aria-label={t('quiz.correctCharacter', { number: i + 1 })} title={t('quiz.correct')} disabled={saving} onclick={() => correctOne(item)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4.5L16.5 4l3.5 3.5L8.5 19z" /></svg></button>{/if}<button class="inspect-choice" aria-label={t('quiz.inspectCharacter', { number: i + 1 })} disabled={saving} onclick={() => inspectChoice(item)}>↗</button>{#if skipped[item.id]}<button class="restore-choice" aria-label={t('quiz.restoreCharacter', { number: i + 1 })} disabled={saving} onclick={() => restore(item.id)}>{t('quiz.restore')}</button>{:else}<button class="skip-choice" aria-label={t('quiz.skipCharacter', { number: i + 1 })} title={skipHint()} disabled={saving} onclick={() => skip([item.id])}>–</button>{/if}</div>
+    <div class="stage-toolbar">
+      <strong>{openSelection.length ? t('quiz.select.selectedCount', { count: openSelection.length }) : t('quiz.select.selectProblems')}</strong>
+      <button class="bulk-toggle" disabled={saving || loading || !available} onclick={selectAll}>{decidable.length && decidable.every(i => selected[i.id]) ? t('quiz.bulk.none') : t('quiz.bulk.all')}</button>
+      <button class="bulk-toggle skip-selection" disabled={saving || loading || !selection.length} onclick={() => skip()} title={skipHint()}>{t('quiz.skipSelected', { skip: skipLabel() })}</button>
+      <span class="keyboard-hint">{t('quiz.keyboardHint.pickCrop')}</span>
+      <div class="quiz-view-controls">
+        <button type="button" class="form-group-toggle" aria-pressed={groupByForm} onclick={toggleGroupByForm}>{t('quiz.groupByForm')}</button>
+        <div class="layout-toggle quiz-mode-toggle" role="group" aria-label={t('quiz.view.label')}>
+          {#each [['cards', () => t('quiz.view.cards')], ['compact', () => t('quiz.view.compact')]] as [value, label]}
+            <button type="button" class:active={view === value} aria-pressed={view === value} onclick={() => setView(value)}>{label()}</button>
+          {/each}
         </div>
-      {/each}{#if loadingMore}{#each Array(6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}{/if}
+        <label class="zoom-control quiz-zoom" title={t('explore.zoom.label')}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg>
+          <input type="range" min="0" max={QUIZ_TILE_SIZES.length - 1} step="1" value={sizeIndex}
+            aria-label={t('explore.zoom.label')} aria-valuetext={`${tileSize}px`}
+            style:--attr-min={0} style:--attr-max={QUIZ_TILE_SIZES.length - 1} style:--control-value={sizeIndex}
+            oninput={event => setTileSize(QUIZ_TILE_SIZES[Number(event.currentTarget.value)])} />
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
+        </label>
+      </div>
+    </div>
+    {#key roundId}<div class="quiz-grid" class:compact class:tight={compact && tileSize <= 60} class:sectioned={!loading && sectioned} style:--quiz-tile-w={`${tileSize}px`} style:--quiz-gap={`${gridGap}px`} aria-label={t('quiz.grid.label')} aria-busy={loading}>
+      {#if loading}{#each Array(compact ? 24 : 12) as _}<div class="quiz-skeleton"></div>{/each}
+      {:else if sectioned}
+        {#each sections as section (section.key)}
+          {@const status = sectionStatus(section)}
+          <section class="quiz-section" data-form={section.form}>
+            <header class="quiz-section-head">
+              <button type="button" class="section-select" role="checkbox"
+                aria-checked={status.state === 'some' ? 'mixed' : status.state === 'all'}
+                aria-disabled={!status.open.length && status.state === 'none'}
+                aria-label={t('quiz.section.select', { form: section.form || graphemeName })}
+                title={t('quiz.section.select', { form: section.form || graphemeName })}
+                disabled={saving || loading}
+                onclick={() => toggleSection(section)}>
+                <span aria-hidden="true">{status.state === 'all' ? '✓' : status.state === 'some' ? '–' : ''}</span>
+              </button>
+              <h2 class="quiz-section-form">{#if section.form}<FormText text={section.form} />{:else}<ScriptText {...labelParts(graphemeChar)} />{/if}</h2>
+              {#if section.jibo}<span class="quiz-section-jibo"><ScriptText text={section.jibo} /></span>{/if}
+              <span class="quiz-section-count">{#if status.picked.length}{number(status.picked.length)} / {/if}{number(section.items.length)}</span>
+            </header>
+            <div class="quiz-section-grid">
+              {#each section.items as item (item.id)}
+                {@render quizTile(item, indexById.get(item.id) ?? 0)}
+              {/each}
+            </div>
+          </section>
+        {/each}
+        {#if loadingMore}<div class="quiz-section-grid">{#each Array(compact ? 12 : 6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}</div>{/if}
+      {:else}
+        {#each ordered as item, i (item.id)}
+          {@render quizTile(item, i)}
+        {/each}
+        {#if loadingMore}{#each Array(compact ? 12 : 6) as _}<div class="quiz-skeleton" aria-hidden="true"></div>{/each}{/if}
+      {/if}
     </div>
     {/key}
     <!-- More crops load on their own as the reader nears the end; the row only says what is happening.
@@ -1016,8 +1150,138 @@
   .quiz-tile.skipped .quiz-choice { opacity: .35; }
   .restore-choice { font-size: 9px; padding: 1px 7px; }
   /* One stage at a time: the selection toolbar belongs to step one and is not shown again. */
-  .stage-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 10px; font-size: 12px; }
+  .stage-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 12px; font-size: 12px; }
   .stage-toolbar strong { font-weight: 500; }
+  .quiz-view-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-inline-start: auto; }
+  :global(html:not([data-hydrated])) .quiz-view-controls { visibility: hidden; }
+  .form-group-toggle { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 11px; padding: 6px 10px; color: var(--muted); white-space: nowrap; }
+  .form-group-toggle[aria-pressed="true"] { background: var(--surface-selected); border-color: var(--line-strong); color: var(--ink); }
+  .quiz-zoom { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .quiz-zoom svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; flex-shrink: 0; }
+  /* Brand-consistent custom range slider (separate WebKit and Firefox pseudo-element blocks). */
+  .quiz-zoom input[type="range"] {
+    --slider-track-size: 4px;
+    --slider-thumb-size: 14px;
+    --slider-track-radius: 999px;
+    --slider-thumb-radius: 50%;
+    --slider-track-color: var(--line-strong);
+    --slider-fill-color: var(--accent-solid);
+    --slider-thumb-color: var(--accent-solid);
+    --slider-direction: to right;
+    --slider-progress: calc(progress(var(--control-value), var(--attr-min), var(--attr-max)) * 100%);
+    appearance: none;
+    inline-size: 92px;
+    block-size: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .quiz-zoom input[type="range"]:dir(rtl) { --slider-direction: to left; }
+  @supports not (opacity: progress(1, 0, 100)) {
+    .quiz-zoom input[type="range"] {
+      --slider-progress: calc((var(--control-value) - var(--attr-min)) / max(1, var(--attr-max) - var(--attr-min)) * 100%);
+    }
+  }
+  .quiz-zoom input[type="range"]::-webkit-slider-runnable-track {
+    block-size: var(--slider-track-size);
+    border: 0;
+    border-radius: var(--slider-track-radius);
+    background: linear-gradient(var(--slider-direction), var(--slider-fill-color) var(--slider-progress), var(--slider-track-color) var(--slider-progress));
+  }
+  .quiz-zoom input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    inline-size: var(--slider-thumb-size);
+    block-size: var(--slider-thumb-size);
+    margin-block-start: calc((var(--slider-track-size) - var(--slider-thumb-size)) / 2);
+    border: 0;
+    border-radius: var(--slider-thumb-radius);
+    background: var(--slider-thumb-color);
+  }
+  .quiz-zoom input[type="range"]::-moz-range-track {
+    block-size: var(--slider-track-size);
+    border: 0;
+    border-radius: var(--slider-track-radius);
+    background: var(--slider-track-color);
+  }
+  .quiz-zoom input[type="range"]::-moz-range-progress {
+    block-size: var(--slider-track-size);
+    border-radius: var(--slider-track-radius);
+    background: var(--slider-fill-color);
+  }
+  .quiz-zoom input[type="range"]::-moz-range-thumb {
+    inline-size: var(--slider-thumb-size);
+    block-size: var(--slider-thumb-size);
+    border: 0;
+    border-radius: var(--slider-thumb-radius);
+    background: var(--slider-thumb-color);
+  }
+  .quiz-zoom input[type="range"]:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
+  @media (pointer: coarse) { .quiz-zoom input[type="range"] { block-size: 36px; --slider-thumb-size: 18px; } }
+
+  /* Grid sizing driven by --quiz-tile-w with auto-fill so small form sections keep uniform tile width. */
+  .quiz-grid:not(.sectioned),
+  .quiz-section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--quiz-tile-w, 160px), 1fr));
+    gap: var(--quiz-gap, 12px);
+    align-items: start;
+  }
+  .quiz-grid.sectioned { display: flex; flex-direction: column; align-items: stretch; gap: 22px; }
+  .quiz-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .quiz-section-head { display: flex; align-items: center; gap: 10px; padding-block-end: 8px; border-block-end: 1px solid var(--line); }
+  .quiz-section-form { margin: 0; font-size: 24px; font-weight: 500; line-height: 1.15; font-family: var(--char-font, serif); }
+  .quiz-section-jibo { font-size: 13px; color: var(--muted); }
+  .quiz-section-count { margin-inline-start: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .section-select { position: relative; flex: none; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 5px; background: var(--surface); color: var(--on-color); font: 700 11px/1 var(--ga-font-ui, system-ui, sans-serif); padding: 0; }
+  .section-select::after { content: ''; position: absolute; inset: -10px -8px; }
+  .section-select:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--accent-solid); }
+  .section-select[aria-disabled="true"] { border-color: var(--line); cursor: default; }
+  .section-select:not([aria-checked="false"]) { background: var(--accent-solid); border-color: var(--accent-solid); }
+
+  /* Card tiles scale their image height smoothly with --quiz-tile-w. */
+  .quiz-grid:not(.compact) .quiz-tile { height: auto; min-height: 0; }
+  .quiz-grid:not(.compact) .quiz-choice { height: clamp(104px, calc(var(--quiz-tile-w, 160px) * 0.88), 184px); }
+  .quiz-grid:not(.compact) .quiz-skeleton { height: clamp(140px, calc(var(--quiz-tile-w, 160px) * 1.08), 216px); min-height: 0; }
+
+  /* Compact thumbnail mode: dense square crops for fast visual scanning. */
+  .quiz-grid.compact .quiz-tile { aspect-ratio: 1; height: auto; min-height: 0; border-radius: 6px; }
+  .quiz-grid.compact .quiz-skeleton { aspect-ratio: 1; height: auto; min-height: 0; border-radius: 6px; }
+  .quiz-grid.compact .quiz-choice { width: 100%; height: 100%; padding: 5px; }
+  .quiz-grid.compact.tight .quiz-choice { padding: 3px; }
+  .quiz-grid.compact .choice-mark { top: 3px; right: 3px; font-size: 16px; }
+  .quiz-grid.compact .quiz-tile.selected .choice-mark { width: 17px; height: 17px; font-size: 10px; top: 3px; right: 3px; }
+  .quiz-grid.compact .quiz-tile-details,
+  .quiz-grid.compact .quiz-production { display: none; }
+  .compact-tag { position: absolute; top: 3px; left: 3px; z-index: 1; max-width: calc(100% - 26px); padding: 1px 4px; border-radius: 4px; background: var(--overlay); font-size: 10px; line-height: 1.25; pointer-events: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .compact-tag .quiz-written { font-size: 10px; }
+  .compact-tag .wrong-read { color: var(--wrong); }
+  .compact-status { font-size: 9px; color: var(--muted); }
+  .quiz-grid.compact .quiz-tile-tools { position: absolute; left: 3px; right: 3px; bottom: 3px; z-index: 2; height: auto; min-height: 0; padding: 0; gap: 2px; justify-content: flex-end; opacity: 0; pointer-events: none; transition: opacity .12s; }
+  .quiz-grid.compact .quiz-tile:hover .quiz-tile-tools,
+  .quiz-grid.compact .quiz-tile:has(:focus-visible) .quiz-tile-tools { opacity: 1; pointer-events: auto; }
+  .quiz-grid.compact .quiz-tile-tools kbd,
+  .quiz-grid.compact .quiz-tile-tools .choice-label { display: none; }
+  .quiz-grid.compact .quiz-tile-tools button { min-width: 20px; min-height: 20px; padding: 0 4px; font-size: 11px; line-height: 1; background: var(--overlay); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); box-shadow: 0 1px 4px var(--shadow-soft); }
+  .quiz-grid.compact .quiz-tile-tools .reading-choice { font-size: 10px; padding: 1px 5px; border-color: var(--wrong); color: var(--wrong); background: var(--overlay); }
+  @media (hover: none) {
+    .quiz-grid.compact .quiz-tile-tools { display: none; }
+    .quiz-grid.compact .quiz-tile:is(.selected, .recorded, .skipped, .unavailable) .quiz-tile-tools { display: flex; opacity: 1; pointer-events: auto; }
+  }
+  @media (max-width: 700px) {
+    .quiz-view-controls { width: 100%; margin-inline-start: 0; justify-content: space-between; gap: 8px; }
+    .quiz-zoom input[type="range"] { inline-size: 72px; }
+    .quiz-grid:not(.compact):not(.sectioned),
+    .quiz-grid:not(.compact) .quiz-section-grid {
+      grid-template-columns: repeat(auto-fill, minmax(calc(var(--quiz-tile-w, 160px) * 0.68), 1fr));
+      gap: 8px;
+    }
+    .quiz-grid:not(.compact) .quiz-choice { height: clamp(88px, calc(var(--quiz-tile-w, 160px) * 0.68), 140px); padding: 10px 10px 0; }
+    .quiz-section-form { font-size: 21px; }
+  }
   .character-history { display:flex; align-items:center; gap:10px; margin:0 0 20px; min-width:0; }
   .character-history > button { flex-shrink:0; font-size:11px; }
   .history-characters { display:flex; gap:6px; overflow-x:auto; min-width:0; padding:3px; }
