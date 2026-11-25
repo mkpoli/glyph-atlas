@@ -479,10 +479,13 @@ def build(directory: Path, vocab: Path):
 
 
 def write_shape_tables(vocab: Path, variants: str = "", equivalents: str = "", figures: str = "") -> None:
-    """The three tables the shape families are read from, with the given data rows."""
+    """The tables the shape families are read from, with the given data rows."""
     (vocab / "kanji-variants.tsv").write_text("# fixture\na\tb\trelation\tsource\tdetail\n" + variants, encoding="utf-8")
     (vocab / "kanji-equivalents.tsv").write_text("a\tb\tkind\tsource\n" + equivalents, encoding="utf-8")
     (vocab / "mj-kanji.tsv").write_text("mj\tcode_point\timplemented_code_point\tivs\n" + figures, encoding="utf-8")
+    (vocab / "tongyong-guifan.tsv").write_text("position\tcode_point\tchar\n", encoding="utf-8")
+    (vocab / "tongyong-guifan-forms.tsv").write_text("position\tchar\tfull\tvariant\tnote\n", encoding="utf-8")
+    (vocab / "headword-readings.tsv").write_text("dictionary\tentry\tchar\trole\treading\n", encoding="utf-8")
 
 
 @pytest.fixture

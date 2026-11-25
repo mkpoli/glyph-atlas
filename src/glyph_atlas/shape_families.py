@@ -64,6 +64,41 @@ group to the one family it is tied to when
    and 菓, 辟 and 避 stay apart, as do 余 and 馀;
 7. two curated families are never joined, nor brought together through a family both join.
 
+A third pass (`_join_standard_forms`) takes in the form a national standard prescribes for one character:
+a 简体字 of the 通用规范汉字表 (2013) and a 新字体 of the 常用漢字表 (2010). The second pass counts every
+relation of a form, and a form in wide use has relations to more than the character it is written for:
+动 is the simplified 動, and 異体字 tables also relate it to 働; 对 and 备 are related to others in some
+senses, 枪 is the standard form of the 異體 鎗 too. A standard's own table says which character a form
+is for, so here only what the standards, Unihan and OpenCC give as its full forms counts. The form
+joins the family of its full form when it writes that one character, and stays apart (`Decision.reasons`)
+when
+
+1. the table gives it for itself too (后 for 后 and 後, 干, 里, 谷), or OpenCC's STCharacters does
+   (`STANDALONE`: 价, 广, 愿): it is a character in use beside the one it simplifies;
+2. its full forms are of several families (发 for 發 and 髮, 弁 for 辨, 瓣 and 辯), or Unihan, OpenCC or
+   the 新字体 tables give it a further one that is no form of the first: one no source calls a variant of it
+   and the table does not print as its 异体字 (录 for 錄 and 彔, 钥 for 鑰 and 鈅), or one both dictionaries of 4
+   hold apart from it (闲 for 閑 and 閒);
+3. the table lists its full form too, so the simplification is partial (着 and 著, 了 and 瞭, 乾 and 干);
+4. it is a headword of the 說文解字 or the 廣韻 with no reading its full form's family has there (听 宜引切
+   and 聽, 胜 and 勝, 从 疾容切 and 從 慈用切 in the 說文解字), or a 重文 there of another character that the 廣韻
+   reads alike (箓 of 簏, not 籙). A form the 說文解字 gives as a 重文 of the full
+   form is that character (达 and 達, 网 and 網, 无 and 無), whatever the 廣韻 says. Rules 1 and 4 are of the
+   通用规范汉字表 alone: a pair of the 常用漢字表 is one character by that table, as the curated families are
+   (戻 and 戾, though 戻 他計切 is also a 說文解字 headword);
+5. a source calls the pair a loan or a substitute (离 and 離), or a non-cognate homograph. cjkvi's
+   non-cognate list also holds shapes ISO/IEC 10646 encodes apart for the source separation rule, and
+   the tag counts for nothing where the same database calls the pair a 異体字, a simplification or
+   separated at the source (状 and 狀, 温 and 溫);
+6. the family of its full form is headed by another character of the table that no curated family
+   states one with the full form (铀: 鈾 stands under 宙, its 古文);
+7. what it would bring along is different from the family in one of the senses of 5, or the two are curated.
+
+A form the second pass put elsewhere leaves that family with what hangs on it alone (备 under 留, 壳 under
+売), and a form that heads its own takes the whole of it along (黄). The joined family keeps the head of
+its full form's, unless the form's is better known to a Japanese reader (`familiarity`: 没 over 沒), or known as
+well and the 新字体 of the two (遥 over 遙).
+
 A form with no character of its own, no reading or definition, that neither pass puts in a family
 stands for each family the sources state it a whole variant of (role `stands-for`): 𠮮 stands for 后
 and for 𠯑, and has no grapheme of its own.
@@ -126,6 +161,9 @@ from dataclasses import dataclass, field
 
 from . import refs
 
+#: The source records of the standards and dictionaries the third pass reads.
+TONGYONG, JOYO = "tongyong-guifan", "joyo"
+SHUOWEN, GUANGYUN = "shuowen", "guangyun"
 #: Relations of the 異体字 graph that keep a pair in separate families.
 DIFFERENT = frozenset({"borrowed", "substitute", "non-cognate", "spoofing"})
 #: Of those, the relations of two characters that only look or sound alike, which no form writes both of.
@@ -135,6 +173,8 @@ BLOCKING = refs.KEPT_APART | refs.NOT_WIDENED | DIFFERENT
 #: one of these.
 WHOLE = frozenset({"variant", "equivalent", "semantic", "z", "simplified", "shinjitai", "regional",
                    "shuowen", "compatibility"})
+#: Relations by which a source calls two full forms one character (rule 2 of the third pass).
+VARIANT = (WHOLE - {"simplified"}) | {"reduction"}
 #: Relations that tie a pair as a variant in some senses only, and keep it apart.
 SPLIT = frozenset({"specialized-semantic"})
 #: Directed relations whose `b` is the form written for `a`'s character: a reduced form that may
@@ -185,10 +225,98 @@ class Family:
     members: set[str]
     edges: list[Edge] = field(default_factory=list)
     curated: bool = False
+    #: The members `graphemes.yaml` states.
+    stated: frozenset[str] = frozenset()
+    #: The head a joined standard form leaves the family, one of the two it had; None before any joined.
+    kept_head: str | None = None
     #: The characters of other families that also write this one, each with the edges that say so
     #: (role `writes`): 后 writes 後 as well as 后, and 闲 writes 閑 and 閒. A form with no character
     #: of its own stands for each family it is a variant of (role `stands-for`): 𠮮 for 后 and 𠯑.
     writers: dict[str, list[Edge]] = field(default_factory=dict)
+
+
+class Headwords:
+    """The headwords of the 說文解字 and the 廣韻 with their readings (`data/vocab/headword-readings.tsv`)."""
+
+    def __init__(self, rows: Iterable[Mapping[str, str]] = ()) -> None:
+        self._entries: dict[str, dict[str, set[str]]] = {}
+        self._own: dict[str, dict[str, set[str]]] = {}
+        self._read: dict[str, dict[str, set[str]]] = {}
+        #: The 親字 of each 說文解字 entry, and the entries each 重文 is of.
+        self._heads: dict[str, set[str]] = {}
+        self._forms: dict[str, set[str]] = {}
+        for row in rows:
+            name, char = row["dictionary"], row["char"]
+            self._entries.setdefault(name, {}).setdefault(char, set()).add(row["entry"])
+            if name == SHUOWEN:
+                if row["role"] == "head":
+                    self._heads.setdefault(row["entry"], set()).add(char)
+                else:
+                    self._forms.setdefault(char, set()).add(row["entry"])
+            if row["reading"]:
+                self._read.setdefault(name, {}).setdefault(char, set()).add(row["reading"])
+                if row["role"] == "head":
+                    self._own.setdefault(name, {}).setdefault(char, set()).add(row["reading"])
+
+    @staticmethod
+    def _all(found: Mapping[str, set[str]], chars: Iterable[str]) -> set[str]:
+        return set().union(*(found.get(char, set()) for char in chars))
+
+    def one_entry(self, chars: Iterable[str], others: Iterable[str]) -> bool:
+        """Whether the 說文解字 gives one of `others` in one entry with one of `chars`, as its 重文."""
+        entries = self._entries.get(SHUOWEN, {})
+        return bool(self._all(entries, chars) & self._all(entries, others))
+
+    def writes(self, char: str) -> str:
+        """The 親字 the 說文解字 gives `char` as a 重文 of and the 廣韻 reads alike; empty for none."""
+        own = self._own.get(GUANGYUN, {})
+        return "".join(sorted(head for entry in self._forms.get(char, ()) for head in self._heads.get(entry, ())
+                              if own.get(char, set()) & own.get(head, set())))
+
+    def apart_in(self, chars: Iterable[str], others: Iterable[str]) -> list[str]:
+        """The dictionaries that hold both, `chars` as headwords, and share no reading between them."""
+        found = []
+        for name in (SHUOWEN, GUANGYUN):
+            own, read = self._all(self._own.get(name, {}), chars), self._all(self._read.get(name, {}), others)
+            if own and read and not own & read:
+                found.append(name)
+        return found
+
+
+@dataclass(frozen=True)
+class StandardForm:
+    """One character of the 通用规范汉字表 with what the table prints beside it: its full forms (繁体字), whether
+    it stands for itself among them (～), and the 异体字."""
+
+    char: str
+    position: int
+    full: frozenset[str] = frozenset()
+    itself: bool = False
+    others: frozenset[str] = frozenset()
+
+
+@dataclass
+class Decision:
+    """What the third pass found of one standard form: its full forms of other families, the edges that state them and, where it
+    stays apart, why."""
+
+    form: str
+    full: frozenset[str]
+    edges: list[Edge]
+    reasons: list[str] = field(default_factory=list)
+
+
+def standard_forms(rows: Iterable[Mapping[str, str]], listed: Mapping[str, int]) -> dict[str, StandardForm]:
+    """The 通用规范汉字表 by character, from its table of forms (`data/vocab/tongyong-guifan-forms.tsv`) and its
+    characters with their numbers."""
+    full: dict[str, set[str]] = {}
+    others: dict[str, set[str]] = {}
+    for row in rows:
+        full.setdefault(row["char"], set()).add(row["full"])
+        others.setdefault(row["char"], set()).add(row["variant"])
+    return {char: StandardForm(char, position, frozenset(full.get(char, set()) - {char}), char in full.get(char, set()),
+                               frozenset(others.get(char, set()) - full.get(char, set()) - {char}))
+            for char, position in listed.items()}
 
 
 def _canonical(char: str) -> str:
@@ -272,6 +400,9 @@ def families(
     cns1: set[str] | None = None,
     familiarity: Mapping[str, int] | None = None,
     readings: set[str] | None = None,
+    standard: Mapping[str, StandardForm] | None = None,
+    headwords: Headwords | None = None,
+    decisions: list[Decision] | None = None,
 ) -> list[Family]:
     """Every family of more than one character or with a writer, curated ones included, in head code
     point order.
@@ -283,7 +414,9 @@ def families(
     and CNS 11643 plane 1 repertoires (rule 6 of the 異寫字 pass), `familiarity` ranks the characters
     a reader knows, lowest first, for the head. `readings` holds the ideographs that are characters of
     their own, with a reading or a definition; any other one a family takes in no shape stands for
-    the families it is a variant of (`_add_stand_ins`). Without it, none does.
+    the families it is a variant of (`_add_stand_ins`). Without it, none does. `standard` is the
+    通用规范汉字表 and `headwords` the two dictionaries of the third pass, whose findings `decisions`,
+    when given, collects; without `standard` the pass does not run.
     """
     variants = list(variants)
     edges, corroboration, blocked = candidate_edges(
@@ -292,7 +425,7 @@ def families(
     seiji = {edge.b for edge in edges if edge.relation == "reduction"} - reduced
     group: dict[str, Family] = {}
     for head, members in (curated or {}).items():
-        family = Family(head, set(members), curated=True)
+        family = Family(head, set(members), curated=True, stated=frozenset(members))
         for member in members:
             group[member] = family
 
@@ -332,12 +465,20 @@ def families(
         keep.edges += gone.edges + [edge] + seconds
         for char in keep.members:
             group[char] = keep
-    _join_yixiezi(variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse,
-                  readings)
+    headwords = headwords or Headwords()
+    reduced_forms, unlike, standalone, stated = _join_yixiezi(
+        variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse)
+    if standard is not None:
+        found = _join_standard_forms(variants, ideographs, group, refuse, standard, headwords, standalone, familiarity or {})
+        if decisions is not None:
+            decisions.extend(found)
+    _add_writers(reduced_forms, unlike, standalone, group)
+    if readings is not None:
+        _add_stand_ins(stated, unlike, readings, group)
     found = {id(family): family for family in group.values() if len(family.members) > 1 or family.writers}
     for family in found.values():
         if not family.curated:
-            family.head = head_of(family, familiarity or {})
+            family.head = _head(family, familiarity or {})
     return sorted(found.values(), key=lambda family: ord(family.head))
 
 
@@ -362,10 +503,12 @@ def _stated_by(standard: str, edge: Edge) -> bool:
 
 
 def _join_yixiezi(
-    variants: list[Mapping[str, str]], ideographs: set[str], standards: tuple[set[str], ...],
-    group: dict[str, Family], refuse, readings: set[str] | None = None,
-) -> None:
-    """The 異寫字 pass (see the module docstring): join each group tied to one family only."""
+    variants: list[Mapping[str, str]], ideographs: set[str], standards: Mapping[str, set[str]],
+    group: dict[str, Family], refuse,
+) -> tuple[dict[str, list[Edge]], dict[str, set[str]], set[str], dict[str, list[Edge]]]:
+    """The 異寫字 pass (see the module docstring): join each group tied to one family only. Answers with what the
+    recording of writers reads: each reduced form's statements, the look-alikes, the forms that also write
+    themselves, and each character's statements of the whole of another."""
     standalone = {row["b"] for row in variants if row["relation"] == "simplified" and row["source"] == "opencc"
                   and STANDALONE in row["detail"].split(" | ")}
     units: dict[str, Family] = {}
@@ -460,9 +603,195 @@ def _join_yixiezi(
         keep.edges += gone.edges + edges
         for char in keep.members:
             group[char] = keep
-    _add_writers(reduced, unlike, standalone, group)
-    if readings is not None:
-        _add_stand_ins(stated, unlike, readings, group)
+    return reduced, unlike, standalone, stated
+
+
+#: cjkvi tags by which its database calls a pair one character, whatever its non-cognate list says: a 異体字 table,
+#: a simplification, or separated at the source (原規格分離).
+SAME_TAGS = ("hydzd/", "twedu/", "koseki/", "joyo/", "jinmei1/", "jinmei2/", "hyogai/", "dypytz/", "ucs-scs/",
+             "cjkvi/duplicate", "cjkvi/simplified", "cjkvi/traditional")
+
+
+def _is_different(rows: Iterable[Mapping[str, str]]) -> str | None:
+    """Why the rows between two characters make them different ones, or None (rule 5 of the third pass)."""
+    rows = list(rows)
+    if any(row["relation"] in ("borrowed", "substitute") for row in rows):
+        return "a loan or a substitute"
+    tags = [claim.split()[1] for row in rows if row["source"] == "cjkvi-variants" and row["relation"] != "non-cognate"
+            for claim in row["detail"].split(" | ") if len(claim.split()) > 1]
+    if any(row["relation"] == "non-cognate" for row in rows) and not any(tag.startswith(SAME_TAGS) for tag in tags):
+        return "a non-cognate homograph"
+    return None
+
+
+def _join_standard_forms(
+    variants: list[Mapping[str, str]], ideographs: set[str], group: dict[str, Family], refuse,
+    standard: Mapping[str, StandardForm], headwords: Headwords, standalone: set[str], familiarity: Mapping[str, int],
+) -> list[Decision]:
+    """The third pass (see the module docstring): join each form a national standard prescribes for one character."""
+    between: dict[frozenset[str], list[Mapping[str, str]]] = {}
+    #: The full forms the sources reduce to each form: by Unihan, by OpenCC's STCharacters, as a 新字体, and the
+    #: 旧字体 the 常用漢字表 prints beside it.
+    unihan: dict[str, set[str]] = {}
+    opencc: dict[str, set[str]] = {}
+    shinjitai: dict[str, set[str]] = {}
+    joyo: dict[str, set[str]] = {}
+    for row in variants:
+        a, b, relation, source = row["a"], row["b"], row["relation"], row["source"]
+        if a not in ideographs or b not in ideographs or _canonical(a) == _canonical(b):
+            continue
+        between.setdefault(frozenset((a, b)), []).append(row)
+        claims = row["detail"].split(" | ")
+        if relation == "simplified" and source == "unihan":
+            unihan.setdefault(b, set()).add(a)
+        elif relation == "simplified" and source == "opencc" and any(claim.startswith("STCharacters") for claim in claims):
+            opencc.setdefault(b, set()).add(a)
+        elif relation == "shinjitai" and source != "opencc":
+            shinjitai.setdefault(b, set()).add(a)
+        for claim in claims:
+            if claim.split()[1:2] == ["joyo/variant"]:
+                new, _, old = claim.split()[0].partition("→")
+                joyo.setdefault(new, set()).add(old)
+
+    def unit(char: str) -> Family:
+        return group.get(char) or Family(char, {char})
+
+    def two_characters(a: str, b: str) -> bool:
+        return not headwords.one_entry({a}, {b}) and len(headwords.apart_in({a}, {b})) == 2
+
+    def related(a: str, b: str) -> bool:
+        return not two_characters(a, b) and any(row["relation"] in VARIANT for row in between.get(frozenset((a, b)), ()))
+
+    def decide(form: str, full: set[str], further: set[str], edges: list[Edge], table: StandardForm | None) -> Decision | None:
+        families = {id(unit(char)) for char in full}
+        if form in group and families == {id(group[form])}:
+            return None
+        edges += [Edge(row["a"], row["b"], row["relation"], row["source"], row["detail"])
+                  for char in sorted(full) for row in between.get(frozenset((form, char)), ())
+                  if row["b"] == form and row["relation"] in REDUCED_FORM or "joyo/variant" in row["detail"]]
+        found = Decision(form, frozenset(full), edges)
+        if table is not None and table.full and table.itself:
+            found.reasons.append("the table gives it for itself too")
+        if form in standalone and table is not None:
+            found.reasons.append("OpenCC gives it for itself too")
+        if len(families) > 1:
+            found.reasons.append("several characters: " + "".join(sorted(full)))
+        outside = sorted(char for char in further - full - {form} if char in ideographs and unit(char) is not unit(form)
+                         and id(unit(char)) not in families
+                         and not any(related(char, one) or (table is not None and char in table.others
+                                                            and not two_characters(char, one)) for one in full))
+        if outside:
+            found.reasons.append("a further character: " + "".join(outside))
+        listed = sorted(char for char in full if char in standard and table is not None)
+        if listed:
+            found.reasons.append("the table lists the full form too: " + "".join(listed))
+        members = set().union(*(unit(char).members for char in full)) - {form}
+        if table is not None and not headwords.one_entry({form}, members):
+            found.reasons += [f"a headword of the {name} with another reading" for name in headwords.apart_in({form}, members)]
+            if other := headwords.writes(form):
+                found.reasons.append(f"a 重文 of another character: {other}")
+        for char in sorted(full):
+            if why := _is_different(between.get(frozenset((form, char)), ())):
+                found.reasons.append(why)
+        if len(families) == 1:
+            target = unit(min(full))
+            head = _head(target, familiarity)
+            curated = any(char in target.stated for char in full)
+            if table is not None and head in standard and head != form and head not in full and not curated:
+                found.reasons.append(f"its full form is of the grapheme of {head}, another character of the table")
+        found.full = frozenset(full - unit(form).members)
+        return found
+
+    decided: list[Decision] = []
+    for char, table in sorted(standard.items(), key=lambda item: item[1].position):
+        full = {one for one in table.full if one in ideographs}
+        told = {one for one in unihan.get(char, set()) if one != char}
+        others = {one for one in table.others if one in ideographs}
+        if not full and not told:
+            continue
+        # With no 繁体字 printed, the full form is the one Unihan gives; where the table prints one 异体字 and
+        # Unihan another character, it is the table's (净［淨］, Unihan 凈).
+        target = full or (others if told.isdisjoint(others) and len(others) == 1 else told)
+        further = told | opencc.get(char, set()) | shinjitai.get(char, set())
+        edges = [Edge(one, char, "simplified", TONGYONG, f"{table.position:04d} {char}（{one}）") for one in sorted(full)]
+        edges += [Edge(one, char, "variant", TONGYONG, f"{table.position:04d} {char}［{one}］") for one in sorted(target & others)]
+        if (found := decide(char, target, further, edges, table)) is not None:
+            decided.append(found)
+    for char in sorted(joyo, key=ord):
+        full = {one for one in joyo[char] if one in ideographs and _canonical(one) == one}
+        if not full or any(found.form == char and full <= found.full for found in decided):
+            continue
+        if (found := decide(char, full, shinjitai.get(char, set()), [], None)) is not None:
+            decided.append(found)
+    for found in decided:
+        edge = found.edges[0]
+        if found.reasons:
+            refuse("a standard form: " + found.reasons[0].partition(":")[0], edge)
+        elif why := _take_in(found, group, between, familiarity):
+            found.reasons.append(why)
+            refuse("a standard form: " + why, edge)
+    return decided
+
+
+def _head(family: Family, familiarity: Mapping[str, int]) -> str:
+    return family.head if family.curated else family.kept_head or head_of(family, familiarity)
+
+
+def _part_of(form: str, family: Family, familiarity: Mapping[str, int]) -> set[str]:
+    """What moves with `form` out of its family: the whole when it heads it, or else what hangs on it alone."""
+    head = _head(family, familiarity)
+    if len(family.members) == 1 or head == form:
+        return set(family.members)
+    reached, queue = {head}, [head]
+    while queue:
+        char = queue.pop()
+        for edge in family.edges:
+            for one, other in ((edge.a, edge.b), (edge.b, edge.a)):
+                if one == char and other != form and other in family.members and other not in reached:
+                    reached.add(other)
+                    queue.append(other)
+    return set(family.members) - reached
+
+
+def _take_in(
+    found: Decision, group: dict[str, Family], between: Mapping[frozenset[str], list[Mapping[str, str]]],
+    familiarity: Mapping[str, int],
+) -> str | None:
+    """Join one standard form to the family of its full form, or say why what it brings along cannot."""
+    form = found.form
+    source = group.get(form) or Family(form, {form})
+    target = group.get(min(found.full)) or Family(min(found.full), {min(found.full)})
+    if source is target:
+        return None
+    moved = _part_of(form, source, familiarity)
+    if form in source.stated and (target.curated or moved != source.members):
+        return "two curated families"
+    for char in moved - {form}:
+        for member in target.members:
+            if why := _is_different(between.get(frozenset((char, member)), ())):
+                return f"{char}, which it brings, and {member}: {why}"
+    heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
+    edges = [edge for edge in source.edges if edge.a in moved and edge.b in moved]
+    rest = [edge for edge in source.edges if edge.a not in moved and edge.b not in moved]
+    if moved != source.members:
+        source.members -= moved
+        source.edges = rest
+        keep = target
+        keep.members |= moved
+        keep.edges += edges + found.edges
+    else:
+        keep, gone = (source, target) if source.curated else (target, source)
+        keep.members |= gone.members
+        keep.edges += gone.edges + found.edges
+    if not keep.curated:
+        # The full form's family keeps its head, unless the form's is one a Japanese reader knows better, or as
+        # well and the 新字体 of the pair (遥 for 遙; 憐 stays over 怜).
+        known = [familiarity.get(head, 9) if familiarity.get(head) in JAPANESE_RANKS else 9 for head in heads]
+        newer = heads[0] == form and any(edge.relation == "shinjitai" or "joyo/variant" in edge.detail for edge in found.edges)
+        keep.kept_head = heads[0] if known[0] < known[1] or (known[0] == known[1] < 9 and newer) else heads[1]
+    for char in keep.members:
+        group[char] = keep
+    return None
 
 
 def _add_writers(

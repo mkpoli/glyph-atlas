@@ -13,12 +13,12 @@ const card = { code_point: 'U+5047', char: '假', grapheme: { code_point: 'U+4EE
 
 describe('what stands for a grapheme', () => {
   it('is its 旧字体, its head and its 简体字, each once, else its head', () => {
-    expect(['図', '竜', '語', '馬', '国', '仮', '説', '線', '弯', '歩'].map(graphemeLabel)).toEqual(['圖図图', '龍竜龙', '語语', '馬马', '國国', '假仮', '説说', '線线', '彎弯', '步歩'])
+    expect(['図', '竜', '語', '馬', '国', '仮', '説', '線', '弯', '歩', '対', '状', '閣'].map(graphemeLabel)).toEqual(['圖図图', '龍竜龙', '語语', '馬马', '國国', '假仮', '説说', '線线', '彎弯', '步歩', '對対对', '狀状', '閣阁'])
     expect(['壷', '税'].map(graphemeLabel)).toEqual(['壺壷壶', '税'])
     expect(['図', '語', '後'].map(labelSize)).toEqual([3, 2, 1])
     // The old form or the 简体字 alone, a head with neither or whose forms are another grapheme's, a kana,
     // a description and a key that names nothing.
-    for (const text of ['假', '语', '遇', '神', '青', '状', '弁', '閣', '确', 'は', '⿰木木', '', 'toString']) expect(graphemeLabel(text)).toBe(text)
+    for (const text of ['假', '语', '遇', '神', '青', '機', '弁', '確', '确', 'は', '⿰木木', '', 'toString']) expect(graphemeLabel(text)).toBe(text)
   })
   it('is two or three characters, the head among them, whatever the table holds', () => {
     for (const [head, label] of Object.entries(LABELS)) expect([[2, 3].includes([...label].length), [...label].includes(head)]).toEqual([true, true])

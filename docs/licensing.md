@@ -91,6 +91,10 @@ through みんなで翻刻.
   (CC BY-SA 4.0) and cjkvi-variants. A variant relation between two characters is a fact without
   creative expression, so a relation table that states no licence (cjkvi-variants) is used as public
   domain, and Wikidata's statements are used under CC0 whichever dictionary they cite.
+- 通用规范汉字表 附件1 (`data/vocab/tongyong-guifan-forms.tsv`): a law of the People's Republic of China, outside copyright
+  (著作权法第五条), in mandel59's transcription (CC0) of Wikisource's (public domain).
+- Headwords of the 說文解字 and the 廣韻 (`data/vocab/headword-readings.tsv`): shuowen.org's data (Apache-2.0) and nk2028's
+  tshet-uinh-data (CC0).
 - 通用规范汉字表 (`data/vocab/tongyong-guifan.tsv`): the positions of its 8,105 characters, from Unihan 18.0.0 kTGH
   (Unicode License v3). The labels of graphemes (`apps/cloudflare/src/graphemeLabels.json`) draw on it, on Unihan's
   simplified forms and on the 常用漢字表's older forms as CJKVI gives them.
