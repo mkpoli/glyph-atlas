@@ -461,9 +461,9 @@ journalctl -u fish-bot -f
 ```
 
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
-estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, with each Google Search query at
-$14 per 1,000 (the free 5,000 a month are shared with the account's other projects), logged once a
-day. `[budget] daily_usd` is what calls may cost a day on average. A day may also spend what earlier days
+estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, logged once a
+day. Google Search queries count as free up to 3,000 a month (Google gives 5,000, shared with the
+account's other projects), then at $14 per 1,000. `[budget] daily_usd` is what calls may cost a day on average. A day may also spend what earlier days
 saved, up to one day's worth, and borrow one day's worth from the next, so a busy evening is not cut off
 and a quiet day pays for it. A call sets $0.05 aside before it is sent and is settled at its real cost
 (one that costs more may pass the limit by the difference). With nothing left no call is sent until
