@@ -7,6 +7,7 @@ import contextlib
 import io
 import itertools
 import json
+import re
 import sqlite3
 import urllib.parse
 import zlib
@@ -3736,3 +3737,22 @@ def test_searches_of_a_visit_count_towards_the_month(tmp_path):
 
 def test_a_day_without_calls_has_no_report(tmp_path):
     assert fish_bot.answer_report(fish_bot.Store(tmp_path / "chat.sqlite3").outcomes(7)) == ""
+
+
+def test_every_block_of_the_communitys_scripts_is_read_as_one():
+    blocks = fish_bot.unicode_data().blocks
+    han = [row for row in blocks if row[2].startswith(("CJK Unified Ideographs", "CJK Compatibility Ideographs"))]
+    others = [row for row in blocks if row[2] in ("Tangut", "Tangut Components", "Tangut Supplement", "Khitan Small Script",
+                                                  "Jurchen", "Jurchen Radicals", "Nushu", "Seal", "Egyptian Hieroglyphs",
+                                                  "Egyptian Hieroglyphs Extended-A")]
+    assert len(han) == 13 and len(others) == 10
+    for low, high, name in han + others:
+        for point in (low, high):
+            assert re.match(f"[{fish_bot.SPACELESS}]", chr(point)), name
+            assert bool(re.match(f"[{fish_bot.HAN}]", chr(point))) is ([low, high, name] in han), name
+
+
+def test_the_newest_characters_can_be_remembered_and_found():
+    for char in ("\U000323b0", "\U00031350", "\U00018e00", "\U0003d000"):
+        terms = fish_bot.memory_terms(char * 2, 10)
+        assert terms and all(char in term for term in terms)
