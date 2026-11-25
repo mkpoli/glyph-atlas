@@ -5,11 +5,11 @@
   // dictionary that the characters write can be named with it.
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
-  import { RUN_MAX, beside, clearReading, cropLine, pressed, setReading, stretch } from '../lib/cropReadings.js'
+  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, setReading, stretch } from '../lib/cropReadings.js'
   import { clearWord, setWord, wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
   import { t } from '../lib/i18n.svelte.js'
-  import { signedInUser } from '../lib/session.svelte.js'
+  import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
   import ScriptText from './ScriptText.svelte'
 
@@ -60,30 +60,29 @@
   function fill() {
     for (const place of places) if (readings[place] === undefined && kana(line.parts[place])) readings[place] = plainKana(line.parts[place])
   }
-  function open() {
+  async function open() {
+    // Whose reading it opens with waits until the page knows who reads.
+    await sessionStarted()
     error = ''; chosen = undefined; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
-    const value = values[0] ?? rubyValues[0] ?? null
-    method = item.reading?.methods?.[0] ?? untrack(() => method)
-    place(cropLine(item), value)
+    const opened = opening(item.reading, signedInUser()?.id)
+    method = opened.method ?? untrack(() => method)
+    place(cropLine(item), opened)
     editing = true
     tick().then(() => root?.querySelector('.reading-over input')?.focus({ preventScroll: true }))
     neighbours = []
     arriving = item.origin === 'corpus' ? null : readLine(item.id, { reach: RUN_MAX - 1 }).then(({ items }) => {
       if (!editing) return
       neighbours = items
-      if (!touched) place(cropLine(item, items), value)
+      if (!touched) place(cropLine(item, items), opened)
     }).catch(() => { /* The run is then saved on this crop alone. */ })
   }
   // Stand the crop on its line, with the run of an earlier reading where the line still holds it.
-  function place(next, value) {
+  function place(next, { value, reading: over, ruby: beside }) {
     const start = value ? next.at - value.at : next.at, kept = value && value.run.every((part, i) => next.parts[start + i] === part)
     line = value && !kept ? { parts: value.run, at: value.at, also: [] } : next
     from = value ? line.at - value.at : line.at; to = from + (value?.run.length ?? 1) - 1
     readings = {}; rubies = {}; whole = false; wholeReading = ''; wholeRuby = ''; letters = null
     if (value) {
-      // The ruby beside another run is another's, and says nothing of this one.
-      const together = one => one.at === value.at && JSON.stringify(one.run) === JSON.stringify(value.run)
-      const over = value.reading ?? [], beside = rubyValues.find(together)?.ruby ?? []
       whole = value.run.length > 1 && (over.length || beside.length) === 1
       if (whole) { wholeReading = over.join(''); wholeRuby = beside.join('') }
       else value.run.forEach((_, i) => { readings[from + i] = over[i] ?? ''; if (beside.length === value.run.length) rubies[from + i] = beside[i] })

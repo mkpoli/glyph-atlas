@@ -48,6 +48,21 @@ export function cropLine(crop, neighbours = []) {
   return here < 0 ? { parts: [own], at: 0, also: [] } : { parts: line.map(one => one.offset === 0 ? own : composed(one.label)), at: here, also: [] }
 }
 
+const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.stringify(b.run)
+/**
+ * What the editor opens with, for a reader: the reading and the ruby they hold, or, holding neither, the
+ * ones nobody disputes. A ruby beside another run says nothing of this one. `value` names the run.
+ */
+export function opening(slot, user) {
+  const mine = value => Boolean(user && value.by?.includes(user))
+  const readings = slot?.values ?? [], rubies = slot?.ruby?.values ?? []
+  const holds = [...readings, ...rubies].some(mine)
+  const from = (values, status) => holds ? values.find(mine) : status === 'disputed' ? undefined : values[0]
+  const reading = from(readings, slot?.status), ruby = from(rubies, slot?.ruby?.status)
+  const value = reading ?? ruby ?? null
+  return { value, reading: reading?.reading ?? [], ruby: value && ruby && together(value, ruby) ? ruby.ruby : [], method: reading?.methods?.[0] ?? null }
+}
+
 /** The places a run around `at` can reach: the characters up to the punctuation either side of it. */
 export function stretch(parts, at) {
   let from = at, to = at

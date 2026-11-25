@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -57,6 +57,31 @@ it('a press grows the run to a character outside it, and leaves one inside it ou
   expect(pressed({ from: 3, to: 5 }, 5, 3)).toEqual({ from: 4, to: 5 })
   expect(pressed({ from: 3, to: 5 }, 5, 5)).toEqual({ from: 3, to: 5 })
   expect(pressed({ from: 20, to: 20 }, 20, 0)).toEqual({ from: 9, to: 20 })
+})
+
+describe('what the editor opens with', () => {
+  const run = { run: ['諸', '器'], at: 1 }, alone = { run: ['器'], at: 0 }
+  const theirs = { ...run, reading: ['しょ', 'き'], by: ['a'], methods: ['ruby'] }, mine = { ...alone, reading: ['うつわ'], by: ['me', 'b'], methods: ['context'] }
+  it('is the reading the reader holds, beside another they do not', () => {
+    expect(opening({ status: 'disputed', values: [theirs, mine] }, 'me')).toEqual({ value: mine, reading: ['うつわ'], ruby: [], method: 'context' })
+  })
+  it('never fills in another reader\'s ruby beside the reader\'s own reading', () => {
+    const slot = { status: 'asserted', values: [{ ...theirs, by: ['a', 'me'] }], ruby: { status: 'asserted', values: [{ ...run, ruby: ['𛁈よ', 'き'], by: ['a'] }] } }
+    expect(opening(slot, 'me')).toMatchObject({ reading: ['しょ', 'き'], ruby: [] })
+    slot.ruby.values.push({ ...run, ruby: ['しよ', 'き'], by: ['me'] }); slot.ruby.status = 'disputed'
+    expect(opening(slot, 'me').ruby).toEqual(['しよ', 'き'])
+  })
+  it('is, for a reader who holds nothing, what nobody disputes', () => {
+    const slot = { status: 'asserted', values: [theirs], ruby: { status: 'asserted', values: [{ ...run, ruby: ['𛁈よ', 'き'], by: ['a'] }] } }
+    for (const user of ['me', undefined]) expect(opening(slot, user)).toMatchObject({ value: theirs, reading: ['しょ', 'き'], ruby: ['𛁈よ', 'き'], method: 'ruby' })
+    expect(opening({ status: 'disputed', values: [theirs, { ...mine, by: ['b'] }] }, 'me')).toEqual({ value: null, reading: [], ruby: [], method: null })
+    expect(opening(null, 'me')).toEqual({ value: null, reading: [], ruby: [], method: null })
+  })
+  it('leaves out a ruby beside another run, and opens with a ruby alone', () => {
+    const ruby = { ...alone, ruby: ['き'], by: ['a'] }
+    expect(opening({ status: 'asserted', values: [theirs], ruby: { status: 'asserted', values: [ruby] } }, 'me').ruby).toEqual([])
+    expect(opening({ status: null, values: [], ruby: { status: 'asserted', values: [ruby] } }, 'me')).toMatchObject({ value: ruby, ruby: ['き'] })
+  })
 })
 
 describe('hentaigana', () => {
