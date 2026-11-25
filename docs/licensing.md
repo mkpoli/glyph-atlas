@@ -58,6 +58,9 @@ through みんなで翻刻.
 - HDIC KRM, KTB and TSJ (観智院本類聚名義抄, 高山寺本篆隷萬象名義, 天治本新撰字鏡): CC BY-SA 4.0, stated
   in the repositories' READMEs and in each TSV's header. The page images they are placed on are NDL
   facsimiles, all marked PDM.
+- 青雀古籍 (YingdaZhao), 龍龕手鏡 table: CC BY-SA 4.0 for the project's own work; its README says the origin and licence of
+  the first transcription could not be traced. It places and labels crops of the 宋刻本, which is public domain on
+  Wikimedia Commons, and is not republished.
 - nk2028 tshet-uinh-data (廣韻 of the 澤存堂本: entries, and each entry's leaf, column and place): CC0 1.0,
   stated in the repository's LICENSE. nk2028's photographs of the printing name 韻典網 as their source
   and neither a holder nor terms; they reproduce flat printed pages, so the rule above records them as

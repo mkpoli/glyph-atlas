@@ -1,7 +1,8 @@
 import { isSeal } from './cardTiers.js'
 import { keyText } from './codePoints.js'
 
-const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
+/** A text's code points, as a key names them. */
+export const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
 /** The text a grapheme key names, or the key itself where it names none. */
 export const charOf = key => keyText(key) ?? key
 

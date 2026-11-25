@@ -984,7 +984,7 @@ describe('a crop\'s style', () => {
     const { db, env, ids } = styledSetup();
     const saved = await send(env, `/atlas/characters/${publicId(ids[0])}/style`, { id: uuid(901), revision: 0, style: 'regular' });
     expect(saved.status).toBe(200);
-    expect(saved.body).toMatchObject({ id: publicId(ids[0]), style: 'regular', style_basis: 'unit', style_editable: true, revision: 1 });
+    expect(saved.body).toMatchObject({ id: publicId(ids[0]), style: 'regular', style_basis: 'unit', style_inherited: 'cursive', style_editable: true, revision: 1 });
     expect(styleOf(db, ids[0])).toEqual({ revision: 1, style: 'regular', overlay: (db.query(`SELECT code FROM codes WHERE field='style' AND key='regular'`).get() as any).code, base: 'cursive' });
     expect(styles(db)).toEqual({ cursive: -1, regular: 1 });
     expect(db.query('SELECT kind,style IS NOT NULL AS own,label,state FROM events WHERE crop=?').get(ids[0])).toEqual({ kind: 9, own: 1, label: 1, state: 0 });
@@ -997,7 +997,7 @@ describe('a crop\'s style', () => {
     await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(902), revision: 0, style: 'running' });
     await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(903), revision: 1, style: 'seal' });
     const back = await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(904), revision: 2, style: 'unassessed' });
-    expect(back.body).toMatchObject({ style: 'cursive', style_basis: 'none', revision: 3 });
+    expect(back.body).toMatchObject({ style: 'cursive', style_basis: 'none', style_inherited: 'cursive', revision: 3 });
     expect(styleOf(db, ids[6])).toMatchObject({ revision: 3, style: 'cursive', base: 'cursive' });
     expect(styles(db)).toEqual({});
     const again = await send(env, `/atlas/characters/${publicId(ids[6])}/style`, { id: uuid(904), revision: 2, style: 'unassessed' });

@@ -463,11 +463,14 @@ journalctl -u fish-bot -f
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
 estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, with each Google Search query at
 $14 per 1,000 (the free 5,000 a month are shared with the account's other projects), logged once a
-day. `[budget] daily_usd` limits what a day may cost: a call sets $0.05 aside before it is sent and is
-settled at its real cost (one that costs more may pass the limit by the difference), and once the
-day's money is gone no call is sent until midnight JST. She opens no rooms unasked while spending
-is ahead of a pace that rises through the day; from 85% she reads 15 lines and one picture and leaves
-bystanders in a conversation alone; with none left she tells a room that calls her, once a day. A
+day. `[budget] daily_usd` is what calls may cost a day on average. A day may also spend what earlier days
+saved, up to one day's worth, and borrow one day's worth from the next, so a busy evening is not cut off
+and a quiet day pays for it. A call sets $0.05 aside before it is sent and is settled at its real cost
+(one that costs more may pass the limit by the difference). With nothing left no call is sent until
+midnight JST. Her unasked visits have
+their own part of it, let out as people write through the day by the hours of the last two weeks. The last
+$0.35 is kept for people who call her: below it she makes no visits and no digest, reads 15 lines and one
+picture, and leaves bystanders in a conversation alone; with none left she tells a room that calls her, once a day. A
 client without a purse sends nothing at all, and only the process systemd runs as `fish-bot.service`
 may call a model: nothing that costs money is ever tested, by anyone or any agent. The last week is
 printed by

@@ -94,7 +94,7 @@ try {
 
   // The box in the toolbar has the page below it, so its list keeps opening downward.
   await browser.evaluate(typeInto('.collection-toolbar .character-search input', 'い'))
-  await browser.waitFor(`document.querySelectorAll('.collection-toolbar .candidate-list .candidate').length === 10`)
+  await browser.waitFor(`document.querySelectorAll('.collection-toolbar .candidate-list .search-card').length === 10`)
   await browser.screenshot('/tmp/atlas-menu-flip-toolbar.png')
   const top = await browser.evaluate(geometryOf('.collection-toolbar .character-search'))
   assert(top.list.top >= top.form.bottom - 1, `the toolbar's list opens above its box: ${JSON.stringify(top)}`)

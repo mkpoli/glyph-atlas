@@ -254,10 +254,10 @@
 
 <style>
   .crop-form{scroll-margin:180px 0 120px;display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
-  .form-row{display:flex;gap:6px;align-items:flex-start}
+  .form-row{display:flex;gap:8px;align-items:flex-start}
   .form-row :global(.copy-value){align-self:center}
   /* A caption stands above each group's chips: the controls beside them keep to the chips' line. */
-  .form-row.captioned .form-add{margin-top:17px}
+  .form-row.captioned .form-add{margin-top:20px}
   .form-row.captioned :global(.copy-value){align-self:flex-end;margin-bottom:8px}
   .form-own{display:flex;align-items:baseline;gap:8px;font-size:14px;line-height:22px}
   .form-own sup{font-size:11px;line-height:1;color:var(--muted);margin-left:2px}
@@ -266,7 +266,7 @@
   .form-unread{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;align-self:center;margin:0;font-size:12px;color:var(--muted)}
   .form-more{display:inline-flex;align-items:baseline;gap:8px;align-self:flex-end;padding:4px 10px;font-size:15px;line-height:1.75;border-style:dashed;color:var(--muted)}
   .form-more small{font-size:11px}
-  .form-add{flex:none;min-width:40px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
+  .form-add{flex:none;min-width:40px;min-height:36px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .form-picker :global(.character-search){width:100%;min-width:0}
