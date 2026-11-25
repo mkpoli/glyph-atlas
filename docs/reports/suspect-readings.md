@@ -62,14 +62,22 @@ correction itself. Both are given; the labels of 27 September are the fair ones.
 
 Neighbours are the 20 nearest crops of other pages. Nearest crops do not separate the right readings.
 
-A line neighbour with the reading is a label shifted along its line, and it does: 45 of 53 where the probability is
-0.0000 (85%, 95% interval 73–92%). The 43 of those reviewed after the marks come from seven `ar:` books, so
-the figure may not hold elsewhere. 489 pending marks are of this kind (343 `ar:`, 117 `hk:`).
+A line neighbour with the reading does: 45 of 53 where the probability is 0.0000 (85%, 95% interval 73–92%). The 43 of
+those reviewed after the marks come from seven `ar:` books, so the figure may not hold elsewhere.
+
+489 pending marks are of this kind on 2026-11-25. 460 are of collected crops (343 `ar:`, 117 `hk:`; two were reviewed on the site before
+this was done) in 425 lines, 391 of them with a single one; the other 29 are corpus glyphs and were left. They are no
+lines slipped as a whole: beside most of them another box of the line is cut wrong. Each was looked at enlarged in its context.
+240 were judged to be exactly the character named, whole in its box and in that form; one was reviewed meanwhile and six べ and ぺ could be
+either script, which leaves 233. A second reader was shown those 233 with the proposed character and without the label, knew that a first
+reader had passed them, and rejected 24 and was unsure of 33. The 176 both accepted are the relabels, less 2 whose new character is a
+symbol. The rest are mostly a box over part of a stroke (し), a form of another parent (の from 能, す from 須) or a variant
+(嶋 read as 島, 皈 as 帰).
 
 ## Reading
 
 A mark's reading does not say what is wrong with the crop. No threshold measured here makes a bulk "take every reading" safe; a
-reading is an offer on one tile. A shifted line is put right as a line, by moving its labels.
+reading is an offer on one tile.
 
 ## Readings that were no doubt at all
 
