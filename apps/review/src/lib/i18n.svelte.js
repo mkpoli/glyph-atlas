@@ -8,7 +8,7 @@
 export const LOCALES = Object.entries(import.meta.glob('../locales/*.json', { eager: true, import: 'default' }))
   .map(([path, { '@locale': about, ...messages }]) => ({ tag: path.slice(11, -5), ...about, messages }))
   .sort((a, b) => a.tag.localeCompare(b.tag))
-const byTag = Object.fromEntries(LOCALES.map(locale => [locale.tag, locale]))
+const byTag = Object.assign(Object.create(null), Object.fromEntries(LOCALES.map(locale => [locale.tag, locale])))
 const en = byTag.en.messages
 
 /**
@@ -39,7 +39,7 @@ let current = $state('en')
 
 export const locale = () => current
 export const base = () => byTag[current].base
-export const isLocale = tag => Boolean(byTag[tag])
+export const isLocale = tag => Object.hasOwn(byTag, tag)
 
 /** `path` in language `tag`: every language under its own prefix. */
 export const localize = (path, tag = current) => `/${tag}${path === '/' ? '' : path}`
