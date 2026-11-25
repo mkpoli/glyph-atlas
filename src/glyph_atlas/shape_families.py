@@ -81,8 +81,8 @@ when
    hold apart from it (闲 for 閑 and 閒). A further form that is the same character as a full form the table
    prints is joined to it first, and the form joins both (骂 with 駡 and 罵, 鉴 with 鑒 and 鑑): two sources call
    the two variants, no dictionary reads both and only apart, no source calls them different in the sense of 5,
-   neither has another standard form or is a variant of another full form (鈡 of 鍾 and 鐘), and the members they bring together are
-   different in neither sense. So 叹 stays apart (嘆 and 歎: an entry each in the 說文解字, 歎 rewritten as 嘆 in the
+   neither has another standard form or is a variant of another full form (鈡 of 鍾 and 鐘), they are not each an
+   entry of the 常用漢字表 (個 and 箇), and the members they bring together are different in neither sense. So 叹 stays apart (嘆 and 歎: an entry each in the 說文解字, 歎 rewritten as 嘆 in the
    Japanese list of substitutes), as do 夹 (夾 and 袷: one source alone) and 赞 (贊 and 讚: one source alone);
 3. the table lists its full form too, so the simplification is partial (着 and 著, 了 and 瞭, 乾 and 干);
 4. it is a headword of the 說文解字 or the 廣韻 with no reading its full form has there (听 宜引切 and 聽, 胜 and
@@ -97,13 +97,15 @@ when
 5. a source calls the pair a loan or a substitute (离 and 離), or a non-cognate homograph. cjkvi's
    lists of these also hold shapes ISO/IEC 10646 encodes apart for the source separation rule and simplified
    forms, and their tag counts for nothing where the same database calls the pair a 異体字, a simplification or
-   separated at the source (状 and 狀, 涩 and 澀, 檩 and 檁), unless the 說文解字 heads an entry with each (离 and
-   離) and the 常用漢字表 does not give the pair;
+   separated at the source (状 and 狀, 涩 and 澀, 檩 and 檁), unless the 說文解字 heads an entry of its own with a form of each
+   (离 and 離; 盪, and 𣿴 for 蕩) and the 常用漢字表 does not give the pair;
 6. the family of its full form is headed by another character of the table that no curated family
    states one with the full form (铀: 鈾 stands under 宙, its 古文);
-7. what it would bring along is different from the family in one of the senses of 5, or the two are curated.
+7. what it would bring along is different from the family in one of the senses of 5, the two are curated, or it
+   would part what `graphemes.yaml` states one.
    A member it would bring that both dictionaries read, and neither with a reading in common, stays behind with
-   what hangs on it alone (𦬕, 陟宮切 in the 說文解字, when 茧 joins 繭 古典切).
+   what hangs on it alone (𦬕, 陟宮切 in the 說文解字, when 茧 joins 繭 古典切), and counts for nothing above. What
+   stays is as many families as its ties hold together.
 
 A ruling of `data/vocab/grapheme-rulings.tsv` settles a pair before these rules do: `one` joins the form to the
 full form named, the only one it then has, and `two` keeps them apart; of two full forms it says whether rule 2
@@ -169,6 +171,7 @@ the code point is only there to make the choice total.
 
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping
@@ -306,10 +309,11 @@ class Headwords:
         shared = self.compared({a}, {b})
         return len(shared) == 2 and not any(shared.values()) and not self.one_entry({a}, {b})
 
-    def entries_apart(self, a: str, b: str) -> bool:
-        """Whether the 說文解字 heads an entry with each."""
-        heads = self._own.get(SHUOWEN, {})
-        return a in heads and b in heads and not self.one_entry({a}, {b})
+    def entries_apart(self, chars: Iterable[str], others: Iterable[str]) -> bool:
+        """Whether the 說文解字 heads an entry with a character of each, and another entry with one of the other. A form it
+        gives under an entry heads none."""
+        one, other = ({entry for entry, heads in self._heads.items() if not heads.isdisjoint(side)} for side in (set(chars), set(others)))
+        return bool(one - other) and bool(other - one)
 
     def parted(self, form: str, full: Iterable[str], members: Iterable[str]) -> list[str]:
         """The dictionaries that read a headword and its full forms apart (rule 4 of the third pass). The full forms'
@@ -676,13 +680,14 @@ SAME_TAGS = ("hydzd/", "twedu/", "koseki/", "joyo/", "jinmei1/", "jinmei2/", "hy
              "cjkvi/duplicate", "cjkvi/simplified", "cjkvi/traditional", "cjkvi/variant")
 
 
-def _is_different(a: str, b: str, rows: Iterable[Mapping[str, str]], headwords: Headwords) -> str | None:
-    """Why the rows between two characters make them different ones, or None (rule 5 of the third pass)."""
+def _is_different(chars: Iterable[str], others: Iterable[str], rows: Iterable[Mapping[str, str]], headwords: Headwords) -> str | None:
+    """Why the rows between two characters make them different ones, or None (rule 5 of the third pass). `chars` and
+    `others` are the characters of their families: the 說文解字 may head its entry with another form (𣿴 of 蕩)."""
     rows = list(rows)
     tags = [claim.split()[1] for row in rows if row["source"] == "cjkvi-variants" and row["relation"] not in DIFFERENT
             for claim in row["detail"].split(" | ") if len(claim.split()) > 1]
     contradicted = any(tag.startswith(SAME_TAGS) for tag in tags) and (
-        "joyo/variant" in tags or not headwords.entries_apart(a, b))
+        "joyo/variant" in tags or not headwords.entries_apart(chars, others))
     said = {row["relation"] for row in rows if not (contradicted and row["source"] == "cjkvi-variants")}
     if said & {"borrowed", "substitute"}:
         return "a loan or a substitute"
@@ -728,7 +733,7 @@ def _join_standard_forms(
         rows, shared = between.get(frozenset((a, b)), ()), headwords.compared({a}, {b})
         return (len({row["source"] for row in rows if row["relation"] in VARIANT}) > 1
                 and (not shared or any(shared.values()) or headwords.one_entry({a}, {b}))
-                and _is_different(a, b, rows, headwords) is None)
+                and _is_different(unit(a).members, unit(b).members, rows, headwords) is None)
 
     def related(a: str, b: str) -> bool:
         return not headwords.two(a, b) and any(row["relation"] in VARIANT for row in between.get(frozenset((a, b)), ()))
@@ -739,7 +744,10 @@ def _join_standard_forms(
         settled.update(pair for pair in ((a, b), (b, a)) if pair in rulings)
         if one is other or not (ruling.one if ruling else one_character(a, b)) or one.curated and other.curated:
             return
-        if any(_kept_apart(x, y, between, headwords) for x in one.members for y in other.members if {x, y} != {a, b}):
+        # Each its own entry of the 常用漢字表: two characters, whatever one form is written for both (個 and 箇).
+        if not ruling and all(any(familiarity.get(char) == JOYO_RANK for char in side.members) for side in (one, other)):
+            return
+        if any(_kept_apart(x, y, one.members, other.members, between, headwords) for x in one.members for y in other.members if {x, y} != {a, b}):
             return
         keep, gone = (other, one) if other.curated else (one, other)
         keep.members |= gone.members
@@ -779,7 +787,7 @@ def _join_standard_forms(
             if other := headwords.writes(form):
                 found.reasons.append(f"a 重文 of another character: {other}")
         for char in sorted(full):
-            if why := _is_different(form, char, between.get(frozenset((form, char)), ()), headwords):
+            if why := _is_different(_part_of(form, unit(form), familiarity), unit(char).members, between.get(frozenset((form, char)), ()), headwords):
                 found.reasons.append(why)
         if len(families) == 1:
             target = unit(min(full))
@@ -853,15 +861,31 @@ def _part_of(form: str, family: Family, familiarity: Mapping[str, int]) -> set[s
     head = _head(family, familiarity)
     if len(family.members) == 1 or head == form:
         return set(family.members)
-    return set(family.members) - _reached(head, [edge for edge in family.edges if form not in (edge.a, edge.b)])
+    return set(family.members) - _reached(head, _ties(family, family.members - {form}))
 
 
-def _reached(start: str, edges: Iterable[Edge]) -> set[str]:
-    """`start` and what `edges` lead to from it."""
+def _ties(family: Family, among: set[str]) -> list[tuple[str, str]]:
+    """The pairs that hold a family together, of the characters `among`: its edges, and the curated family it states,
+    which no edge of it need say."""
+    stated = sorted(family.stated & among)
+    return [(edge.a, edge.b) for edge in family.edges if edge.a in among and edge.b in among] + list(itertools.pairwise(stated))
+
+
+def _parts(members: set[str], pairs: Iterable[tuple[str, str]]) -> list[set[str]]:
+    """The groups `pairs` hold `members` together in, in the order of their first characters."""
+    pairs, parts, rest = list(pairs), [], set(members)
+    while rest:
+        parts.append(_reached(min(rest), pairs))
+        rest -= parts[-1]
+    return parts
+
+
+def _reached(start: str, pairs: Iterable[tuple[str, str]]) -> set[str]:
+    """`start` and what `pairs` lead to from it."""
     beside: dict[str, set[str]] = {}
-    for edge in edges:
-        beside.setdefault(edge.a, set()).add(edge.b)
-        beside.setdefault(edge.b, set()).add(edge.a)
+    for a, b in pairs:
+        beside.setdefault(a, set()).add(b)
+        beside.setdefault(b, set()).add(a)
     found, queue = {start}, [start]
     while queue:
         queue += (more := beside.get(queue.pop(), set()) - found)
@@ -870,10 +894,11 @@ def _reached(start: str, edges: Iterable[Edge]) -> set[str]:
 
 
 def _kept_apart(
-    a: str, b: str, between: Mapping[frozenset[str], list[Mapping[str, str]]], headwords: Headwords,
+    a: str, b: str, chars: Iterable[str], others: Iterable[str],
+    between: Mapping[frozenset[str], list[Mapping[str, str]]], headwords: Headwords,
 ) -> str | None:
-    """Why two characters that a join would bring into one family are different ones, or None."""
-    return _is_different(a, b, between.get(frozenset((a, b)), ()), headwords) or (
+    """Why two characters of two families (`chars`, `others`) that a join would bring into one are different ones, or None."""
+    return _is_different(chars, others, between.get(frozenset((a, b)), ()), headwords) or (
         "two headwords with no reading in common" if headwords.two(a, b) else None)
 
 
@@ -888,30 +913,32 @@ def _take_in(
     if source is target:
         return None
     moved = _part_of(form, source, familiarity)
-    if form in source.stated and (target.curated or moved != source.members):
-        return "two curated families"
-    for char in sorted(moved):
-        for member in sorted(target.members):
-            if not (char == form and member in found.full) and (why := _is_different(
-                    char, member, between.get(frozenset((char, member)), ()), headwords)):
-                return f"{char}, which it brings, and {member}: {why}" if char != form else f"{member}, which its full form brings: {why}"
     # A member the dictionaries hold apart from the family stays behind, with what hangs on it alone.
     left = {char for char in moved - {form} if any(headwords.two(char, member) for member in target.members)}
     if left:
-        moved = _reached(form, [edge for edge in source.edges if edge.a in moved - left and edge.b in moved - left])
+        moved = _reached(form, _ties(source, moved - left))
+    for char in sorted(moved):
+        for member in sorted(target.members):
+            if not (char == form and member in found.full) and (why := _is_different(
+                    moved, target.members, between.get(frozenset((char, member)), ()), headwords)):
+                return f"{char}, which it brings, and {member}: {why}" if char != form else f"{member}, which its full form brings: {why}"
+    # What `graphemes.yaml` states one family goes or stays whole.
+    curated = bool(moved & source.stated)
+    if curated and (target.curated or not source.stated <= moved):
+        return "two curated families" if target.curated else "it would leave part of a curated family behind"
     heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
-    edges = [edge for edge in source.edges if edge.a in moved and edge.b in moved]
-    rest = [edge for edge in source.edges if edge.a not in moved and edge.b not in moved]
-    if moved != source.members:
-        source.members -= moved
-        source.edges = rest
-        keep = target
-        keep.members |= moved
-        keep.edges += edges + found.edges
-    else:
-        keep, gone = (source, target) if source.curated else (target, source)
-        keep.members |= gone.members
-        keep.edges += gone.edges + found.edges
+    stays, stated_edges = source.members - moved, source.edges
+    taken = [edge for edge in stated_edges if edge.a in moved and edge.b in moved]
+    # What stays is as many families as its ties hold together; a curated one is the family it was.
+    for part in _parts(stays, _ties(source, stays)):
+        kept = source if part & source.stated else Family(min(part), part)
+        kept.members, kept.edges = part, [edge for edge in stated_edges if edge.a in part and edge.b in part]
+        kept.kept_head = source.kept_head if source.kept_head in part else None
+        for char in part:
+            group[char] = kept
+    keep = source if curated else target
+    keep.members, keep.edges = moved | target.members, (
+        [*taken, *target.edges, *found.edges] if curated else [*target.edges, *taken, *found.edges])
     if not keep.curated:
         # The full form's family keeps its head, unless the form's is one a Japanese reader knows better, or as
         # well and the 新字体 of the pair (遥 for 遙; 憐 stays over 怜).
@@ -979,6 +1006,8 @@ def _add_stand_ins(
             target.writers[form] = sorted(found, key=lambda edge: (ord(edge.a), ord(edge.b), edge.source, edge.relation))
 
 
+#: The rank of a 常用漢字 in `familiarity`.
+JOYO_RANK = 0
 #: The ranks of `familiarity` a Japanese reader knows (常用, 人名用, JIS X 0208 levels 1 and 2), the
 #: traditional standard's (CNS 11643 planes 1 and 2) and the simplified standard's (GB 2312).
 JAPANESE_RANKS, TRADITIONAL_RANKS, SIMPLIFIED_RANKS = range(4), frozenset({4, 5, 7}), frozenset({6})

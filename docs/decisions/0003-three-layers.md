@@ -79,13 +79,23 @@ policies remain separate from browsing families.
 A 简体字 of the 通用规范汉字表 (2013) or a 新字体 of the 常用漢字表 (2010) is of the grapheme of its full form when it writes that one
 character: 对對, 动動, 实實, 黄黃, 状狀. Before, a form joined only when every variant relation it had led to one family, so a
 form in wide use stayed apart for its other relations (动 also relates to 働). What a form is for is now read from the
-standards' own tables, with Unihan and OpenCC, and 425 of the 608 forms outside their full form's grapheme join it.
-183 stay apart (`data/vocab/grapheme-apart.tsv`, each with its reasons): the form is also itself (后, 价, 谷), writes
-several characters (发, 历, 弁, 枪), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its
-full form (着, 了), or is a loan for it. Two full forms of one form that two sources call variants, and nothing holds
-apart, are one character too and join with it (駡 and 罵 with 骂). `glyph_atlas.shape_families` states each rule with its
-sources, and `data/vocab/grapheme-rulings.tsv` the pairs ruled on by hand. The joined grapheme keeps the key of the
-full form's, unless the form is better known in Japan (没 over 沒, 黄 over 黃).
+standards' own tables, with Unihan and OpenCC, and 423 of the 608 forms outside their full form's grapheme join it.
+185 stay apart (`data/vocab/grapheme-apart.tsv`, each with its reasons): the form is also itself (后, 价, 谷), writes
+several characters (发, 历, 弁, 枪, 个), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its
+full form (着, 了), or is a loan for it.
+
+Two full forms of one form that two sources call variants, and nothing holds apart, are one character too and join
+with it (駡 and 罵 with 骂). A dictionary holds two apart by the readings it gives both. Where none reads both there is
+nothing to compare, and the join rests on the two sources: 駡, 鈎 and 綉 are later shapes neither dictionary heads an
+entry with, while 罵, 鉤 and 繡 are headwords, and asking for a shared reading would part every such pair. A non-cognate
+tag of cjkvi's is no word of two characters where its own database also calls the pair 異体字: 奬 and 獎 are tagged so and
+are 異体字 in its hydzd, dypytz, twedu and 戸籍 tables, as 状 and 狀 are, and the list it comes from also holds shapes ISO/IEC
+10646 encodes apart. Two entries of the 常用漢字表 are two characters (個 and 箇), and so is a pair called a loan whose forms
+the 說文解字 heads an entry with each (蕩, as 𣿴, and 盪).
+
+`glyph_atlas.shape_families` states each rule with its sources, and `data/vocab/grapheme-rulings.tsv` the pairs ruled
+on by hand. The joined grapheme keeps the key of the full form's, unless the form is better known in Japan (没 over 沒,
+黄 over 黃).
 
 - 教育部・国家语言文字工作委员会『通用规范汉字表』附件1 规范字与繁体字、异体字对照表, 国发〔2013〕23号, as transcribed by
   Wikisource and mandel59 (`data/sources/tongyong-guifan.yaml`); nos. 1151–1508 compared with the official scan.

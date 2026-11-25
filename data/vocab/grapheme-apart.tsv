@@ -1,18 +1,19 @@
 # The 简体字 of the 通用规范汉字表 and the 新字体 of the 常用漢字表 that are not in the grapheme of their full
 # form, with the rules of src/glyph_atlas/shape_families.py that keep them apart; the sources of the edges as
 # in grapheme-families.tsv.
-# standard forms: 608, joined: 425, apart: 183
+# standard forms: 608, joined: 423, apart: 185
 form	full	reasons	sources
 厂	廠	OpenCC gives it for itself too | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 卜	蔔	the table gives it for itself too | OpenCC gives it for itself too | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan
 儿	兒	a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 几	幾	the table gives it for itself too | OpenCC gives it for itself too | a headword of the shuowen with another reading | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 了	瞭	the table gives it for itself too | OpenCC gives it for itself too | the table lists the full form too: 瞭	cjkvi-variants opencc tongyong-guifan unihan
-干	乾幹	the table gives it for itself too | OpenCC gives it for itself too | several characters: 乾幹 | the table lists the full form too: 乾 | a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
+干	乾幹	the table gives it for itself too | OpenCC gives it for itself too | several characters: 乾幹 | the table lists the full form too: 乾 | a headword of the shuowen with another reading | a loan or a substitute	cjkvi-variants opencc tongyong-guifan unihan yitizi
 于	於	OpenCC gives it for itself too | the table lists the full form too: 於 | a headword of the guangyun with another reading	opencc unihan yitizi
 亏	虧	a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 才	纔	the table gives it for itself too | OpenCC gives it for itself too | a headword of the shuowen with another reading | a loan or a substitute	cjkvi-variants opencc tongyong-guifan unihan
 千	韆	the table gives it for itself too | OpenCC gives it for itself too | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan
+个	個	a further character: 箇	cjkvi-variants opencc tongyong-guifan unihan yitizi
 么	麽	a further character: 幺 | the table lists the full form too: 麽	cjkvi-variants opencc tongyong-guifan unihan yitizi
 广	廣	OpenCC gives it for itself too | a headword of the shuowen with another reading | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 尸	屍	OpenCC gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
@@ -52,7 +53,7 @@ form	full	reasons	sources
 迁	遷	a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 价	價	OpenCC gives it for itself too | a headword of the shuowen with another reading | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 伙	夥	the table gives it for itself too | OpenCC gives it for itself too | the table lists the full form too: 夥	cjkvi-variants opencc tongyong-guifan unihan
-向	嚮	the table gives it for itself too | OpenCC gives it for itself too | a further character: 曏 | a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
+向	嚮	the table gives it for itself too | OpenCC gives it for itself too | a further character: 曏 | a headword of the shuowen with another reading | a loan or a substitute	cjkvi-variants opencc tongyong-guifan unihan yitizi
 后	後	the table gives it for itself too | OpenCC gives it for itself too | a loan or a substitute	cjkvi-variants opencc tongyong-guifan unihan yitizi
 合	閤	the table gives it for itself too | OpenCC gives it for itself too | a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan
 冲	衝	the table gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
@@ -65,7 +66,7 @@ form	full	reasons	sources
 坏	壞	a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 坝	垻壩	several characters: 垻壩	cjkvi-variants opencc tongyong-guifan unihan yitizi
 折	摺	the table gives it for itself too | OpenCC gives it for itself too | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan
-志	誌	OpenCC gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
+志	誌	OpenCC gives it for itself too | a loan or a substitute	cjkvi-variants opencc tongyong-guifan unihan yitizi
 克	剋	the table gives it for itself too | OpenCC gives it for itself too | the table lists the full form too: 剋	cjkvi-variants opencc tongyong-guifan unihan yitizi
 苏	囌蘇	several characters: 囌蘇 | a further character: 甦	cjkvi-variants opencc tongyong-guifan unihan yitizi
 杆	桿	OpenCC gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
@@ -85,7 +86,7 @@ form	full	reasons	sources
 忧	憂	a headword of the shuowen with another reading | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 表	錶	the table gives it for itself too | OpenCC gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
 苹	蘋	OpenCC gives it for itself too | a headword of the shuowen with another reading | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
-范	範	the table gives it for itself too | OpenCC gives it for itself too | a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
+范	範	the table gives it for itself too | OpenCC gives it for itself too | a headword of the shuowen with another reading | a loan or a substitute	cjkvi-variants opencc tongyong-guifan unihan yitizi
 柜	櫃	OpenCC gives it for itself too | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
 板	闆	the table gives it for itself too | OpenCC gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
 松	鬆	the table gives it for itself too | OpenCC gives it for itself too | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
@@ -107,6 +108,7 @@ form	full	reasons	sources
 弥	瀰	several characters: 彌瀰	cjkvi-variants opencc tongyong-guifan unihan yitizi
 挂	掛	OpenCC gives it for itself too	cjkvi-variants opencc tongyong-guifan unihan yitizi
 荐	薦	OpenCC gives it for itself too | a headword of the shuowen with another reading | a headword of the guangyun with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi
+荡	蕩	a further character: 盪	cjkvi-variants opencc tongyong-guifan unihan yitizi
 胡	鬍	the table gives it for itself too | OpenCC gives it for itself too | a further character: 衚	cjkvi-variants opencc tongyong-guifan unihan yitizi
 柠	檸	a headword of the guangyun with another reading | a 重文 of another character: 楮	cjkvi-variants opencc tongyong-guifan unihan yitizi
 咸	鹹	the table gives it for itself too | OpenCC gives it for itself too | a headword of the shuowen with another reading	cjkvi-variants opencc tongyong-guifan unihan yitizi

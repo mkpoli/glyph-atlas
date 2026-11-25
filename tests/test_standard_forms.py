@@ -185,6 +185,129 @@ def test_full_forms_do_not_join_over_a_member_held_apart():
     assert not any({"駡", "罵"} <= set(members) for members in found.values()) and reasons["骂"] == ["a further character: 罵"]
 
 
+def test_two_entries_of_the_jouyou_table_are_two_characters():
+    """個 and 箇 are an entry each; 罵 alone is one of the two full forms of 骂."""
+    table, rows = forms(骂=MA_TABLE), [*MA, *SAME]
+    assert decided(rows, table, familiar="罵")[1]["骂"] == []
+    assert decided(rows, table, familiar="罵駡")[1]["骂"] == ["a further character: 罵"]
+    # An entry among the members each brings, too; a ruling settles it all the same.
+    assert decided([*rows, edge("駡", "庚", "z")], table, familiar="罵庚")[1]["骂"] == ["a further character: 罵"]
+    assert decided(rows, table, familiar="罵駡", hand=ruled(("駡", "罵", "one")))[1]["骂"] == []
+
+
+def test_the_entries_of_two_characters_are_those_of_their_other_forms_too():
+    """The 說文解字 heads 盪, and 蕩 as 𣿴, a form of it: the loan another table states between them stands."""
+    rows = [edge("蕩", "荡"), edge("盪", "荡"), edge("荡", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata"), edge("蕩", "𣿴", "z"),
+            edge("蕩", "盪", "semantic"), edge("蕩", "盪", "variant", "cjkvi-variants", "蕩→盪 hydzd/variant"),
+            edge("蕩", "盪", "borrowed", "cjkvi-variants", "蕩→盪 hydcd/borrowed"), edge("蕩", "丙", "variant", "wikidata"),
+            edge("盪", "丁", "variant", "wikidata"), edge("丙", "戊", "variant", "wikidata"), edge("丁", "己", "variant", "wikidata")]
+    table = forms(荡=[("蕩", "蕩"), ("蕩", "盪")])
+    assert decided(rows, table, words=headwords(("shuowen", "1", "盪", "x")))[1]["荡"] == []
+    assert decided(rows, table, words=headwords(("shuowen", "1", "盪", "x"), ("shuowen", "2", "𣿴", "x")))[1]["荡"] == ["a further character: 盪"]
+    # One entry that holds both is one character.
+    one = Headwords([{"dictionary": "shuowen", "entry": "1", "char": char, "role": role, "reading": "x"} for char, role in (("盪", "head"), ("𣿴", "form"))])
+    assert decided(rows, table, words=one)[1]["荡"] == []
+
+
+@pytest.mark.parametrize("form", ["丙", "甲", "乙"])
+def test_a_curated_family_goes_or_stays_whole(form):
+    """甲 and 乙 are stated one with no edge between them, and 丙 hangs on 甲: what moves of it leaves neither behind."""
+    rows = [edge("丁", form), edge("甲", "丙", "z"), edge(form, "戊", "variant", "wikidata"), edge("戊", "己", "variant", "wikidata"),
+            edge("丁", "庚", "variant", "wikidata"), edge("庚", "辛", "variant", "wikidata")]
+    found, reasons = decided(rows, {**forms(**{form: [("丁", "丁")]})}, curated={"甲": ["甲", "乙"]})
+    families_of = {frozenset(members) for members in found.values()}
+    assert any({"甲", "乙"} <= members for members in families_of), (found, reasons)
+    if form == "丙":
+        assert frozenset("丁丙") in families_of and frozenset("甲乙") in families_of and reasons == {"丙": []}
+
+
+def test_a_curated_family_a_dictionary_would_part_does_not_move():
+    """乙, stated one with 甲, is held apart from 丁 by both dictionaries: 甲 does not leave it behind."""
+    rows = [edge("丁", "甲"), edge("甲", "戊", "variant", "wikidata"), edge("戊", "己", "variant", "wikidata"),
+            edge("丁", "庚", "variant", "wikidata"), edge("庚", "辛", "variant", "wikidata")]
+    found, reasons = decided(rows, forms(甲=[("丁", "丁")]), curated={"甲": ["甲", "乙"]}, words=headwords(*apart_in_both("乙", "丁")))
+    assert found["甲"] == "乙甲" and reasons == {"甲": ["it would leave part of a curated family behind"]}
+
+
+def test_an_entry_two_families_share_cancels_no_loan_between_two_that_head_one_each():
+    """The 說文解字 heads 盪, with 𣿴 under it, and heads 蕩; 𣿴 is a form of 蕩."""
+    made = [{"dictionary": "shuowen", "entry": entry, "char": char, "role": role, "reading": "x"}
+            for entry, char, role in (("1", "盪", "head"), ("1", "𣿴", "form"), ("2", "蕩", "head"))]
+    assert Headwords(made).entries_apart("蕩𣿴", "盪") and Headwords(made).entries_apart("盪", "蕩𣿴")
+    # A form under an entry heads none, and one entry both head is no entry of each.
+    assert not Headwords(made[:2]).entries_apart("蕩𣿴", "盪")
+    assert not Headwords([made[0], {**made[0], "char": "蕩"}]).entries_apart("蕩", "盪")
+    rows = [edge("蕩", "荡"), edge("盪", "荡"), edge("荡", "甲", "variant", "wikidata"), edge("甲", "乙", "variant", "wikidata"), edge("蕩", "𣿴", "z"),
+            edge("蕩", "盪", "semantic"), edge("蕩", "盪", "variant", "cjkvi-variants", "蕩→盪 hydzd/variant"),
+            edge("蕩", "盪", "borrowed", "cjkvi-variants", "蕩→盪 hydcd/borrowed"), edge("蕩", "丙", "variant", "wikidata"),
+            edge("盪", "丁", "variant", "wikidata"), edge("丙", "戊", "variant", "wikidata"), edge("丁", "己", "variant", "wikidata")]
+    assert decided(rows, forms(荡=[("蕩", "蕩"), ("蕩", "盪")]), words=Headwords(made))[1]["荡"] == ["a further character: 盪"]
+
+
+#: 甲 is for 丁, and other passes relate each to more than one.
+LEAVING = [edge("丁", "甲"), edge("甲", "戊", "variant", "wikidata"), edge("戊", "己", "variant", "wikidata"),
+           edge("丁", "庚", "variant", "wikidata"), edge("庚", "辛", "variant", "wikidata")]
+
+
+def groups_of(rows, standard, **given):
+    found, reasons = decided(rows, standard, **given)
+    return {frozenset(members) for members in found.values()}, reasons
+
+
+def test_members_left_with_no_tie_to_one_another_are_no_family():
+    """乙 and 丙 hang on 甲 alone and are each held apart from 丁: 甲 goes and leaves each by itself."""
+    rows = [*LEAVING, edge("甲", "乙", "z"), edge("甲", "丙", "z")]
+    words = headwords(*apart_in_both("乙", "丁"), *apart_in_both("丙"))
+    groups, reasons = groups_of(rows, forms(甲=[("丁", "丁")]), words=words, familiar="甲")
+    assert reasons == {"甲": []} and frozenset("甲丁") in groups and not any({"乙", "丙"} & group for group in groups)
+    # With a tie between them, one family.
+    groups, _ = groups_of([*rows, edge("乙", "丙", "z")], forms(甲=[("丁", "丁")]), words=words, familiar="甲")
+    assert {frozenset("甲丁"), frozenset("乙丙")} <= groups
+
+
+def test_a_member_held_back_is_no_part_of_the_family_it_hung_in_by_the_one_that_goes():
+    """癸–甲–乙: 甲 goes from 癸's family, and 乙, held back, has no tie to 癸."""
+    rows = [*LEAVING, edge("癸", "甲", "z"), edge("甲", "乙", "z"), edge("癸", "壬", "z")]
+    groups, reasons = groups_of(rows, forms(甲=[("丁", "丁")]), words=headwords(*apart_in_both("乙", "丁")), familiar="癸")
+    assert reasons == {"甲": []} and {frozenset("甲丁"), frozenset("癸壬")} <= groups and not any("乙" in group for group in groups)
+
+
+def test_a_member_that_stays_behind_counts_for_nothing_against_the_join():
+    """乙, held back, is called a loan of 丁; and it heads an entry, as 丁 does, beside a loan 甲 and 丁 are contradicted in."""
+    words = headwords(*apart_in_both("乙", "丁"))
+    rows = [*LEAVING, edge("甲", "乙", "z"), edge("乙", "丁", "borrowed", "wikidata")]
+    groups, reasons = groups_of(rows, forms(甲=[("丁", "丁")]), words=words, familiar="甲")
+    assert reasons == {"甲": []} and frozenset("甲丁") in groups
+    rows = [*LEAVING, edge("甲", "乙", "z"), edge("甲", "丙", "z"), edge("丙", "丁", "borrowed", "cjkvi-variants", "丙→丁 hydcd/borrowed"),
+            edge("丙", "丁", "variant", "cjkvi-variants", "丙→丁 hydzd/variant")]
+    groups, reasons = groups_of(rows, forms(甲=[("丁", "丁")]), words=words, familiar="甲")
+    assert reasons == {"甲": []} and frozenset("甲丙丁") in groups
+
+
+def test_a_curated_family_moves_and_what_hangs_on_it_may_stay():
+    """甲 and 乙 are stated one, 丙 hangs on 甲 and is held apart from 丁: the two go to 丁 and keep their head."""
+    found, reasons = decided([*LEAVING, edge("甲", "丙", "z")], forms(甲=[("丁", "丁")]), curated={"甲": ["甲", "乙"]}, words=headwords(*apart_in_both("丙", "丁")))
+    assert found["甲"] == "".join(sorted("甲乙丁")) and reasons == {"甲": []} and not any("丙" in members for members in found.values())
+    found, _ = decided([*LEAVING, edge("甲", "丙", "z"), edge("丙", "癸", "z")], forms(甲=[("丁", "丁")]), curated={"甲": ["甲", "乙"]}, words=headwords(*apart_in_both("丙", "丁")))
+    assert found["甲"] == "".join(sorted("甲乙丁")) and "丙癸" in {"".join(sorted(m)) for m in found.values()}
+
+
+def test_a_family_whose_head_goes_takes_another():
+    """黄 heads 黃's family from one join, and then leaves it with what it brought for 丁's: 黃's has a head of its own."""
+    rows = [edge("黃", "黄"), edge("黃", "黄", "variant", "cjkvi-variants", "黄→黃 ucs-scs/variant"), edge("黄", "𨝴", "z"), edge("黃", "𡕛", "z"), edge("丁", "黄", "reduction")]
+    chars = {char for row in rows for char in (row["a"], row["b"])}
+    for family in families(rows, (), chars, {}, set(), standard=forms(黄=[("黃", "黃")]), familiarity={"黄": 0}):
+        assert family.head in family.members
+    from glyph_atlas import shape_families as sf
+    family = sf.Family("黄", set("黄黃𡕛𨝴"), [sf.Edge("黄", "𨝴", "z", "unihan", "x"), sf.Edge("黃", "𡕛", "z", "unihan", "x"), sf.Edge("黄", "黃", "z", "unihan", "x")], kept_head="黄")
+    target = sf.Family("丁", {"丁"})
+    group = {**dict.fromkeys(family.members, family), "丁": target}
+    decision = sf.Decision("黄", frozenset("丁"), [sf.Edge("丁", "黄", "simplified", "unihan", "x")])
+    assert sf._take_in(decision, group, {}, headwords(*apart_in_both("黃", "丁")), {}) is None
+    left = group["黃"]
+    assert target.members == set("丁黄𨝴") and left.members == set("黃𡕛") and left is group["𡕛"] and sf._head(left, {}) in left.members
+
+
 def test_a_ruling_on_two_full_forms_settles_whether_they_join():
     rows = [*MA, *SAME]
     assert decided(rows, forms(骂=MA_TABLE), hand=ruled(("罵", "駡", "two")))[1]["骂"] == ["a further character: 罵"]
@@ -339,10 +462,10 @@ def test_the_collation_of_a_headword_is_read():
 def test_the_forms_joined_and_the_forms_apart_are_pinned():
     apart = table("grapheme-apart.tsv")
     joined = {row["b"] for row in table("grapheme-families.tsv") if row["source"] == "tongyong-guifan"}
-    assert (len(joined), len(apart)) == (357, 183)
+    assert (len(joined), len(apart)) == (355, 185)
     assert Counter(reason.partition(":")[0].partition(" of ")[0] for row in apart for reason in row["reasons"].split(" | ")) == {
         "a headword": 114, "OpenCC gives it for itself too": 96, "the table gives it for itself too": 71, "several characters": 29,
-        "a loan or a substitute": 11, "the table lists the full form too": 14, "a further character": 27, "its full form is": 6, "a 重文": 5}
+        "a loan or a substitute": 15, "the table lists the full form too": 14, "a further character": 29, "its full form is": 6, "a 重文": 5}
 
 
 def test_every_form_the_rule_names_stays_apart():
@@ -357,7 +480,7 @@ def test_the_forms_that_write_another_character_stay_apart():
 
 
 def test_the_forms_that_write_one_character_join():
-    pairs = ("对對 对対 动動 备備 实實 实実 还還 这這 无無 网網 个個 开開 电電 风風 门門 内內 没沒 黄黃 温溫 虚虛 状狀 涙淚 即卽 併倂 戻戾 概槪 錬鍊 餅餠 "
+    pairs = ("对對 对対 动動 备備 实實 实実 还還 这這 无無 网網 开開 电電 风風 门門 内內 没沒 黄黃 温溫 虚虛 状狀 涙淚 即卽 併倂 戻戾 概槪 錬鍊 餅餠 "
              "达達 壳殼 启啓 净淨 艺藝 滨濱 归歸 阁閣 场場 识識")
     assert [pair for pair in pairs.split() if not same(*pair)] == []
 
@@ -365,7 +488,7 @@ def test_the_forms_that_write_one_character_join():
 def test_the_full_forms_of_one_form_are_one_grapheme_or_the_form_is_in_neither():
     one = ("骂駡 骂罵 钩鈎 钩鉤 绣綉 绣繡 蕴藴 蕴蘊 赃贜 赃贓 奖奬 奖獎 鉴鑒 鉴鑑 镰鐮 镰鎌 鳄鰐 鳄鱷 启啓 启啟 酝醖 酝醞")
     assert [pair for pair in one.split() if not same(*pair)] == []
-    two = "叹嘆 叹歎 嘆歎 夹夾 夹袷 夾袷 赞贊 赞讚 枪槍 枪鎗 炼煉 炼鍊 鍾鐘 曆歷 當噹 壇罎"
+    two = "叹嘆 叹歎 嘆歎 夹夾 夹袷 夾袷 赞贊 赞讚 枪槍 枪鎗 炼煉 炼鍊 鍾鐘 曆歷 當噹 壇罎 个個 个箇 個箇 荡蕩 荡盪 蕩盪"
     assert [pair for pair in two.split() if same(*pair)] == []
     assert refs.grapheme("U+9A82") == refs.to_code_point("罵")
 
@@ -375,7 +498,7 @@ def test_a_join_holds_for_what_it_brings():
 
 
 def test_one_rule_for_loans_and_non_cognates():
-    assert [pair for pair in "涩澀 衅釁 糁糝 凭憑 檩檁 廪廩".split() if not same(*pair)] == []
+    assert [pair for pair in ["涩澀", "衅釁", "糁糝", "凭憑", "檩檁", "廪廩"] if not same(*pair)] == []
     assert not same("离", "離")
 
 
