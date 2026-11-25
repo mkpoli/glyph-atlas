@@ -66,8 +66,10 @@ COST = -0.3
 MARGIN = 0.3
 #: The table pages searched either side of the one a half-leaf is expected to show.
 REACH, WIDE_REACH = 12, 40
-#: How many of the pages closest at first sight have their sizes fitted.
+#: How many of the pages closest at first sight have their sizes fitted, and how much a page can gain by it: every
+#: page the winner's margin does not outlast by this is fitted too (0.28 was the most in 250 fits on ten half-leaves).
 CANDIDATES = 4
+GAIN = 0.35
 #: A headword's height and a gloss row in half-column pitches: what the fit of a page tries.
 HEADS = (1.2, 1.35, 1.5, 1.65, 1.8, 1.95)
 ROWS = (0.72, 0.8, 0.88, 0.96, 1.04, 1.12)
@@ -218,9 +220,18 @@ def main() -> int:
             for number in near:
                 alike = tape.similarity(slots_of[number], crops, anchors)
                 sized[number] = (*fitted(page, slots_of[number], alike), alike)
+            # A page left unfitted could still win if its first cost is less than a fitted one's and the most it may gain.
+            while True:
+                rest = [n for n in costs if n not in sized and costs[n] - GAIN < min(v[0] for v in sized.values()) + MARGIN]
+                if not rest:
+                    break
+                number = min(rest, key=costs.get)
+                alike = tape.similarity(slots_of[number], crops, anchors)
+                sized[number] = (*fitted(page, slots_of[number], alike), alike)
             number = min(sized, key=lambda n: sized[n][0])
             cost, head, row, alike = sized[number]
-            others = [sized[n][0] for n in sized if n != number] + [v for n, v in costs.items() if n not in sized]
+            # An unfitted page is as good as its first cost less the most it may gain.
+            others = [sized[n][0] for n in sized if n != number] + [v - GAIN for n, v in costs.items() if n not in sized]
             margin = min(others) - cost if others else 0.0
             found.append({"leaf": leaf, "side": side, "url": url, "size": image.size, "table_page": number, "cost": cost, "margin": margin,
                           "page": page, "head": head, "row": row, "alike": alike, "good": cost <= COST and (not others or margin >= MARGIN)})

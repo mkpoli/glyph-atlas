@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -145,8 +146,34 @@ def half(boxes: Sequence[Box], lowest: float, highest: float) -> Half | None:
     return Half(strength, pitch, tilt, gloss, top, bottom, used, middle, candidates)
 
 
+def apart(boxes: list[tuple[float, int, Box]], ink: np.ndarray, page: Half) -> list[tuple[float, int, Box]]:
+    """Boxes of one column that overlap, divided at the row between their middles that holds the least ink."""
+    out = list(boxes)
+    by_column: dict[int, list[int]] = {}
+    for n, (_, column, _) in enumerate(out):
+        by_column.setdefault(column, []).append(n)
+    for members in by_column.values():
+        members.sort(key=lambda n: out[n][2].y + out[n][2].h / 2)
+        for upper, lower in pairwise(members):
+            a, b = out[upper][2], out[lower][2]
+            if a.y + a.h <= b.y:
+                continue
+            first, last = int(a.y + a.h / 2), int(b.y + b.h / 2)
+            middle = page.middle(out[upper][1], (a.y + b.y + b.h) / 2)
+            x0, x1 = int(max(0, middle - SPAN * page.pitch)), int(min(ink.shape[1], middle + SPAN * page.pitch))
+            if last - first < 4 or not 0 <= first < ink.shape[0]:
+                continue
+            row = first + int(np.argmin(ink[first:last, x0:x1].sum(1)))
+            if row - a.y < 0.4 * a.h or b.y + b.h - row < 0.4 * b.h:
+                continue
+            out[upper] = (*out[upper][:2], Box(x=a.x, y=a.y, w=a.w, h=row - a.y))
+            out[lower] = (*out[lower][:2], Box(x=b.x, y=row, w=b.w, h=b.y + b.h - row))
+    return out
+
+
 def recut(image: Image.Image, page: Half) -> list[tuple[float, int, Box]]:
-    """Each candidate cut again to its column: its ink followed a little past its box, as far as a blank gap."""
+    """Each candidate cut again to its column: its ink followed a little past its box, as far as a blank gap,
+    and divided from the next where they would overlap."""
     levels = np.asarray(image.convert("L"), float)
     ink = levels < 0.55 * np.percentile(levels, 1) + 0.45 * np.percentile(levels, 60)
     out = []
@@ -179,7 +206,7 @@ def recut(image: Image.Image, page: Half) -> list[tuple[float, int, Box]]:
             out.append((place, column, box))
             continue
         out.append((place, column, Box(x=int(x0 + columns[0]), y=int(first + top), w=int(columns[-1] - columns[0] + 1), h=int(bottom - top + 1))))
-    return out
+    return apart(out, ink, page)
 
 
 class Anchors:
