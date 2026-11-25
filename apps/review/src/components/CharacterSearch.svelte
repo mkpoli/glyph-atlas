@@ -23,6 +23,7 @@
   import { suggest, countsLabel, ownLabel } from '../lib/layers.js'
   import { t } from '../lib/i18n.svelte.js'
   import { isSingle } from '../lib/issues.js'
+  import { compatibility } from '$worker/representation.ts'
 
   let {
     value = $bindable(''),
@@ -66,11 +67,15 @@
   const MIN_BELOW = 200   // less than this under the box shows too few rows to choose from
 
   // A card's other forms, offered under it (`more`): those its grapheme is written with that the card does
-  // not list, as the candidate's grapheme names them.
+  // not list, as the candidate's grapheme names them, where that is the card's own grapheme (`of`). A seal
+  // character's card of its own, or one the site files apart from the service, offers none. A compatibility
+  // ideograph is no form of its own (`cardTiers.js`), unless crops are filed under it.
   const withMore = (card, grapheme) => {
+    if (card.alone || !grapheme?.code_point || (card.grapheme ?? card.key) !== grapheme.code_point) return card
     const listed = new Set(card.members.map(member => member.label))
-    const more = (grapheme?.members ?? []).filter(member => !listed.has(member.char)).map(member => ({ label: member.char, count: countOf(member.char) ?? null }))
-    return { ...card, forms: card.members.length + more.length, more }
+    const more = (grapheme.members ?? []).filter(member => !listed.has(member.char) && (!compatibility(member.char) || countOf(member.char) > 0))
+      .map(member => ({ label: member.char, count: countOf(member.char) ?? null }))
+    return { ...card, of: grapheme.code_point, forms: card.members.length + more.length, more }
   }
   // The graphemes the candidates belong to, once each and in the candidates' order, and the candidates
   // that belong to none the page holds; those of a grapheme a card shows are among its other forms.
@@ -80,7 +85,7 @@
     for (const item of items) { const group = groupOf(item); if (group && !seen.has(group.key)) seen.set(group.key, withMore(group, item.grapheme)) }
     return [...seen.values()]
   })
-  const shown = $derived(new Set(cards.flatMap(card => [card.key, card.grapheme])))
+  const shown = $derived(new Set(cards.flatMap(card => card.of ? [card.of] : [])))
   const others = $derived(groupOf ? items.filter(item => !groupOf(item) && !shown.has(item.grapheme?.code_point)) : [])
   // Those in cards of their own, each of the forms the query found, then the rest; what its grapheme holds in
   // all is not said.
