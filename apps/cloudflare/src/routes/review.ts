@@ -10,9 +10,10 @@ import { undoCountQuery } from '../atlas3Stamps';
 import { categoryOf } from '../category';
 import { drawnHeads, formed } from '../forms';
 import { drawnForm } from '../representation';
-import { planFormUndo, planReviewForm } from './claims';
+import { cropNow, filedRuns, planFormUndo, planReviewForm } from './claims';
 import { inspected } from './crop';
 import { FORM_COLUMNS, FORM_JOINS, STYLE_KIND, STYLE_TARGET, codePoints, foundCrop, formRow, redrawLimits, type FormColumns } from '../cropRecords';
+import { resolveSlots } from '../ledger';
 import { body, canonical, compose, graphemeKey, graphemeText, text, unified, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
 import { addressKey } from '../reverse';
@@ -390,6 +391,23 @@ export function cropChanges(env: Env, actor: number, key: string, at: number, ch
   if (!changes.length) return [];
   return [...eventStatements(env, actor, key, at, changes), ...applyStatements(env, key, at, [...new Set(changes.map(c => c.kind))], changes)];
 }
+// The slots of every claim on these crops, by `assertion_crop`.
+export const cropSlotKeysQuery = () => `SELECT DISTINCT a.crop,a.subject,a.predicate,a.scope,a.slot FROM json_each(?) j JOIN assertions a ON a.crop=j.value`;
+/** The resolution of the claims of each crop a write gives another box, for the end of its batch: a claim holds on the box
+ *  it rests on, which a drawing leaves and an undo, or the same drawing again, returns to. A grapheme claim read again is
+ *  dated now, for the publisher's filing, and `filed` files its crop's runs once the batch has landed. */
+async function redrawnSlots(env: Env, crops: number[], at: number): Promise<{ statements: D1PreparedStatement[]; filed: () => Promise<void> }> {
+  const keys = crops.length ? (await env.ATLAS.prepare(cropSlotKeysQuery()).bind(JSON.stringify(crops))
+    .all<{ crop: number; subject: string; predicate: string; scope: string; slot: string }>()).results : [];
+  if (!keys.length) return { statements: [], filed: async () => {} };
+  const shown = await Promise.all([...new Set(keys.map(k => k.crop))].map(crop => cropNow(env, crop)));
+  const read = [...new Set(keys.filter(k => k.predicate === 'has_grapheme').map(k => k.crop))];
+  return { statements: [...resolveSlots(env, keys.map(k => [k.subject, k.predicate, k.scope, k.slot]), shown),
+      ...(read.length ? [env.ATLAS.prepare("UPDATE current_claims SET at=? WHERE crop IN (SELECT value FROM json_each(?)) AND predicate='has_grapheme'")
+        .bind(new Date(at).toISOString(), JSON.stringify(read))] : [])],
+    filed: async () => { for (const crop of read) await filedRuns(env, crop) } };
+}
+
 // --- A crop's style ---
 
 // The styles of `data/vocab/style.yaml` a reviewer may give a crop; `unassessed` takes it back to its publication's.
@@ -655,7 +673,8 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     ON CONFLICT(crop,actor) DO UPDATE SET cut=excluded.cut,at=excluded.at,submission=excluded.submission`).bind(actor, at, key, passedRows));
   statements.push(...corpusRows(env, [...first, ...shown, ...passed], first, key));
   if (shown.length || passed.length) statements.push(markStatement(env, actor, key, at, [...shown, ...passed], false));
-  statements.push(...applyStatements(env, key, at, [...VERDICTS, KIND.seen, KIND.hard], changes), ...claimed);
+  const redrawn = await redrawnSlots(env, changes.filter(c => c.box !== undefined).map(c => c.crop), at);
+  statements.push(...applyStatements(env, key, at, [...VERDICTS, KIND.seen, KIND.hard], changes), ...claimed, ...redrawn.statements);
   statements.push(actorStats(env, actor, changes.length, 1, at));
   if (shown.length || passed.length) statements.push(env.ATLAS.prepare(`UPDATE submissions SET response=json_set(response,'$.results',json((
     SELECT json_group_array(json(value)) FROM (
@@ -680,6 +699,7 @@ async function save(env: Env, sent: Json, address: string | null, user: string, 
     if (conflict(error)) throw await conflictProblem(env, changes);
     throw error;
   }
+  await redrawn.filed();
   return saved;
 }
 
@@ -772,6 +792,7 @@ export async function revert(env: Env, submission: Submission, actor: number, by
   const shownOrSkipped = complete ? (await env.ATLAS.prepare(`SELECT crop FROM seen WHERE submission=?1
     UNION SELECT crop FROM skips WHERE submission=?1`).bind(submission.id).all<{ crop: number }>()).results
     .map(row => row.crop).filter(crop => !reviewed.some(r => r.crop === crop)) : [];
+  const redrawn = await redrawnSlots(env, changes.filter(c => c.box !== undefined).map(c => c.crop), at);
   const forms = changes.length ? await planFormUndo(env, { key: submission.key, by, crops: changes.map(c => c.crop), at: new Date(at).toISOString() }) : [];
   // Undone in full, the NOT NULL guard claims it atomically, and a second claimant rolls back its batch; in
   // part, each crop's own revision guard does. The undo is counted beside the claim, which moves the
@@ -782,7 +803,7 @@ export async function revert(env: Env, submission: Submission, actor: number, by
     ...(shownOrSkipped.length ? [markStatement(env, actor, submission.key, at, shownOrSkipped, true)] : []),
     ...applyStatements(env, submission.key, at, [KIND.undo], changes),
     // The form a review claimed goes with it, and the reader's own it replaced comes back.
-    ...forms,
+    ...forms, ...redrawn.statements,
     env.ATLAS.prepare('UPDATE actor_stats SET reviews=coalesce(reviews,0)-?,rounds=coalesce(rounds,0)-? WHERE actor=?')
       .bind(changes.length, complete ? 1 : 0, submission.actor),
     ...(rejection ? [env.ATLAS.prepare('INSERT INTO rejections(submission,by,reason,at) VALUES(?,?,?,?)').bind(submission.id, by, rejection.reason, at)] : []),
@@ -798,7 +819,8 @@ export async function revert(env: Env, submission: Submission, actor: number, by
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
   }
-  return { queries: forms.length, results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
+  await redrawn.filed();
+  return { queries: forms.length + redrawn.statements.length, results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
     : { id: ids.get(r.crop) ?? null, target_id: publicId(r.crop), revision: r.revision,
       review: { id: ids.get(r.crop) ?? null, kind: 'undo', reverses: r.reverses, at: new Date(at).toISOString() } }) };
 }

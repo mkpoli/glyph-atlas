@@ -55,6 +55,7 @@ import sys
 from collections import defaultdict
 
 from build import HERE, OUT
+from claims import resolve_statements
 from load_history import GROUP, SCHEMA, built, deliver, row_statements, stamped
 from publish import applied, lit, query, send
 
@@ -294,48 +295,6 @@ def ignored(table, row):
 def base(identity):
     """The claim an assertion states: its id, less the `@<stamp>` of a claim asserted again."""
     return identity.split("@", 1)[0]
-
-
-# The ledger's resolver (data/ledger.json) as the Worker runs it on glyph-atlas-v3 (`apps/cloudflare/src/
-# ledger.ts`): crop evidence is live while it names its crop at the crop's effective cut, and a slot names
-# its crop and that cut. A date slot's subject is a book, so both are NULL there.
-def effective_cut(crop):
-    return (f"(SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL) "
-            f"FROM crops c WHERE c.id={crop})")
-
-
-# The columns the resolver selects, in its order.
-RESOLVED = "subject,predicate,scope,slot,status,object,value,members,supporting,claims,crop,cut,resolver,at"
-SLOT_CROP = ("(SELECT a.crop FROM assertions a WHERE a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope "
-             "AND a.slot=k.slot AND a.crop IS NOT NULL LIMIT 1)")
-CROP_PARTS = (("e.ref IS NOT (SELECT c.version FROM crop_now c WHERE c.unit=a.subject)",
-               f"(e.crop IS NOT a.crop OR e.cut IS NOT {effective_cut('a.crop')})"),
-              ("(SELECT c.version FROM crop_now c WHERE c.unit=k.subject) AS crop_version,",
-               f"{SLOT_CROP} AS crop, {effective_cut(SLOT_CROP)} AS cut,"))
-
-
-def v3_resolve():
-    body = ledger.RESOLVE_BODY
-    for old, new in CROP_PARTS:
-        if body.count(old) != 1:
-            sys.exit(f"data/ledger.json's resolver changed: {old}")
-        body = body.replace(old, new)
-    if "crop_now" in body:
-        sys.exit("data/ledger.json's resolver names crop_now where it is not replaced")
-    return body
-
-
-def resolve_statements(slots):
-    """The statements that resolve `slots` again in the database they run on, from its own rows: each
-    slot's `current_claims` row removed, then written where a claim of it is live (`resolveSlots`)."""
-    clear = ("DELETE FROM current_claims WHERE (subject,predicate,scope,slot) IN (SELECT json_extract(value,'$[0]'),"
-             "json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1))")
-    write = f"INSERT INTO current_claims({RESOLVED}) WITH {v3_resolve()}"
-    out = []
-    for i in range(0, len(slots), ledger.KEYS_PER_STATEMENT):
-        bound = lit(ledger.canonical([list(k) for k in slots[i:i + ledger.KEYS_PER_STATEMENT]]))
-        out += [" ".join(line.strip() for line in sql.splitlines()).replace("?1", bound) + ";" for sql in (clear, write)]
-    return out
 
 
 def date_ledger(atlas, documents=None):

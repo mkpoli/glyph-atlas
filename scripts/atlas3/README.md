@@ -132,7 +132,9 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   leaves its claims on the old cut. The local copy first takes from D1, and keeps, the runs the Worker
   moved (`run_moves`), their counts and their crops' `run_written` rows; nothing of them is sent back.
   A run is taken out under whatever key it holds when the part lands, its count with it, and a run of
-  a claimed or moved crop is put in counted only if it went in. Once the runs have landed, the publish
+  a claimed or moved crop is put in counted only if it went in. Once the crops have landed, the claims on
+  those cut again are resolved again, from the box and page image each rests on (`settle_claims`); crops
+  with no claim are only read. Once the runs have landed, the publish
   files again the runs of every crop whose claim changed since the last reconcile and of every crop in
   `run_moves`, from the claims as they then stand (`reconcile`): a claim disputed meanwhile, a claim a
   redrawn box or a new cut stopped, and a filing the Worker could not finish are put right. Each batch's

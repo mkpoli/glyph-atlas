@@ -63,15 +63,17 @@ maps by its whole `id@pixels@box`. A box no recorded version has comes from befo
 kept them (one seen mark today) and takes the cut below the oldest recorded one.
 A claim on cut -1 is not live, as the old resolver treated a claim on a crop's earlier version.
 
-A claim rests on the crop's effective cut: its published cut, or the next one while a redrawn box
-waits in `reviews`, as the old site rewrote a crop's record at once when its box was redrawn. Claims
-on the cut the redraw replaces stop holding at once, as the old `current_claim_recut` trigger dropped
-them; claims made while the redraw waits hold through the publication, which gives the crop that
-cut; an undone redraw returns the crop to its published cut and the claims made on it. Two edges
-follow from naming versions by cut:
+A claim names the crop's effective cut: its published cut, or the next one while a redrawn box waits
+in `reviews`, as the old site rewrote a crop's record at once when its box was redrawn. It holds while
+the crop has the box its evidence names, on that cut or on the same page image (`holds` in
+`data/ledger.json`): a box drawn over another leaves the claims on it, an undo or the same drawing
+returns them, and the publication of one of several drawings gives its cut to the claims on that one
+alone. A slot is resolved again with each claim, redraw, undo and publication of its crop, so a
+reader finds what holds by the effective cut. Three edges follow:
 
-- A crop cut back to an earlier box gets a new cut. Claims made on that box before do not return.
+- A crop cut back to an earlier box of one page image gets a new cut, and the claims on that box return.
 - A change of image encoding alone keeps the cut, so the claims on it stay live.
+- A corpus glyph's record can change its box on one cut, and the claims on that cut stay.
 
 ### Tables in `glyph-atlas-v3`
 

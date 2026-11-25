@@ -8,7 +8,7 @@ import { d1 } from '../forms.test';
 import { bundleKey, cropId, publicId } from '../atlas3';
 import { claimHistoryQuery, corpusRowQuery, currentClaimsQuery, currentCropClaimsQuery, ledgerActionsQuery, ledgerClaimsQuery, resolveClearQuery,
   resolveSlots, resolveWriteQuery } from '../ledger';
-import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNowQuery, cropSlotsQuery, formNamesQuery,
+import { bookDateClaimsQuery, bookDates, bookDatesQuery, bookKeyQuery, claimRead, claimWrite, type ClaimTools, cropNow, cropNowQuery, cropSlotsQuery, formNamesQuery,
   formOfCrop, ownClaimQuery, setCropStructure, setForm, setForms, setGrapheme, ownStructuresQuery, setStructure, setFold, foldsOf, foldsQuery, ownFoldQuery, ownReadingsQuery, savedRunsQuery, setReading, setWrittenFor, structureId, structureLabelsQuery, structuresOf, structuresQuery, claimedStructures, claimedStructuresQuery, wordMethodsQuery, wordNamesQuery, wordOfCrop,
   writtenForOf, writtenForQuery } from './claims';
 import { cropStructures } from '../cropPanels';
@@ -57,6 +57,15 @@ function setup() {
     { slot: 1, id: text.corpus, source_revision: 'rev1', box: BOX },
     { slot: 2, id: text.retired, retired: true, replaced_by: local },
     { slot: 3, id: `ex:${n}:orphan`, retired: true }] })));
+  // A publication that cuts the first crop again, from a box on a page image, and takes a box that waits for it from the review.
+  const cutAgain = (box: object, pixels = 'px') => {
+    const rev = (db.query(`SELECT rev FROM pages WHERE id=${page}`).get() as { rev: number }).rev + 1;
+    const last = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(bundleKey(page, rev - 1))!)));
+    objects.set(bundleKey(page, rev), gzipSync(JSON.stringify({ ...last, rev, crops: last.crops.map((crop: any) => crop.slot ? crop : { ...crop, box, image_sha256: pixels }) })));
+    db.exec(`UPDATE pages SET rev=${rev}; UPDATE crops SET cut=cut+1 WHERE id=${local}`);
+    const { x, y, w, h } = box as any;
+    db.exec(`UPDATE reviews SET x=NULL,y=NULL,w=NULL,h=NULL WHERE crop=${local} AND x=${x} AND y=${y} AND w=${w} AND h=${h}`);
+  };
   const reads: string[] = [];
   const MEDIA = { get: async (name: string) => {
     reads.push(name);
@@ -87,7 +96,7 @@ function setup() {
     { id: crypto.randomUUID(), crop_version: version(crop, crop === corpus ? 'rev1' : 'px'), subject: publicId(crop), predicate: 'writes_word', method, claims: members },
     { id: actor, admin: false }) as Promise<any>;
   const read = (path: string) => claimRead(env, new URL('https://x' + path), tools);
-  return { db, runs, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page, objects };
+  return { db, runs, env, tools, text, local, corpus, retired, gone, version, input, save, post, claim, read, reads, page, objects, cutAgain };
 }
 
 describe('the word of a run', () => {
@@ -154,10 +163,11 @@ describe('the word of a run', () => {
   });
 
   it('on an earlier cut does not go with the run', async () => {
-    const { db, env, tools, local, corpus, version, input, save } = setup();
+    const { env, tools, local, corpus, version, input, save, cutAgain } = setup();
     await save();
-    db.exec(`UPDATE crops SET cut=1 WHERE id=${local}`);
-    const { word: _, ...rest } = input({ run: ['而', '已'], reading: ['のみ'], others: [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }] });
+    cutAgain({ x: 5, y: 0, w: 10, h: 10 });
+    const { word: _, ...rest } = input({ run: ['而', '已'], reading: ['のみ'], crop_version: `${publicId(local)}@px@5,0,10,10`,
+      others: [{ id: publicId(corpus), crop_version: version(corpus, 'rev1'), at: 1 }] });
     await setReading(env, rest, publicId(local), 'reader', tools);
     expect([await wordOfCrop(env, local), await wordOfCrop(env, corpus)]).toEqual([null, null]);
   });
@@ -901,6 +911,67 @@ describe('a pending redraw', () => {
     // The publication cuts the redrawn box: the crop takes cut 1 and the pending row goes.
     db.exec(`UPDATE crops SET cut=1 WHERE id=${local}; DELETE FROM reviews WHERE crop=${local}`);
     expect((await wordOfCrop(env, local))?.values).toMatchObject([{ word: OTHER }]);
+  });
+
+  it('drawn again, leaves the claims made on it to the box they rest on, through the publications', async () => {
+    const { db, env, local, corpus, input, tools, cutAgain } = setup();
+    const at = (x: number) => ({ x, y: 2, w: 3, h: 4 }), text = ({ x, y, w, h }: any) => [x, y, w, h].join(',');
+    let pixels = 'px';
+    const resolve = async () => { const subject = (db.query('SELECT subject FROM assertions LIMIT 1').get() as { subject: string }).subject;
+      await env.ATLAS.batch(resolveSlots(env, [[subject, 'writes_word', '', '']], [await cropNow(env, local)])) };
+    const draw = async (x: number | null) => {
+      db.exec(`INSERT OR IGNORE INTO reviews(crop,gen,at,state) VALUES(${local},0,0,0)`);
+      db.query('UPDATE reviews SET x=?1,y=iif(?1 IS NULL,NULL,2),w=iif(?1 IS NULL,NULL,3),h=iif(?1 IS NULL,NULL,4) WHERE crop=?2').run(x, local);
+      await resolve();
+    };
+    const publish = async (box: object, image = pixels) => { pixels = image; cutAgain(box, image); await resolve() };
+    const save = (box: object, word: string, by: string) => setReading(env, input({ crop_version: `${publicId(local)}@${pixels}@${text(box)}`, word }), publicId(local), by, tools);
+    const word = async () => { const held = await wordOfCrop(env, local); return held && [held.status, held.values.map((v: any) => v.word), held.by] };
+    await save(BOX, W, 'zero');
+    await draw(1);
+    expect(await word()).toBeNull();
+    await save(at(1), W, 'one');
+    // Drawn again before a publication: the claim on the first drawing is none on this one, and another's here disputes nothing.
+    await draw(9);
+    expect(await word()).toBeNull();
+    await save(at(9), OTHER, 'two');
+    expect(await word()).toEqual(['asserted', [OTHER], ['two']]);
+    // Each box drawn again, or returned to, has its claims; a box nobody claimed on has none. Back at the published box, what was claimed on that.
+    for (const [x, held] of [[1, ['asserted', [W], ['one']]], [20, null], [9, ['asserted', [OTHER], ['two']]], [null, ['asserted', [W], ['zero']]]] as const) {
+      await draw(x);
+      expect([x, await word()]).toEqual([x, held as any]);
+    }
+    db.exec(`UPDATE reviews SET x=0,y=0,w=10,h=10 WHERE crop=${local}`); await resolve();
+    expect(await word()).toEqual(['asserted', [W], ['zero']]);
+    await save(BOX, OTHER, 'three');
+    expect((await word())![0]).toBe('disputed');
+    // The first drawing is published while the second waits: its claims hold, and undone the first's do.
+    await draw(9); await publish(at(1));
+    expect(await word()).toEqual(['asserted', [OTHER], ['two']]);
+    await draw(null);
+    expect(await word()).toEqual(['asserted', [W], ['one']]);
+    // A third, drawn and claimed on while the second is published, then published itself.
+    await draw(30); await save(at(30), OTHER, 'four'); await publish(at(9));
+    expect(await word()).toEqual(['asserted', [OTHER], ['four']]);
+    await publish(at(30));
+    expect(await word()).toEqual(['asserted', [OTHER], ['four']]);
+    // Claimed on a drawing of a page image since replaced, under the published box: on neither.
+    await draw(40); await save(at(40), W, 'five'); await publish(at(30), 'px2');
+    expect(await word()).toBeNull();
+    await draw(null);
+    expect(await word()).toBeNull();
+    expect(await wordOfCrop(env, corpus)).toBeNull();
+  });
+
+  it('a verdict on a claim made on another box makes it no claim on this one', async () => {
+    const { db, env, local, input, tools, post } = setup();
+    pending(db, local);
+    const saved = await setReading(env, input({ crop_version: `${publicId(local)}@px@1,2,3,4` }), publicId(local), 'reader', tools);
+    db.exec(`UPDATE reviews SET x=9 WHERE crop=${local}`);
+    await post(`/atlas/claims/${saved.word!.supporting[0]}/actions`, { id: crypto.randomUUID(), action: 'accept' }, { id: 'other', admin: false });
+    expect(await wordOfCrop(env, local)).toBeNull();
+    db.exec(`UPDATE reviews SET x=NULL,y=NULL,w=NULL,h=NULL WHERE crop=${local}`);
+    expect(await wordOfCrop(env, local)).toBeNull();
   });
 
   it('undone, returns the crop to its published cut and the claims made on it', async () => {

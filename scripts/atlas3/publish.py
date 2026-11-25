@@ -82,6 +82,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import claims
 import media_map
 import votes
 from build import (
@@ -548,6 +549,25 @@ def reconcile(m, run):
     m.runs.execute("INSERT OR REPLACE INTO reconciled VALUES(0, ?)", (newest,))
     m.runs.commit()
     return moved
+
+
+def settle_claims(run):
+    """Resolve the claims on the crops this publish cut again (`claims.settle_statements`): those made on the box published
+    hold, those on a box drawn since or before wait for it. Crops no claim is on are read and left."""
+    path = run / "recut.json"
+    recut = {row[0]: row for row in json.loads(path.read_text())} if path.exists() else {}
+    claimed, crops = [], sorted(recut)
+    for i in range(0, len(crops), 500):
+        claimed += [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IN ("
+                                             + ",".join(map(str, crops[i:i + 500])) + ")")]
+    if not claimed:
+        return
+    body = "\n".join(claims.settle_statements([recut[c] for c in sorted(claimed)]))
+    stamp = f"{run.name}.claims.{hashlib.sha256(body.encode()).hexdigest()[:12]}"
+    path = run / f"claims-{stamp.rsplit('.', 1)[1]}.sql"
+    path.write_text(body + f"\nINSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+    if not send("glyph-atlas-v3", path, stamp):
+        sys.exit(f"{path.name} did not apply; rerun to finish {run.name}")
 
 
 def applied(database, stamp):
@@ -1214,6 +1234,10 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The claims on the crops cut again, which hold or wait by the box each rests on, now that the new cuts have landed.
+    if "claims settled" not in journal(run):
+        settle_claims(run)
+        mark(run, "claims settled")
     # The runs of claimed and moved crops, filed from the claims as they stand once the publish's runs
     # have landed, whatever was claimed, disputed or redrawn while it was under way.
     if "reconciled" not in journal(run):
@@ -1495,6 +1519,8 @@ def main():
     # A box a reviewer redrew on the site waits in `reviews` for its cut; a re-cut to exactly that box is the
     # reviewer's, whatever it covers (as `box_pending` says in a catalogue taken from the site).
     drawn = pending_boxes([m.known(i) for i in recut])
+    # Each crop cut again as the claims on it find it (`settle_claims`).
+    cut_again = []
 
     def redrawn(rid, data):
         box = data.get("box")
@@ -1712,6 +1738,7 @@ def main():
                                          [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous},
                                            **({"at": previous["cut_at"]} if previous.get("cut_at") else {})}])
             bundle["cut_at"] = cut_time
+            cut_again.append(claims.shown_as(cid, old_cut + 1, data))
         elif row is None and previous.get("retired"):
             given["cut"] = old_cut
         for field in ("image", "context_image"):
@@ -2228,6 +2255,8 @@ def main():
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
+    if cut_again:
+        (run / "recut.json").write_text(json.dumps(cut_again))
     (run / "run-answers.json").write_text(json.dumps({"books": sorted(scope["books"]), "shards": sorted(scope["shards"]),
                                                       "texts": [[*k, v] for k, v in sorted(texts.items())]}))
     statements = sum(len(g) for g in groups)

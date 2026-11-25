@@ -221,6 +221,18 @@
    "value_shape": "date"
   }
  },
+ "holds": [
+  "-- Whether crop evidence `e` of assertion `a` holds in glyph-atlas-v3, where a crop's version is its page's record: the caller gives",
+  "-- it in `shown` (crop, cut, pixels, box), `@<pixels>` and `@<x,y,w,h>` as an evidence version ends, for the cut the crop has. Evidence",
+  "-- holds on the box the crop has, the redrawn one while it waits, made on its cut or on those pixels: so a claim on another box",
+  "-- waits for that box to come back. A corpus glyph's box can change with its record on one cut, whose claims stay; a crop whose",
+  "-- version is not given goes by its cut alone.",
+  "EXISTS (SELECT 1 FROM (SELECT c.cut,c.kind,rv.crop AS waits,n.pixels,coalesce('@'||rv.x||','||rv.y||','||rv.w||','||rv.h,n.box) AS box FROM crops c",
+  "    LEFT JOIN reviews rv ON rv.crop=c.id AND rv.x IS NOT NULL LEFT JOIN shown n ON n.crop=c.id AND n.cut=c.cut WHERE c.id=a.crop) s",
+  "  WHERE e.crop=a.crop AND CASE WHEN s.waits IS NULL AND (s.box IS NULL OR s.kind=1)",
+  "    THEN e.cut=s.cut OR substr(e.ref,-length(s.pixels||s.box))=s.pixels||s.box",
+  "    ELSE substr(e.ref,-length(s.box))=s.box AND (e.cut=s.cut+(s.waits IS NOT NULL) OR substr(e.ref,-length(s.pixels||s.box))=s.pixels||s.box) END)"
+ ],
  "resolve": [
   "keys(subject,predicate,scope,slot) AS (",
   "  SELECT DISTINCT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1)),",
