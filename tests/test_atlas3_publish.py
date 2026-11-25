@@ -762,6 +762,40 @@ def test_a_claim_on_a_drawn_box_of_a_page_image_since_replaced_holds_no_longer(d
     assert drawn.held() == []
 
 
+def test_a_claim_on_a_drawn_box_does_not_hold_on_that_box_published_from_another_page_image(drawn):
+    drawn.publish_box(B)
+    drawn.draw(C)
+    drawn.claim("r1", C, "U+4E00")
+    drawn.publish_box(C, "px2")
+    assert drawn.held() == []
+    drawn.publish_box(C, "px1")
+    assert drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+
+
+def test_runs_a_publication_filed_by_a_claim_are_filed_back_when_it_stops_whoever_fails_to(drawn):
+    """The claim on C is revived by the publication of B, whose reconcile files the run; C is drawn over, and the Worker's filing fails."""
+    root, site, runs = drawn.root, drawn.site, drawn.remote.dbs["glyph-atlas-v3-runs"]
+    a1 = ids(root)["ex:a1"]
+    filed = lambda: runs.execute("SELECT graphemes FROM runs").fetchall()
+    drawn.draw(C)
+    drawn.claim("r1", C, "U+4E00")
+    drawn.publish_box(B)
+    assert filed() == [("あ一",)] and runs.execute("SELECT first, size, crop FROM run_moves").fetchall() == [(a1, 2, drawn.crop)]
+    drawn.draw(D)
+    site.commit()
+    assert drawn.held() == [] and filed() == [("あ一",)]
+    drawn.path.unlink()
+    run(drawn.publish, drawn.monkeypatch, catalogue(drawn.path, [unit("ex:a4", "hl:p1", {"x": 0, "y": 60, "w": 10, "h": 10}, "お")]))
+    assert filed() == [("あい",)] and runs.execute("SELECT count(*) FROM run_moves").fetchone() == (0,)
+
+
+def test_the_claims_of_crops_are_found_by_their_index(drawn):
+    _, write, _ = drawn.claims().settle_statements([drawn.claims().shown_as(drawn.crop, 0, drawn.record)])
+    plan = [row[3] for row in drawn.site.execute("EXPLAIN QUERY PLAN " + write)]
+    assert not [step for step in plan if re.match(r"SCAN (a|x|e|c|rv)\b", step)]
+    assert any("assertion_crop" in step for step in plan)
+
+
 def test_the_claims_of_the_crops_cut_again_alone_are_resolved_and_their_grapheme_claims_filed(drawn):
     """A publication that revives a grapheme claim dates it, so that `reconcile` files its crop's runs."""
     drawn.draw(C)

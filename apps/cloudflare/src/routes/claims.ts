@@ -49,9 +49,10 @@ export async function cropNow(env: Env, id: number): Promise<CropNow | null> {
     return values === null ? '@' : values.every(Number.isSafeInteger) ? '@' + values.join(',') : null;
   };
   const end = boxed(box), shown = typeof pixels === 'string' ? '@' + pixels : null;
+  const images = shown === null ? null : [shown, ...((entry.encodings ?? []) as Json[]).flatMap(e => typeof e.pixels === 'string' ? ['@' + e.pixels] : [])];
   const version = shown === null || end === null ? null : publicId(id) + shown + end;
   return { id, cut: row.cut + (row.x !== null ? 1 : 0), version, text: entry.id, kind: row.kind,
-    published: { cut: row.cut, pixels: shown, box: shown === null ? null : boxed(record.box) } };
+    published: { cut: row.cut, pixels: images, box: shown === null ? null : boxed(record.box) } };
 }
 
 const NOT_HERE = 'This character is not in the published collection.';
@@ -70,7 +71,7 @@ async function namedCrop(env: Env, named: unknown, fail: ClaimTools['fail'], ctx
 const ledgerTools = (env: Env, tools: ClaimTools, ctx?: ExecutionContext, read = new Map<number, CropNow>()): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
   owned: ownedActors, alias: text => aliasCrop(env, text, ctx),
   crop: async (env, named) => { const crop = await namedCrop(env, named, tools.fail, ctx); read.set(crop.id, crop); return crop },
-  now: async id => read.get(id) ?? await cropNow(env, id),
+  now: async (id, afresh) => !afresh && read.get(id) || await cropNow(env, id),
   // A claim is saved in glyph-atlas-v3 and its runs filed in glyph-atlas-v3-runs, which cannot share a
   // transaction: a filing that fails is logged and the claim answers as saved, and the publisher files
   // the crop's runs from the claims as they stand once it next publishes.

@@ -65,8 +65,8 @@ A claim on cut -1 is not live, as the old resolver treated a claim on a crop's e
 
 A claim names the crop's effective cut: its published cut, or the next one while a redrawn box waits
 in `reviews`, as the old site rewrote a crop's record at once when its box was redrawn. It holds while
-the crop has the box its evidence names, on that cut or on the same page image (`holds` in
-`data/ledger.json`): a box drawn over another leaves the claims on it, an undo or the same drawing
+the crop has the image and the box its evidence names, an encoding its cut had before counting as that
+image, and a corpus glyph's claims hold on its cut (`holds` in `data/ledger.json`): a box drawn over another leaves the claims on it, an undo or the same drawing
 returns them, and the publication of one of several drawings gives its cut to the claims on that one
 alone. A slot is resolved again with each claim, redraw, undo and publication of its crop, so a
 reader finds what holds by the effective cut. Three edges follow:

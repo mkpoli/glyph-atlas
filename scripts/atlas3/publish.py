@@ -505,6 +505,7 @@ def reconcile(m, run):
     changed = query("glyph-atlas-v3", "SELECT crop, max(at) AS at FROM current_claims WHERE predicate = 'has_grapheme' "
                                       f"AND crop IS NOT NULL AND at > {lit(after)} GROUP BY crop")
     newest = max([since, *(r["at"] for r in changed)])
+    listed = {(r["first"], r["size"], r["crop"]) for r in logged}
     crops = sorted({r["crop"] for r in logged} | {r["crop"] for r in changed})
     read, moved = set(), 0
     for i in range(0, len(crops), 100):
@@ -524,6 +525,10 @@ def reconcile(m, run):
             if len(parts) != len(run_members):
                 continue
             fold = {c: heads.get(c) or own[c]["head"] for c in run_members if c in heads or (c in own and own[c]["head"])}
+            # A run a claim files otherwise than its crop's own family is listed, as the Worker lists one it moves, so
+            # that a claim that stops reading its crop files the run back, whoever filed it here.
+            statements += [f"INSERT OR IGNORE INTO run_moves(first,size,crop) VALUES({r['first']},{r['size']},{c});" for c in run_members
+                           if c in batch and c in heads and heads[c] != own.get(c, {}).get("head") and (r["first"], r["size"], c) not in listed]
             graphemes = "".join(fold.get(c, part) for c, part in zip(run_members, parts, strict=True))
             if graphemes != r["graphemes"]:
                 statements += move_sql(r, graphemes)

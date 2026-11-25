@@ -31,8 +31,8 @@ function planned(db: Database) {
       const statement = db.prepare('EXPLAIN QUERY PLAN ' + sql);
       const plan = (statement.all(...Array(statement.paramsCount).fill(null)) as { detail: string }[]).map(r => r.detail);
       statement.finalize();
-      // A scan of a table, not of the request's JSON list or the subquery over it (`m`).
-      scans.set(sql, plan.filter(d => /^SCAN /.test(d) && !d.includes('VIRTUAL TABLE') && d !== 'SCAN m' && d !== 'SCAN CONSTANT ROW'));
+      // A scan of a table, not of the request's JSON list, the subquery over it (`m`) or the resolver's own rows.
+      scans.set(sql, plan.filter(d => /^SCAN /.test(d) && !d.includes('VIRTUAL TABLE') && !/^SCAN (m|k|s|claims|CONSTANT ROW|\(subquery-\d+\))$/.test(d)));
     }
     return atlas.prepare(sql);
   } };
@@ -1220,6 +1220,22 @@ describe('a form claimed with its character', () => {
     await pick(2, 0, '⿴囗㐭', 'u2', version(0, '1,0,12,10'));
     expect((await save(3, 0, { revision: 1, crop_version: version(0, '1,0,12,10'), box: { x: 2, y: 0, w: 12, h: 10 } })).status).toBe(200);
     expect(await shown(0)).toEqual(['⿴囗啚']);
+    await send(env, `/atlas/corrections/${uuid(3)}/undo`, {});
+    expect(await shown(0)).toEqual(['⿴囗㐭']);
+  });
+
+  it('claimed on the box before while another is drawn over it, is not on the one drawn', async () => {
+    const { env, ids, pick, shown, version } = formed();
+    const path = `/atlas/characters/${publicId(ids[0])}`, box = (x: number) => ({ x, y: 0, w: 12, h: 10 });
+    await send(env, path, { ...local(ids[0]), id: uuid(1), verdict: 'match', box: box(1) });
+    // The claim lands once the redraw has read everything it reads, before its batch.
+    let claimed = false;
+    const racing = { ...env, ATLAS: { ...env.ATLAS, batch: async (list: D1PreparedStatement[]) => {
+      if (!claimed && list.some((one: any) => one.sql.includes('INTO events'))) { claimed = true; await pick(2, 0, '⿴囗㐭', 'u2', version(0, '1,0,12,10')); expect(await shown(0)).toEqual(['⿴囗㐭']); }
+      return env.ATLAS.batch(list);
+    } } } as Env;
+    expect((await send(racing, path, { ...local(ids[0], { revision: 1 }), id: uuid(3), verdict: 'match', box: box(2) })).status).toBe(200);
+    expect([claimed, await shown(0)]).toEqual([true, null]);
     await send(env, `/atlas/corrections/${uuid(3)}/undo`, {});
     expect(await shown(0)).toEqual(['⿴囗㐭']);
   });

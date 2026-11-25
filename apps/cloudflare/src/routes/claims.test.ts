@@ -963,6 +963,57 @@ describe('a pending redraw', () => {
     expect(await wordOfCrop(env, corpus)).toBeNull();
   });
 
+  it('is not the same box on another page image, published or not', async () => {
+    const { db, env, local, input, tools, cutAgain } = setup();
+    pending(db, local);
+    await setReading(env, input({ crop_version: `${publicId(local)}@px@1,2,3,4` }), publicId(local), 'reader', tools);
+    cutAgain({ x: 1, y: 2, w: 3, h: 4 }, 'px2');
+    const subject = (db.query('SELECT subject FROM assertions').get() as { subject: string }).subject;
+    const resolve = async () => env.ATLAS.batch(resolveSlots(env, [[subject, 'writes_word', '', '']], [await cropNow(env, local)]));
+    await resolve();
+    expect(await wordOfCrop(env, local)).toBeNull();
+    // The old image back, in the same box.
+    cutAgain({ x: 1, y: 2, w: 3, h: 4 }, 'px'); await resolve();
+    expect((await wordOfCrop(env, local))?.by).toEqual(['reader']);
+  });
+
+  it('an encoding its cut had before is the image it has', async () => {
+    const { db, env, local, page, objects, save } = setup();
+    await save();
+    const last = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(objects.get(bundleKey(page, 3))!)));
+    objects.set(bundleKey(page, 4), gzipSync(JSON.stringify({ ...last, rev: 4, crops: last.crops.map((crop: any) => crop.slot ? crop
+      : { ...crop, image_sha256: 'webp', encodings: [{ pixels: 'px', image: null, at: null }] }) })));
+    db.exec('UPDATE pages SET rev=4');
+    const subject = (db.query('SELECT subject FROM assertions').get() as { subject: string }).subject;
+    await env.ATLAS.batch(resolveSlots(env, [[subject, 'writes_word', '', '']], [await cropNow(env, local)]));
+    expect((await wordOfCrop(env, local))?.by).toEqual(['reader']);
+  });
+
+  it('cut again while an action on a claim is under way: the action reads the crop as it then is', async () => {
+    const { db, env, local, input, tools, cutAgain } = setup();
+    const box = (x: number) => ({ x, y: 2, w: 3, h: 4 });
+    pending(db, local);
+    const saved = await setReading(env, input({ crop_version: `${publicId(local)}@px@1,2,3,4` }), publicId(local), 'reader', tools);
+    // Another box is published over the one that waits, whose drawing is undone, once the action has read what it reads.
+    let cut = 0;
+    const racing = (publish: () => void) => ({ ...env, ATLAS: { ...env.ATLAS, batch: async (list: D1PreparedStatement[]) => { if (!cut++) publish(); return env.ATLAS.batch(list) } } }) as Env;
+    const other = { id: 'other', admin: false }, path = `/atlas/claims/${saved.word!.supporting[0]}/actions`;
+    const act = (env: Env, action: string) => claimWrite(env, new Request('https://x' + path, { method: 'POST', body: JSON.stringify({ id: crypto.randomUUID(), action }) }), path, other, tools, async () => {});
+    await act(racing(() => { db.exec(`UPDATE reviews SET x=NULL,y=NULL,w=NULL,h=NULL WHERE crop=${local}`); cutAgain(box(9)); }), 'accept');
+    expect([cut, await wordOfCrop(env, local)]).toEqual([2, null]);
+    expect(db.query('SELECT action FROM assertion_actions').all()).toEqual([{ action: 'accept' }]);
+    // Under its own box published, the verdict counts.
+    cut = 0;
+    await act(racing(() => cutAgain(box(1))), 'accept');
+    expect([cut, (await wordOfCrop(env, local))?.status]).toEqual([2, 'accepted']);
+    // A claim made on the crop as it was is refused whole.
+    cut = 0;
+    const before = db.query('SELECT count(*) AS n FROM assertions').get();
+    await expect(setReading(racing(() => cutAgain(box(20))), input({ crop_version: `${publicId(local)}@px@1,2,3,4`, word: OTHER }), publicId(local), 'third', tools))
+      .rejects.toThrow('409 This crop was cut again. Reload it.');
+    expect(db.query('SELECT count(*) AS n FROM assertions').get()).toEqual(before as any);
+  });
+
   it('a verdict on a claim made on another box makes it no claim on this one', async () => {
     const { db, env, local, input, tools, post } = setup();
     pending(db, local);

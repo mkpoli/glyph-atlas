@@ -70,11 +70,11 @@ def resolve_statements(slots):
 
 
 def shown_as(crop, cut, record):
-    """A crop's row of `shown`: its cut, and its record's pixels and box as a version ends (`cropNow`)."""
+    """A crop's row of `shown` at a new cut: the cut, and its record's pixels and box as a version ends (`cropNow`)."""
     pixels, box = record.get("image_sha256") or record.get("source_revision"), record.get("box")
     values = [] if box is None else [box.get(k) for k in "xywh"]
     whole = all(isinstance(v, int) for v in values)
-    return [crop, cut, f"@{pixels}" if pixels else None, "@" + ",".join(map(str, values)) if pixels and whole else None]
+    return [crop, cut, [f"@{pixels}"] if pixels else None, "@" + ",".join(map(str, values)) if pixels and whole else None]
 
 
 def settle_statements(shown, chunk=200):

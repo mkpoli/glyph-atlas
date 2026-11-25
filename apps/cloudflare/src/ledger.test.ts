@@ -51,14 +51,14 @@ test('the resolver names its version and reads crop evidence on the crop as it s
   expect(resolveWriteQuery()).not.toMatch(/^\s*--/m)
 })
 
-test('a claim rests on the box its evidence names, by its cut or its pixels', () => {
+test('a claim rests on the image and the box its evidence names', () => {
   const crop = (fields: Partial<CropNow> = {}): CropNow => ({ id: 1, cut: 1, kind: 0, text: 'ex:1', version: 'c1@px@0,0,9,9',
-    published: { cut: 1, pixels: '@px', box: '@0,0,9,9' }, ...fields })
+    published: { cut: 1, pixels: ['@px', '@webp'], box: '@0,0,9,9' }, ...fields })
   const waiting = crop({ cut: 2, version: 'c1@px@1,0,9,9' })
   for (const [held, at, cut, version] of [
-    [true, crop(), 1, 'ex:1@px@0,0,9,9'], [true, crop(), 0, 'ex:1@px@0,0,9,9'], [true, crop(), 1, 'ex:1@other@0,0,9,9'],
-    [false, crop(), 0, 'ex:1@other@0,0,9,9'], [false, crop(), 1, 'c1@px@1,0,9,9'], [false, crop(), 1, null],
-    [true, waiting, 2, 'c1@px@1,0,9,9'], [false, waiting, 2, 'c1@px@2,0,9,9'], [false, waiting, 1, 'c1@px@0,0,9,9'], [false, waiting, 1, 'c1@other@1,0,9,9'],
+    [true, crop(), 1, 'ex:1@px@0,0,9,9'], [true, crop(), 0, 'ex:1@px@0,0,9,9'], [true, crop(), 1, 'ex:1@webp@0,0,9,9'],
+    [false, crop(), 1, 'ex:1@other@0,0,9,9'], [true, crop({ published: { cut: 1, pixels: null, box: null }, version: null }), 1, 'ex:1@other@0,0,9,9'], [false, crop(), 1, 'c1@px@1,0,9,9'], [false, crop(), 1, null],
+    [true, waiting, 2, 'c1@px@1,0,9,9'], [false, waiting, 2, 'c1@px@2,0,9,9'], [false, waiting, 1, 'c1@px@0,0,9,9'], [false, waiting, 2, 'c1@other@1,0,9,9'], [true, { ...waiting, kind: 1 }, 2, 'c1@other@1,0,9,9'],
     [true, crop({ kind: 1 }), 1, 'c1@older@5,5,5,5'], [false, crop({ kind: 1 }), 0, 'c1@older@0,0,9,9'],
   ] as const) expect([at.cut, cut, version, restsOn(at, cut, version)]).toEqual([at.cut, cut, version, held])
 })
