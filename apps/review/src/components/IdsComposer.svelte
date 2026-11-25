@@ -11,7 +11,6 @@
   // Space, or pressing Alt+Arrow; right-click, Menu or Shift+F10 opens a part's context menu.
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
-  import { tokens } from 'han-compose/tokens'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
@@ -19,7 +18,7 @@
   import FigureText from './FigureText.svelte'
   import OperatorIcon from './OperatorIcon.svelte'
   import { CODES, KEYS, OPERATORS, OP_NAMES, arity, isDescription, isNode, isSequence, layout, neighbor, nextEmpty, parse, partAt, paths,
-    rangeToken, reorderSiblings, replaceAt, samePath, siblings, swapOp, swapParts, swappable, unalias, unwrap, clear, wrap, write,
+    rangeToken, reorderSiblings, replaceAt, samePath, siblings, swapOp, swapParts, swappable, tokenize, unalias, unwrap, clear, wrap, write,
     namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar, regionNames, startCharacter, variants } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
@@ -180,7 +179,7 @@
     if (!field || typed.problem || tree === null) return
     const start = field.selectionStart ?? 0, end = field.selectionEnd ?? 0
     if (start === end) return
-    const token = rangeToken(tokens(draft), start, end)
+    const token = rangeToken(tokenize(draft), start, end)
     if (!token) return
     const node = partAt(tree, token.path)
     if (node === undefined) return
@@ -193,9 +192,9 @@
 
   // Where an operator or a part goes when nothing is chosen: the first empty slot.
   const target = () => chosen ?? (tree === null ? [] : nextEmpty(tree))
+  const draftBlocked = () => { if (typed.problem && draft) { note = t('form.ids.problem.draft'); return true } return false }
   function operator(op, explicitAt = undefined) {
-    if (disabled) return
-    if (explicitAt === undefined && typed.problem && draft) { note = t('form.ids.problem.draft'); return }
+    if (disabled || draftBlocked()) return
     const replace = explicitAt === undefined && lone
     const at = explicitAt === undefined ? target() : explicitAt
     // Every slot filled and none chosen: the whole sequence becomes the operator's first part.
@@ -213,7 +212,7 @@
     change(replaceAt(tree, at, wrap(op, part)), select)
   }
   function place(part, explicitAt = undefined) {
-    if (explicitAt === undefined && typed.problem && draft) { note = t('form.ids.problem.draft'); return }
+    if (draftBlocked()) return
     const at = explicitAt === undefined ? target() : explicitAt
     if (!at) { note = t('form.ids.chooseFirst'); return }
     const next = replaceAt(tree, at, part)
@@ -224,17 +223,17 @@
   function split(sequence) { const found = parse(sequence, { open: true }); if (!found.problem) place(found.tree) }
   // A part or a node taken from the parts palette, "Take parts from", or a text drop.
   function take(written, explicitAt = undefined) {
-    if (disabled) return
+    if (disabled || draftBlocked()) return
     const found = parse(unalias(written), { open: true })
     if (!found.problem && found.tree !== null) place(found.tree, explicitAt)
   }
   function reorder(from, to) {
-    if (disabled) return
+    if (disabled || draftBlocked()) return
     const next = reorderSiblings(tree, from, to)
     if (next !== tree) change(next, to)
   }
   function exchange(from, to) {
-    if (disabled) return
+    if (disabled || draftBlocked()) return
     const next = swapParts(tree, from, to)
     if (next !== tree) change(next, to)
   }
@@ -255,8 +254,8 @@
     piece = text(part)
     if (typeof part === 'string') { read(lookupChar(part)); readFigures(lookupChar(part)) }
   }
-  function remove(path) { if (!disabled && path && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
-  function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
+  function remove(path) { if (!disabled && !draftBlocked() && path && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
+  function empty(path) { if (!disabled && !draftBlocked() && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
 
   // The part field: Apply or Enter puts what it holds in the chosen slot and moves on to the next empty one.
   const pieceDirty = $derived(Boolean(piece.trim()) && (chosen === null || unalias(piece.trim()) !== text(picked)))
@@ -381,14 +380,15 @@
   // popover="auto" so it clears the enclosing <dialog> without clipping.
   let menu = $state(null), menuEl = $state(null)
   const menuPart = $derived(menu ? partAt(tree, menu.path) : undefined)
-  async function openMenu(path, x, y) {
+  async function openMenu(path, x, y, { keyboard = false } = {}) {
     if (disabled) return
     const W = 240, H = 260
     menu = { path, x: Math.max(8, Math.min(x, innerWidth - W - 8)), y: Math.max(8, Math.min(y, innerHeight - H - 8)) }
     choose(path, { toggle: false })
     await tick()
     if (menuEl && !menuEl.matches(':popover-open')) menuEl.showPopover()
-    menuEl?.querySelector('[role="menuitem"]:not([disabled])')?.focus()
+    if (keyboard) menuEl?.querySelector('[role="menuitem"]:not([disabled])')?.focus()
+    else menuEl?.focus({ preventScroll: true })
   }
   function closeMenu({ refocus = true } = {}) {
     if (!menu) return
@@ -426,7 +426,7 @@
     if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
       event.preventDefault()
       const r = event.currentTarget.getBoundingClientRect()
-      openMenu(path, r.left + 8, r.bottom)
+      openMenu(path, r.left + 8, r.bottom, { keyboard: true })
     }
   }
   function frameClick(event, path) {

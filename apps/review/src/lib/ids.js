@@ -259,11 +259,45 @@ export function swapParts(tree, from, to) {
   return write(next) === write(tree) ? tree : next
 }
 
+/**
+ * `text` split into UTF-16 offset spans matching `parse(text, { open: true })` path-for-path: each
+ * operator and each component (including optional variation selector) gets `{ path, start, end, tokenEnd }`.
+ * Missing trailing operands get zero-width spans at the end. Unparseable text returns `[]`.
+ */
+export function tokenize(text) {
+  if (!text) return []
+  if (parse(text, { open: true }).problem) return []
+  const chars = [...text]
+  const out = []
+  let ci = 0, offset = 0
+  function read(path) {
+    const start = offset
+    const char = chars[ci]
+    if (char === undefined) {
+      out.push({ path, start, end: start, tokenEnd: start })
+      return
+    }
+    ci++
+    offset += char.length
+    const n = arity(char)
+    if (!n) {
+      if (!EMPTY_READ.has(char) && isSelector(chars[ci])) offset += chars[ci++].length
+      out.push({ path, start, end: offset, tokenEnd: offset })
+      return
+    }
+    const token = { path, start, end: offset, tokenEnd: offset }
+    out.push(token)
+    for (let i = 0; i < n; i++) read([...path, i])
+    token.end = offset
+  }
+  read([])
+  return out
+}
+
 /** The smallest subtree token in `spans` covering a non-empty UTF-16 text range `[start, end]`. */
 export function rangeToken(spans, start, end) {
   if (start === end) return null
-  return spans.filter(token => token.start <= start && token.end >= end
-    && !(token.noteStart !== undefined && start >= token.noteStart && end <= (token.noteEnd ?? token.noteStart)))
+  return spans.filter(token => token.start <= start && token.end >= end)
     .sort((a, b) => b.path.length - a.path.length)[0] ?? null
 }
 

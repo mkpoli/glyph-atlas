@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { tokens } from 'han-compose/tokens'
-import { ALIASES, CODES, KEYS, isComponent, isLetter, namingOperator, OPERATORS, clear, leaves, neighbor, nextEmpty, parse, partAt, paths, rangeToken, reorderSiblings, siblings, swapOp, swapParts, swappable, unalias, unwrap, wrap, write } from '../src/lib/ids.js'
+import { ALIASES, CODES, KEYS, isComponent, isLetter, namingOperator, OPERATORS, clear, leaves, neighbor, nextEmpty, parse, partAt, paths, rangeToken, reorderSiblings, siblings, swapOp, swapParts, swappable, tokenize, unalias, unwrap, wrap, write } from '../src/lib/ids.js'
 
 const tree = text => parse(text, { open: true }).tree
 
@@ -100,7 +99,7 @@ describe('the editor verbs', () => {
   })
   it('map a sequence field selection to its smallest covering tree part', () => {
     const seq = '⿰𠤕⿱龴疋'
-    const spans = tokens(seq)
+    const spans = tokenize(seq)
     // ⿰ (0..1), 𠤕 (1..3, surrogate pair), ⿱ (3..4), 龴 (4..5), 疋 (5..6)
     expect(rangeToken(spans, 1, 3)?.path).toEqual([0])
     expect(rangeToken(spans, 5, 6)?.path).toEqual([1, 1])
@@ -108,7 +107,10 @@ describe('the editor verbs', () => {
     expect(rangeToken(spans, 3, 4)?.path).toEqual([1])
     expect(rangeToken(spans, 2, 2)).toBeNull()
     const ivs = '⿺辶\u{E0101}禺\u{E0101}'
-    expect(rangeToken(tokens(ivs), 1, 4)?.path).toEqual([0])
+    expect(rangeToken(tokenize(ivs), 1, 4)?.path).toEqual([0])
+    // Hangul jamo stay aligned with parse() rather than grouping into syllables
+    const jamo = '⿰\u1100\u1161'
+    expect(rangeToken(tokenize(jamo), 2, 3)?.path).toEqual([1])
   })
   it('remove one level, keeping the first part that is filled', () => {
     expect(write(unwrap(t, [1]))).toBe('⿰亻七')
