@@ -2475,7 +2475,7 @@ def test_a_client_without_a_purse_sends_nothing(monkeypatch):
 
 def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    purse = fish_bot.Purse(store, 0.10)
+    purse = fish_bot.Purse(store, 0.05)
     model = paid_gemini("key", purse=purse)
     sent = []
     # 0.04 a call: 10,000 tokens in and 3,333 out.
@@ -2487,7 +2487,7 @@ def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
 
     call()
     call()
-    assert 0.079 < purse.spent() < 0.081 and 0.79 < purse.share() < 0.81
+    assert 0.079 < purse.spent() < 0.081 and 0.019 < purse.remaining() < 0.021
     with pytest.raises(fish_bot.SpendError):
         call()
     assert len(sent) == 2
@@ -2498,8 +2498,8 @@ def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
 
 
 def test_two_processes_share_the_days_money(tmp_path):
-    first = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 4.5 * fish_bot.CALL_RESERVE)
-    second = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 4.5 * fish_bot.CALL_RESERVE)
+    first = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 2.25 * fish_bot.CALL_RESERVE)
+    second = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 2.25 * fish_bot.CALL_RESERVE)
     for purse in (first, second, first, second):
         purse.reserve("chat")
     for purse in (first, second):
@@ -2529,12 +2529,75 @@ def test_a_refused_call_is_free_and_a_lost_one_is_not(tmp_path, monkeypatch):
 
 def test_the_day_is_read_under_the_lock(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    store.count_usage("chat", cost=0.10)
     start = fish_bot.now_ms()
-    clock = iter([start + 86_400_000])
-    monkeypatch.setattr(fish_bot, "now_ms", lambda: next(clock, start + 86_400_000))
-    purse = fish_bot.Purse(store, 0.10)
-    assert purse.reserve("chat") == fish_bot.local_day(start + 86_400_000)
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: start + 86_400_000 if store.db.in_transaction else start)
+    assert fish_bot.Purse(store, 1.0).reserve("chat") == fish_bot.local_day(start + 86_400_000)
+
+
+def spent_days(store, now, past, usd=1.0):
+    """Days that each had a budget and cost this much, ending yesterday."""
+    for number, cost in enumerate(past):
+        day = fish_bot.local_day(now - (len(past) - number) * 86_400_000)
+        store.db.execute("INSERT INTO budget(day, usd) VALUES(?,?)", (day, usd))
+        store.count_usage("chat", cost=cost, day=day)
+
+
+@pytest.mark.parametrize(("past", "allowed"), [
+    ([], 2.0),                      # its own dollar and one borrowed
+    ([0.2], 2.8),                   # a quiet day leaves 0.8
+    ([0.0, 0.0, 0.0], 3.0),         # no more than one day is saved
+    ([1.6], 1.4),                   # a busy day took 0.6 ahead
+    ([2.0, 1.0, 1.0], 1.0),         # fully borrowed, every day still has its own
+    ([2.1, 1.0], 0.9),              # what a last call cost beyond the limit is owed too
+    ([2.0, 0.4], 1.6),              # a quiet day pays the loan back
+])
+def test_a_day_may_use_what_was_saved_and_borrow_a_day(tmp_path, past, allowed):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now, past)
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(allowed)
+
+
+def test_days_before_there_was_a_budget_are_neither_saved_nor_owed(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    for number, cost in ((3, 0.0), (2, 9.0)):
+        store.count_usage("chat", cost=cost, day=fish_bot.local_day(now - number * 86_400_000))
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0)
+
+
+def test_a_day_without_calls_saves_too(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now - 86_400_000, [2.0])
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0)
+
+
+def test_a_day_keeps_the_money_it_had_when_the_budget_changes(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now, [0.25, 0.25, 0.0], usd=0.25)
+    assert fish_bot.Purse(store, 2.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0 + 0.25 + 2.0)
+    assert fish_bot.Purse(store, 0.1).allowance(fish_bot.local_day(now)) == pytest.approx(0.1 + 0.25 + 0.1)
+
+
+def test_the_spending_averages_the_daily_amount_however_calls_overshoot(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    start = fish_bot.now_ms()
+    clock = {"now": start}
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: clock["now"])
+    total = 0.0
+    for day in range(200):
+        clock["now"] = start + day * 86_400_000
+        for _ in range(100):
+            try:
+                booked = purse.reserve("chat")
+            except fish_bot.SpendError:
+                break
+            purse.settle("chat", booked, cost=0.14)
+            total += 0.14
+    assert 198 < total <= 200 + fish_bot.BORROW_DAYS + 0.14
 
 
 def test_unreadable_spending_counts_as_all_spent(tmp_path, monkeypatch):
@@ -2544,7 +2607,8 @@ def test_unreadable_spending_counts_as_all_spent(tmp_path, monkeypatch):
         raise sqlite3.OperationalError("disk I/O error")
 
     monkeypatch.setattr(store, "spent", broken)
-    assert fish_bot.Purse(store, 1.0).share() == 1.0
+    purse = fish_bot.Purse(store, 1.0)
+    assert purse.remaining() == 0.0 and purse.short() and not purse.may_visit(1.0)
 
 
 def test_an_answer_without_token_counts_is_charged_as_reserved(tmp_path, monkeypatch):
@@ -2907,27 +2971,97 @@ def test_out_of_money_she_says_so_once_a_day_in_a_room(tmp_path):
     assert [content["body"] for _, content, *_ in matrix.sent] == [fish_bot.BROKE["en"]]
 
 
-def test_she_opens_no_rooms_while_spending_is_ahead_of_the_days_pace(tmp_path, monkeypatch):
-    bot, _, _ = make_bot(tmp_path, act=act("hi", interest=4))
-    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, tzinfo=fish_bot.JST)
-    middle = sum(fish_bot.THRIFT_VISITS) / 2
+def test_visits_have_money_of_their_own_let_out_through_the_day(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("chat", cost=0.9)
+    assert purse.may_visit(0.0)
+    store.count_usage("visit", cost=0.10)
+    assert not purse.may_visit(0.0) and purse.may_visit(0.5)
+    store.count_usage("visit", cost=0.26)
+    assert not purse.may_visit(1.0)
+
+
+def test_visits_shrink_on_a_day_that_starts_in_debt(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    spent_days(store, fish_bot.now_ms(), [1.2])
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("visit", cost=0.14)
+    assert purse.may_visit(1.0)
+    store.count_usage("visit", cost=0.02)
+    assert not purse.may_visit(1.0)
+
+
+def test_the_callers_money_is_kept_from_visits(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("chat", cost=2.0 - fish_bot.CALLER_FLOOR - 0.01)
+    assert purse.may_visit(1.0) and not purse.short()
+    store.count_usage("chat", cost=0.02)
+    assert purse.short() and not purse.may_visit(1.0)
+    assert purse.reserve("chat")
+
+
+def test_a_visit_is_counted_with_its_lookups_and_kept_off_the_callers_money(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    with purse.unasked("visit"):
+        for kind in ("chat", "search"):
+            purse.settle(kind, purse.reserve(kind), cost=0.06)
+    purse.settle("chat", purse.reserve("chat"), cost=0.02)
+    today = fish_bot.local_day(fish_bot.now_ms())
+    assert store.spent_on("visit", today) == pytest.approx(0.12)
+    assert {row["kind"] for row in store.usage(1)} == {"visit chat", "visit search", "chat"}
+    store.count_usage("chat", cost=2.0 - 0.14 - fish_bot.CALLER_FLOOR - 0.02)
+    with purse.unasked("visit"), pytest.raises(fish_bot.SpendError):
+        purse.reserve("chat")
+    assert purse.work == "" and purse.reserve("chat")
+
+
+def test_visits_and_digests_run_as_unasked_work(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    works = []
+    monkeypatch.setattr(bot, "turn", lambda *_, **__: works.append(bot.gemini.purse.work))
     bot._unread[ROOM] = {"first": "$x", "count": 1, "lively": False, "due": -1e9, "last": -1e9}
-    bot._clock = lambda: noon
-    monkeypatch.setattr(bot.gemini.purse, "share", lambda: middle + 0.01)
+    bot.visit()
+    monkeypatch.setattr(bot.gemini, "digest", lambda *_: works.append(bot.gemini.purse.work) or "digest")
+    store.add_event("$l", "!other:example", "@reader:example", fish_bot.now_ms(), "hi", "m.text", backfilled=False)
+    bot.active_rooms = {ROOM, "!other:example"}
+    bot.post_digest("2026-11-25", ROOM, "English")
+    assert works == ["visit", "digest"] and bot.gemini.purse.work == ""
+
+
+def test_without_money_for_visits_the_room_stays_unread(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path, act=act("hi", interest=4))
+    bot._unread[ROOM] = {"first": "$x", "count": 1, "lively": False, "due": -1e9, "last": -1e9}
+    monkeypatch.setattr(bot.gemini.purse, "may_visit", lambda passed: False)
     bot.visit()
     assert bot.gemini.turns == [] and bot._unread[ROOM]["due"] > 0
     bot._unread[ROOM]["due"] = -1e9
-    bot._clock = lambda: noon.replace(hour=15)
+    monkeypatch.setattr(bot.gemini.purse, "may_visit", lambda passed: True)
     bot.visit()
     assert len(bot.gemini.turns) == 1
 
 
-def test_past_the_second_mark_she_reads_less_and_leaves_bystanders_alone(tmp_path, monkeypatch):
+def test_the_digest_waits_while_only_the_callers_money_is_left(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path, config=fish_bot.Config(user_id=USER, digest_hour=0, digest_rooms=((ROOM, "English"),)))
+    posted = []
+    monkeypatch.setattr(bot, "post_digest", lambda day, room, language: posted.append(room))
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
+    bot.digest()
+    assert posted == []
+    bot._digest_tried.clear()
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: False)
+    bot.digest()
+    assert posted == [ROOM]
+
+
+def test_with_only_the_callers_money_she_reads_less_and_leaves_bystanders_alone(tmp_path, monkeypatch):
     bot, _, store = make_bot(tmp_path)
     start = fish_bot.now_ms() - 600_000
     for number in range(30):
         store.add_event(f"$l{number}", ROOM, "@reader:example", start + number, f"line {number}", "m.text", backfilled=False)
-    monkeypatch.setattr(bot.gemini.purse, "share", lambda: fish_bot.THRIFT_SHORT)
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
     call = event("大肥魚!", event_id="$call")
     bot.ingest(ROOM, call, backfilled=False)
     bot.answer(ROOM, call)
@@ -2961,7 +3095,7 @@ def test_a_newcomer_is_greeted_once_there_is_money_again(tmp_path, monkeypatch):
 
 def test_a_call_is_read_even_when_many_lines_followed_it(tmp_path, monkeypatch):
     bot, _, store = make_bot(tmp_path)
-    monkeypatch.setattr(bot.gemini.purse, "share", lambda: fish_bot.THRIFT_SHORT)
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
     start = fish_bot.now_ms() - 600_000
     store.add_event("$call", ROOM, "@reader:example", start, "大肥魚, what is 𠀋?", "m.text", backfilled=False)
     for number in range(20):
@@ -3118,3 +3252,56 @@ def test_a_called_answer_outside_the_service_is_refused(monkeypatch):
     monkeypatch.setattr(fish_bot, "in_service", lambda: False)
     with pytest.raises(fish_bot.SpendError):
         paid_gemini("key").act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
+
+
+def test_the_pace_follows_the_hours_people_write_in(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    evening = fish_bot.datetime.datetime.now(fish_bot.JST).replace(hour=20, minute=30, second=0, microsecond=0)
+    evening -= fish_bot.datetime.timedelta(days=1)
+    for number in range(2000):
+        store.add_event(f"$l{number}", ROOM, "@reader:example", int(evening.timestamp() * 1000) + number, "hi", "m.text", backfilled=False)
+    for number in range(500):
+        store.add_event(f"$m{number}", ROOM, USER, int(evening.replace(hour=9).timestamp() * 1000) + number, "hi", "m.text", backfilled=False)
+    noon = evening.replace(hour=12, minute=0)
+    bot._clock = lambda: noon
+    assert bot._day_passed() < 0.1
+    bot._clock = lambda: evening.replace(hour=21, minute=0)
+    assert bot._day_passed() > 0.9
+
+
+def test_without_a_log_the_pace_is_the_clock(tmp_path):
+    bot, _, _ = make_bot(tmp_path)
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, 30, tzinfo=fish_bot.JST)
+    bot._clock = lambda: noon
+    assert bot._day_passed() == pytest.approx(12.5 / 24)
+
+
+def test_the_hours_are_counted_again_the_next_day(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    counted = []
+    monkeypatch.setattr(store, "hours", lambda since, exclude: counted.append(since) or [0] * 24)
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, tzinfo=fish_bot.JST)
+    for day in (24, 24, 25):
+        bot._clock = lambda day=day: noon.replace(day=day)
+        bot._day_passed()
+    assert len(counted) == 2
+
+
+def test_hours_that_cannot_be_read_leave_the_clock(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+
+    def broken(since, exclude):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    read = store.hours
+    monkeypatch.setattr(store, "hours", broken)
+    bot._clock = lambda: fish_bot.datetime.datetime(2026, 11, 24, 6, tzinfo=fish_bot.JST)
+    assert bot._day_passed() == pytest.approx(0.25)
+    monkeypatch.setattr(store, "hours", read)
+    assert bot._day_passed() == pytest.approx(0.25) and bot._hours is not None
+
+
+def test_an_empty_exclusion_counts_everyone(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    store.add_event("$a", ROOM, "@reader:example", 3_600_000 * 24 * 400, "hi", "m.text", backfilled=False)
+    assert sum(store.hours(0, [])) == 1 and store.hours(0, [])[9] == 1

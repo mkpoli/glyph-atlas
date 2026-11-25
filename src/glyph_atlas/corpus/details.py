@@ -54,6 +54,7 @@ UNIT_ID_PREFIXES = {
     "tsj:": "hdic-tsj",
     "gy-photographs:": "guangyun-photographs",
     "gy-ioc:": "guangyun-ioc",
+    "lk-song:": "longkan-song",
 }
 
 #: Tables whose content a resolved detail depends on. A change to any of them, or to

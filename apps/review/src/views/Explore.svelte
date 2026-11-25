@@ -20,7 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import { charOf, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
+  import { charOf, codesOf, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -42,6 +42,7 @@
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { character as layerCharacter, occurrences, candidates as layerCandidates, gallery as layerGallery, decades, bookGallery as layerBooks } from '../lib/layers.js'
   import { t, around, withText, localName, locale, localize, delocalize, formatNumber, formatCompactNumber } from '../lib/i18n.svelte.js'
+  import { SearchGroups, groupOf } from '../lib/searchGroups.svelte.js'
   import { collectionAddress, expandFor, galleryAddress, galleryPage, graphemeAddress, graphemeOf } from '../lib/addresses.js'
   import { corpusScope, bookPage, bookScope, styleCounts } from '../lib/gallery.js'
   import { keyText } from '../lib/codePoints.js'
@@ -293,7 +294,6 @@
   }
   function runsChanged() { if (counting) loadRuns(); else { runsFor = null; runsRequest += 1 } }
   $effect(() => { if (counting && unit + '|' + work !== runsFor) untrack(loadRuns) })
-  const codesOf = text => [...text].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ')
   const works = $derived((data?.documents ?? []).filter(w => !flagged || w.flagged || w.hard)
     .map(w => ({ ...w, count: flagged ? w.flagged + w.hard : w.total })))
   /** The label a tile shows. `identity.js` names an unassigned crop and a group without a label in
@@ -1294,12 +1294,10 @@
     pick({ code_point: codesOf(part), char: part })
   }
   // The graphemes the browser lists, by key: a query's candidate shows in its grapheme's card when the
-  // collection holds that very character, as the browser's card lists it.
+  // collection holds that very character, as the browser's card lists it. Needs fixing lists only reported
+  // crops, so its box reads the site's.
   const graphemeByKey = $derived(new Map(graphemes.map(group => [group.key, group])))
-  function groupOf(item) {
-    const group = graphemeByKey.get(item.grapheme?.code_point ?? codesOf(item.char ?? '')) ?? graphemeByKey.get(codesOf(item.char ?? ''))
-    return group && group.members.some(member => member.label === item.char) ? group : null
-  }
+  const searchGroups = untrack(() => flagged) ? new SearchGroups() : null
   function shuffle() { let next; do next = shuffleSeed(); while (next === seed); seed = next; load() }
   // The gallery as one image: every crop it holds so far, in the columns it shows them in, over a
   // credit of the page and the holders (`lib/collageImage.js`). Runs and crops with no image the site
@@ -1493,7 +1491,7 @@
       </button>
     {/if}
   </div>
-  <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) loadCounts() }}>
+  <div class="collection-toolbar" onfocusin={e => { if (e.target.closest('.character-search') && e.target.matches('input')) { loadCounts(); searchGroups?.read() } }}>
     <!-- The box, empty and focused, lists the collection's graphemes; one chosen narrows the grid, and a
          form in a tile's popover opens that form's own gallery. -->
     {#snippet browse(close)}
@@ -1513,7 +1511,7 @@
     <!-- What to look through: a character, a work, a fresh deal, and the script. A row too narrow for
          them all puts the scripts on a line of their own. -->
     <div class="toolbar-query">
-      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} linked {browse} {groupOf} countOf={char => tileCounts ? tileCounts.forms.get(char) ?? 0 : countsFailed || flagged ? null : undefined} lead={run ? runLead : null}
+      <CharacterSearch bind:value={query} oninput={seek} onselect={pick} {browse} groupOf={searchGroups?.groupOf ?? (item => groupOf(graphemeByKey, item))} countOf={searchGroups?.countOf ?? (char => tileCounts ? tileCounts.forms.get(char) ?? 0 : undefined)} lead={run ? runLead : null}
                        onform={form => pick({ code_point: codesOf(form), char: form })}
                        token={grapheme ? charOf(grapheme) : ''} tokenLabel={t('explore.clearGrapheme', { grapheme: graphemeLabel(charOf(grapheme)) })} ontokenclear={() => select('')}
                        onsubmit={() => { clearTimeout(searchTimer); submitQuery() }}

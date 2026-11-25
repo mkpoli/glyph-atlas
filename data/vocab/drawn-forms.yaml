@@ -49,3 +49,22 @@ forms:
       The form: a cursive variant of 事, supplied by mkpoli on 2026-11-18 and not yet matched to a
       cluster in forms clustering 582865e3b2b68c53.
       The drawings: supplied by mkpoli on 2026-11-18 as one picture of a serif and a sans figure, traced
+  U+F0003:
+    written_for: U+6642
+    script: han
+    name: 時 in cursive, a short left stroke and tilted loop for 日 bridging into a crossed top and sweeping る-like bottom loop for 寺
+    basis: >-
+      The form: forms clustering 582865e3b2b68c53 of 時, read on https://glyphatlas.org/ja/forms/U+6642 on
+      2026-11-24, cluster U+6642:0acef6512f (86 glyphs), named as one form by mkpoli on 2026-11-24.
+      The drawings: vector serif and sans outlines drawn from the cluster crops and approved by mkpoli on
+      2026-11-24.
+  U+F0004:
+    written_for: U+6642
+    script: han
+    name: 时 in cursive, a short left stroke and tilted loop for 日 bridging into a horizontal bar and downstroke that loops back up-left for 寸
+    basis: >-
+      The form: forms clustering 582865e3b2b68c53 of 時, read on https://glyphatlas.org/ja/forms/U+6642 on
+      2026-11-24, clusters U+6642:c8571812ca, U+6642:da68d06221, U+6642:29a76a1991, U+6642:02fb013dd2 and
+      U+6642:3dab6db29c (1,971 glyphs), grouped as one form by mkpoli on 2026-11-24.
+      The drawings: vector serif and sans outlines drawn from the cluster crops and approved by mkpoli on
+      2026-11-24.

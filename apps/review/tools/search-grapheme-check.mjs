@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
- * The heading over a grapheme's rows in the search list leads to the grapheme's page, by the pointer and
- * by the arrow keys, where rows open pages; a box that picks a character has no such link.
+ * A search that opens pages shows its candidates as grapheme cards wherever the box is, each heading a link
+ * to its grapheme's page by the pointer and the keyboard; a box that picks a character lists rows.
  *
- * Run through devrun:
+ * Run through devrun, against the last build:
  *   devrun bun apps/review/tools/search-grapheme-check.mjs
  */
 import Browser from './browser.mjs'
@@ -18,7 +18,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 const grapheme = { code_point: 'U+9F95', char: '龕', character_count: 2 }
 const row = (code_point, char, more = {}) => ({ char, code_point, script: 'han', name: char, candidates: { imported: 0 }, ...more })
 const suggestions = { items: [row('U+9F95', '龕', { grapheme }), row('U+9FA4', '龤', { grapheme }), row('U+9F98', '龘', { grapheme: { code_point: 'U+9F98', char: '龘', character_count: 1 } })] }
-const BOX = '.collection-toolbar .character-search input', HEAD = '.collection-toolbar .candidate-grapheme-head'
+const BOX = '.collection-toolbar .character-search input', HEAD = '.collection-toolbar .search-card a.card-head'
 const typed = selector => `(() => {
   const field = document.querySelector(${JSON.stringify(selector)})
   field.focus()
@@ -35,44 +35,50 @@ try {
     requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
     body: Buffer.from(JSON.stringify(suggestions)).toString('base64'),
   }) })
-  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.select-toggle') !== null` })
-  // The local review service has no grapheme pages, so the link followed is what is read.
-  await browser.evaluate(`addEventListener('click', e => { const a = e.target.closest('a.candidate-grapheme-head'); if (a) { e.preventDefault(); e.stopPropagation(); window.followed = a.getAttribute('href') } }, true)`)
-  const opened = async () => {
-    await browser.evaluate(`window.followed = null`)
-    await browser.evaluate(typed(BOX))
-    await browser.waitFor(`document.querySelectorAll('.collection-toolbar .candidate').length === 3 && document.querySelector(${JSON.stringify(BOX)}).getAttribute('aria-busy') === 'false'`)
+  for (const path of ['/en', '/en/flagged']) {
+    await browser.goto(service.base + path, { waitFor: `document.querySelector(${JSON.stringify(BOX)}) !== null` })
+    // The local review service has no grapheme pages, so the link followed is what is read.
+    await browser.evaluate(`addEventListener('click', e => { const a = e.target.closest('a.card-head'); if (a) { e.preventDefault(); e.stopPropagation(); window.followed = a.getAttribute('href') } }, true)`)
+    const opened = async () => {
+      await browser.evaluate(`window.followed = null`)
+      await browser.evaluate(typed(BOX))
+      await browser.waitFor(`document.querySelectorAll(${JSON.stringify(HEAD)}).length === 2`)
+    }
+    const follows = how => browser.waitFor(`window.followed === '/en/grapheme/U+9F95'`, 4000).catch(() => { throw new Error(`${how} on ${path} does not follow the link to the grapheme's page`) })
+
+    await opened()
+    const list = await browser.evaluate(`({ heads: [...document.querySelectorAll(${JSON.stringify(HEAD)})].map(h => h.getAttribute('href')), forms: [...document.querySelectorAll('.collection-toolbar .search-card li')].length,
+      rows: document.querySelectorAll('.collection-toolbar .candidate').length,
+      wide: [...document.querySelectorAll('.collection-toolbar .candidate-list *')].some(e => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'visible') })`)
+    assert(JSON.stringify(list.heads) === '["/en/grapheme/U+9F95","/en/grapheme/U+9F98"]', `${path}: the headings lead to ${JSON.stringify(list.heads)}`)
+    assert(list.forms === 3 && list.rows === 0, `${path}: ${list.forms} forms in cards and ${list.rows} rows`)
+    assert(!list.wide, `${path}: the list overflows`)
+    const point = await browser.centre(HEAD)
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
+    // A slow press: the list stays while the button is down.
+    await Bun.sleep(400)
+    assert(await browser.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(BOX)})`), 'pressing the heading takes focus from the box')
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+    await follows('a click on the heading')
+
+    await opened()
+    await key('ArrowDown', 40); await key('Enter', 13)
+    await follows('the arrow and Enter')
+
+    // The fold of characters held nowhere is passed over while closed: the arrows reach the box again.
+    await opened()
+    const stops = await browser.evaluate(`document.querySelectorAll('.collection-toolbar .candidate-list a[href], .collection-toolbar .candidate-list button:not(:disabled), .collection-toolbar .candidate-list summary').length`)
+    for (let i = 0; i <= stops + 1; i++) await key('ArrowDown', 40)
+    const at = await browser.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(BOX)}) || document.activeElement.matches('.collection-toolbar .candidate-list *')`)
+    assert(at, `${path}: the arrows lose the list`)
   }
-  const active = () => browser.evaluate(`document.querySelector(${JSON.stringify(BOX)}).getAttribute('aria-activedescendant')`)
-  const follows = how => browser.waitFor(`window.followed === '/en/grapheme/U+9F95'`, 4000).catch(() => { throw new Error(`${how} does not follow the link to the grapheme's page`) })
 
-  await opened()
-  const heads = await browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(HEAD)})].map(h => h.getAttribute('href'))`)
-  assert(JSON.stringify(heads) === '["/en/grapheme/U+9F95"]', `the headings lead to ${JSON.stringify(heads)}`)
-  assert((await active()).endsWith('-0'), 'the first candidate is not the one Enter opens')
-  const point = await browser.centre(HEAD)
-  await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
-  // A slow press: the list stays while the button is down.
-  await Bun.sleep(400)
-  assert(await browser.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(BOX)})`), 'pressing the heading takes focus from the box')
-  await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
-  await follows('a click on the heading')
-
-  await opened()
-  await key('ArrowUp', 38)
-  assert((await active()).endsWith('-g0'), 'the arrows pass over the heading')
-  await key('ArrowDown', 40)
-  assert((await active()).endsWith('-0'), 'the arrows do not return to the first row')
-  await key('ArrowUp', 38); await key('ArrowUp', 38)
-  assert((await active()).endsWith('-2'), 'the arrows do not wrap to the last row')
-  await key('ArrowDown', 40); await key('Enter', 13)
-  await follows('Enter on the heading')
-
+  await browser.goto(`${service.base}/en`, { waitFor: `document.querySelector('.select-toggle') !== null` })
   await browser.evaluate(`document.querySelector('.select-toggle').click()`)
   await browser.waitFor(`document.querySelector('.bulk-bar .character-search input') !== null`)
   await browser.evaluate(typed('.bulk-bar .character-search input'))
   await browser.waitFor(`document.querySelectorAll('.bulk-bar .candidate').length === 3`)
-  assert(await browser.evaluate(`document.querySelectorAll('.bulk-bar a.candidate-grapheme-head').length === 0`), 'the box that picks a character links to a grapheme')
+  assert(await browser.evaluate(`document.querySelectorAll('.bulk-bar .candidate-list a').length === 0`), 'the box that picks a character links to a page')
   console.log('search-grapheme-check passed')
 } finally {
   await browser?.close()

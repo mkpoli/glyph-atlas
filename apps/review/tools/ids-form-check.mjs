@@ -191,13 +191,27 @@ try {
   await typeSequence('LR木UD口')
   await becomes('⿰木⿱口⬚')
   assert(await browser.evaluate(`document.querySelectorAll('dialog[open] .ids-part.empty').length`) === 1, 'the missing part is not an empty slot')
-  // A character typed on the empty slot goes to the part field; Enter puts it in the slot.
+  // A character typed on the empty slot goes to the part field; both Enter and the Apply button put it in the slot.
   await focusPath('1.1')
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply is enabled on an empty part field')
   await browser.key('日')
   assert(await browser.evaluate(`document.activeElement === document.querySelector('dialog[open] .ids-slot input')`), 'typing on a slot does not reach the part field')
+  assert(!await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply stayed disabled after typing a part')
+  await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').click()`)
+  await becomes('⿰木⿱口日')
+  // Editing the chosen slot (still selected after Apply) can also be confirmed with Enter, and the primary Use button sits above the operators.
+  assert(await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply is enabled when the part field matches the slot')
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-slot input'); i.focus(); i.value = '月'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  assert(!await browser.evaluate(`document.querySelector('dialog[open] .ids-apply').disabled`), 'Apply stayed disabled after editing the part field')
+  const aboveOps = await browser.evaluate(`document.querySelector('dialog[open] .ids-use').getBoundingClientRect().top < document.querySelector('dialog[open] .ids-operators').getBoundingClientRect().top`)
+  assert(aboveOps, 'the primary Use button is not positioned above the operators')
+  await shoot('ids-confirm-buttons', '.ids-composer')
+  await browser.key('Enter')
+  await becomes('⿰木⿱口月')
+  await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-slot input'); i.focus(); i.value = '日'; i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await browser.key('Enter')
   await becomes('⿰木⿱口日')
-  console.log('PASS ASCII names are read as operators, and a part typed on a slot fills it')
+  console.log('PASS ASCII names are read as operators, a part typed on a slot applies by button or Enter, and Use is above the fold')
 
   // An operator key on an operator swaps it, keeping its parts and padding with an empty slot; back
   // to two parts the empty one goes; a swap that would drop a filled part is refused.
