@@ -8,13 +8,39 @@
  */
 
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 export const HERE = import.meta.dir
 export const ROOT = resolve(HERE, '..', '..', '..')
 export const APP = join(ROOT, 'apps', 'review')
+
+const FOLDER = 'atlas-review-', OWNER = '.owner'
+/** Whether the process that made a folder still runs: its pid and the time it started, which a later process of the same pid does not share. */
+const started = pid => { try { return readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ')[19] } catch { return null } }
+/** Removes the folders of checks that were killed before they removed their own (one of a run still going, or kept with
+ *  `--keep`, stays; so does a folder no check signed). */
+export function sweep(parent = tmpdir()) {
+  for (const name of readdirSync(parent).filter(name => name.startsWith(FOLDER))) {
+    let owner
+    try { owner = JSON.parse(readFileSync(join(parent, name, OWNER), 'utf8')) } catch { continue }
+    if (!owner.keep && (owner.started === null || started(owner.pid) !== owner.started)) rmSync(join(parent, name), { recursive: true, force: true })
+  }
+}
+/** A folder for one run, signed by this process, which removes it when it ends or is told to; the next run removes it
+ *  where this one is killed outright. */
+export function folder({ keep = false, parent = tmpdir() } = {}) {
+  sweep(parent)
+  const directory = mkdtempSync(join(parent, FOLDER))
+  writeFileSync(join(directory, OWNER), JSON.stringify({ pid: process.pid, started: started(process.pid), keep }))
+  if (!keep) {
+    process.on('exit', () => rmSync(directory, { recursive: true, force: true }))
+    // A handler takes the signal's own ending away, so it ends the run as the signal would have.
+    for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) process.once(signal, () => process.exit(code))
+  }
+  return directory
+}
 
 /** The command-line options the three tools share. */
 export function options(argv = process.argv.slice(2)) {
@@ -23,11 +49,12 @@ export function options(argv = process.argv.slice(2)) {
     if (index >= 0 && argv[index + 1] && !argv[index + 1].startsWith('--')) return argv[index + 1]
     return fallback
   }
+  const keep = argv.includes('--keep')
   return {
-    keep: argv.includes('--keep'),
+    keep,
     python: value('python', join(ROOT, '.venv', 'bin', 'python')),
     port: Number(value('port', '0')),
-    directory: resolve(value('directory', mkdtempSync(join(tmpdir(), 'atlas-review-')))),
+    directory: resolve(value('directory') ?? folder({ keep })),
     external: value('server', null),
     // With `--server`, the review service the page server at that address forwards to.
     externalApi: value('api', null),
@@ -73,6 +100,8 @@ export async function boot(config) {
   let server = null
   let web = null
   const log = []
+  // The services go before the folder they write in, however the run ends.
+  process.prependListener('exit', () => { for (const child of [web, server]) if (child && child.exitCode === null) child.kill('SIGKILL') })
 
   if (!config.external) {
     // A dataset directory that a previous run left behind would carry its reviewed state in
