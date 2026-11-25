@@ -252,7 +252,7 @@ seq	image	canvas	column	x	y	w	h	parent	parent_code_point	char	code_point	ccz	equ
 242	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	14	947	1296	174	274	𦺋	U+26E8B	𽇙	U+3D1D9		𦺋	equivalent	9412c8d6110faa1b8ecff91be9414753a15b16bde8c5700b27ea24174db2fd11
 243	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	14	949	2247	167	257	𦺝	U+26E9D	𽉳	U+3D273		𦺝	equivalent	998740b92d4e4a847027dca2810437fedaf653367a2f0ac7e77409a91141cb0d
 244	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	14	939	3172	170	303	𦺭	U+26EAD	𽋌	U+3D2CC		𦺭	equivalent	46da425bdcea617003f22928bf77f7eaeecedca6c3c248495a8a203c1d90e519
-245	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	15	709	1291	174	260	𦺍	U+26E8D	𽈊	U+3D20A		𧁄	ink	131bdf9abd210014103645ce8af8d211c932d9088024bbacae2e4f4638d15886
+245	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	15	709	1291	174	260	𦺍	U+26E8D					parent	131bdf9abd210014103645ce8af8d211c932d9088024bbacae2e4f4638d15886
 246	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	15	712	2250	173	258	蕕	U+8555	𽆪	U+3D1AA		蕕	equivalent	ceb0082f1d3e9009edef638bbb72298514366f3c3bc7049a5eb66222db7dcf60
 247	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	15	714	3173	177	297	蕝	U+855D	𽊘	U+3D298		蕝	equivalent	94c556e4b9d69ab1e1e8bc998a46f3b80a1a5124906a9d6658d16591d24d537f
 248	TE00024_0006_1	https://dl.ndl.go.jp/api/iiif/1181893/canvas/8	16	489	1283	158	268	蕎	U+854E					parent	3cbb39efcd60fa6c3cfbabd26f7dad27078c3a823cb98bc0ebb10d9d1cd6eb97
