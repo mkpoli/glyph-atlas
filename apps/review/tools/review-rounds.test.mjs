@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dealsFor, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress } from '../src/lib/reviewRounds.js'
+import {
+  dealtRound, firstCrops, nextGrapheme, mergeReferences, roundGraphemes, roundAddress,
+  QUIZ_TILE_SIZES, QUIZ_CARDS_SIZE, QUIZ_COMPACT_SIZE, QUIZ_CARDS_MIN,
+  normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
+} from '../src/lib/reviewRounds.js'
 
 const categories = [{ label: '仮', pending: 1 }, { label: '假', pending: 5 },
   { label: 'あ', pending: 6 }, { label: 'い', pending: 12 }, { label: 'う', pending: 8 }]
@@ -33,11 +37,24 @@ test('characters of one grapheme make one round, counting all their pending crop
     ['U+4EEE', '仮', 6, ['假', '仮']], ['U+3042', 'あ', 3, ['あ']], ['U+203B', '※', 1, ['※']]])
 })
 
-test('a round is dealt for a grapheme, or for one of its characters alone', () => {
-  const rounds = roundGraphemes([{ label: '春', grapheme: 'U+6625', pending: 2 }, { label: '\u{3D307}', grapheme: 'U+6625', pending: 3 },
-    { label: 'は', grapheme: 'U+306F', pending: 1 }])
-  const held = key => rounds.filter(group => dealsFor(group, key)).map(group => group.label)
-  assert.deepEqual([held('U+6625'), held('U+3D307'), held('U+30CF')], [['U+6625'], ['U+6625'], []])
+test('a named round is dealt whatever the counts hold, and gives way when it deals none', async () => {
+  // The counts still file the seal character under itself, and hold no pending crop of 萅 or 春.
+  const stale = roundGraphemes([{ label: '\u{3D307}', grapheme: 'U+3D307', pending: 3 }, { label: 'は', grapheme: 'U+306F', pending: 9 }])
+  let asked
+  const deal = (held, named, counts = stale) => { asked = []; return dealtRound(counts, named, left => left[0]?.label ?? null,
+    async key => { asked.push(key); return { items: held.includes(key) ? [{ id: key }] : [] } }) }
+  for (const counts of [stale, []]) {
+    assert.equal((await deal(['U+6625', 'U+306F'], 'U+6625', counts)).chosen, 'U+6625')
+    assert.deepEqual(asked, ['U+6625'])
+  }
+  // The same round again, in another material or after a refusal: the counts hold it no more than they did.
+  assert.deepEqual(await deal(['U+306F'], 'U+6625'), { chosen: 'U+306F', result: { items: [{ id: 'U+306F' }] } })
+  assert.deepEqual(asked, ['U+6625', 'U+306F'])
+  assert.equal((await deal(['U+3D307'], null)).chosen, 'U+3D307')
+  assert.deepEqual(asked, ['U+306F', 'U+3D307'])
+  assert.deepEqual(await deal([], 'U+6625'), { chosen: null, result: null })
+  assert.deepEqual(asked, ['U+6625', 'U+306F', 'U+3D307'])
+  assert.equal((await dealtRound(stale, 'U+6625', () => null, async () => ({ items: [{}] }), () => true)).chosen, null)
 })
 
 test('the reference strip tags confirmed crops before seen ones', () => {
@@ -91,4 +108,48 @@ test('a first batch of only kept crops reads on, and a grapheme with nothing pas
   reads = []
   assert.deepEqual((await firstCrops(page, new Set())).items, [{ id: 'p0' }, { id: 'p1' }])
   assert.deepEqual(reads, [0])
+})
+
+test('switching Quick Review view mode restores each mode\'s tile size cleanly', () => {
+  assert.deepEqual(switchQuizView('compact'), { view: 'compact', size: QUIZ_COMPACT_SIZE })
+  assert.deepEqual(switchQuizView('cards'), { view: 'cards', size: QUIZ_CARDS_SIZE })
+  assert.deepEqual(switchQuizView('compact', { compactSize: 60 }), { view: 'compact', size: 60 })
+  assert.deepEqual(switchQuizView('cards', { cardsSize: 200 }), { view: 'cards', size: 200 })
+  // A too-narrow saved cards size clamps back to default cards width.
+  assert.deepEqual(switchQuizView('cards', { cardsSize: 76 }), { view: 'cards', size: QUIZ_CARDS_SIZE })
+  assert.equal(normalizeQuizTileSize('not-a-number', 76), 76)
+  assert.equal(normalizeQuizTileSize(999, 160), 160)
+  assert.ok(QUIZ_TILE_SIZES.includes(QUIZ_CARDS_MIN))
+})
+
+test('resizing tiles below card width switches into compact mode, and keeps compact mode when growing', () => {
+  assert.deepEqual(resizeQuizTiles(76, 'cards'), { view: 'compact', size: 76 })
+  assert.deepEqual(resizeQuizTiles(48, 'cards'), { view: 'compact', size: 48 })
+  assert.deepEqual(resizeQuizTiles(124, 'cards'), { view: 'cards', size: 124 })
+  assert.deepEqual(resizeQuizTiles(200, 'cards'), { view: 'cards', size: 200 })
+  assert.deepEqual(resizeQuizTiles(124, 'compact'), { view: 'compact', size: 124 })
+})
+
+test('groupRoundByForm partitions crops by written form in member order while preserving in-section order', () => {
+  const crops = [
+    { id: 'c1', label: '假', shape_order: 1 },
+    { id: 'c2', label: '仮', shape_order: 2 },
+    { id: 'c3', label: '假', shape_order: 3 },
+    { id: 'c4', label: '𛂞', jibo: '八', shape_order: 4 },
+    { id: 'c5', label: '仮', shape_order: 5 },
+  ]
+  const sections = groupRoundByForm(crops, ['仮', '假'], '仮')
+  assert.deepEqual(sections.map(s => [s.form, s.jibo, s.items.map(i => i.id)]), [
+    ['仮', null, ['c2', 'c5']],
+    ['假', null, ['c1', 'c3']],
+    ['𛂞', '八', ['c4']],
+  ])
+})
+
+test('cropSectionForm prefers frozen dealtForm, then standing claimed form, then written character', () => {
+  assert.equal(cropSectionForm({ label: '仮', dealtForm: '假' }), '假')
+  assert.equal(cropSectionForm({ label: '所', form: { status: 'asserted', values: [{ text: '⿰戶斤' }] } }), '⿰戶斤')
+  assert.equal(cropSectionForm({ label: '所', form: { status: 'disputed', values: [{ text: '⿰戶斤' }] } }), '所')
+  assert.equal(cropSectionForm({ written_character: '嶋', label: '島' }), '嶋')
+  assert.equal(cropSectionForm({}, 'あ'), 'あ')
 })

@@ -38,17 +38,16 @@ The browsing hierarchy is **grapheme → character → form** (clarified 2026-09
   - The **旧字体** is the older form the 常用漢字表 (2010) prints beside the head, where it is a character of the
     same grapheme. The pairs are the `joyo/variant` edges of `kanji-variants.tsv` (CJKVI, `joyo-variants.txt`,
     異体字（常用漢字表）), which are the 364 the 文化庁 index of the table prints (`joyo-2010` in `graphemes.yaml`,
-    compared 2026-11-24). The 271 families below have one, and so have 徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺,
-    whose two forms `characters.tsv` files together for another reason. 併即戻概涙状虚錬餅温黄 and 弁 have none, as
-    the older form (倂卽戾槪淚狀虛鍊餠溫黃, 辨瓣辯) is of another grapheme, whose crops this one does not count.
-    Neither have those whose older form is a compatibility ideograph ([0013](0013-finer-forms.md)).
+    compared 2026-11-24). The 271 families below have one, and so have 徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺 and
+    併即戻概涙状虚錬餅温黄, whose two forms `characters.tsv` files together. 弁 has none, as its older forms
+    (辨瓣辯) are three other graphemes. Neither have those whose older form is a compatibility ideograph
+    ([0013](0013-finer-forms.md)).
   - The **简体字** is a character of the grapheme that the 通用规范汉字表 (2013) lists (Unihan 18.0.0 kTGH, in
     `tongyong-guifan.tsv`) and that Unihan gives as the simplified form of another of its characters
     (kSimplifiedVariant, kTraditionalVariant). Of two the first in the table stands: 线 (1336) before 缐 (7459)
     for 線, 铁 before 𫓧 for 鉄. A relation of another source alone (冦 寇, 第一批异体字) gives none. Nor is
-    there one where the simplified form of the head or of its 旧字体 is of another grapheme (労 勞: 劳; 対: 对;
-    実: 实; 関: 关; 駆: 驱; 験: 验; 縄: 绳; 緑: 绿; 豊 豐: 丰; 閣: 阁), so 對対 stands beside 圖図图, or where the
-    table lists the head itself (确黹砷簧晅): the form left is of some other member.
+    there one where the simplified form of the head or of its 旧字体 is of another grapheme (豊 豐: 丰; 発 發: 发;
+    歴 歷: 历), or where the table lists the head itself (确黹砷簧晅): the form left is of some other member.
   - A head with no 旧字体 stands after the character of the grapheme that Unihan simplifies to its 简体字, where
     that is of another 構形 ([0012](0012-structure-layer.md)): 彎弯, whose head is the 简体字, 壺壷壶, 聰聡聪.
     A head that simplifies in the grapheme itself is such a character (線: 缐), and stands first.
@@ -74,6 +73,37 @@ first character cell of the [Agency for Cultural Affairs Jōyō index](https://w
 `graphemes.yaml` records each pair, relation and source digest. Multi-form entries
 and compatibility ideographs are outside this initial set. Broader alignment
 policies remain separate from browsing families.
+
+### 简体字 and 新字体 (2026-11-25)
+
+A 简体字 of the 通用规范汉字表 (2013) or a 新字体 of the 常用漢字表 (2010) is of the grapheme of its full form when it writes that one
+character: 对對, 动動, 实實, 黄黃, 状狀. Before, a form joined only when every variant relation it had led to one family, so a
+form in wide use stayed apart for its other relations (动 also relates to 働). What a form is for is now read from the
+standards' own tables, with Unihan and OpenCC, and 423 of the 608 forms outside their full form's grapheme join it.
+185 stay apart (`data/vocab/grapheme-apart.tsv`, each with its reasons): the form is also itself (后, 价, 谷), writes
+several characters (发, 历, 弁, 枪, 个), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its
+full form (着, 了), or is a loan for it.
+
+Two full forms of one form that two sources call variants, that a dictionary reads alike, and nothing holds apart, are one
+character too and join with it (鉴 with 鑒 and 鑑). Where no dictionary reads both, the two join by a ruling: 駡, 鈎 and 綉 are
+later shapes neither dictionary heads an entry with, while 罵, 鉤 and 繡 are headwords, and
+`data/vocab/grapheme-rulings.tsv` names each such pair with its sources. It also names ten pairs that were one grapheme before
+and that these rules would part (细 and 細: the 說文解字 data has 细 for another headword), each with the reason. A non-cognate
+tag of cjkvi's is no word of two characters where its own database also calls the pair 異体字: 奬 and 獎 are tagged so and
+are 異体字 in its hydzd, dypytz, twedu and 戸籍 tables, as 状 and 狀 are, and the list it comes from also holds shapes ISO/IEC
+10646 encodes apart. Two entries of the 常用漢字表 are two characters (個 and 箇), and so is a pair called a loan whose forms
+the 說文解字 heads an entry with each (蕩, as 𣿴, and 盪).
+
+`glyph_atlas.shape_families` states each rule with its sources, and `data/vocab/grapheme-rulings.tsv` the pairs ruled
+on by hand. The joined grapheme keeps the key of the full form's, unless the form is better known in Japan (没 over 沒,
+黄 over 黃).
+
+- 教育部・国家语言文字工作委员会『通用规范汉字表』附件1 规范字与繁体字、异体字对照表, 国发〔2013〕23号, as transcribed by
+  Wikisource and mandel59 (`data/sources/tongyong-guifan.yaml`); nos. 1151–1508 compared with the official scan.
+- 文化庁『常用漢字表』(2010), through CJKVI `joyo-variants.txt` (`joyo-2010` in `graphemes.yaml`).
+- 『說文解字』 in the data of shuowen.org (`data/sources/shuowen.yaml`), not collated with a printing, and
+  『廣韻』(澤存堂本) in nk2028's tshet-uinh-data (`data/sources/guangyun-zecuntang.yaml`), into
+  `data/vocab/headword-readings.tsv`.
 
 Character and occurrence queries stay exact by default. `expand=grapheme` requests
 the whole family; selecting a written character returns its own occurrences.

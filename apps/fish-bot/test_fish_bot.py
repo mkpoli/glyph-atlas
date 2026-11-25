@@ -5,7 +5,9 @@ from __future__ import annotations
 import base64
 import contextlib
 import io
+import itertools
 import json
+import re
 import sqlite3
 import urllib.parse
 import zlib
@@ -217,7 +219,7 @@ class OpenPurse:
     def settle(self, kind, day, **tally):
         pass
 
-    def add(self, kind, cost):
+    def search(self, queries):
         pass
 
 
@@ -1853,7 +1855,7 @@ def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatc
     act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
                     bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
     assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
-    assert [tool["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
+    assert [tool["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "unicode", "recall"]
     assert bodies[1]["previous_interaction_id"] == "v1_r1"
     assert bodies[1]["input"][0]["type"] == "function_result"
     assert bodies[1]["input"][0]["call_id"] == "call_0"
@@ -1942,11 +1944,106 @@ def test_config_reads_the_lookup_table(tmp_path):
     assert (config.lookup_enabled, config.lookup_per_hour) == (False, 30)
 
 
-def test_characters_are_described_from_the_database_with_derived_names():
-    described = fish_bot.describe_characters("𗼇字\U0003FFFD")
-    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "name": "TANGUT IDEOGRAPH-17F07"}
-    assert described[1]["name"] == "CJK UNIFIED IDEOGRAPH-5B57"
-    assert described[2]["name"].startswith("unassigned")
+def test_characters_are_described_from_the_current_database():
+    described = fish_bot.unicode_data().describe("𗼇字\U0003FFFD\ue000")
+    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "block": "Tangut", "name": "TANGUT IDEOGRAPH-17F07",
+                            "since": "Unicode 9.0"}
+    assert (described[1]["name"], described[1]["since"]) == ("CJK UNIFIED IDEOGRAPH-5B57", "Unicode 1.1")
+    assert described[2]["name"] == "not assigned in Unicode 18.0" and "since" not in described[2]
+    assert described[3]["block"] == "Private Use Area" and described[3]["name"].startswith("no name")
+
+
+@pytest.mark.parametrize(("point", "block", "name", "since"), [
+    (0x2EBF0, "CJK Unified Ideographs Extension I", "CJK UNIFIED IDEOGRAPH-2EBF0", "15.1"),
+    (0x323B0, "CJK Unified Ideographs Extension J", "CJK UNIFIED IDEOGRAPH-323B0", "17.0"),
+    (0x33479, "CJK Unified Ideographs Extension J", "CJK UNIFIED IDEOGRAPH-33479", "17.0"),
+    (0x2B81E, "CJK Unified Ideographs Extension D", "CJK UNIFIED IDEOGRAPH-2B81E", "18.0"),
+    (0x18E00, "Jurchen", "JURCHEN CHARACTER-18E00", "18.0"),
+    (0x3D000, "Seal", "SMALL SEAL CHARACTER-3D000", "18.0"),
+    (0x2FFC, "Ideographic Description Characters", "IDEOGRAPHIC DESCRIPTION CHARACTER SURROUND FROM RIGHT", "15.1")])
+def test_the_newest_characters_are_known_however_they_are_written(point, block, name, since):
+    for text in (chr(point), f"U+{point:X}", f"what is u+{point:x}?"):
+        entry = fish_bot.unicode_data().describe(text)[0]
+        assert (entry["code_point"], entry["block"], entry["name"], entry["since"]) == (
+            f"U+{point:04X}", block, name, f"Unicode {since}")
+
+
+def test_code_points_that_are_no_characters_are_described_safely():
+    described = fish_bot.unicode_data().describe("U+D800 U+110000 U+0007 U+FDD0")
+    assert [entry["code_point"] for entry in described[:4]] == ["U+D800", "U+110000", "U+0007", "U+FDD0"]
+    assert described[1]["name"].startswith("no code point") and described[3]["name"].startswith("a noncharacter")
+    json.dumps(described, ensure_ascii=False).encode()
+
+
+def test_blocks_are_found_by_the_words_of_their_names():
+    found = fish_bot.unicode_data().search("cjk extension")
+    assert (found["unicode"], found["released"], found["characters"], found["unified_ideographs"]) == (
+        "18.0", "2026-09-16", 172_808, 101_997)
+    extensions = {block["block"][-1]: block for block in found["blocks"] if "Unified" in block["block"]}
+    assert "".join(sorted(extensions)) == "ABCDEFGHIJ"
+    assert (extensions["J"]["range"], extensions["J"]["assigned"], extensions["J"]["versions"]) == ("U+323B0-U+3347F", 4298, ["17.0"])
+    assert extensions["D"]["versions"] == ["6.0", "18.0"]
+    assert [block["block"] for block in fish_bot.unicode_data().search("khitan")["blocks"]] == ["Khitan Small Script"]
+    missed = fish_bot.unicode_data().search("Proto-Cuneiform")
+    assert missed["blocks"] == [] and missed["note"]
+    assert len(fish_bot.unicode_data().search("")["blocks"]) == 13
+    assert len(json.dumps(fish_bot.unicode_data().search("a"), ensure_ascii=False)) < fish_bot.MAX_TOOL_RESULT
+
+
+def test_every_block_is_found_by_its_own_name():
+    data = fish_bot.unicode_data()
+    for low, high, name in data.blocks:
+        found = data.search(name)
+        assert name in [block["block"] for block in found["blocks"]] and "note" not in found
+
+
+def test_noncharacters_count_as_no_characters():
+    block = next(block for block in fish_bot.unicode_data().search("arabic presentation forms a")["blocks"])
+    assert (block["block"], block["assigned"]) == ("Arabic Presentation Forms-A", 656)
+
+
+def test_a_character_written_as_a_surrogate_pair_is_one():
+    assert fish_bot.unicode_data().describe("\\ud842\\udfb7")[0]["code_point"] == "U+20BB7"
+
+
+def test_the_facts_she_starts_from_agree_with_the_database():
+    data, prompt = fish_bot.unicode_data(), fish_bot.PERSONA_PROMPT
+    day = fish_bot.datetime.date.fromisoformat(data.released)
+    assert f"version {data.version}, released on {day.day} {day:%B} {day.year}" in prompt
+    assert f"{data.characters:,} characters, {data.unified:,} of them unified ideographs" in prompt
+    letters = sorted(row[2][-1] for row in data.blocks if row[2].startswith("CJK Unified Ideographs Extension"))
+    assert f"Extensions {letters[0]} to {letters[-1]}" in prompt
+    newest = max(data.ages, key=lambda row: [int(part) for part in row[2].split(".")])[2]
+    assert newest == data.version
+    in_blocks = sum(1 for row in data.blocks if row[2].startswith("CJK Unified") for point in range(row[0], row[1] + 1) if data.since(point))
+    assert f"{data.unified - in_blocks} of the unified ones" in prompt
+    blocks = {row[2] for row in data.blocks}
+    assert {"Jurchen", "Seal", "Tangut", "Khitan Small Script", "Nushu"} <= blocks
+    assert not any("Khitan Large" in name for name in blocks)
+    for name, version in (("Jurchen", "18.0"), ("Seal", "18.0"), ("Extension J", "17.0"), ("Extension I", "15.1")):
+        block = next(row for row in data.blocks if row[2].endswith(name))
+        assert data.since(block[0]) == version
+
+
+def test_the_unicode_tool_costs_no_budget_and_its_answers_reach_her(tmp_path):
+    lookup = fish_bot.Lookup(None, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", rooms=lambda: set(),
+                             per_hour=0, memory=False)
+    assert lookup.run("unicode", {"query": "Extension J"})["blocks"][0]["assigned"] == 4298
+    assert lookup.run("unicode", {})["unicode"] == "18.0"
+
+
+def test_without_its_unicode_data_she_does_not_start(tmp_path, monkeypatch):
+    for name in ("matrix-token", "gemini-key"):
+        (tmp_path / name).write_text("secret")
+    config = tmp_path / "config.toml"
+    config.write_text('[matrix]\ntoken_file = "matrix-token"\n[gemini]\napi_key_file = "gemini-key"\n')
+
+    def missing():
+        raise FileNotFoundError("unicode-18.0.0.json.gz")
+
+    monkeypatch.setattr(fish_bot, "unicode_data", missing)
+    with pytest.raises(SystemExit, match="unicode-18"):
+        fish_bot.main(["--config", str(config), "--db", str(tmp_path / "chat.sqlite3")])
 
 
 def test_the_characters_tool_costs_no_budget(tmp_path):
@@ -1971,7 +2068,7 @@ def test_github_reads_stay_inside_the_named_repository(tmp_path):
 
 
 def test_characters_keep_whitespace():
-    lookup_text = fish_bot.describe_characters("　 a ")
+    lookup_text = fish_bot.unicode_data().describe("　 a ")
     assert [item["code_point"] for item in lookup_text] == ["U+3000", "U+0020", "U+0061", "U+00A0"]
 
 
@@ -2475,7 +2572,7 @@ def test_a_client_without_a_purse_sends_nothing(monkeypatch):
 
 def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    purse = fish_bot.Purse(store, 0.10)
+    purse = fish_bot.Purse(store, 0.05)
     model = paid_gemini("key", purse=purse)
     sent = []
     # 0.04 a call: 10,000 tokens in and 3,333 out.
@@ -2487,7 +2584,7 @@ def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
 
     call()
     call()
-    assert 0.079 < purse.spent() < 0.081 and 0.79 < purse.share() < 0.81
+    assert 0.079 < purse.spent() < 0.081 and 0.019 < purse.remaining() < 0.021
     with pytest.raises(fish_bot.SpendError):
         call()
     assert len(sent) == 2
@@ -2498,8 +2595,8 @@ def test_the_day_ends_when_its_money_is_spent(tmp_path, monkeypatch):
 
 
 def test_two_processes_share_the_days_money(tmp_path):
-    first = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 4.5 * fish_bot.CALL_RESERVE)
-    second = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 4.5 * fish_bot.CALL_RESERVE)
+    first = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 2.25 * fish_bot.CALL_RESERVE)
+    second = fish_bot.Purse(fish_bot.Store(tmp_path / "chat.sqlite3"), 2.25 * fish_bot.CALL_RESERVE)
     for purse in (first, second, first, second):
         purse.reserve("chat")
     for purse in (first, second):
@@ -2529,12 +2626,75 @@ def test_a_refused_call_is_free_and_a_lost_one_is_not(tmp_path, monkeypatch):
 
 def test_the_day_is_read_under_the_lock(tmp_path, monkeypatch):
     store = fish_bot.Store(tmp_path / "chat.sqlite3")
-    store.count_usage("chat", cost=0.10)
     start = fish_bot.now_ms()
-    clock = iter([start + 86_400_000])
-    monkeypatch.setattr(fish_bot, "now_ms", lambda: next(clock, start + 86_400_000))
-    purse = fish_bot.Purse(store, 0.10)
-    assert purse.reserve("chat") == fish_bot.local_day(start + 86_400_000)
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: start + 86_400_000 if store.db.in_transaction else start)
+    assert fish_bot.Purse(store, 1.0).reserve("chat") == fish_bot.local_day(start + 86_400_000)
+
+
+def spent_days(store, now, past, usd=1.0):
+    """Days that each had a budget and cost this much, ending yesterday."""
+    for number, cost in enumerate(past):
+        day = fish_bot.local_day(now - (len(past) - number) * 86_400_000)
+        store.db.execute("INSERT INTO budget(day, usd) VALUES(?,?)", (day, usd))
+        store.count_usage("chat", cost=cost, day=day)
+
+
+@pytest.mark.parametrize(("past", "allowed"), [
+    ([], 2.0),                      # its own dollar and one borrowed
+    ([0.2], 2.8),                   # a quiet day leaves 0.8
+    ([0.0, 0.0, 0.0], 3.0),         # no more than one day is saved
+    ([1.6], 1.4),                   # a busy day took 0.6 ahead
+    ([2.0, 1.0, 1.0], 1.0),         # fully borrowed, every day still has its own
+    ([2.1, 1.0], 0.9),              # what a last call cost beyond the limit is owed too
+    ([2.0, 0.4], 1.6),              # a quiet day pays the loan back
+])
+def test_a_day_may_use_what_was_saved_and_borrow_a_day(tmp_path, past, allowed):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now, past)
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(allowed)
+
+
+def test_days_before_there_was_a_budget_are_neither_saved_nor_owed(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    for number, cost in ((3, 0.0), (2, 9.0)):
+        store.count_usage("chat", cost=cost, day=fish_bot.local_day(now - number * 86_400_000))
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0)
+
+
+def test_a_day_without_calls_saves_too(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now - 86_400_000, [2.0])
+    assert fish_bot.Purse(store, 1.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0)
+
+
+def test_a_day_keeps_the_money_it_had_when_the_budget_changes(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    now = fish_bot.now_ms()
+    spent_days(store, now, [0.25, 0.25, 0.0], usd=0.25)
+    assert fish_bot.Purse(store, 2.0).allowance(fish_bot.local_day(now)) == pytest.approx(2.0 + 0.25 + 2.0)
+    assert fish_bot.Purse(store, 0.1).allowance(fish_bot.local_day(now)) == pytest.approx(0.1 + 0.25 + 0.1)
+
+
+def test_the_spending_averages_the_daily_amount_however_calls_overshoot(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    start = fish_bot.now_ms()
+    clock = {"now": start}
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: clock["now"])
+    total = 0.0
+    for day in range(200):
+        clock["now"] = start + day * 86_400_000
+        for _ in range(100):
+            try:
+                booked = purse.reserve("chat")
+            except fish_bot.SpendError:
+                break
+            purse.settle("chat", booked, cost=0.14)
+            total += 0.14
+    assert 198 < total <= 200 + fish_bot.BORROW_DAYS + 0.14
 
 
 def test_unreadable_spending_counts_as_all_spent(tmp_path, monkeypatch):
@@ -2544,7 +2704,8 @@ def test_unreadable_spending_counts_as_all_spent(tmp_path, monkeypatch):
         raise sqlite3.OperationalError("disk I/O error")
 
     monkeypatch.setattr(store, "spent", broken)
-    assert fish_bot.Purse(store, 1.0).share() == 1.0
+    purse = fish_bot.Purse(store, 1.0)
+    assert purse.remaining() == 0.0 and purse.short() and not purse.may_visit(1.0)
 
 
 def test_an_answer_without_token_counts_is_charged_as_reserved(tmp_path, monkeypatch):
@@ -2828,7 +2989,21 @@ def test_each_search_query_is_counted(tmp_path, monkeypatch):
     monkeypatch.setattr(model, "_send", lambda body, **_: found)
     model.search("tangut")
     row = {row["kind"]: row for row in store.usage(1)}["grounding"]
-    assert round(row["cost"], 6) == round(3 * fish_bot.PRICE_SEARCH_QUERY, 6)
+    assert (row["calls"], row["cost"]) == (3, 0)
+
+
+def test_searches_past_the_months_free_ones_are_charged(tmp_path, monkeypatch):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("grounding", calls=fish_bot.FREE_SEARCHES - 1)
+    purse.search(3)
+    assert purse.spent() == pytest.approx(2 * fish_bot.PRICE_SEARCH_QUERY)
+    purse.search(1)
+    assert purse.spent() == pytest.approx(3 * fish_bot.PRICE_SEARCH_QUERY)
+    later = fish_bot.now_ms() + 32 * 86_400_000
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: later)
+    purse.search(5)
+    assert purse.spent() == 0
 
 
 def test_a_reply_names_the_message_it_answers(tmp_path):
@@ -2907,27 +3082,97 @@ def test_out_of_money_she_says_so_once_a_day_in_a_room(tmp_path):
     assert [content["body"] for _, content, *_ in matrix.sent] == [fish_bot.BROKE["en"]]
 
 
-def test_she_opens_no_rooms_while_spending_is_ahead_of_the_days_pace(tmp_path, monkeypatch):
-    bot, _, _ = make_bot(tmp_path, act=act("hi", interest=4))
-    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, tzinfo=fish_bot.JST)
-    middle = sum(fish_bot.THRIFT_VISITS) / 2
+def test_visits_have_money_of_their_own_let_out_through_the_day(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("chat", cost=0.9)
+    assert purse.may_visit(0.0)
+    store.count_usage("visit", cost=0.10)
+    assert not purse.may_visit(0.0) and purse.may_visit(0.5)
+    store.count_usage("visit", cost=0.26)
+    assert not purse.may_visit(1.0)
+
+
+def test_visits_shrink_on_a_day_that_starts_in_debt(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    spent_days(store, fish_bot.now_ms(), [1.2])
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("visit", cost=0.14)
+    assert purse.may_visit(1.0)
+    store.count_usage("visit", cost=0.02)
+    assert not purse.may_visit(1.0)
+
+
+def test_the_callers_money_is_kept_from_visits(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    store.count_usage("chat", cost=2.0 - fish_bot.CALLER_FLOOR - 0.01)
+    assert purse.may_visit(1.0) and not purse.short()
+    store.count_usage("chat", cost=0.02)
+    assert purse.short() and not purse.may_visit(1.0)
+    assert purse.reserve("chat")
+
+
+def test_a_visit_is_counted_with_its_lookups_and_kept_off_the_callers_money(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    with purse.unasked("visit"):
+        for kind in ("chat", "search"):
+            purse.settle(kind, purse.reserve(kind), cost=0.06)
+    purse.settle("chat", purse.reserve("chat"), cost=0.02)
+    today = fish_bot.local_day(fish_bot.now_ms())
+    assert store.spent_on("visit", today) == pytest.approx(0.12)
+    assert {row["kind"] for row in store.usage(1)} == {"visit chat", "visit search", "chat"}
+    store.count_usage("chat", cost=2.0 - 0.14 - fish_bot.CALLER_FLOOR - 0.02)
+    with purse.unasked("visit"), pytest.raises(fish_bot.SpendError):
+        purse.reserve("chat")
+    assert purse.work == "" and purse.reserve("chat")
+
+
+def test_visits_and_digests_run_as_unasked_work(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    works = []
+    monkeypatch.setattr(bot, "turn", lambda *_, **__: works.append(bot.gemini.purse.work))
     bot._unread[ROOM] = {"first": "$x", "count": 1, "lively": False, "due": -1e9, "last": -1e9}
-    bot._clock = lambda: noon
-    monkeypatch.setattr(bot.gemini.purse, "share", lambda: middle + 0.01)
+    bot.visit()
+    monkeypatch.setattr(bot.gemini, "digest", lambda *_: works.append(bot.gemini.purse.work) or "digest")
+    store.add_event("$l", "!other:example", "@reader:example", fish_bot.now_ms(), "hi", "m.text", backfilled=False)
+    bot.active_rooms = {ROOM, "!other:example"}
+    bot.post_digest("2026-11-25", ROOM, "English")
+    assert works == ["visit", "digest"] and bot.gemini.purse.work == ""
+
+
+def test_without_money_for_visits_the_room_stays_unread(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path, act=act("hi", interest=4))
+    bot._unread[ROOM] = {"first": "$x", "count": 1, "lively": False, "due": -1e9, "last": -1e9}
+    monkeypatch.setattr(bot.gemini.purse, "may_visit", lambda passed: False)
     bot.visit()
     assert bot.gemini.turns == [] and bot._unread[ROOM]["due"] > 0
     bot._unread[ROOM]["due"] = -1e9
-    bot._clock = lambda: noon.replace(hour=15)
+    monkeypatch.setattr(bot.gemini.purse, "may_visit", lambda passed: True)
     bot.visit()
     assert len(bot.gemini.turns) == 1
 
 
-def test_past_the_second_mark_she_reads_less_and_leaves_bystanders_alone(tmp_path, monkeypatch):
+def test_the_digest_waits_while_only_the_callers_money_is_left(tmp_path, monkeypatch):
+    bot, _, _ = make_bot(tmp_path, config=fish_bot.Config(user_id=USER, digest_hour=0, digest_rooms=((ROOM, "English"),)))
+    posted = []
+    monkeypatch.setattr(bot, "post_digest", lambda day, room, language: posted.append(room))
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
+    bot.digest()
+    assert posted == []
+    bot._digest_tried.clear()
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: False)
+    bot.digest()
+    assert posted == [ROOM]
+
+
+def test_with_only_the_callers_money_she_reads_less_and_leaves_bystanders_alone(tmp_path, monkeypatch):
     bot, _, store = make_bot(tmp_path)
     start = fish_bot.now_ms() - 600_000
     for number in range(30):
         store.add_event(f"$l{number}", ROOM, "@reader:example", start + number, f"line {number}", "m.text", backfilled=False)
-    monkeypatch.setattr(bot.gemini.purse, "share", lambda: fish_bot.THRIFT_SHORT)
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
     call = event("大肥魚!", event_id="$call")
     bot.ingest(ROOM, call, backfilled=False)
     bot.answer(ROOM, call)
@@ -2961,10 +3206,10 @@ def test_a_newcomer_is_greeted_once_there_is_money_again(tmp_path, monkeypatch):
 
 def test_a_call_is_read_even_when_many_lines_followed_it(tmp_path, monkeypatch):
     bot, _, store = make_bot(tmp_path)
-    monkeypatch.setattr(bot.gemini.purse, "share", lambda: fish_bot.THRIFT_SHORT)
+    monkeypatch.setattr(bot.gemini.purse, "short", lambda: True)
     start = fish_bot.now_ms() - 600_000
     store.add_event("$call", ROOM, "@reader:example", start, "大肥魚, what is 𠀋?", "m.text", backfilled=False)
-    for number in range(20):
+    for number in range(fish_bot.CHAT_CONTEXT + 10):
         store.add_event(f"$l{number}", ROOM, "@other:example", start + 1 + number, f"line {number}", "m.text", backfilled=False)
     bot.turn(ROOM, "$call", task="called")
     _, trigger, read = bot.gemini.turns[-1]
@@ -3118,3 +3363,396 @@ def test_a_called_answer_outside_the_service_is_refused(monkeypatch):
     monkeypatch.setattr(fish_bot, "in_service", lambda: False)
     with pytest.raises(fish_bot.SpendError):
         paid_gemini("key").act("Room", "", [message_row("hi")], {}, task="called", trigger=0, bot_user_id=USER)
+
+
+def test_the_pace_follows_the_hours_people_write_in(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    evening = fish_bot.datetime.datetime.now(fish_bot.JST).replace(hour=20, minute=30, second=0, microsecond=0)
+    evening -= fish_bot.datetime.timedelta(days=1)
+    for number in range(2000):
+        store.add_event(f"$l{number}", ROOM, "@reader:example", int(evening.timestamp() * 1000) + number, "hi", "m.text", backfilled=False)
+    for number in range(500):
+        store.add_event(f"$m{number}", ROOM, USER, int(evening.replace(hour=9).timestamp() * 1000) + number, "hi", "m.text", backfilled=False)
+    noon = evening.replace(hour=12, minute=0)
+    bot._clock = lambda: noon
+    assert bot._day_passed() < 0.1
+    bot._clock = lambda: evening.replace(hour=21, minute=0)
+    assert bot._day_passed() > 0.9
+
+
+def test_without_a_log_the_pace_is_the_clock(tmp_path):
+    bot, _, _ = make_bot(tmp_path)
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, 30, tzinfo=fish_bot.JST)
+    bot._clock = lambda: noon
+    assert bot._day_passed() == pytest.approx(12.5 / 24)
+
+
+def test_the_hours_are_counted_again_the_next_day(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+    counted = []
+    monkeypatch.setattr(store, "hours", lambda since, exclude: counted.append(since) or [0] * 24)
+    noon = fish_bot.datetime.datetime(2026, 11, 24, 12, tzinfo=fish_bot.JST)
+    for day in (24, 24, 25):
+        bot._clock = lambda day=day: noon.replace(day=day)
+        bot._day_passed()
+    assert len(counted) == 2
+
+
+def test_hours_that_cannot_be_read_leave_the_clock(tmp_path, monkeypatch):
+    bot, _, store = make_bot(tmp_path)
+
+    def broken(since, exclude):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    read = store.hours
+    monkeypatch.setattr(store, "hours", broken)
+    bot._clock = lambda: fish_bot.datetime.datetime(2026, 11, 24, 6, tzinfo=fish_bot.JST)
+    assert bot._day_passed() == pytest.approx(0.25)
+    monkeypatch.setattr(store, "hours", read)
+    assert bot._day_passed() == pytest.approx(0.25) and bot._hours is not None
+
+
+def test_an_empty_exclusion_counts_everyone(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    store.add_event("$a", ROOM, "@reader:example", 3_600_000 * 24 * 400, "hi", "m.text", backfilled=False)
+    assert sum(store.hours(0, [])) == 1 and store.hours(0, [])[9] == 1
+
+
+def sleeper(tmp_path, monkeypatch, *, act_value=None, error=None):
+    """A bot that could not answer a call in ROOM, and a clock to wake it with."""
+    bot, matrix, store = make_bot(tmp_path, act=act_value or act("啊，剛醒！萍是十九畫～"))
+    clock = {"now": 10_000.0, "ms": fish_bot.now_ms()}
+    monkeypatch.setattr(fish_bot.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(fish_bot, "now_ms", lambda: clock["ms"])
+    bot.active_rooms = {ROOM}
+    bot._heard_at = 0.0
+    answering = bot.gemini.act
+
+    def fail(*_, **__):
+        raise error or fish_bot.SpendError("spent")
+
+    def wake(minutes=2.0):
+        bot.gemini.act = answering
+        clock["now"] += 60 * minutes
+        clock["ms"] += int(60_000 * minutes)
+
+    bot.gemini.act = fail
+    return bot, matrix, store, wake
+
+
+def raises(error):
+    def fail(*_, **__):
+        raise error
+    return fail
+
+
+def call_her(bot, event_id, text="大肥魚，「萍」幾畫？", sender="@reader:example"):
+    call = event(text, event_id=event_id, sender=sender, origin_server_ts=fish_bot.now_ms())
+    bot.ingest(ROOM, call, backfilled=False)
+    bot.answer(ROOM, call)
+
+
+def test_missed_calls_of_a_room_are_answered_together_when_the_money_is_back(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    call_her(bot, "$two", "大肥魚宕機了喵？", sender="@other:example")
+    assert store.outcome("$one")[0] == store.outcome("$two")[0] == "deferred"
+    assert len(matrix.sent) == 1
+    wake()
+    bot.catch_up()
+    assert [(task, read[trigger]) for task, trigger, read in bot.gemini.turns] == [("catchup", "$two")]
+    missed = json.loads(bot.gemini.rooms)
+    assert [line["line"] for line in missed] == ["大肥魚，「萍」幾畫？", "大肥魚宕機了喵？"]
+    assert matrix.sent[-1][1]["body"] == "啊，剛醒！萍是十九畫～"
+    assert matrix.sent[-1][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$two"}}
+    assert store.outcome("$one")[0] == store.outcome("$two")[0] == "caught-up"
+    wake(60)
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_catching_up_leaves_money_for_who_calls_next(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    wake()
+    monkeypatch.setattr(bot.gemini.purse, "remaining", lambda: fish_bot.CATCH_UP_FLOOR - 0.01)
+    for _ in range(20):
+        wake()
+        bot.catch_up()
+    assert bot.gemini.turns == [] and store.outcome("$one")[0] == "deferred"
+    monkeypatch.setattr(bot.gemini.purse, "remaining", lambda: fish_bot.CATCH_UP_FLOOR)
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_a_call_lost_to_a_failing_model_is_tried_again_ever_later_then_dropped(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, error=fish_bot.ModelError("Gemini answered 429", status=429))
+    call_her(bot, "$one")
+    assert store.outcome("$one")[0] == "deferred" and matrix.sent == []
+    failing = []
+
+    def fail(*_, **__):
+        failing.append(fish_bot.now_ms())
+        raise fish_bot.ModelError("Gemini answered 503", status=503)
+
+    for _ in range(60 * 6):
+        wake(1)
+        bot.gemini.act = fail
+        bot.catch_up()
+    assert len(failing) == fish_bot.CATCH_UP_TRIES
+    gaps = [later - earlier for earlier, later in itertools.pairwise(failing)]
+    assert gaps == sorted(gaps) and gaps[0] < gaps[-1]
+    assert store.outcome("$one")[0] == "expired"
+
+
+def test_a_failure_then_an_answer(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, error=fish_bot.ModelError("Gemini could not be reached"))
+    call_her(bot, "$one")
+    wake()
+    bot.catch_up()
+    assert store.outcome("$one")[0] == "caught-up" and len(matrix.sent) == 1
+
+
+def test_an_answer_to_something_else_does_not_close_an_older_question(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$glyph")
+    wake()
+    call_her(bot, "$hello", "大肥魚早安")
+    assert store.outcome("$hello")[0] == "chatted"
+    wake()
+    bot.catch_up()
+    assert bot.gemini.turns[-1][0] == "catchup" and store.outcome("$glyph")[0] == "caught-up"
+
+
+def test_more_calls_than_fit_are_answered_in_order(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    total = fish_bot.CATCH_UP_LINES + 2
+    for number in range(total):
+        call_her(bot, f"$c{number}", f"大肥魚，第{number}問", sender=f"@reader{number}:example")
+        wake(0.05)
+        bot.gemini.act = raises(fish_bot.SpendError("spent"))
+    wake()
+    bot.catch_up()
+    assert [line["line"] for line in json.loads(bot.gemini.rooms)] == [f"大肥魚，第{n}問" for n in range(fish_bot.CATCH_UP_LINES)]
+    assert store.outcome(f"$c{total - 1}")[0] == "deferred"
+    wake()
+    bot.catch_up()
+    assert {store.outcome(f"$c{number}")[0] for number in range(total)} == {"caught-up"}
+
+
+def test_a_reply_that_cannot_be_posted_keeps_the_calls(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    wake()
+    send = matrix.send
+
+    def broken(*_, **__):
+        raise fish_bot.MatrixError(502, "bad gateway")
+
+    monkeypatch.setattr(matrix, "send", broken)
+    bot.catch_up()
+    assert store.outcome("$one")[0] == "deferred"
+    monkeypatch.setattr(matrix, "send", send)
+    wake(10)
+    bot.catch_up()
+    assert store.outcome("$one")[0] == "caught-up"
+
+
+def test_a_reply_of_which_the_first_bubble_got_out_is_not_posted_again(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, act_value=act("答案甲", "答案乙"))
+    call_her(bot, "$one")
+    wake()
+    send = matrix.send
+    sent = []
+
+    def once(room_id, content, key, kind="m.room.message"):
+        if sent:
+            raise fish_bot.MatrixError(502, "bad gateway")
+        sent.append(content["body"])
+        return send(room_id, content, key, kind)
+
+    monkeypatch.setattr(matrix, "send", once)
+    bot.catch_up()
+    assert sent == ["答案甲"] and store.outcome("$one")[0] == "caught-up"
+
+
+def test_the_calls_are_closed_only_once_the_reply_is_out(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch)
+    bot._pace = 1.0
+    call_her(bot, "$one")
+    wake()
+    bot.catch_up()
+    assert bot._outbox == {} and matrix.sent[-1][1]["body"].startswith("啊") and store.outcome("$one")[0] == "caught-up"
+
+
+def test_a_failing_issue_desk_does_not_answer_again(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch, act_value=act("好，我報上去", issue=True))
+    wake()
+    monkeypatch.setattr(bot, "_to_desk", raises(fish_bot.SpendError("spent")))
+    call_her(bot, "$bug")
+    assert store.outcome("$bug")[0] == "chatted" and store.deferred_rooms() == []
+    bot._listen(ROOM, "@reader:example")
+    talk = bot._talks[ROOM]
+    store.add_event("$more", ROOM, "@reader:example", fish_bot.now_ms(), "記得報", "m.text", backfilled=False)
+    talk.event_id, talk.sender, talk.body, talk.due = "$more", "@reader:example", "記得報", -1e9
+    bot.follow()
+    assert store.db.execute("SELECT COUNT(*) FROM deferred").fetchone()[0] == 0
+
+
+def test_a_fresh_call_neither_waits_for_nor_hurries_an_older_one(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$old")
+    for _ in range(fish_bot.CATCH_UP_TRIES - 1):
+        store.postpone_deferred(["$old"])
+    wake(60 * 3)
+    bot.gemini.act = raises(fish_bot.ModelError("Gemini answered 503", status=503))
+    call_her(bot, "$new", sender="@other:example")
+    assert [row["event_id"] for row in store.deferred(ROOM, 8)] == ["$old"]
+    bot.catch_up()
+    wake(60 * 3)
+    bot.gemini.act = raises(fish_bot.ModelError("Gemini answered 503", status=503))
+    bot.catch_up()
+    assert store.outcome("$old")[0] == "expired" and store.outcome("$new")[0] == "deferred"
+
+
+def test_a_call_is_kept_even_when_the_typing_notice_fails(tmp_path, monkeypatch):
+    bot, matrix, store, _ = sleeper(tmp_path, monkeypatch, error=fish_bot.ModelError("Gemini answered 503", status=503))
+    real = matrix.typing
+
+    def typing(room_id, user_id, timeout_ms=1):
+        if timeout_ms == 0:
+            raise fish_bot.MatrixError(502, "bad gateway")
+        return real(room_id, user_id)
+
+    monkeypatch.setattr(matrix, "typing", typing)
+    with contextlib.suppress(fish_bot.MatrixError):
+        call_her(bot, "$one")
+    assert store.outcome("$one")[0] == "deferred"
+
+
+def test_redacted_forgotten_and_old_calls_are_let_go(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$redacted")
+    store.delete_event("$redacted")
+    call_her(bot, "$forgotten", sender="@gone:example")
+    store.forget_person("@gone:example")
+    call_her(bot, "$old", sender="@late:example")
+    wake(60 * fish_bot.CATCH_UP_HOURS + 5)
+    bot.catch_up()
+    assert bot.gemini.turns == [] and store.outcome("$old")[0] == "expired"
+    assert store.db.execute("SELECT COUNT(*) FROM deferred").fetchone()[0] == 0
+
+
+def test_one_room_at_a_time_and_a_busy_one_holds_up_no_other(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    for room in (ROOM, "!second:example"):
+        store.add_event(f"$in{room}", room, "@reader:example", fish_bot.now_ms(), "大肥魚？", "m.text", backfilled=False)
+        store.defer(f"$in{room}", room, "@reader:example", 60_000)
+    bot.active_rooms = {ROOM, "!second:example"}
+    wake()
+    bot._heard_at = bot._heard_in[ROOM] = fish_bot.time.monotonic()
+    bot.catch_up()
+    bot.catch_up()
+    assert [read for _, _, read in bot.gemini.turns] == [["$in!second:example"]]
+    wake()
+    bot._heard_in[ROOM] = fish_bot.time.monotonic()
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 1
+    bot._heard_in.clear()
+    wake()
+    bot.catch_up()
+    assert len(bot.gemini.turns) == 2
+
+
+def test_a_restart_keeps_what_was_missed_and_waits_before_trying_again(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    call_her(bot, "$one")
+    wake()
+
+    def crash(*_, **__):
+        raise KeyboardInterrupt
+
+    bot.gemini.act = crash
+    with pytest.raises(KeyboardInterrupt):
+        bot.catch_up()
+    assert store.deferred_rooms() == [] and store.outcome("$one")[0] == "deferred"
+    wake()
+    assert store.deferred_rooms() == [ROOM]
+
+
+def test_nothing_left_to_say_is_quiet_and_done(tmp_path, monkeypatch):
+    bot, matrix, store, wake = sleeper(tmp_path, monkeypatch, act_value=act())
+    call_her(bot, "$one")
+    said = len(matrix.sent)
+    wake()
+    bot.catch_up()
+    assert len(matrix.sent) == said and store.outcome("$one")[0] == "caught-up"
+
+
+def test_a_missed_follow_up_is_kept_only_for_her_partner(tmp_path, monkeypatch):
+    bot, _, store, _ = sleeper(tmp_path, monkeypatch)
+    for sender, kept in (("@partner:example", True), ("@bystander:example", False)):
+        bot._listen(ROOM, "@partner:example")
+        talk = bot._talks[ROOM]
+        store.add_event(f"$l{sender}", ROOM, sender, fish_bot.now_ms(), "不是啦", "m.text", backfilled=False)
+        talk.event_id, talk.sender, talk.body, talk.due = f"$l{sender}", sender, "不是啦", -1e9
+        bot.follow()
+        assert bool(store.outcome(f"$l{sender}")) is kept
+
+
+def test_the_catch_up_task_names_the_lines_and_allows_silence():
+    payload = json.loads(fish_bot.format_chat("Room", "", [message_row("hi")], {}, task="catchup", trigger=0,
+                                              bot_user_id=USER, rooms='[{"sender": "A", "line": "hi"}]'))
+    assert '[{"sender": "A", "line": "hi"}]' in payload["task"] and "stay quiet" in payload["task"]
+
+
+def test_the_report_counts_what_became_of_the_days_calls(tmp_path, capsys):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    for number, outcome in enumerate(["chatted"] * 7 + ["caught-up", "recapped", "deferred", "expired", "failed: ValueError"]):
+        store.mark_handled(f"$e{number}", outcome)
+    today = fish_bot.local_day(fish_bot.now_ms())
+    line = f"{today}: 9 calls answered (1 later), 1 waiting, 2 lost (18%)"
+    assert fish_bot.answer_report(store.outcomes(7)) == line
+    store.close()
+    fish_bot.main(["--usage", "--db", str(tmp_path / "chat.sqlite3")])
+    assert line in capsys.readouterr().out
+
+
+def test_a_call_answered_the_next_day_counts_on_its_own(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    yesterday = fish_bot.now_ms() - 86_400_000
+    store.add_event("$late", ROOM, "@reader:example", yesterday, "大肥魚？", "m.text", backfilled=False)
+    store.mark_handled("$late", "caught-up")
+    assert store.outcomes(7) == {fish_bot.local_day(yesterday): {"caught-up": 1}}
+
+
+def test_searches_of_a_visit_count_towards_the_month(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    with purse.unasked("visit"):
+        purse.search(4)
+    purse.search(2)
+    assert store.calls_this_month("grounding") == 6
+
+
+def test_a_day_without_calls_has_no_report(tmp_path):
+    assert fish_bot.answer_report(fish_bot.Store(tmp_path / "chat.sqlite3").outcomes(7)) == ""
+
+
+def test_every_block_of_the_communitys_scripts_is_read_as_one():
+    blocks = fish_bot.unicode_data().blocks
+    han = [row for row in blocks if row[2].startswith(("CJK Unified Ideographs", "CJK Compatibility Ideographs"))]
+    others = [row for row in blocks if row[2] in ("Tangut", "Tangut Components", "Tangut Supplement", "Khitan Small Script",
+                                                  "Jurchen", "Jurchen Radicals", "Nushu", "Seal", "Egyptian Hieroglyphs",
+                                                  "Egyptian Hieroglyphs Extended-A")]
+    assert len(han) == 13 and len(others) == 10
+    for low, high, name in han + others:
+        for point in (low, high):
+            assert re.match(f"[{fish_bot.SPACELESS}]", chr(point)), name
+            assert bool(re.match(f"[{fish_bot.HAN}]", chr(point))) is ([low, high, name] in han), name
+
+
+def test_the_newest_characters_can_be_remembered_and_found():
+    for char in ("\U000323b0", "\U00031350", "\U00018e00", "\U0003d000"):
+        terms = fish_bot.memory_terms(char * 2, 10)
+        assert terms and all(char in term for term in terms)

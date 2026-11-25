@@ -1,0 +1,40 @@
+# Pairs of a standard form (简体字 or 新字体) and a full form, or of two full forms of one, ruled on by hand, which
+# scripts/build_character_table.py reads before the rules of src/glyph_atlas/shape_families.py decide them.
+# ruling: `one` character, joined, or `two`, kept apart; by and date: who ruled, and when (`owner`: the pair lists the
+# owner approved; `kept`: one grapheme before the rules, left as it was with no ruling yet); note: why, or the source.
+form	full	ruling	by	date	note
+麽	麼	one	owner	2026-11-25	full forms of 么; variants by cjkvi-variants mj-shrink-map unihan wikidata yitizi; no dictionary reads both (麽: 說文解字, 麼: 廣韻)
+衆	眾	one	owner	2026-11-25	full forms of 众; variants by cjkvi-variants hng-basic-data mj-shrink-map opencc unihan wikidata yitizi; no dictionary reads both (衆: neither, 眾: 說文解字 and 廣韻)
+裏	裡	one	owner	2026-11-25	full forms of 里; variants by cjkvi-variants hng-basic-data opencc unihan wikidata yitizi; no dictionary reads both (裏: 說文解字 and 廣韻, 裡: neither)
+啓	啟	one	owner	2026-11-25	full forms of 启; variants by cjkvi-variants mj-shrink-map opencc unihan wikidata yitizi; no dictionary reads both (啓: 廣韻, 啟: 說文解字)
+駡	罵	one	owner	2026-11-25	full forms of 骂; variants by cjkvi-variants wikidata yitizi; no dictionary reads both (駡: neither, 罵: 說文解字 and 廣韻)
+嘩	譁	one	owner	2026-11-25	full forms of 哗; variants by cjkvi-variants mj-shrink-map unihan wikidata; no dictionary reads both (嘩: neither, 譁: 說文解字 and 廣韻)
+鈎	鉤	one	owner	2026-11-25	full forms of 钩; variants by cjkvi-variants hng-basic-data opencc unihan wikidata yitizi; no dictionary reads both (鈎: neither, 鉤: 說文解字 and 廣韻)
+敘	敍	one	owner	2026-11-25	full forms of 叙; variants by cjkvi-variants hng-basic-data mj-shrink-map opencc unihan wikidata yitizi; no dictionary reads both (敘: 說文解字 and 廣韻, 敍: neither); approved as a moved key (敘, U+6558 to U+53D9)
+奬	獎	one	owner	2026-11-25	full forms of 奖; variants by cjkvi-variants mj-shrink-map unihan wikidata yitizi; no dictionary reads both (奬: neither, 獎: 廣韻)
+贜	贓	one	owner	2026-11-25	full forms of 赃; variants by cjkvi-variants mj-shrink-map unihan wikidata yitizi; no dictionary reads both (贜: neither, 贓: 廣韻)
+綉	繡	one	owner	2026-11-25	full forms of 绣; variants by cjkvi-variants unihan wikidata yitizi; no dictionary reads both (綉: neither, 繡: 說文解字 and 廣韻)
+醖	醞	one	owner	2026-11-25	full forms of 酝; variants by cjkvi-variants mj-shrink-map opencc wikidata yitizi; no dictionary reads both (醖: neither, 醞: 說文解字 and 廣韻)
+鏟	剷	one	owner	2026-11-25	full forms of 铲; variants by cjkvi-variants yitizi; no dictionary reads both (鏟: 說文解字 and 廣韻, 剷: neither)
+藴	蘊	one	owner	2026-11-25	full forms of 蕴; variants by cjkvi-variants mj-shrink-map opencc wikidata yitizi; no dictionary reads both (藴: neither, 蘊: 廣韻)
+鰐	鱷	one	owner	2026-11-25	full forms of 鳄; variants by cjkvi-variants hng-basic-data unihan wikidata; no dictionary reads both (鰐: 廣韻, 鱷: neither)
+裊	嫋	one	owner	2026-11-25	full forms of 袅; variants by cjkvi-variants yitizi; no dictionary reads both (裊: neither, 嫋: 說文解字 and 廣韻)
+慤	愨	one	owner	2026-11-25	full forms of 悫; variants by cjkvi-variants mj-shrink-map wikidata yitizi; no dictionary reads both (慤: neither, 愨: 說文解字 and 廣韻)
+鷳	鷴	one	owner	2026-11-25	full forms of 鹇; variants by cjkvi-variants alone; no dictionary reads both (鷳: 說文解字, 鷴: 廣韻)
+瘻	瘺	one	owner	2026-11-25	full forms of 瘘; variants by cjkvi-variants mj-shrink-map opencc unihan; no dictionary reads both (瘻: 說文解字 and 廣韻, 瘺: neither)
+鮝	鯗	one	owner	2026-11-25	full forms of 鲞; variants by cjkvi-variants unihan; no dictionary reads both (鮝: neither, 鯗: 廣韻)
+贋	贗	one	owner	2026-11-25	full forms of 赝; variants by cjkvi-variants opencc unihan wikidata yitizi; no dictionary reads both (贋: neither, 贗: 廣韻)
+緼	縕	one	owner	2026-11-25	full forms of 缊; variants by cjkvi-variants mj-shrink-map opencc wikidata yitizi; no dictionary reads both (緼: neither, 縕: 說文解字 and 廣韻)
+輼	轀	one	owner	2026-11-25	full forms of 辒; variants by cjkvi-variants mj-shrink-map opencc wikidata yitizi; no dictionary reads both (輼: neither, 轀: 說文解字 and 廣韻)
+謭	譾	one	owner	2026-11-25	full forms of 谫; variants by cjkvi-variants wikidata yitizi; no dictionary reads both (謭: neither, 譾: neither)
+鷉	鷈	one	owner	2026-11-25	full forms of 䴘; variants by cjkvi-variants wikidata; no dictionary reads both (鷉: neither, 鷈: 說文解字 and 廣韻)
+细	細	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; the shuowen data has 细 for another headword (康很切)
+终	終	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; the shuowen data has 终 for another headword (徒冬切)
+绉	縐	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; the shuowen data has 绉 for another headword (彼及切)
+绱	緔	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; OpenCC or Unihan gives 鞝 too
+镎	鎿	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; OpenCC or Unihan gives 錼 too
+𬬹	鉮	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; 鉮 is of the grapheme of 砷, another character of the table
+𬒈	礐	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; 礐 is of the grapheme of 确, another character of the table
+𫄨	絺	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; 絺 is of the grapheme of 黹, another character of the table
+暅	𣈶	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; 𣈶 is of the grapheme of 晅, another character of the table
+𨱑	鐄	one	kept	2026-11-25	one before this table, joined by an earlier pass, not on the lists of 2026-11-25; 鐄 is of the grapheme of 簧, another character of the table
