@@ -2,7 +2,8 @@
   // One grapheme and the forms it gathers, with their own code points and counts: 仮 and 假 under one
   // heading. The heading links to the grapheme's page (the collection narrowed to it when it has none);
   // choosing a form opens that form's own gallery. The grapheme browser shows it over a pointed tile, and
-  // the search box for each grapheme a query names.
+  // the search box for each grapheme a query names. A count of null is not known, and is not shown;
+  // `forms` is how many forms the grapheme has, where `members` are only some.
   import ReferenceGlyph from './ReferenceGlyph.svelte'
   import { labelParts } from '$worker/graphemeLabel.ts'
   import { number } from '../lib/client.js'
@@ -17,12 +18,12 @@
 <div class="grapheme-card">
   <a class="card-head" href={localize(group.alone ? characterAddress(group.key) : graphemeAddress(group.key, group.char))}>
     <ReferenceGlyph char={parts.text} simplified={parts.simplified} size="lg" />
-    <span><b>{t(group.alone ? 'chips.forms' : 'chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.members.length })} · {number(group.count)}</span>
+    <span><b>{t(group.alone ? 'chips.forms' : 'chips.grapheme')}</b> <code>{group.key}</code><br />{t('explore.grapheme.forms', { count: group.forms ?? group.members.length })}{group.count === null ? '' : ` · ${number(group.count)}`}</span>
   </a>
   <ul>
     {#each group.members as member (member.label)}
       <li><button type="button" onclick={() => onform(member.label)}>
-        <ReferenceGlyph char={member.label} size="md" /><code>{codes(member.label)}</code><small>{number(member.count)}</small>
+        <ReferenceGlyph char={member.label} size="md" /><code>{codes(member.label)}</code>{#if member.count !== null}<small>{number(member.count)}</small>{/if}
       </button></li>
     {/each}
   </ul>

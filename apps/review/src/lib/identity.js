@@ -103,8 +103,16 @@ export const claimedGrapheme = item => FILING.has(item?.grapheme_claim?.status) 
 /** `crop` with its grapheme slot `claim`, filed under the grapheme the claim holds, or `own`, its
  *  character's, once none does. */
 export function withGraphemeClaim(crop, claim, own = null) {
-  const saved = { ...crop, grapheme_claim: claim }
-  return { ...saved, grapheme: claimedGrapheme(saved) ?? own ?? crop.grapheme }
+  const saved = { ...crop, grapheme_claim: claim }, character = own ?? crop.own_grapheme ?? crop.grapheme
+  return { ...saved, grapheme: claimedGrapheme(saved) ?? character, own_grapheme: character }
+}
+/** The grapheme a holding claim reads the crop as, `{ grapheme, char }`, where it is another than its
+ *  character's own; null where none is. */
+export function readAs(item) {
+  const filed = claimedGrapheme(item)
+  if (!filed || isUnassigned(item)) return null
+  const own = item.own_grapheme?.code_point ?? item.own_grapheme, value = item.grapheme_claim.values.find(each => each.grapheme === filed)
+  return filed === own || value.char === (item.written_character ?? item.label) ? null : value
 }
 
 /** The pixel token a crop is checked against: a corpus glyph by its source revision, a crop by

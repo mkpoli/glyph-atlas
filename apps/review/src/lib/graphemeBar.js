@@ -57,12 +57,13 @@ export const NO_FORMS = { members: [], variants: [], related: [], derived: [], a
 /** What a crop's bar is read for, as one string: its character `char`, or with no character of its own (`whole`) the
  *  crop itself, and the characters its source names its grapheme by (`focal`). */
 export const barKey = (id, char, whole, focal) => JSON.stringify(whole ? [char, id, focal] : [char])
+const alone = char => ({ ...NO_FORMS, of: char, chips: [{ char, code_point: pointOf(char), script: '', base: char, of: char }], family: [char], bases: new Map([[char, char]]), focal: [char], shaped: [] })
 /** What a crop's bar lists of the forms last read (`offered`): those read for its `key`, or until then its character
  *  `char` alone. A crop with no character (`whole`) lists nothing until then, and is not `ready`: what choosing a
- *  form assigns is not known. */
-export function listedOf(offered, key, char, whole) {
+ *  form assigns is not known. One given another character (`subject`) lists that character until then. */
+export function listedOf(offered, key, char, whole, subject = null) {
   const read = offered.key === key
-  return { ready: read || !whole, listed: read ? offered : { ...NO_FORMS, members: whole ? [] : [{ char }] } }
+  return { ready: read || !whole, listed: read ? offered : subject ? alone(subject) : { ...NO_FORMS, members: whole ? [] : [{ char }] } }
 }
 
 /** The 構形 groups a bar of more than `limit` chips shows, and those it folds away: every group with a form in

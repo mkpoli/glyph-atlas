@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { decomposable, lookupChar, namedParts, roots, searchParts, tokens, treeKey, unencoded, variants } from '../src/lib/decompose.js'
+import { decomposable, lookupChar, namedParts, regionNames, roots, searchParts, startCharacter, tokens, treeKey, unencoded, variants } from '../src/lib/decompose.js'
 
 const ready = (sequences, shapes = []) => ({ status: 'ready', sequences, shapes })
 
@@ -98,5 +98,26 @@ describe('keys in the tree', () => {
   it('leaves other keys alone', () => {
     expect(treeKey(rows, 0, 'a')).toBeNull()
     expect(treeKey([], 0, 'ArrowDown')).toBeNull()
+  })
+})
+
+describe('starting from an existing character', () => {
+  it('accepts one decomposable character and drops its variation selector', () => {
+    expect(startCharacter('骨')).toBe('骨')
+    expect(startCharacter(' 𠤕 ')).toBe('𠤕')
+    expect(startCharacter('葛\u{E0100}')).toBe('葛')
+  })
+  it('refuses sequences, multiple characters, readings and ？', () => {
+    expect(startCharacter('⿰日月')).toBe('')
+    expect(startCharacter('明朝')).toBe('')
+    expect(startCharacter('kotsu')).toBe('')
+    expect(startCharacter('？')).toBe('')
+    expect(startCharacter('')).toBe('')
+  })
+  it('formats BabelStone source region letters with localized names', () => {
+    expect(regionNames('TJ', 'en')).toContain('T ')
+    expect(regionNames('TJ', 'en')).toContain('J ')
+    expect(regionNames('US', 'en')).toBe('U UTC · S SAT')
+    expect(regionNames('', 'en')).toBe('')
   })
 })

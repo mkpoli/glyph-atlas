@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { claimedGrapheme, withGraphemeClaim } from '../src/lib/identity.js'
+import { claimedGrapheme, readAs, withGraphemeClaim } from '../src/lib/identity.js'
 
 const AFTER = 'U+5F8C', QUEEN = 'U+540E'
 const crop = { id: 'crop', label: '后', grapheme: QUEEN, grapheme_claim: null }
@@ -13,5 +13,11 @@ describe('a crop\'s grapheme claim', () => {
     const disputed = withGraphemeClaim(crop, slot('disputed'), QUEEN)
     expect([disputed.grapheme, claimedGrapheme(disputed)]).toEqual([QUEEN, null])
     expect(withGraphemeClaim(crop, null).grapheme).toBe(QUEEN)
+  })
+  it('reads the crop as another grapheme than its character\'s, while it holds', () => {
+    const filed = withGraphemeClaim(crop, slot('asserted'))
+    expect(readAs(filed)).toMatchObject({ grapheme: AFTER, char: '後' })
+    expect(withGraphemeClaim(filed, null).grapheme).toBe(QUEEN)
+    expect([crop, withGraphemeClaim(crop, slot('disputed')), { ...filed, own_grapheme: AFTER }, { ...filed, identity_status: 'unassigned' }].map(readAs)).toEqual([null, null, null, null])
   })
 })

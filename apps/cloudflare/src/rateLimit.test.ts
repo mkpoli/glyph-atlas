@@ -35,8 +35,8 @@ describe('only requests that read data are counted', () => {
       '/layers/gallery', '/api/auth/get-session', '/api/account', '/sitemap.xml', '/wp-login.php', '/atlas/mediafile', '/healthz'])
       expect([path, counted(path)]).toEqual([path, true]);
   });
-  it('leaves out built files, crop images, Cloudflare’s paths and the health check', () => {
-    for (const path of ['/_app/immutable/chunks/a.js', '/_app/version.json', '/atlas/media/' + 'a'.repeat(64) + '.webp', '/cdn-cgi/rum', '/cdn-cgi/challenge-platform/x', '/health'])
+  it('leaves out built files, crop images, pictures of users, Cloudflare’s paths and the health check', () => {
+    for (const path of ['/_app/immutable/chunks/a.js', '/_app/version.json', '/atlas/media/' + 'a'.repeat(64) + '.webp', '/cdn-cgi/rum', '/cdn-cgi/challenge-platform/x', '/api/avatars/00000000-0000-0000-0000-000000000001', '/health'])
       expect([path, counted(path)]).toEqual([path, false]);
   });
 });
