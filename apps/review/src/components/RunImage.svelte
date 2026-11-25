@@ -87,12 +87,13 @@
   {#if oninspect}{#each crops as crop, i (i)}
     <rect class="run-hit" class:marked={context && whole} class:checked={context && crop.state === 'checked'} class:flagged={context && (crop.state === 'flagged' || crop.state === 'hard')} class:active={active === i} x={cells[i].x} y={cells[i].y} width={cells[i].w} height={cells[i].h} role="button" tabindex="0" data-unit={crop.id}
           aria-label={t('explore.tile.inspect', { label: crop.label })} onclick={() => oninspect(crop.id)} onkeydown={event => pressed(event, crop)} />
-  {/each}{/if}
+  {/each}{:else if context && whole && placed}{#each cells as cell, i (i)}<rect class="run-mark" x={cell.x} y={cell.y} width={cell.w} height={cell.h} />{/each}{/if}
 </svg>
 
 <style>
   .run-image{display:block;width:100%;height:100%}
   .run-paper{fill:var(--tone,var(--crop-paper))}
+  .run-mark{fill:none;stroke:var(--accent);stroke-width:2px;vector-effect:non-scaling-stroke}
   .run-hit{fill:transparent;stroke:transparent;stroke-width:2px;vector-effect:non-scaling-stroke;cursor:pointer;outline:none}
   .run-hit:hover,.run-hit:focus-visible{stroke:var(--accent)}
   .run-hit.marked{stroke:var(--accent);stroke-opacity:.55}

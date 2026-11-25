@@ -4,7 +4,7 @@
   // place but by its own button.
   import { onMount } from 'svelte'
   import { setReading } from '../lib/cropReadings.js'
-  import { bookOf, placeReading, placesText, readingPlaces, readingsNow, runPlaces } from '../lib/readingPlaces.js'
+  import { bookOf, placeReading, placesSaved, placesText, readingPlaces, readingsNow, runPlaces } from '../lib/readingPlaces.js'
   import { t } from '../lib/i18n.svelte.js'
   import ReadingRuby from './ReadingRuby.svelte'
   import RunImage from './RunImage.svelte'
@@ -16,18 +16,20 @@
   const text = $derived(placesText(value)), book = $derived(bookOf(item))
   let dialog = $state(null), places = $state([]), works = $state([]), total = $state(0), next = $state(0), document = $state(null)
   let loading = $state(false), error = $state(''), carry = $state(true), methods = $state({}), saving = $state(null), refused = $state({})
-  let generation = 0
+  let generation = 0, gone = false
   const here = $derived(works.find(work => work.id === book)?.count ?? 0)
   const all = $derived(works.reduce((sum, work) => sum + work.count, 0))
-  const more = $derived(next < total)
+  const more = $derived(next > 0 && next < total)
 
   async function load({ page = null, reset = false } = {}) {
     const current = reset ? ++generation : generation
     loading = true; error = ''
+    // Another scope starts from nothing, so one that cannot be read never stands over the last one's places.
+    if (reset) { places = []; next = 0; total = 0 }
     try {
       const found = page ?? await runPlaces(text, { document, offset: reset ? 0 : next })
       const reads = found.items.length ? await readingsNow([...new Set(found.items.flatMap(one => one.crops.map(crop => crop.id)))]) : new Map()
-      if (current !== generation) return
+      if (gone || current !== generation) return
       const listed = readingPlaces(found.items, reads, item.id)
       places = reset ? listed : [...places, ...listed]
       next = found.next_offset
@@ -43,7 +45,7 @@
       const method = methods[place.id] ?? 'context'
       const [crop, reading] = placeReading(place, value, { method, word: word && carry ? { id: word.word, form: word.form ?? 'certain', method } : undefined })
       const saved = await setReading(crop, reading)
-      places = places.map(one => one.id === place.id ? { ...one, open: false, read: saved.reading } : one)
+      places = placesSaved(places, place, saved.reading)
     } catch (failure) { refused = { ...refused, [place.id]: failure.message || t('client.saveFailed') } }
     finally { saving = null }
   }
@@ -53,15 +55,22 @@
     const line = (place.crops[0].text ?? '').normalize('NFC'), run = place.run.join(''), at = line.indexOf(run)
     return line && at >= 0 && line.indexOf(run, at + 1) < 0 ? { before: line.slice(0, at), run, after: line.slice(at + run.length) } : line ? { before: line, run: '', after: '' } : null
   }
+  function closed() { gone = true; close() }
+  // A press on the backdrop closes; one on the dialog's own margin does not.
+  function outside(event) {
+    if (event.target !== dialog) return
+    const { left, right, top, bottom } = dialog.getBoundingClientRect()
+    if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) dialog.close()
+  }
   onMount(async () => {
     dialog.showModal()
     await load({ page: first, reset: true })
     // A book that writes the run elsewhere too is read first.
-    if (here > 1 && all > here) within(book)
+    if (!gone && here > 1 && all > here) within(book)
   })
 </script>
 
-<dialog class="reading-places" bind:this={dialog} aria-labelledby="{uid}-title" onclose={close} onclick={event => { if (event.target === dialog) dialog.close() }}>
+<dialog class="reading-places" bind:this={dialog} aria-labelledby="{uid}-title" onclose={closed} onclick={outside}>
   <header>
     <h2 id="{uid}-title"><ReadingRuby {value} /> <span>{t('reading.places')}</span></h2>
     <button type="button" class="icon-button" aria-label={t('structure.close')} onclick={() => dialog.close()}>×</button>
@@ -90,7 +99,7 @@
             </div>
             <button type="button" class="place-confirm" disabled={Boolean(saving)} onclick={() => confirm(place)}>{saving === place.id ? t('common.saving') : t('reading.places.confirm', { reading: value.reading.join('') })}</button>
           {:else if place.read}
-            <span class="place-read">{#each place.read.values as one}<ReadingRuby value={one} />{/each}{#if place.read.status === 'disputed'}<span class="disputed">{t('reading.disputed')}</span>{/if}</span>
+            <span class="place-read">{#if place.read.values.length}{#each place.read.values as one}<ReadingRuby value={one} />{/each}{:else}{#each [...place.read.ruby?.values ?? [], ...place.read.left?.values ?? []] as one}<ReadingRuby value={one} field="ruby" />{/each}{/if}{#if place.read.status === 'disputed'}<span class="disputed">{t('reading.disputed')}</span>{/if}</span>
           {/if}
           {#if refused[place.id]}<span class="place-error" role="alert">{refused[place.id]}</span>{/if}
         </div>

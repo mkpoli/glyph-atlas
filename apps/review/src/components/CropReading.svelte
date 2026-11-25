@@ -13,7 +13,7 @@
   import Glyph from './Glyph.svelte'
   import ReadingPlaces from './ReadingPlaces.svelte'
   import ReadingRuby from './ReadingRuby.svelte'
-  import { placesText, runPlaces } from '../lib/readingPlaces.js'
+  import { otherPlaces, placesText, runPlaces } from '../lib/readingPlaces.js'
   import ScriptText from './ScriptText.svelte'
 
   let { item, disabled = false, working = null, saved = null } = $props()
@@ -38,7 +38,8 @@
   const words = $derived(item.word?.values ?? [])
   // The reading that stands alone, whose run the other places of can be read alike; how many there are is asked after a save.
   const standing = $derived(chips.length === 1 && item.reading.status !== 'disputed' ? chips[0].reading : null)
-  let placed = $state(null), showing = $state(false)
+  let placed = $state.raw(null), showing = $state(false)
+  const counted = $derived(placed && standing && placed.text === placesText(standing) ? placed : null)
   // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
   const known = $derived(Object.hasOwn(item, 'reading'))
   const mine = slot => Boolean(signedInUser()?.id && slot?.by?.includes(signedInUser().id))
@@ -188,11 +189,14 @@
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
   }
-  // The first places of the run just saved, for the button that shows them.
+  // The first places of the run just saved, for the button that shows them. They are of that run alone: another
+  // reading that stands here asks for its own.
+  let counting = 0
   async function count(value) {
+    const text = placesText(value), turn = ++counting
     placed = null
-    if (item.origin === 'corpus' || !placesText(value)) return
-    try { placed = await runPlaces(placesText(value)) } catch { /* The button stays without its count. */ }
+    if (item.origin === 'corpus' || !text) return
+    try { const page = await runPlaces(text); if (turn === counting) placed = { text, page, others: otherPlaces(page, item.id) } } catch { /* The button stays without its count. */ }
   }
   async function clear() {
     if (busy) return
@@ -231,7 +235,7 @@
     {/each}
     {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-badge disputed">{t('reading.disputed')}</span>{/if}
     {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>
-      {#if standing && placesText(standing) && placed?.total !== 1}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if placed?.total > 1}<span class="reading-count">{placed.total - 1}</span>{/if}</button>{/if}{/if}
+      {#if standing && placesText(standing) && counted?.others !== 0}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if counted?.others}<span class="reading-count">{counted.others}</span>{/if}</button>{/if}{/if}
   </div>
   {#if editing && line}
     <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
@@ -298,7 +302,7 @@
       </div>
     </div>
   {:else if error}<span class="reading-error" role="alert">{error}</span>{/if}
-  {#if showing && standing}<ReadingPlaces {item} value={standing} word={held?.word ? held : null} first={placed} close={() => showing = false} />{/if}
+  {#if showing && standing}<ReadingPlaces {item} value={standing} word={held?.word ? held : null} first={counted?.page ?? null} close={() => showing = false} />{/if}
 </div>
 
 <style>
