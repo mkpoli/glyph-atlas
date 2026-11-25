@@ -672,7 +672,7 @@
   "quiz.suspectToggle.only": "◆ Chỉ vùng cắt đáng ngờ",
   "quiz.suspect.readsAs": "Có thể là {character}",
   "quiz.suspect.doubtful": "Cần xem lại",
-  "quiz.suspect.none.other": "Không vùng cắt nào trong {count} vùng cắt đã chia là đáng ngờ.",
+  "quiz.suspect.none": "Không còn vùng cắt đáng ngờ nào ở đây.",
   "quiz.skipCharacter": "Bỏ qua chữ {number}",
   "quiz.skipSelected": "{skip} các mục đã chọn",
   "quiz.skippedNotSaved": "{count} đã bỏ qua · chưa lưu",

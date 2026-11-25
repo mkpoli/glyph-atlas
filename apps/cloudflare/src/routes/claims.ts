@@ -11,7 +11,8 @@ import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { formOf, slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
 import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyHeads, keyText, ledgerPage, type LedgerTools, type Member,
-  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, retractOwn, RUN_MAX, sameVersion, savedSubmission, submissionId, withCrop, writeClaim } from '../ledger';
+  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, resolveSlots, retractOwn, RUN_MAX, sameVersion, savedSubmission, SQL_UUID, submissionId, withCrop, writeClaim } from '../ledger';
+import { canonical, literal } from '../input';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
 import { FORM_LONGEST, anchoredForm, representationId, structureKey, typed, written, type FormProblem, type Representation } from '../representation';
@@ -131,7 +132,6 @@ export async function setForm(env: Env, input: Json, named: string, actor: strin
     if (crop == null) tools.fail(404, NOT_HERE);
     return { id: publicId(crop), form: await formOfCrop(env, crop), replaced: saved.replaced ?? null };
   }
-  if (input.review != null && !(typeof input.review === 'string' && /^[0-9a-f-]{36}$/i.test(input.review))) tools.fail(422, 'Invalid review id.');
   const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
   const representation = typedForm ? typed(tools.literal(typedForm)) : null;
   if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
@@ -177,6 +177,64 @@ async function planForm(env: Env, pick: { key: string; actor: string; crop: Crop
   if (!named.has(form)) { named.add(form); await planNaming(env, { key, actor, representation, at }, plan); }
   add(await planClaim(env, { key, actor, crop, predicate: 'has_form', scope: '', at, method: 'form-picker',
     members: [{ object: form, value: null, confidence: null, confidence_scheme: null }] }, ledger));
+}
+
+/** The rows of a form claimed by the review that names its crop's character, for that review's own batch
+ *  (routes/review.ts), and the ledger's row of the submission. The form is the character's: a character is
+ *  itself and a figure its base, while a description names no character. The claim rests on the crop the
+ *  reviewer saw (`seen`, its evidence version), or on the cut its new box makes when the review redraws it,
+ *  so its slot is resolved after the review has written its box. */
+export async function planReviewForm(env: Env, review: { key: string; actor: string; signature: string; at: string; id: number; character: string;
+  form: string; seen: unknown; cut: number; box?: { x: number; y: number; w: number; h: number } }, fail: ClaimTools['fail']): Promise<D1PreparedStatement[]> {
+  const { key, actor, signature, at, id, character, form, seen, cut, box } = review;
+  const representation = typed(literal(form));
+  if (typeof representation === 'string') return fail(422, PROBLEMS[representation]);
+  const written = representation.scheme === 'ids' ? character : representation.scheme === 'ivs' ? [...representation.value][0] : representation.value;
+  if (written !== character) fail(422, 'This form is another character’s.');
+  const shown = await cropNow(env, id) ?? fail(404, NOT_HERE);
+  sameVersion(shown, seen, fail);
+  const crop = box ? { ...shown, cut: cut + 1, version: shown.version!.replace(/[^@]*$/, [box.x, box.y, box.w, box.h].join(',')) } : shown;
+  const ledger = { fail, canonical, owned: ownedActors } as LedgerTools;
+  const plan: Plan = { statements: [], keys: [] };
+  await planForm(env, { key, actor, crop, representation, own: null, at }, plan, new Set(), ledger);
+  return [...plan.statements, ...resolveSlots(env, plan.keys), env.ATLAS.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
+    .bind(key, actor, signature, JSON.stringify({ submission: key, crop: crop.id, cut: crop.cut }), at)];
+}
+
+// The form claims a review's submission wrote on its crops that nobody has taken back, each with the claims of the
+// same reader it replaced: the submission's ledger row, then each crop's forms by `assertion_crop`, then their actions by theirs.
+export const reviewFormsQuery = () => `SELECT a.id,a.subject,(SELECT json_group_array(json_object('id',o.id,'set',o.alternative_set)) FROM assertions o
+    JOIN assertion_actions x ON x.assertion=o.id AND x.action='retract' WHERE o.crop=a.crop AND o.predicate='has_form' AND x.submission=?1) AS replaced
+  FROM ledger_submissions l CROSS JOIN json_each(?2) j CROSS JOIN assertions a ON a.crop=j.value AND a.predicate='has_form'
+  WHERE l.id=?1 AND a.submission=?1 AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`;
+/** The rows that take back the form a review's submission claimed and put back the reader's own claim it
+ *  replaced, for the batch that undoes the review (`by`, the reader or an admin). Rows of the ledger are
+ *  never changed, so a claim comes back as a new row of the submission that made it, naming the row it
+ *  restores among its premises and carrying the verdicts on it. A claim its reader has since replaced or
+ *  taken back stays as they left it; nobody else's claim is touched, and the form's own rows stay, which
+ *  other crops may name. */
+export async function planFormUndo(env: Env, undone: { key: string; by: string; crops: number[]; at: string }): Promise<D1PreparedStatement[]> {
+  const { key, by, crops, at } = undone;
+  const claims = (await env.ATLAS.prepare(reviewFormsQuery()).bind(key, JSON.stringify(crops)).all<{ id: string; subject: string; replaced: string }>()).results;
+  if (!claims.length) return [];
+  const undo = key + ':undo', standing = (claim: string) => `NOT EXISTS(SELECT 1 FROM assertion_actions x WHERE x.assertion=${claim} AND x.action='retract')`;
+  const statements = claims.flatMap(claim => {
+    const sets = new Map<string, string>(), again = (set: string | null) => set && (sets.get(set) ?? sets.set(set, 'cf:' + crypto.randomUUID()).get(set)!);
+    return [...(JSON.parse(claim.replaced) as { id: string; set: string | null }[]).flatMap(own => {
+      const id = 'cf:' + crypto.randomUUID(), written = 'EXISTS(SELECT 1 FROM assertions WHERE id=?1)';
+      return [env.ATLAS.prepare(`INSERT INTO assertions(id,submission,subject,crop,cut,predicate,scope,slot,object,value,alternative_set,tier,asserted_by,asserted_at,confidence,confidence_scheme,method,run,legacy)
+          SELECT ?1,submission,subject,crop,cut,predicate,scope,slot,object,value,?2,tier,asserted_by,?3,confidence,confidence_scheme,method,run,legacy FROM assertions WHERE id=?4 AND ${standing('?5')}`)
+          .bind(id, again(own.set), at, own.id, claim.id),
+        env.ATLAS.prepare(`INSERT INTO assertion_evidence(assertion,kind,ref,crop,cut,locator) SELECT ?1,kind,ref,crop,cut,locator FROM assertion_evidence WHERE assertion=?2 AND ${written}`).bind(id, own.id),
+        env.ATLAS.prepare(`INSERT INTO assertion_premises(assertion,premise,role) SELECT ?1,coalesce((SELECT premise FROM assertion_premises WHERE assertion=?2 AND role='restores'),?2),'restores' WHERE ${written}`).bind(id, own.id),
+        env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason)
+          SELECT 'cf:'||${SQL_UUID},submission,?1,action,actor,at,reason FROM assertion_actions WHERE assertion=?2 AND action<>'retract' AND ${written} ORDER BY rowid`).bind(id, own.id)];
+    }), env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) SELECT ?1,?2,?3,'retract',?4,?5,'undone' WHERE ${standing('?3')}`)
+      .bind('cf:' + crypto.randomUUID(), undo, claim.id, by, at)];
+  });
+  return [...statements, ...resolveSlots(env, [...new Set(claims.map(claim => claim.subject))].map(subject => [subject, 'has_form', '', ''])),
+    env.ATLAS.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
+      .bind(undo, by, JSON.stringify({ undo: key }), JSON.stringify({ submission: undo }), at)];
 }
 
 // A selection marked as one form is a batch of picks, one per crop: each names the evidence version the

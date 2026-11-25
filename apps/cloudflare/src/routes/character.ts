@@ -9,15 +9,16 @@ import { cropOf, publicId } from '../atlas3';
 import { STYLE_GROUPS, STYLE_NAMES, characterCounts, claimsAt, composedBooks, cursorOf, familyClaims, filedCell, filedClaimsKept, filedCounts, galleryPage, groupOf, phasesOf,
   rangeCountQuery, sourceWhere, type Cell, type Filed, type FiledAt, type GalleryQuery, type Phase, type Source, type StyleGroup } from '../atlas3Gallery';
 import { listingItems } from '../atlas3Listing';
-import { cardList, characterObject, type CharacterObject } from '../atlas3Reference';
+import { cardList, characterIds, characterObject, type CharacterObject } from '../atlas3Reference';
 import { currentPointer } from '../atlas3Answers';
 import { catalogueStamps, catalogueVersion, publicationKey } from '../atlas3Stamps';
+import { answerDue } from '../atlas3Media';
 import { Problem } from '../busy';
 import { idsCharacter, isSeal } from '../category';
 import { CITE_TTL, CITE_TYPES, FORMATS, bibtex, characterEntry, csl, hayagriva, type Day, type Format } from '../citation';
 import { yearOptions, type YearOptions } from '../dating';
 import { WIDENED_CAP, addCrops, fileClaims, soleForms, type Rows } from '../graphemeTotals';
-import { drawnForm, drawnFormsOf } from '../representation';
+import { compatibility, drawnForm, drawnFormsOf } from '../representation';
 import { WRITERS, WRITER_SOURCES } from '../writtenWithData';
 
 type Json = any;
@@ -32,11 +33,11 @@ function integer(q: URLSearchParams, key: string, fallback: number, max = 100000
 const fail = (status: number, message: string): never => { throw new Problem(status, message) };
 // Answers that change only with the catalogue are kept at the edge an hour.
 const KEPT = 3600;
-async function edge<T>(ctx: ExecutionContext, key: Request, build: () => Promise<T>): Promise<T> {
+async function edge<T>(ctx: ExecutionContext, key: Request, build: () => Promise<T>, kept = () => KEPT): Promise<T> {
   const cached = await caches.default.match(key);
   if (cached) return await cached.json() as T;
-  const body = await build();
-  ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${KEPT}` } })));
+  const body = await build(), seconds = Math.floor(kept());
+  if (seconds > 0) ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${seconds}` } })));
   return body;
 }
 // A value a publication states about the whole site (`site`, migration 0005).
@@ -239,6 +240,23 @@ async function carriedForms(env: Env, card: Card, rows: Json[], claimed: Claimed
     .map(({ value, ...row }) => ({ char: value, code_point: null, form: row.form, scheme: row.scheme, count: row.count, corpus_count: row.corpus_count }))
     .sort((a, b) => (b.count + b.corpus_count) - (a.count + a.corpus_count) || (a.char < b.char ? -1 : a.char > b.char ? 1 : 0));
 }
+/** The characters `char` shares an edge with, most attested first and at most VARIANTS_SHOWN of each kind, with
+ *  every edge kept, and how many there are in all. */
+function relatedTo(object: CharacterObject | null, char: string) {
+  const byChar = new Map<string, { char: string; code_point: string; widens: boolean; written: boolean; relations: Json[]; edges: Edge[] }>();
+  for (const e of edgesOf(object)) {
+    if (e.other === char) continue;
+    const entry = byChar.get(e.other) ?? { char: e.other, code_point: cp(e.other), widens: false, written: false, relations: [], edges: [] };
+    entry.edges.push(e);
+    entry.relations.push({ relation: e.relation, source: e.source, detail: e.detail });
+    byChar.set(e.other, entry);
+  }
+  const attested = (entry: { relations: Json[] }) => new Set(entry.relations.map(r => r.source)).size;
+  const ordered = [...byChar.values()].map(({ edges: pair, ...entry }) => ({ ...entry,
+    widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)), written: pair.some(e => e.written) }))
+    .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
+  return { shown: [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)], related: [...byChar.keys()] };
+}
 /** The characters `char` shares an edge with, as the card lists them: `items` a gallery widens to (a
  *  pair with a widening edge and none that keeps it apart), `related` the rest, each most attested first
  *  (sources, then code point), every edge kept; `written` marks a pair one of whose edges says one may
@@ -249,19 +267,7 @@ async function carriedForms(env: Env, card: Card, rows: Json[], claimed: Claimed
 async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card: Card, version: string, claimed: Claimed) {
   const char = card.detail.char, object = card.object;
   return edge(ctx, new Request(`${origin}/layers/variants?c=${encodeURIComponent(char)}&v=${encodeURIComponent(`${TOTALS_SHAPE}:${version}`)}`), async () => {
-    const byChar = new Map<string, { char: string; code_point: string; widens: boolean; written: boolean; relations: Json[]; edges: Edge[] }>();
-    for (const e of edgesOf(object)) {
-      if (e.other === char) continue;
-      const entry = byChar.get(e.other) ?? { char: e.other, code_point: cp(e.other), widens: false, written: false, relations: [], edges: [] };
-      entry.edges.push(e);
-      entry.relations.push({ relation: e.relation, source: e.source, detail: e.detail });
-      byChar.set(e.other, entry);
-    }
-    const attested = (entry: { relations: Json[] }) => new Set(entry.relations.map(r => r.source)).size;
-    const ordered = [...byChar.values()].map(({ edges: pair, ...entry }) => ({ ...entry,
-      widens: pair.some(e => e.widens) && !pair.some(e => KEPT_APART.has(e.relation)), written: pair.some(e => e.written) }))
-      .sort((a, b) => attested(b) - attested(a) || (a.char.codePointAt(0)! - b.char.codePointAt(0)!));
-    const shown = [...ordered.filter(e => e.widens).slice(0, VARIANTS_SHOWN), ...ordered.filter(e => !e.widens).slice(0, VARIANTS_SHOWN)];
+    const { shown, related } = relatedTo(object, char), byChar = new Set(related);
     const derived = object ? derivedOf(object) : [];
     const chars = [...shown.map(entry => entry.char), ...derived.filter(entry => entry.encoded).map(entry => entry.char)];
     const ids = new Map(chars.flatMap(c => { const id = card.object && Object.hasOwn(card.object.ids, c) ? card.object.ids[c] : null; return id === null ? [] : [[c, id] as const] }));
@@ -310,6 +316,58 @@ async function variantsOf(env: Env, ctx: ExecutionContext, origin: string, card:
       total: byChar.size + lent.length, writes, writers, own,
       sources: Object.fromEntries([...used].sort().map(source => [source, cited[source] ?? WRITER_SOURCES[source] ?? source])) };
   });
+}
+
+// A family lists at most this many members' shapes and variants, each a reference object and a shard of the IDS.
+const FORMS_MEMBERS = 64;
+// Raised when graphemeForms answers differently for the same data, so no older answer is served.
+const GRAPHEME_FORMS_SHAPE = 1;
+/** The forms a crop of a grapheme (字種) with no character of its own may be: every member with its regional
+ *  shapes, the characters the sources attest as variants of any member, those related otherwise and those
+ *  derived, each with the members it is one of (`via`), and the forms the grapheme's crops carry. A regional
+ *  shape names the member choosing it assigns (`base`), and none where another member is described by it too.
+ *  What the reference data gives is kept as long as the objects it was read from, and what the crops carry
+ *  by the catalogue version. */
+export async function graphemeForms(env: Env, ctx: ExecutionContext, url: URL, value: string, tools: CharacterTools) {
+  const named = await characterCard(env, value, tools, ctx), top = named.data.grapheme?.char ?? named.data.char;
+  const card = top === named.data.char ? named : await characterCard(env, cp(top), tools, ctx), head = card.data.char;
+  const version = await catalogueVersion(env);
+  let due = 0;
+  const known = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms?c=${encodeURIComponent(head)}&v=${GRAPHEME_FORMS_SHAPE}`), async () => {
+    const members: Json[] = (card.detail.grapheme?.members ?? [{ char: head, code_point: cp(head) }]).filter((m: Json) => !compatibility(m.char)).slice(0, FORMS_MEMBERS);
+    const family = new Set<string>(members.map(m => m.char));
+    const shards: (object | null)[] = [card.object];
+    const read = await Promise.all(members.map(async m => {
+      const [object, ids] = await Promise.all([characterObject(env, cp(m.char), ctx), /^\p{Script=Han}$/u.test(m.char) ? characterIds(env, m.char, ctx, shards) : null]);
+      return { object, shapes: ids?.shapes ?? [], described: new Set([...ids?.sequences ?? [], ...(ids?.shapes ?? []).map(shape => shape.text)]) };
+    }));
+    due = answerDue([...shards, ...read.map(each => each.object)]);
+    // A member of one shape has no regional shapes, and its descriptions alone say it is written so.
+    const shared = (shape: Json, i: number) => members.some((m, j) => j !== i && (read[j].described.has(shape.text) || shape.chars?.includes(m.char)));
+    type Via = { char: string; via: string[] };
+    const variants = new Map<string, Via>(), related = new Map<string, Via>(), derived = new Map<string, Via & { encoded: boolean; route: [string, string][] }>();
+    const join = <T extends Via>(list: Map<string, T>, entry: T) => { const found = list.get(entry.char); if (found) found.via.push(...entry.via); else list.set(entry.char, entry) };
+    const outside = (char: string) => !family.has(char) && !compatibility(char);
+    const lent = WRITERS.filter(w => w.grapheme === head).map(w => w.char);
+    members.forEach(({ char }, i) => {
+      const { object } = read[i], writers = new Set([...(object?.writers ?? []).map(([c]) => c), ...lent]);
+      const writes = new Set([...(object?.writes ?? []).map(([c]) => c), ...WRITERS.filter(w => w.char === char).map(w => w.grapheme)]);
+      const rows = [...relatedTo(object, char).shown, ...lent.map(c => ({ char: c, widens: false, written: true }))].filter(row => row.char !== char && outside(row.char));
+      const variant = (row: { char: string; widens: boolean; written: boolean }) => (row.widens || row.written || writers.has(row.char)) && !writes.has(row.char);
+      for (const row of [...rows.filter(variant)].sort((a, b) => Number(writers.has(b.char)) - Number(writers.has(a.char)))) join(variants, { char: row.char, via: [char] });
+      for (const row of rows) if (!variant(row)) join(related, { char: row.char, via: [char] });
+      for (const row of object ? derivedOf(object) : []) if (outside(row.char)) join(derived, { char: row.char, via: [char], encoded: row.encoded,
+        route: row.routes[0].map(step => [step.was, step.became] as [string, string]) });
+    });
+    const list = (found: Map<string, Via>, not: Map<string, Via>[]) => [...found.values()].filter(row => !not.some(other => other.has(row.char)))
+      .map(row => ({ ...row, via: [...new Set(row.via)], code_point: [...row.char].length === 1 ? cp(row.char) : null }));
+    return { head, members: members.map((m, i) => ({ char: m.char, code_point: m.code_point ?? cp(m.char), script: m.script ?? '',
+        shapes: read[i].shapes.map(shape => ({ ...shape, base: shared(shape, i) ? null : m.char })) })),
+      variants: list(variants, []), related: list(related, [variants]), derived: list(derived, [variants, related]) };
+  }, () => (due - Date.now()) / 1000);
+  const forms = await edge(ctx, new Request(`${url.origin}/layers/grapheme-forms/carried?c=${encodeURIComponent(head)}&v=${encodeURIComponent(version)}`),
+    () => carriedForms(env, card, known.variants, claimsKept(env, version)));
+  return { ...known, forms };
 }
 
 /** A family's own forms (the card's `grapheme.members`), by character, each with the crops filed under

@@ -1,8 +1,10 @@
-import { request, character as readCrop, cropPixels } from './client.js'
-import { character as readCard, ids as readIds } from './layers.js'
+import { request, character as readCrop } from './client.js'
+import { character as readCard, graphemeForms as readGrapheme, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
 import { sealsLast } from './cardTiers.js'
 import { sortForms } from './formOffers.js'
+import { graphemeChips, langOf } from './graphemeBar.js'
+import { isUnassigned } from './identity.js'
 import { compatibility } from '../../../cloudflare/src/representation.ts'
 
 /**
@@ -24,13 +26,12 @@ const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? n
 const carriedEntry = item => ({ char: item.char, code_point: null, script: 'han', lang: '', form: item.form, count: item.count, corpus_count: item.corpus_count })
 
 const HAN = /^\p{Script=Han}$/u
-// The language whose fonts draw a BabelStone region's shape (U+6236 戶 is drawn as 戸 under `ja`).
-const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja', K: 'ko', P: 'ko-KP', V: 'vi' }
-const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
 const cards = new Map()
 // A description or a figure claimed on a crop, or taken back, changes its grapheme's forms, so the cards
 // read here are read again. A character of its own is on its cards whatever is claimed.
-const claimed = (...values) => { if (values.some(value => [...value ?? ''].length > 1)) cards.clear() }
+const formClaimed = (...values) => { if (values.some(value => [...value ?? ''].length > 1)) cards.clear() }
+/** A save claimed `values` on `crop`, or took them back: the form it had then may be no one's now. */
+export const formSaved = (crop, ...values) => formClaimed(...values, ...formNames(crop.form))
 /**
  * The forms offered for a crop written as `char`: the members of its grapheme (は, ハ, 𛂞…) but one
  * drawn as `char` itself (𨓜, 逸 encoded again as its J shape), a kanji's small seal characters last
@@ -94,6 +95,29 @@ export function listForms(char) {
   return cards.get(char)
 }
 
+// What the site answers of a grapheme, with each member's figures once their font is loaded; one whose font
+// or figures could not be read is offered without them, and that answer is not kept.
+function readWhole(char) {
+  const key = 'grapheme ' + char
+  if (!cards.has(key)) {
+    let partial = false
+    const loaded = readGrapheme(pointOf(char)).then(async found => [found, new Map(await Promise.all(found.members.filter(member => HAN.test(member.char)).map(async ({ char }) =>
+      [char, await figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures)).catch(() => { partial = true; return [] })])))])
+    cards.set(key, loaded.then(whole => (partial && cards.delete(key), whole), error => { cards.delete(key); throw error }))
+  }
+  return cards.get(key)
+}
+/** The forms offered for a crop of the grapheme `char` is of, whose own character nobody has assigned: those of
+ *  the whole grapheme (`graphemeChips`), the 構形 of the characters its source names it by (`focal`) first. */
+export async function listGrapheme(char, focal = []) {
+  const [found, figures] = await readWhole(char)
+  return { members: [], variants: [], ...graphemeChips(found, figures, focal) }
+}
+
+/** The character choosing a form names: on a grapheme's bar the chip's own `base`, and on a character's
+ *  (`listForms`) a member of its grapheme (仮 and 假, は and 𛂞). Null for a form that names no character. */
+export const baseOf = (form, { family = [], bases = null }) => bases ? bases.get(form) ?? null : family.includes(form) ? form : null
+
 /** The names a crop's form shows: each form's representation, or each competing one when people
  *  disagree; empty for a crop nobody has sorted, or one whose candidates were all rejected. */
 export function formNames(form) {
@@ -105,75 +129,49 @@ export function formNames(form) {
 export const builtAs = crop => formNames(crop?.form).length ? [] : crop?.structure?.values ?? []
 
 /** The form a crop is shown as now: the form the site holds for it, or the character it is written
- *  as; none while people disagree or while only its structure is given, so that any form chosen is a claim. */
+ *  as; none while people disagree, while only its structure is given or while nobody has assigned its
+ *  character, so that any form chosen is a claim. */
 export const formOf = crop => crop?.form?.status === 'disputed' || builtAs(crop).length ? ''
-  : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
+  : formNames(crop?.form)[0] ?? (isUnassigned(crop) ? '' : crop?.written_character ?? crop?.label ?? '')
 
 const reread = async crop => {
   const record = await readCrop(crop.id)
   return crop.origin ? { ...record, origin: crop.origin } : record
 }
 
-// One submission id per crop, revision or version, and value, so a retry after a lost answer is the
-// same write. A form claim's id is dropped once the site has answered, since the version stays the
-// same across renames and reviews and the same value chosen again later is a new claim. A claim keeps
-// the review it names with its id, so a retry sends the same request.
+// One submission id per crop, version and value, so a retry after a lost answer is the same write. It is
+// dropped once the site has answered, since the version stays the same across renames and reviews and the
+// same value chosen again later is a new claim.
 const submissions = new Map()
-const submission = (parts, review = null) => {
+const submission = parts => {
   const key = parts.join('\u0000')
-  if (!submissions.has(key)) submissions.set(key, { id: crypto.randomUUID(), review })
-  const { id, review: named } = submissions.get(key)
-  return { id, review: named, answered: () => submissions.delete(key) }
+  if (!submissions.has(key)) submissions.set(key, crypto.randomUUID())
+  return { id: submissions.get(key), answered: () => submissions.delete(key) }
 }
 
 /** Claim `form` as the crop's, on the version the reader has; with `form` null take back the reader's
  *  own claim. The crop keeps its character, review and revision. Answers the crop with its form now,
  *  and `replaced`, the value of the reader's own claim the save took back (null for none). */
-async function claimForm(crop, form, review = null) {
-  // A record read from a listing may not name its version; the crop as it stands does.
-  const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
-  const { id, review: named, answered } = submission(['form', crop.id, seen.crop_version, form ?? ''], review)
+async function claimForm(crop, form) {
+  const { id, answered } = submission(['form', crop.id, crop.crop_version, form ?? ''])
   let result
   try {
-    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: seen.crop_version, form, ...(named ? { review: named } : {}) })
+    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/form`, { id, crop_version: crop.crop_version, form })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
-  claimed(form, result.replaced)
-  return { crop: { ...seen, form: result.form }, replaced: result.replaced ?? null }
-}
-
-/** Name the crop's character, as a review of that crop: a checked crop can be named again. Answers the
- *  crop as it now stands and the review's submission id. */
-async function writeCharacter(crop, character) {
-  const { id } = submission(['character', crop.id, crop.revision, character])
-  const pixels = cropPixels(crop)
-  await request('/layers/units/' + encodeURIComponent(crop.id), { id, revision: crop.revision,
-    ...pixels, verdict: 'wrong', issue: 'character', character })
-  return { crop: await reread(crop), review: id }
+  formSaved(crop, form, result.replaced)
+  return { crop: { ...crop, form: result.form }, replaced: result.replaced ?? null }
 }
 
 /**
- * Mark `crop` as `form`, and answer `{ crop, reviewed, replaced }`: the crop as it now stands, whether
- * the marking was itself a review of it, and the value of the reader's own form claim it replaced
- * (null for none).
- *
- * A form that is an encoded member of the crop's own grapheme (仮 and 假, は and 𛂞) is that character,
- * so the crop is reviewed as written with it, and the form is claimed on it. Any other form (a variant,
- * a derived shape, an IDS) is claimed alone, and the crop keeps its character; its own character,
- * chosen, is a confirmation of it. A claim replaces the reader's earlier one on the crop.
- *
- * `{ target }` gives the crop's structure and no form (`setCropStructure`).
+ * Mark `crop` as `form`, a claim alone: the crop keeps its character (a variant, a derived shape, an IDS,
+ * its own character, which is a confirmation of it). A claim replaces the reader's earlier one on the
+ * crop. A form of another character is claimed by the review that names that character instead
+ * (`baseOf`). Answers `{ crop, replaced }`: the crop as it now stands, and the value of the reader's own
+ * form claim it replaced (null for none). `{ target }` gives the crop's structure and no form
+ * (`setCropStructure`).
  */
-export async function setForm(crop, form) {
-  if (form !== null && typeof form === 'object') return { ...await setCropStructure(crop, form.target), reviewed: false }
-  const written = crop.written_character ?? crop.label
-  // A description or a figure is no member of a grapheme.
-  const family = [...form ?? ''].length === 1 ? (await listForms(written)).family : []
-  if (form === written || !family.includes(form)) return { ...await claimForm(crop, form), reviewed: false }
-  // The claim names the review, so the two count as one decision.
-  const named = await writeCharacter(crop, form)
-  return { ...await claimForm(named.crop, form, named.review), reviewed: true }
-}
+export const setForm = (crop, form) => form !== null && typeof form === 'object' ? setCropStructure(crop, form.target) : claimForm(crop, form)
 
 /**
  * Say what 構形 `crop` is built as, its form left for later, or with `target` null take back the reader's
@@ -181,15 +179,14 @@ export async function setForm(crop, form) {
  * back with it. Answers the crop as it now stands.
  */
 async function setCropStructure(crop, target) {
-  const seen = crop.crop_version ? crop : { ...crop, ...await reread(crop) }
-  const { id, answered } = submission(['structure', crop.id, seen.crop_version, JSON.stringify(target)])
+  const { id, answered } = submission(['structure', crop.id, crop.crop_version, JSON.stringify(target)])
   let result
   try {
-    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/structure`, { id, crop_version: seen.crop_version, ...target ?? {} })
+    result = await request(`/atlas/characters/${encodeURIComponent(crop.id)}/structure`, { id, crop_version: crop.crop_version, ...target ?? {} })
   } catch (error) { if (error.status) answered(); throw error }
   answered()
-  claimed(result.replaced_form)
-  return { crop: { ...seen, structure: result.structure, form: result.form } }
+  formClaimed(result.replaced_form)
+  return { crop: { ...crop, structure: result.structure, form: result.form } }
 }
 
 // A form claimed on many crops at once is a batch of form picks, each 48 crops: a claim on each crop and
@@ -214,7 +211,7 @@ async function sendPicks(picks) {
       throw Object.assign(error ?? new Error(), { marked, kept })
     }
     answered()
-    claimed(...part.map(pick => pick.form), ...(result.crops ?? []).map(crop => crop.replaced))
+    formClaimed(...part.map(pick => pick.form), ...(result.crops ?? []).map(crop => crop.replaced))
     const byId = new Map(part.map(({ crop }) => [crop.id, crop]))
     for (const { id: target, form, replaced } of result.crops ?? []) if (byId.has(target)) marked.push({ crop: { ...byId.get(target), form }, replaced: replaced ?? null })
   }

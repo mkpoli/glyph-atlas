@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { formsOf, groupForms, keyOrder, notoDraws, sortForms } from '../src/lib/formOffers.js'
+import { chipsOf, formsOf, groupForms, notoDraws, sortForms } from '../src/lib/formOffers.js'
 
 // 邦's Moji_Joho figures as the MJ figure list gives them, with their IVD descriptions; MJ026242 is
 // the default.
@@ -84,22 +84,19 @@ const barOf = list => list.map(([char]) => ({ char }))
 const charsOf = group => formsOf(group).map(form => form.char)
 
 describe('a small seal character on the bar', () => {
-  it('stands last in its 構形 and takes a number key after every Han form', () => {
+  it('stands last in its 構形 and takes the number key of its place', () => {
     const groups = groupForms(barOf(shun), { structureOf: standingOf(shun), own: 'st:⿱𡗗日' })
     expect(charsOf(groups.find(group => group.label === '⿱艸旾'))).toEqual(['萅', SHUN])
     expect(groups.map(group => group.blocks[0].own)).toEqual([true, ...Array(10).fill(false)])
-    const keys = keyOrder(groups).map(form => form.char)
-    expect(keys).toEqual(shun.map(([char]) => char))
-    expect(keys.slice(0, 10)).not.toContain(SHUN)
-    // Without it, the keys are the same.
-    expect(keyOrder(groupForms(barOf(shun.slice(0, -1)), { structureOf: standingOf(shun) })).map(form => form.char)).toEqual(keys.slice(0, 11))
+    const han = shun.map(([char]) => char).filter(char => char !== SHUN)
+    expect(chipsOf(groups).map(form => form.char)).toEqual(han.flatMap(char => char === '萅' ? [char, SHUN] : [char]))
   })
   it('follows the figures of its 構形 and the related characters, and stands alone where it has none', () => {
     // 臭's bar: the figure MJ030291 and the seal character under 臭's structure, 臰 under its own.
     const chou = [['臭', '⿱自犬'], ['臭\u{E0103}', '⿱自犬'], ['臰', '⿱自死'], ['\u{3EC9F}', '⿱自犬']]
     const bar = groupForms(barOf(chou), { structureOf: standingOf(chou), related: new Set(['臰']) })
     expect(bar.map(charsOf)).toEqual([['臭', '臭\u{E0103}', '\u{3EC9F}'], ['臰']])
-    expect(keyOrder(bar).map(form => form.char)).toEqual(['臭', '臭\u{E0103}', '臰', '\u{3EC9F}'])
+    expect(chipsOf(bar).map(form => form.char)).toEqual(['臭', '臭\u{E0103}', '\u{3EC9F}', '臰'])
     // 折's three: 𽋍 under 㪿's structure, and two Unicode gives one value, which have none.
     const setsu = [['折', '⿰手斤'], ['㪿', '⿰⿱䶹䶹斤'], ['\u{3D2CD}', '⿰⿱䶹䶹斤'], ['\u{3D2CE}', ''], ['\u{3D2CF}', '']]
     expect(groupForms(barOf(setsu), { structureOf: standingOf(setsu) }).map(group => [group.label, charsOf(group)])).toEqual([
@@ -114,20 +111,18 @@ describe('a small seal character on the bar', () => {
     expect(groups.map(group => [group.label, group.blocks.map(block => [block.label, block.own, block.forms.map(form => [form.char, form.proposed])])])).toEqual([
       ['⿺辶禺', [['⿺辶禺', false, [['遇', false]]], ['⿰辵禺', true, [[GU, true]]]]],
       ['⿺辶於', [['⿺辶於', false, [['𨔆', false]]]]], ['⿺辶寓', [['⿺辶寓', false, [['𫑈', false]]]]]])
-    expect(keyOrder(groups).map(form => form.char)).toEqual(['遇', '𨔆', '𫑈', GU])
+    expect(chipsOf(groups).map(form => form.char)).toEqual(['遇', GU, '𨔆', '𫑈'])
   })
   it('stands so too while the site gives it as a related character', () => {
     // 萅's bar before the reference load that makes 𽌇 a member.
     const chun = [['萅', '⿱艸旾'], ['春', '⿱𡗗日'], [SHUN, '⿱艸旾'], ['蠢', '⿱春䖵']]
     const groups = groupForms(barOf(chun), { structureOf: standingOf(chun), related: new Set([SHUN, '蠢']) })
     expect(groups.map(charsOf)).toEqual([['萅', SHUN], ['春'], ['蠢']])
-    expect(keyOrder(groups).map(form => form.char)).toEqual(['萅', '春', '蠢', SHUN])
   })
   it('leaves a bar without one as it stood', () => {
     const bang = [['邦', '⿰丰阝'], ['㘯', ''], ['𨛜', '⿰𭅺阝'], ['邽', '⿰圭阝']]
     const groups = groupForms(barOf(bang), { structureOf: standingOf(bang), related: new Set(['邽']) })
     expect(groups.map(group => [group.id, charsOf(group)])).toEqual([
       ['st:⿰丰阝', ['邦']], ['st:⿰𭅺阝', ['𨛜']], ['', ['㘯']], ['st:⿰圭阝', ['邽']]])
-    expect(keyOrder(groups)).toEqual(groups.flatMap(formsOf))
   })
 })

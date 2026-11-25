@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 from uuid import uuid4
 
 import pytest
@@ -694,6 +694,73 @@ def test_a_retried_correction_answers_the_first_result(dataset):
     changed = api.post(f"/layers/units/{unit['id']}", json={**payload, "character": "U+5B50"})
     assert changed.status_code == 400, changed.text
     assert "submission id" in changed.json()["detail"]
+
+
+def test_a_form_is_claimed_with_the_character_it_is_a_form_of(dataset):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
+    version = api.get(f"/atlas/characters/{quote(unit['id'], safe='')}").json()["crop_version"]
+    payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"], "image_sha256": digest_of(dataset),
+               "character": "子", "verdict": "wrong", "issue": "character", "form": "子", "crop_version": version}
+    events = len(Store(dataset).events())
+    for refused in ({"form": "⿰木"}, {"form": "孑"}, {"form": "孑\U000e0100"}, {"crop_version": None}, {"character": None}):
+        assert api.post(f"/layers/units/{unit['id']}", json={**payload, **refused}).status_code == 422, refused
+    assert api.post(f"/layers/units/{unit['id']}", json={**payload, "crop_version": "another"}).status_code == 409
+    assert len(Store(dataset).events()) == events and not Store(dataset).forms_for({unit["id"]: version})
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).status_code == 200
+    saved = Store(dataset).forms_for({unit["id"]: version})[unit["id"]]
+    assert [value["text"] for value in saved["values"]] == ["子"]
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).json()["duplicate"] is True
+    assert Store(dataset).forms_for({unit["id"]: version})[unit["id"]] == saved
+
+
+def test_a_form_the_ledger_refuses_leaves_its_review_unwritten(dataset):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
+    version = api.get(f"/atlas/characters/{quote(unit['id'], safe='')}").json()["crop_version"]
+    claim = {"id": str(uuid4()), "client_id": "fixture-reviewer", "crop_version": version, "form": "孑"}
+    assert api.post(f"/atlas/characters/{quote(unit['id'], safe='')}/form", json=claim).status_code == 200
+    events, saved = len(Store(dataset).events()), Store(dataset).forms_for({unit["id"]: version})
+    payload = {**claim, "revision": unit["revision"], "image_sha256": digest_of(dataset),
+               "character": "子", "verdict": "wrong", "issue": "character", "form": "子"}
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).status_code == 409
+    assert len(Store(dataset).events()) == events and Store(dataset).forms_for({unit["id"]: version}) == saved
+
+
+def test_a_form_sent_again_after_its_review_alone_was_saved_rests_on_the_redrawn_box(dataset, monkeypatch):
+    api = client(dataset)
+    unit = api.get("/layers/characters/U+30CD").json()["samples"][0]
+    path = f"/atlas/characters/{quote(unit['id'], safe='')}"
+    record = api.get(path).json()
+    payload = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": unit["revision"], "image_sha256": digest_of(dataset),
+               "character": "子", "verdict": "wrong", "issue": "character", "form": "子", "crop_version": record["crop_version"],
+               "box": {**record["box"], "w": record["box"]["w"] - 1}}
+    with monkeypatch.context() as patch:
+        patch.setattr(Store, "set_form", lambda *_args, **_form: (_ for _ in ()).throw(RuntimeError("stopped")))
+        with pytest.raises(RuntimeError):
+            api.post(f"/layers/units/{unit['id']}", json=payload)
+    assert api.post(f"/layers/units/{unit['id']}", json=payload).json()["duplicate"] is True
+    redrawn = api.get(path).json()
+    assert redrawn["crop_version"] != record["crop_version"]
+    assert [value["text"] for value in redrawn["form"]["values"]] == ["子"]
+
+
+def test_the_forms_of_a_whole_grapheme_name_the_member_each_is_of(dataset):
+    api = client(dataset)
+    found = api.get("/layers/graphemes/U+5716/forms").json()
+    assert found["head"] == "図" and {"図", "圖", "图"} <= {member["char"] for member in found["members"]}
+    bases = {shape["text"]: shape["base"] for member in found["members"] for shape in member["shapes"]}
+    assert bases["⿴囗⿱口㐭"] == "圖"
+    assert ["圖"] in [row["via"] for row in found["variants"] if row["char"] == "啚"]
+    assert "徒" in {row["char"] for row in found["related"]}
+    assert not {row["char"] for row in found["variants"]} & {member["char"] for member in found["members"]}
+    assert api.get("/layers/graphemes/U+306D/forms").json()["head"] == "ね"
+    # 𨺓 and 𨓜 have no shape but one 隆 and 逸 have too.
+    for head, shape in (("隆", "⿰阝⿱夂生"), ("逸", "⿺辶免")):
+        members = api.get(f"/layers/graphemes/U+{ord(head):X}/forms").json()["members"]
+        own = next(member["shapes"] for member in members if member["char"] == head)
+        assert {each["text"]: each["base"] for each in own}[shape] is None
+        assert head in {each["base"] for each in own}
 
 
 def test_a_correction_refuses_a_second_character_and_a_stale_revision(dataset):

@@ -8,8 +8,8 @@
   import CropForm from './CropForm.svelte'
   import CropTitle from './CropTitle.svelte'
   import ReviewState from './ReviewState.svelte'
-  import FormChips from './FormChips.svelte'
-  import { setForm } from '../lib/cropForms.js'
+  import { formSaved, setForm } from '../lib/cropForms.js'
+  import { characterNamed, namingReview } from '../lib/formChoice.js'
   import ZiLink from './ZiLink.svelte'
   import CopyId from './CopyId.svelte'
   import CopyValue from './CopyValue.svelte'
@@ -63,10 +63,12 @@
   const unassigned = $derived(isUnassigned(data))
   const unavailable = $derived(Boolean(data && (data.proxyable === false || !data.image)))
   const needsSplit = $derived(Boolean(data?.needs_segmentation))
-  const needsChoice = $derived((unassigned || needsSplit) && (!issue || (Boolean(box) && issue === 'crop')))
+  const needsChoice = $derived((unassigned || needsSplit) && ((!issue && form == null) || (Boolean(box) && issue === 'crop')))
   const saveDisabled = $derived(busy || !data || !fresh || unavailable || !loaded || imageFailed || needsChoice)
   // The form the reviewer chose for the crop, held until the save; null keeps the one it has.
-  let form = $state(null)
+  let form = $state(null), base = $state(null)
+  // The character the form names, where it is another than the crop's: one review names it and claims the form.
+  const named = $derived(characterNamed({ form, base, character: charOf(data), issue, unassigned, written }))
   // The character a reviewer chose for a wrong-character crop, and whether one was chosen: an
   // untouched crop writes no character.
   let written = $state(charOf(first)), writtenDirty = $state(false)
@@ -104,7 +106,7 @@
     dialog?.scrollTo({ top: 0 })
     // The list's row stands in until the record arrives; nothing can be saved from it.
     data = preloaded ?? (preview?.id === target ? preview : null); fresh = Boolean(preloaded); asked = false
-    error = ''; form = null; issues = []; correction = null; noneSelected = false; box = null; editingBox = false
+    error = ''; form = null; base = null; issues = []; correction = null; noneSelected = false; box = null; editingBox = false
     written = ''; writtenDirty = false; kept = null
     contextSuggestions = null; contextSuggesting = false
     // The server-rendered record's image is already mounted; its load may have come before this effect,
@@ -168,6 +170,8 @@
     submission = null
     // What was chosen for the main problem goes with it; a bad crop beside it changes neither.
     if (main !== issue) {
+      // A form that assigned the crop's character, or stood for it, gives way to what is chosen now.
+      if (unassigned && (issue === 'character' || main === 'character')) { form = null; base = null }
       if (issue === 'character') { written = charOf(data); writtenDirty = false }
       correction = null; noneSelected = false
     }
@@ -181,6 +185,18 @@
     if (!offersSuggestions(value) || !next.includes(value)) return
     queueMicrotask(() => greetSuggestions(suggestionsElement, { focus: true }))
   }
+  /** A form chosen on the bar, and the character it names (`of`). A crop with no character is assigned that
+   *  one, as a correction the reader sees chosen; a form that names none is claimed alone. */
+  function chooseForm(value, of = null) {
+    if (!unassigned) { form = value; base = of; return }
+    submission = null; form = null; base = null
+    if (of == null ? issue === 'character' : issue !== 'character') {
+      issues = toggleIssue(issues, 'character')
+      written = charOf(data); writtenDirty = false; correction = null; noneSelected = false
+    }
+    if (of != null) chooseSuggestion(of)
+    if (value !== of) { form = value; base = of }
+  }
   /** Take up what a round chose for this crop when it sent the reader here to redraw it. */
   function reopen({ issues: chosen, character = null, correction: typed = null }) {
     for (const each of chosen) chooseIssue(each)
@@ -190,6 +206,7 @@
   function chooseSuggestion(value, none = false) {
     noneSelected = none
     submission = null
+    if (unassigned && issue !== 'merged' && value !== base) { form = null; base = null }
     if (!value && issue === 'character') {
       written = charOf(data); writtenDirty = false
     }
@@ -263,27 +280,28 @@
       : { ...choicesNow(), issues: fixed ? issues.filter(each => each !== 'crop') : issues }
     const beside = fixed ? { box } : value.verdict === 'wrong' && issues.length > 1 ? { bad_crop: true } : {}
     busy = true; error = ''
-    // A chosen form is written first, and the review that follows names the revision it left. A wrong
-    // character names the crop's character itself, so a form chosen beside it is not written.
-    if (form != null && issue !== 'character') {
+    const was = data, claimed = named == null ? null : form
+    // A form that names no other character is claimed alone, then the crop is reviewed.
+    if (form != null && named == null && issue !== 'character') {
       try {
         const formed = await setForm(data, form)
         changed?.(target, formed.crop, data)
         if (closed || current !== generation) return
         data = { ...data, ...formed.crop }; form = null
-        // A form that named the crop's character was a review already; nothing more to say.
-        if (formed.reviewed && (matches || !issue)) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop, data); busy = false; return }
+        // A crop with no character has none to confirm.
+        if (unassigned && !issue) { inspector.remember(target, { choices: decided }); leaving = advancing ? target : null; saved(target, formed.crop, was); busy = false; return }
       } catch (e) { if (!closed && current === generation) error = e.message; busy = false; return }
     }
     const correctingCharacter = writtenDirty && Boolean(written) && (unassigned || written !== (data.written_character ?? data.label))
     // A match, and a crop fixed by its redrawn box, carry no issue.
     const resolvedIssue = value.verdict === 'match' ? null : issue
-    const pixels = cropPixels(data), was = data
+    const pixels = cropPixels(data)
     // Naming another character uses `/layers/units/:id`, which rejects extra fields; all other saves use `/atlas/characters/:id`.
-    const route = correctingCharacter
+    const route = claimed != null || correctingCharacter
       ? '/layers/units/' + encodeURIComponent(target)
       : '/atlas/characters/' + encodeURIComponent(target)
-    const payload = correctingCharacter
+    const payload = claimed != null ? { ...namingReview(data, { character: named, form: claimed, issues, correction, box: fixed ? box : null }), ...pixels }
+      : correctingCharacter
       ? { revision: data.revision, ...pixels,
           verdict: matches ? 'match' : decision(issue || 'character').verdict,
           issue: ['character', 'crop', 'merged', 'blank', 'other'].includes(issue)
@@ -298,6 +316,7 @@
     try {
       leaving = advancing ? target : null
       const result = await request(route, { id: submission.id, ...payload })
+      if (claimed != null) formSaved(was, claimed)
       inspector.remember(target, { choices: decided })
       // A save that lands after the dialog closed or moved on still decided its crop.
       if (!closed && current === generation) saved(target, result, was)
@@ -373,13 +392,7 @@
           <StyleField item={data} editable disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />
         </div>
         {#if data.origin !== 'corpus' && (issue === 'character' || badCrop)}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
-        {#if unassigned && data.family_members?.length}
-          <div class="assignment-options">
-            <FormChips forms={data.family_members} chosen={issue === 'character' ? written : null} disabled={busy || !fresh || unavailable}
-              label={t('corpus.assign.label')} onchoose={char => { if (issue !== 'character') chooseIssue('character'); chooseSuggestion(char) }} />
-          </div>
-        {/if}
-        {#snippet formBar()}{#if !unassigned && !needsSplit}<CropForm crop={data} chosen={form} onchoose={value => form = value} disabled={busy || !fresh || unavailable} />{/if}{/snippet}
+        {#snippet formBar()}{#if !needsSplit && (!unassigned || graphemeChar(data))}<CropForm crop={data} chosen={form ?? (unassigned && issue === 'character' && writtenDirty ? written : null)} onchoose={chooseForm} disabled={busy || !fresh || unavailable} />{/if}{/snippet}
         <CropReview forms={formBar} {issues} onissue={chooseIssue} suggested={suggestedIssue} disabled={busy || !fresh} issuesDisabled={unavailable} onskip={skip}
           targetId={data.id} bind:element={suggestionsElement} {noneSelected} result={suggestions?.candidates?.length || suggestions?.votes?.length ? suggestions : data?.suggestions?.length ? { candidates: data.suggestions } : suggestions} loading={suggesting} contextResult={contextSuggestions} contextLoading={contextSuggesting} label={data.written_character ?? data.label} value={issue === 'character' ? written : correction} onchoose={chooseSuggestion} />
         {#if badCrop && redrawable(data) && (box || !editingBox)}<div class="crop-change">{#if box}{t('character.crop.adjusted')}<button type="button" disabled={busy} onclick={() => box = null}>{t('common.reset')}</button>{:else}<button type="button" class="quiet-link adjust-crop" disabled={busy || editingBox} onclick={beginCrop}>{t('character.crop.adjust')}</button>{/if}</div>{/if}
@@ -401,7 +414,6 @@
 <style>
   /* The reading and the style it is written in sit on one line; either wraps when the inspector is narrow. */
   .inspector-words{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px}
-  .assignment-options{margin:0 0 16px}
   .unassigned-title{font-size:28px}
   .title-grapheme{margin-left:12px;font-size:40px;color:var(--muted)}
   .unassigned-title :global(.copy-value){vertical-align:middle;margin-left:4px}

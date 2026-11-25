@@ -26,11 +26,14 @@ export const search = (q, expand = 'none') => get('/layers/search', { q, expand 
 export const ids = char => get('/layers/ids', { c: char })
 /** The 構形 groups of these characters: `{ items: [{ id, label, chars, claimed, folded }], filed }`,
  *  `claimed` naming who filed a form there, `folded` the 構形 that stand under the group's, folded by a
- *  reader (`by`) or as a layout of it (⿰辵禺 of ⿺辶禺, nobody named), and `filed` the other 構形 readers filed a form under. `of` is the character whose regional shapes are
+ *  reader (`by`) or as a layout of it (⿰辵禺 of ⿺辶禺, nobody named), and `filed` the other 構形 readers filed a form under. `of` are the characters whose regional shapes are
  *  among the names. */
 export const structures = (chars, of = '') => get('/layers/structures', { c: chars, of })
 export const character = (codePoint, expand = 'none', options) => get('/layers/characters/' + encodeURIComponent(codePoint), { expand }, options)
 export const occurrences = (codePoint, params = {}, options) => get('/layers/occurrences', { code_point: codePoint, ...params }, options)
+/** What a crop of a grapheme with no character of its own may be: `{ head, members, variants, related, derived, forms }`
+ *  (`graphemeBar.js`). */
+export const graphemeForms = codePoint => get('/layers/graphemes/' + encodeURIComponent(codePoint) + '/forms')
 export const graphemes = (params = {}) => get('/layers/graphemes', params)
 export const ligatures = () => get('/layers/ligatures')
 /** Copies of corpus glyphs from a seed's point of their shuffle, of one script group or of every one ('all'). */

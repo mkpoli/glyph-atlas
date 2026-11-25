@@ -171,7 +171,7 @@ export async function withCrop(env: Env, saved: Json, alias: (text: string) => P
 }
 
 // A random id in the shape of a UUID, made in SQL for rows a batch writes by selecting them.
-const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
+export const SQL_UUID = `lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(2)))||'-'||lower(hex(randomblob(6)))`;
 /** The statement that retracts `actor`'s earlier live claims in a single-valued slot, run in the same
  *  batch after their new claim (`by`), so a concurrent claim of theirs is retracted too. */
 export function retractOwn(env: Env, own: { key: string; actor: string; subject: string; predicate: string; scope: string; at: string; by: string; owned: string }) {
