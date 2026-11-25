@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import han_components
 from .tape import Slot
 
 #: What a gloss is counted without: the modern punctuation of the table, not printed.
@@ -21,6 +22,12 @@ _UNPRINTED = re.compile(r"[，。、；：？！《》「」『』〔〕（）()
 _IDS = re.compile(r"[⿰-⿻<]")
 #: Words printed small between the headwords of one field: 鈗俗鈂 is two headwords.
 _NOTES = set("俗正今古通或誤籀")
+#: The written form of a radical the table names by another character.
+WRITTEN = {"草": "艹", "四": "罒", "𠕀": "罒", "系": "糹", "䖝": "虫", "黒": "黑", "阜": "阝", "曰": "日", "䑕": "鼠", "𤓰": "瓜",
+           "髙": "高", "文": "攵", "反": "歹", "歺": "歹", "尤": "尢", "元": "尢", "西": "襾", "䜴": "鼓", "學": "𦥯", "倝": "𠦝", "卄": "廾",
+           "氣": "气", "凢": "凡"}
+#: A section is tested for its radical when this share of its headwords hold it.
+TESTED = 2 / 3
 #: How many rows before and after a headword a second one written with the same character makes it doubtful.
 NEAR = 2
 #: A section title 某部第幾 is printed at about this many gloss characters' length; a tone header in its own cartouche.
@@ -86,17 +93,34 @@ def slots(entries: list[Entry]) -> list[Slot]:
     return out
 
 
-def unsettled(pages: dict[int, list[Entry]]) -> set[int]:
-    """The rows whose headword is no reading of what the print shows.
+def _holds(char: str, section: str) -> bool:
+    """Whether a character is its section's radical or names it at the top level of its description."""
+    names = {section, WRITTEN.get(section, section)}
+    return char in names or bool(names & han_components.direct(char))
 
-    The table writes 俗, 正 and 通 forms that stand side by side with one character, although the print shows a
-    different shape for each, and a note on a headword says it was blank and filled in, or is in doubt.
+
+def unsettled(pages: dict[int, list[Entry]]) -> set[tuple[int, int]]:
+    """The headwords, as row and place in it, whose character is no sure reading of what the print shows.
+
+    - The table writes 俗, 正 and 通 forms that stand side by side with one character, although the print shows a
+      different shape for each.
+    - A note on a headword says it was blank and filled in, or doubts it.
+    - The character lacks the radical of its section (聴 under 口, where the print has 口 beside it). A section is
+      tested when most of its headwords hold the radical; 雜部 and the like hold none.
     """
     entries = {entry.row: entry for group in pages.values() for entry in group}
-    heads = {row: [c for c in fields(entry) if c] for row, entry in entries.items()}
+    heads = {row: fields(entry) for row, entry in entries.items()}
+    described: dict[str, list[bool]] = {}
+    for row, entry in entries.items():
+        described.setdefault(entry.section, []).extend(_holds(c, entry.section) for c in heads[row] if c and len(c) == 1)
+    tested = {section for section, held in described.items() if sum(held) >= TESTED * len(held)}
     out = set()
     for row, entry in entries.items():
-        near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ())}
-        if len(set(heads[row])) < len(heads[row]) or near & set(heads[row]) or "字頭" in entry.note:
-            out.add(row)
+        own = [c for c in heads[row] if c]
+        near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ()) if c}
+        doubted = len(set(own)) < len(own) or bool(near & set(own)) or "字頭" in entry.note
+        for sub, char in enumerate(heads[row]):
+            foreign = char is not None and len(char) == 1 and entry.section in tested and not _holds(char, entry.section)
+            if doubted or foreign:
+                out.add((row, sub))
     return out

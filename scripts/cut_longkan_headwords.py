@@ -61,7 +61,7 @@ TABLE = "data/古辞书综合/龙龛手镜.csv"
 RUN = Path("models/align/runs/collection-v2.yaml")
 SEGMENTATION = "tape-anchors-v1"
 POSTERIOR = 0.9
-ALIKE = 0.35
+ALIKE = 0.65
 COST = -0.3
 MARGIN = 0.3
 #: The table pages searched either side of the one a half-leaf is expected to show.
@@ -261,7 +261,7 @@ def main() -> int:
                     continue
                 if chance[n, j] < POSTERIOR or f["alike"][n, j] < ALIKE:
                     continue
-                if slot.entry in unsettled:
+                if (slot.entry, slot.sub) in unsettled:
                     doubtful += 1
                     continue
                 entry = next(e for e in entries[f["table_page"]] if e.row == slot.entry)
