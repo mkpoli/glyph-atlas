@@ -15,8 +15,8 @@ export const ROOM_META = {
 
 const NETWORK_MARKS = { Discord: 'discord', Telegram: 'telegram', QQ: 'qq', IRC: 'irc' }
 const GROUP_WINDOW_MS = 5 * 60 * 1000
-const URL_RE = /https?:\/\/[^\s<>]+/g
-const TRAILING_PUNCT = /[.,;:!?)\]）】」』'"、。，；：！？]+$/
+const URL_RE = /https?:\/\/[^\s<>'"「」『』【】（）〔〕〈〉《》、。，；：！？\u3000]+/g
+const TRAILING_PUNCT = /[.,;:!?)\]]+$/
 
 /** Localized label for a preview room: topic rooms from the catalogue, language rooms in their own script. */
 export function roomLabel(room, t) {

@@ -273,11 +273,15 @@
   .preview-lead { margin: 0; padding: 10px 16px 4px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
   @property --fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
   @property --fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
-  .preview-tabs { display: flex; overflow-x: auto; scrollbar-width: none; padding-inline: 5px; scroll-snap-type: inline proximity; scroll-padding-inline: 28px; --fade-size: 28px; --fade-dir: right; --fade-start-pos: 0; --fade-end-pos: 100%; mask: linear-gradient(black, black) no-clip subtract, linear-gradient(to var(--fade-dir), black, transparent) var(--fade-start-pos) 0 / var(--fade-start) 100% no-repeat no-clip, linear-gradient(to var(--fade-dir), transparent, black) var(--fade-end-pos) 0 / var(--fade-end) 100% no-repeat no-clip; animation: reveal-fade-start linear both, hide-fade-end linear both; animation-timeline: scroll(self inline); animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%; transition: --fade-start .2s, --fade-end .2s; }
+  .preview-tabs { display: flex; overflow-x: auto; scrollbar-width: none; padding-inline: 5px; scroll-snap-type: inline proximity; scroll-padding-inline: 28px; --fade-size: 28px; --fade-dir: right; --fade-start-pos: 0; --fade-end-pos: 100%; mask: linear-gradient(black, black) no-clip subtract, linear-gradient(to var(--fade-dir), black, transparent) var(--fade-start-pos) 0 / var(--fade-start) 100% no-repeat no-clip, linear-gradient(to var(--fade-dir), transparent, black) var(--fade-end-pos) 0 / var(--fade-end) 100% no-repeat no-clip; transition: --fade-start .2s, --fade-end .2s; }
   .preview-tabs:dir(rtl) { --fade-dir: left; --fade-start-pos: 100%; --fade-end-pos: 0; }
   .preview-tabs::-webkit-scrollbar { display: none; }
   .preview-tabs.more-start { --fade-start: var(--fade-size); }
   .preview-tabs.more-end { --fade-end: var(--fade-size); }
+  @supports (animation-timeline: scroll()) {
+    .preview-tabs { animation: reveal-fade-start linear both, hide-fade-end linear both; animation-timeline: scroll(self inline); animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%; transition: none; }
+    .preview-feed { --fade-size: 28px; mask: linear-gradient(black, black) no-clip subtract, linear-gradient(to bottom, black, transparent) 0 0 / 100% var(--fade-start) no-repeat no-clip, linear-gradient(to bottom, transparent, black) 0 100% / 100% var(--fade-end) no-repeat no-clip; animation: reveal-fade-start linear both, hide-fade-end linear both; animation-timeline: scroll(self block); animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%; }
+  }
   @keyframes reveal-fade-start { to { --fade-start: var(--fade-size); } }
   @keyframes hide-fade-end { from { --fade-end: var(--fade-size); } }
   .preview-tabs [role="tab"] { position: relative; flex: none; scroll-snap-align: start; border: 0; border-radius: 5px; background: transparent; padding: 9px 11px; font-size: 13px; font-weight: 500; line-height: 1.3; color: var(--muted); white-space: nowrap; }
@@ -293,7 +297,7 @@
      it has them (`apps/review/static/fonts/README.md`). */
   @font-face { font-family: "IDS Parts"; src: url("/fonts/Plangothic-ids-parts.woff2") format("woff2"); font-display: swap; unicode-range: U+2E80-2EFF, U+31E4-31EF, U+20000-3FFFF; }
   @font-face { font-family: "IDS Strokes"; src: url("/fonts/NotoSansCJKjp-ids-strokes.woff2") format("woff2"); font-display: swap; unicode-range: U+31C0-31E3; }
-  .preview-feed { list-style: none; margin: 0; padding: 14px 16px 18px; max-block-size: 420px; overflow-y: auto; display: grid; gap: 12px; --fade-size: 28px; mask: linear-gradient(black, black) no-clip subtract, linear-gradient(to bottom, black, transparent) 0 0 / 100% var(--fade-start) no-repeat no-clip, linear-gradient(to bottom, transparent, black) 0 100% / 100% var(--fade-end) no-repeat no-clip; animation: reveal-fade-start linear both, hide-fade-end linear both; animation-timeline: scroll(self block); animation-range: 0 var(--fade-size), calc(100% - var(--fade-size)) 100%; }
+  .preview-feed { list-style: none; margin: 0; padding: 14px 16px 18px; max-block-size: 420px; overflow-y: auto; display: grid; gap: 12px; }
   .preview-group { min-width: 0; }
   .preview-group:not(:first-child) { border-block-start: 1px solid var(--line); padding-block-start: 12px; }
   .preview-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin-block-end: 4px; }

@@ -65,4 +65,12 @@ describe('linkify', () => {
       { type: 'text', text: ', ok' },
     ])
   })
+
+  it('stops before CJK punctuation and adjacent prose without spaces', () => {
+    expect(linkify('参考（https://example.org。次の文）')).toEqual([
+      { type: 'text', text: '参考（' },
+      { type: 'link', href: 'https://example.org', label: 'example.org' },
+      { type: 'text', text: '。次の文）' },
+    ])
+  })
 })
