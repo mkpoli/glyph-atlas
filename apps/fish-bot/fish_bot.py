@@ -514,6 +514,21 @@ def usage_report(rows: Iterable[sqlite3.Row]) -> str:
     return "\n".join(lines) or "no calls recorded"
 
 
+def answer_report(outcomes: dict[str, dict[str, int]]) -> str:
+    """Each day's calls by what became of them, and the share never answered, one line per day."""
+    lines = []
+    for day, counts in sorted(outcomes.items()):
+        answered = sum(counts.get(name, 0) for name in ("chatted", "recapped", "caught-up"))
+        lost = counts.get("expired", 0) + sum(count for name, count in counts.items() if name.startswith("failed"))
+        line = f"{day}: {answered} calls answered"
+        if counts.get("caught-up"):
+            line += f" ({counts['caught-up']} later)"
+        if counts.get("deferred"):
+            line += f", {counts['deferred']} waiting"
+        lines.append(line + f", {lost} lost" + (f" ({100 * lost / (answered + lost):.0f}%)" if answered + lost else ""))
+    return "\n".join(lines)
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -1502,6 +1517,17 @@ class Store:
             (event_id, outcome, now_ms()),
         )
         self.db.commit()
+
+    def outcomes(self, days: int) -> dict[str, dict[str, int]]:
+        """How many calls of each of the last days (JST) came to each outcome."""
+        start = local_day(now_ms() - (days - 1) * 86_400_000)
+        since = int(datetime.datetime.fromisoformat(start).replace(tzinfo=JST).timestamp() * 1000)
+        found: dict[str, dict[str, int]] = {}
+        for row in self.db.execute("SELECT h.outcome, COALESCE(e.ts, h.handled_at) AS at FROM handled h "
+                                   "LEFT JOIN events e ON e.event_id=h.event_id WHERE at>=?", (since,)):
+            counts = found.setdefault(local_day(int(row["at"])), {})
+            counts[str(row["outcome"])] = counts.get(str(row["outcome"]), 0) + 1
+        return found
 
     def defer(self, event_id: str, room_id: str, sender: str, wait_ms: int) -> None:
         """Keep a call to answer later."""
@@ -4464,6 +4490,8 @@ class Bot:
         if day != self._reported_day:
             if self._reported_day:
                 log.info("usage: %s", usage_report(row for row in self.store.usage(2) if row["day"] == self._reported_day))
+                log.info("calls: %s", answer_report({day: counts for day, counts in self.store.outcomes(2).items()
+                                                    if day == self._reported_day}) or "none")
             self._reported_day = day
         self.follow()
         try:
@@ -5246,6 +5274,7 @@ def main(argv: list[str] | None = None) -> None:
         store = Store(args.db)
         try:
             print(usage_report(store.usage(7)))
+            print(answer_report(store.outcomes(7)))
         finally:
             store.close()
         return

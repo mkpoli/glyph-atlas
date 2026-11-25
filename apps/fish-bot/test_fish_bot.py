@@ -3608,3 +3608,36 @@ def test_the_catch_up_task_names_the_lines_and_allows_silence():
     payload = json.loads(fish_bot.format_chat("Room", "", [message_row("hi")], {}, task="catchup", trigger=0,
                                               bot_user_id=USER, rooms='[{"sender": "A", "line": "hi"}]'))
     assert '[{"sender": "A", "line": "hi"}]' in payload["task"] and "stay quiet" in payload["task"]
+
+
+def test_the_report_counts_what_became_of_the_days_calls(tmp_path, capsys):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    for number, outcome in enumerate(["chatted"] * 7 + ["caught-up", "recapped", "deferred", "expired", "failed: ValueError"]):
+        store.mark_handled(f"$e{number}", outcome)
+    today = fish_bot.local_day(fish_bot.now_ms())
+    line = f"{today}: 9 calls answered (1 later), 1 waiting, 2 lost (18%)"
+    assert fish_bot.answer_report(store.outcomes(7)) == line
+    store.close()
+    fish_bot.main(["--usage", "--db", str(tmp_path / "chat.sqlite3")])
+    assert line in capsys.readouterr().out
+
+
+def test_a_call_answered_the_next_day_counts_on_its_own(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    yesterday = fish_bot.now_ms() - 86_400_000
+    store.add_event("$late", ROOM, "@reader:example", yesterday, "大肥魚？", "m.text", backfilled=False)
+    store.mark_handled("$late", "caught-up")
+    assert store.outcomes(7) == {fish_bot.local_day(yesterday): {"caught-up": 1}}
+
+
+def test_searches_of_a_visit_count_towards_the_month(tmp_path):
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    purse = fish_bot.Purse(store, 1.0)
+    with purse.unasked("visit"):
+        purse.search(4)
+    purse.search(2)
+    assert store.calls_this_month("grounding") == 6
+
+
+def test_a_day_without_calls_has_no_report(tmp_path):
+    assert fish_bot.answer_report(fish_bot.Store(tmp_path / "chat.sqlite3").outcomes(7)) == ""
