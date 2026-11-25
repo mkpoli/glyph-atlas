@@ -116,6 +116,12 @@ export function writtenRecord(record: Json, written: string, head: string | null
     grapheme: codePoints(head ?? written), visual_group: null, category: categoryOf(written) };
 }
 
+/** A record that names a grapheme, under the head its crop's character is filed under now: a record keeps the one
+ *  its publication, or a forms decision, gave it, and a later table may file the character elsewhere. A crop
+ *  with no character keeps the grapheme its record names. */
+export const underHead = (record: Json, char: string | null, head: string | null): Json =>
+  char !== null && record.grapheme != null ? { ...record, grapheme: codePoints(head ?? char) } : record;
+
 /** The record of a crop from its row and the published fields (`base`: the bundle entry, or the corpus
  *  glyph's published record). `source_id` is the id the crop had before the cutover, which listings carry
  *  too (`cropItems`), so an address written with it (a citation's version token) is still read. */
@@ -133,7 +139,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);
-  if (row.written && row.char) record = writtenRecord(record, row.char, row.head);
+  record = row.written && row.char ? writtenRecord(record, row.char, row.head) : underHead(record, row.char, row.head);
   // A redrawn box is the crop's until the next publication cuts it; the image shown is still the old cut.
   if (row.x !== null) Object.assign(record, { box: { x: row.x, y: row.y, w: row.w, h: row.h }, box_pending: true });
   return { ...record, crop_version: cropVersion(record.id, record), crop_editable: Boolean(redrawLimits(record)) };

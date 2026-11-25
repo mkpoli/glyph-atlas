@@ -301,6 +301,19 @@ describe('runs on the new layout', () => {
     for (const item of await shown()) expect(item).toMatchObject({ label: 'ん', identity_basis: 'form_cluster' });
   });
 
+  it('names the grapheme a glyph\'s character is filed under now in runs and listings, over its record\'s and its form\'s', async () => {
+    const f = fixture(), crop = f.at[6].id;
+    f.atlas.exec(`INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
+      VALUES(${crop},'U+3093',NULL,'ん',NULL,NULL,'U+3093','old')`);
+    const named = async () => [(await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし'))).json()).items
+      .flatMap((item: Json) => item.crops).find((item: Json) => item.id === publicId(crop)), ...(await listingItems(f.newEnv, [crop]))].map(item => item.grapheme);
+    expect(await named()).toEqual(['U+3093', 'U+3093']);
+    // The load that moves the head files the runs under it again.
+    f.atlas.exec(`UPDATE graphemes SET head=(SELECT id FROM graphemes WHERE text='し') WHERE id=(SELECT char FROM crops WHERE id=${crop})`);
+    f.runsDb.exec(`UPDATE runs SET graphemes='しし' WHERE first=${crop}`);
+    expect(await named()).toEqual(['U+3057', 'U+3057']);
+  });
+
   it('does not add review revisions when a round mark is undone', async () => {
     const f = fixture(), crop = f.at[0].id;
     f.atlas.exec(`UPDATE crops SET revision=2 WHERE id=${crop};

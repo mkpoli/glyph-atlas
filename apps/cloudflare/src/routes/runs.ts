@@ -14,7 +14,7 @@ import { Problem } from '../busy';
 import { bookDating } from '../dating';
 import { formed, type UnitForm } from '../forms';
 import { honkokuPage } from '../honkoku';
-import { MARKS, WRITTEN, redrawLimits, writtenRecord } from '../cropRecords';
+import { MARKS, WRITTEN, redrawLimits, underHead, writtenRecord } from '../cropRecords';
 import { integer, text } from '../input';
 import { keyHeads, keyText } from '../ledger';
 import { readRecords, recordKey } from '../records';
@@ -273,7 +273,7 @@ async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Js
   for (const item of items) {
     const id = crop.get(item.id)!, whole = given.get(id)!, review = since.get(id);
     let shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
-    if (review?.written && review.char) shown = writtenRecord(shown, review.char, review.head);
+    if (review) shown = review.written && review.char ? writtenRecord(shown, review.char, review.head) : underHead(shown, review.char, review.head);
     found.set(id, { whole, item: { ...shown, state: shownState(shown.state), revision: shown.revision - (review?.marks ?? 0),
       // A corpus glyph's record names the page of its source; its row names the page the layout files it on.
       page_id: whole.page_id ?? shown.page_id,

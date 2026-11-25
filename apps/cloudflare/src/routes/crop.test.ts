@@ -230,6 +230,22 @@ describe('a crop\'s record', () => {
     expect(record.honkoku_url).toBeUndefined();
   });
 
+  it('names the grapheme a corpus glyph\'s character is filed under now, whatever its record was published with', async () => {
+    const { get, ids, db } = setup();
+    const named = async () => (await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any).grapheme;
+    expect(await named()).toBe('U+7FC1');
+    // A later table files 翁 under 四, then under its own head again.
+    db.exec('UPDATE graphemes SET head=5 WHERE id=6');
+    expect(await named()).toBe('U+56DB');
+    db.exec('UPDATE graphemes SET head=6 WHERE id=6');
+    expect(await named()).toBe('U+7FC1');
+    // A glyph with no character is of the grapheme its record names.
+    db.exec(`UPDATE crops SET char=NULL,cluster=NULL WHERE id=${ids.glyph}; UPDATE graphemes SET head=5 WHERE id=6`);
+    expect(await named()).toBe('U+7FC1');
+    // A collected crop's record names none, and gains none.
+    expect((await (await get(`/atlas/characters/${publicId(ids.b)}`)).json() as any).grapheme).toBeUndefined();
+  });
+
   it('always marks corpus glyphs with origin even when a pack omits it', async () => {
     const bareId = cropId(880001, 0);
     const bare = { id: 'codh:bare:0', unit_id: 'codh:bare:0', char: '翁', label: '翁', code_point: 'U+7FC1', box: { x: 1, y: 2, w: 3, h: 4 },
