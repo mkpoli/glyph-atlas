@@ -735,7 +735,7 @@
   "state.unchecked": "Chưa duyệt",
   "reading.label": "Cách đọc",
   "reading.add": "Ghi cách đọc",
-  "reading.edit": "Sửa cách đọc",
+  "reading.edit": "Sửa",
   "reading.run": "Các chữ đọc liền",
   "reading.extend": "Đọc liền với {char}",
   "reading.of": "Cách đọc của {char}",

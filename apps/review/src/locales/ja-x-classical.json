@@ -722,7 +722,7 @@
   "state.unchecked": "未確認",
   "reading.label": "讀ミ",
   "reading.add": "讀ミヲ附ク",
-  "reading.edit": "讀ミヲ改ム",
+  "reading.edit": "改ム",
   "reading.run": "續ケテ讀ム文字",
   "reading.extend": "{char}ト續ケテ讀ム",
   "reading.of": "{char}ノ讀ミ",

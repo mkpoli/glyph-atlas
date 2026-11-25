@@ -48,7 +48,7 @@
   "bulk.report.unlabelled": "確認할 글자가 한 글자로 定해져 있지 않음 ({count})",
   "reading.label": "읽기",
   "reading.add": "읽기 달기",
-  "reading.edit": "읽기 고치기",
+  "reading.edit": "고치기",
   "reading.run": "함께 읽는 글字",
   "reading.extend": "{char}와(과) 함께 읽기",
   "reading.of": "{char}의 읽기",

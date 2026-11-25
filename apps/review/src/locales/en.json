@@ -773,7 +773,7 @@
   "state.unchecked": "Not checked yet",
   "reading.label": "Reading",
   "reading.add": "Add reading",
-  "reading.edit": "Edit reading",
+  "reading.edit": "Edit",
   "reading.run": "Characters read together",
   "reading.extend": "Read with {char}",
   "reading.of": "Reading of {char}",

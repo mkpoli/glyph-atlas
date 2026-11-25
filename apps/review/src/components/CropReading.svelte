@@ -202,23 +202,22 @@
 
 <div class="reading-field" class:editing bind:this={root}>
   <div class="reading-slot">
-    <span>{t('reading.label')}</span>
-    {#each chips as chip}
-      <span class="reading-chip">
-        {#if chip.reading}<ReadingRuby value={chip.reading} />{:else}<bdi class="reading-bare">{chip.run.run.join('')}</bdi>{/if}
-        {#if chip.reading?.methods?.[0] || chip.ruby.length || chip.left.length}<span class="reading-notes">
-          {#if chip.reading?.methods?.[0]}<span class="reading-badge" title={t('reading.method')}>{t(`reading.methods.${chip.reading.methods[0]}`)}</span>{/if}
+    <div class="reading-entries">
+      {#each chips as chip}
+        <div class="reading-entry">
+          {#if chip.reading}<ReadingRuby value={chip.reading} />{:else}<bdi class="reading-bare">{chip.run.run.join('')}</bdi>{/if}
           {#each chip.ruby as text}<bdi class="reading-ruby" title={t('reading.ruby')}>{text}</bdi>{/each}
-          {#each chip.left as text}<span class="reading-badge">{t('reading.left')}</span><bdi class="reading-ruby">{text}</bdi>{/each}
-        </span>{/if}
-      </span>
-    {/each}
-    {#each words as value}
-      <span class="reading-chip"><span class="reading-badge">{t('word.label')}</span><b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>
-        {#if value.form === 'probable'}<span class="reading-badge">{t('word.probable')}</span>{/if}</span>
-    {/each}
-    {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-badge disputed">{t('reading.disputed')}</span>{/if}
-    {#if !editing}<button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>{/if}
+          {#each chip.left as text}<span>{t('reading.left')} <bdi class="reading-ruby">{text}</bdi></span>{/each}
+          {#if chip.reading?.methods?.[0]}<span title={t('reading.method')}>{t(`reading.methods.${chip.reading.methods[0]}`)}</span>{/if}
+        </div>
+      {:else}<div class="reading-entry">{t('reading.label')}</div>{/each}
+      {#if words.length}<div class="reading-entry">{t('word.label')}
+        {#each words as value}<span><b title={value.class ?? undefined}>{value.word ? value.reading ?? value.word : `「${value.gloss}」`}</b>{#if value.form === 'probable'}{' '}{t('word.probable')}{/if}</span>{/each}</div>{/if}
+    </div>
+    {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-disputed">{t('reading.disputed')}</span>{/if}
+    {#if !editing}<div class="reading-acts">
+      <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+    </div>{/if}
   </div>
   {#if editing && line}
     <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
@@ -290,21 +289,23 @@
 <style>
   .reading-field{font-size:12px;color:var(--muted);display:grid;gap:8px;min-width:0}
   .reading-field.editing{flex:1 1 100%}
-  .reading-slot,.reading-methods,.reading-words,.reading-actions{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
-  .reading-slot{min-height:32px}
+  .reading-methods,.reading-words,.reading-actions{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+  /* The runs stand one to a line, and what can be done with them is at the end of the first. */
+  .reading-slot{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline;min-height:32px}
+  .reading-entries{display:grid;gap:8px;min-width:0}
+  .reading-entry{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}
+  .reading-acts{display:flex;flex-wrap:wrap;gap:4px 16px;margin-inline-start:auto}
   b{color:var(--ink);font-weight:600}
   button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
-  .reading-slot>button{min-height:32px}
-  @media(max-width:700px){.reading-slot,.reading-slot>button{min-height:36px}}
   button:hover:not(:disabled){border-color:var(--line-strong)}
   button:disabled{opacity:.5;cursor:default}
   button:focus-visible,input:focus-visible{outline:3px solid var(--focus-ring);outline-offset:1px}
-  .reading-chip{display:inline-flex;flex-wrap:wrap;gap:4px 10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--surface);color:var(--ink)}
-  .reading-chip :global(.reading-run),.reading-bare{font-family:var(--char-font);font-size:22px;line-height:1.25}
-  .reading-notes{display:inline-flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
-  .reading-badge{font-size:11px;color:var(--muted)}
-  .reading-badge.disputed{color:var(--wrong)}
-  .reading-ruby{font-family:var(--char-font);font-size:15px}
+  .reading-acts button{min-height:32px;padding:0;border:0;background:none;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+  .reading-acts button:not(:disabled):hover{color:var(--ink)}
+  @media(max-width:700px){.reading-slot,.reading-acts button{min-height:36px}}
+  .reading-entry :global(.reading-run),.reading-bare{font-family:var(--char-font);font-size:28px;line-height:1.3;color:var(--ink)}
+  .reading-ruby{font-family:var(--char-font);font-size:15px;color:var(--ink)}
+  .reading-disputed{color:var(--wrong)}
   .reading-clear{margin-inline-end:auto}
   .reading-editor{display:grid;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface);min-width:0}
   .reading-line{display:flex;flex-wrap:wrap;row-gap:4px;font-family:var(--char-font);font-size:19px;line-height:1}
