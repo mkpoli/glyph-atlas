@@ -69,8 +69,10 @@ through みんなで翻刻.
 - Unicode data files and the IVD: Unicode License v3, notice and text in `LICENSES/Unicode-3.0.txt` and reproduced in
   `ATTRIBUTION.md`.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
-- CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
-  possible in principle and is not planned.
+- Parts no code point names (`data/vocab/custom-parts.tsv`, record `data/sources/ids-input-custom-parts.yaml`):
+  ids-input's table of BabelStone's numbered parts (public domain), CHISE IDS entities and zi.tools stroke chains,
+  each with the identifier ids-input gives the shape. Which shape a part is, and which name another source gives it,
+  are facts; the table holds those facts and no text of CHISE's GPL-2.0-or-later files, and credits every source.
 - Component tables (`data/vocab/han-ids.tsv`, `data/vocab/han-component-forms.tsv`,
   `data/vocab/han-component-ucv.tsv`): BabelStone
   IDS.TXT, whose header states that IDS sequences are facts not eligible for copyright and waives any

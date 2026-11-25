@@ -1,0 +1,49 @@
+id: ids-input-custom-parts
+name: ids-input custom components (parts no code point names, with their identifiers)
+publisher: mkpoli, ids-input
+kind: reference-table
+url: https://github.com/mkpoli/ids-input/blob/6b790780628b7d7d2a0bbc2f69d51ef0061ed58f/docs/custom-components.md
+version: "commit 6b790780628b7d7d2a0bbc2f69d51ef0061ed58f, data/custom-components.json.gz sha256:22c430de0326d61d05cd868341acecadd320fa2528dd2e1f7f734cc099d50d3f"
+licence: PD
+licence_evidence: https://github.com/mkpoli/ids-input/blob/6b790780628b7d7d2a0bbc2f69d51ef0061ed58f/docs/custom-components.md
+attribution: "mkpoli, ids-input custom-components; from Andrew West (魏安), BabelStone IDS.TXT; MORIOKA Tomohiko and contributors, CHISE IDS; Yi Bai (白易), zi.tools IDS; NightFurySL2001 et al., （白式）IDS 延展语法导论; 黒丿乀 (@midzchi_), IDS（漢字構成記述文字列）ガイド"
+access:
+  file: https://raw.githubusercontent.com/mkpoli/ids-input/6b790780628b7d7d2a0bbc2f69d51ef0061ed58f/data/custom-components.json.gz
+format:
+  table: "data/vocab/custom-parts.tsv, built by scripts/build_custom_parts.py: identifier, every name (BabelStone {n}, CHISE &…;, zi.tools #(…), descriptions that draw it), its drawing, approximate, BabelStone's note 6 description, retired"
+upstreams:
+  - id: babelstone-ids
+    what: the 121 numbered parts {1}–{122}, note 6's description of each and the 52 fragments that write one out
+    file: https://www.babelstone.co.uk/CJK/IDS.TXT
+    version: File Date 2025-06-27, sha256:563f8da2b3e43d21dfb271fa3331dd0f3df96eb2518dc8d8c0cbf309d119be6a
+    licence: PD
+  - id: chise-ids
+    what: 1,387 entity references (&CDP-…;, &GT-…; and others) and which BabelStone part or description each is the same shape as
+    file: https://gitlab.chise.org/CHISE/ids
+    version: main@2026-11-04, sha256:af1ecc1621fb97962eb16e4001e1affd9cdd161020c25bebb98ab565cadc45ac
+    licence: GPL-2.0-or-later
+    attribution: MORIOKA Tomohiko and contributors, CHISE IDS
+  - id: zi-tools-ids
+    what: 164 stroke chains #(…) and the descriptions they equal
+    file: https://github.com/yi-bai/ids/blob/da1e9f8a09e2ec8faaf176bac99203f978282041/ids_lv1.txt
+    version: commit da1e9f8a09e2ec8faaf176bac99203f978282041, sha256:51f78d7d84f52fd73e5bc155c2239b737c58ce627d446894a809f1a36547ae18
+    licence: MIT
+    attribution: Copyright (c) 2021 Yi Bai
+  - id: bai-ids
+    what: the stroke letters of the chains
+    file: https://nightfurysl2001.github.io/bai-ids/
+    version: 2026-09-30, commit 062ce3dfc80ef69984463b10f4cd7d9075ed4f54
+    licence: MIT
+    attribution: NightFurySL2001, with Yi Bai, 1-PT-AxH-RV-0 and Losketch
+  - id: midzchi-ids-guide
+    what: stroke names, read from the guide's stroke table
+    file: https://note.com/midzchi_/n/n21737ee18736
+    version: 2025-09-30
+    licence: none stated
+    attribution: 黒丿乀 (@midzchi_)
+    weakness: the stroke table is an image and its author warns it holds mistakes
+notes:
+  - "Which shape a part is, which name another source gives the same shape, and how a character decomposes are facts, so the atlas treats the table as public domain, as it does cjkvi-variants, and credits every source; CHISE IDS states GPL-2.0-or-later for its files, and nothing of CHISE's own text or files is copied, only which of its entities is which shape."
+  - "An identifier is written &X-NNNNN; inside a description. ids-input also maps each to private-use code point U+F0000 plus its number; the atlas never stores that character, since its drawn forms (data/vocab/drawn-forms.yaml) begin at U+F0000."
+  - "Drawings: 52 numbered parts are written out by BabelStone's fragments (an editorial one for {82}, 聿, and {12}); 69 only by the private-use glyph of BabelStone Han PUA; 763 parts of all three sources by descriptions in encoded characters alone."
+checked: 2026-11-26
