@@ -78,6 +78,7 @@ MJ_KANJI_NAME = "mj-kanji.tsv"
 FAMILIES_NAME = "grapheme-families.tsv"
 TONGYONG_NAME, TONGYONG_FORMS_NAME = "tongyong-guifan.tsv", "tongyong-guifan-forms.tsv"
 HEADWORDS_NAME, APART_NAME = "headword-readings.tsv", "grapheme-apart.tsv"
+RULINGS_NAME = "grapheme-rulings.tsv"
 VOICING_NAME = "kana-voicing.tsv"
 FAMILY_FIELDS = ("head", "a", "b", "relation", "source", "role", "detail")
 
@@ -685,7 +686,8 @@ def _add_shape_families(
         shape_families.standard_forms(
             read_table(vocab / TONGYONG_FORMS_NAME),
             {row["char"]: int(row["position"]) for row in read_table(vocab / TONGYONG_NAME)}),
-        shape_families.Headwords(read_table(vocab / HEADWORDS_NAME)), decisions)
+        shape_families.Headwords(read_table(vocab / HEADWORDS_NAME)), decisions,
+        shape_families.rulings(read_table(vocab / RULINGS_NAME)))
     for family in families:
         head = code_point(ord(family.head))
         for member in family.members:

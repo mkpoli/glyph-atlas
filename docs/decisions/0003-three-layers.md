@@ -83,7 +83,8 @@ the two tables were outside their full form's grapheme. What a form is for is no
 tables, with Unihan and OpenCC, and 430 of them join it. 179 stay apart
 (`data/vocab/grapheme-apart.tsv`, each with its reasons): the form is also itself (后, 价, 谷), writes several
 characters (发, 历, 弁), is a headword of the 說文解字 or the 廣韻 read otherwise (听, 从, 机), is listed beside its full
-form (着, 了), or is a loan for it. `glyph_atlas.shape_families` states each rule with its sources. The joined
+form (着, 了), or is a loan for it. `glyph_atlas.shape_families` states each rule with its sources, and
+`data/vocab/grapheme-rulings.tsv` the pairs ruled on by hand. The joined
 grapheme keeps the key of the full form's, unless the form is better known in Japan (没 over 沒, 黄 over 黃).
 
 - 教育部・国家语言文字工作委员会『通用规范汉字表』附件1 规范字与繁体字、异体字对照表, 国发〔2013〕23号, as transcribed by

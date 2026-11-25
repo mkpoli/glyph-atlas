@@ -94,6 +94,10 @@ when
    states one with the full form (铀: 鈾 stands under 宙, its 古文);
 7. what it would bring along is different from the family in one of the senses of 5, or the two are curated.
 
+A ruling of `data/vocab/grapheme-rulings.tsv` settles a pair before these rules do: `one` joins the form to the
+full form named, the only one it then has, and `two` keeps them apart. What 7 says of the rest of the form's
+family still holds.
+
 A form the second pass put elsewhere leaves that family with what hangs on it alone (备 under 留, 壳 under
 売), and a form that heads its own takes the whole of it along (黄). The joined family keeps the head of
 its full form's, unless the form's is better known to a Japanese reader (`familiarity`: 没 over 沒), or known as
@@ -295,6 +299,26 @@ class StandardForm:
     others: frozenset[str] = frozenset()
 
 
+@dataclass(frozen=True)
+class Ruling:
+    """Whether a standard form and a full form are `one` character, by whom and when."""
+
+    one: bool
+    by: str
+    date: str
+
+
+def rulings(rows: Iterable[Mapping[str, str]]) -> dict[tuple[str, str], Ruling]:
+    """The rulings of `data/vocab/grapheme-rulings.tsv`, by form and full form."""
+    found: dict[tuple[str, str], Ruling] = {}
+    for row in rows:
+        pair = row["form"], row["full"]
+        if row["ruling"] not in ("one", "two") or not row["by"] or not row["date"] or pair in found:
+            raise ValueError(f"a ruling is `one` or `two`, once a pair, with who and when: {row}")
+        found[pair] = Ruling(row["ruling"] == "one", row["by"], row["date"])
+    return found
+
+
 @dataclass
 class Decision:
     """What the third pass found of one standard form: its full forms of other families, the edges that state them and, where it
@@ -403,6 +427,7 @@ def families(
     standard: Mapping[str, StandardForm] | None = None,
     headwords: Headwords | None = None,
     decisions: list[Decision] | None = None,
+    rulings: Mapping[tuple[str, str], Ruling] | None = None,
 ) -> list[Family]:
     """Every family of more than one character or with a writer, curated ones included, in head code
     point order.
@@ -416,7 +441,7 @@ def families(
     their own, with a reading or a definition; any other one a family takes in no shape stands for
     the families it is a variant of (`_add_stand_ins`). Without it, none does. `standard` is the
     通用规范汉字表 and `headwords` the two dictionaries of the third pass, whose findings `decisions`,
-    when given, collects; without `standard` the pass does not run.
+    when given, collects; without `standard` the pass does not run. `rulings` settles pairs of that pass by hand.
     """
     variants = list(variants)
     edges, corroboration, blocked = candidate_edges(
@@ -468,10 +493,13 @@ def families(
     headwords = headwords or Headwords()
     reduced_forms, unlike, standalone, stated = _join_yixiezi(
         variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse)
+    settled: set[tuple[str, str]] = set()
     if standard is not None:
-        found = _join_standard_forms(variants, ideographs, group, refuse, standard, headwords, standalone, familiarity or {})
+        found = _join_standard_forms(variants, ideographs, group, refuse, standard, headwords, standalone, familiarity or {}, rulings or {}, settled)
         if decisions is not None:
             decisions.extend(found)
+    if idle := sorted(set(rulings or {}) - settled):
+        raise ValueError("rulings on pairs no rule decides: " + ", ".join(f"{a}{b}" for a, b in idle))
     _add_writers(reduced_forms, unlike, standalone, group)
     if readings is not None:
         _add_stand_ins(stated, unlike, readings, group)
@@ -627,6 +655,7 @@ def _is_different(rows: Iterable[Mapping[str, str]]) -> str | None:
 def _join_standard_forms(
     variants: list[Mapping[str, str]], ideographs: set[str], group: dict[str, Family], refuse,
     standard: Mapping[str, StandardForm], headwords: Headwords, standalone: set[str], familiarity: Mapping[str, int],
+    rulings: Mapping[tuple[str, str], Ruling], settled: set[tuple[str, str]],
 ) -> list[Decision]:
     """The third pass (see the module docstring): join each form a national standard prescribes for one character."""
     between: dict[frozenset[str], list[Mapping[str, str]]] = {}
@@ -663,9 +692,12 @@ def _join_standard_forms(
         return not two_characters(a, b) and any(row["relation"] in VARIANT for row in between.get(frozenset((a, b)), ()))
 
     def decide(form: str, full: set[str], further: set[str], edges: list[Edge], table: StandardForm | None) -> Decision | None:
+        ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
+        full = {char for char, ruling in ruled.items() if ruling.one} or full
         families = {id(unit(char)) for char in full}
         if form in group and families == {id(group[form])}:
             return None
+        settled.update((form, char) for char in ruled)
         edges += [Edge(row["a"], row["b"], row["relation"], row["source"], row["detail"])
                   for char in sorted(full) for row in between.get(frozenset((form, char)), ())
                   if row["b"] == form and row["relation"] in REDUCED_FORM or "joyo/variant" in row["detail"]]
@@ -699,6 +731,10 @@ def _join_standard_forms(
             curated = any(char in target.stated for char in full)
             if table is not None and head in standard and head != form and head not in full and not curated:
                 found.reasons.append(f"its full form is of the grapheme of {head}, another character of the table")
+        if any(ruling.one for ruling in ruled.values()) and len(families) == 1:
+            found.reasons.clear()
+        found.reasons += [f"ruled two characters: {char}, {ruling.by} {ruling.date}"
+                          for char, ruling in sorted(ruled.items()) if not ruling.one and char in full]
         found.full = frozenset(full - unit(form).members)
         return found
 

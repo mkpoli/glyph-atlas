@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from glyph_atlas import refs
-from glyph_atlas.shape_families import Decision, Headwords, families, standard_forms
+from glyph_atlas.shape_families import Decision, Headwords, families, rulings, standard_forms
 
 ROOT = Path(__file__).resolve().parents[1]
 VOCAB = ROOT / "data" / "vocab"
@@ -43,11 +43,15 @@ def headwords(*rows: tuple[str, str, str, str]) -> Headwords:
                      for dictionary, entry, char, reading in rows)
 
 
-def decided(variants, standard, *, words=None, curated=None, figures=None, familiar=""):
+def ruled(*rows: tuple[str, str, str]) -> dict:
+    return rulings({"form": form, "full": full, "ruling": ruling, "by": "owner", "date": "2026-11-25", "note": ""} for form, full, ruling in rows)
+
+
+def decided(variants, standard, *, words=None, curated=None, figures=None, familiar="", hand=None):
     chars = {char for row in variants for char in (row["a"], row["b"])} | {c for one in standard.values() for c in {one.char, *one.full}}
     found: list[Decision] = []
     joined = families(variants, (), chars, figures or {}, set(), curated, familiarity={char: 0 for char in familiar},
-                      standard=standard, headwords=words, decisions=found)
+                      standard=standard, headwords=words, decisions=found, rulings=hand)
     return ({family.head: "".join(sorted(family.members)) for family in joined if len(family.members) > 1},
             {one.form: one.reasons for one in found})
 
@@ -55,6 +59,27 @@ def decided(variants, standard, *, words=None, curated=None, figures=None, famil
 #: 动 is the simplified 動, and other tables also relate it to 働 and 甲, so the 異寫字 pass joins it to none.
 DONG = [edge("動", "动"), edge("働", "动", "variant", "wikidata"), edge("动", "甲", "variant", "wikidata"),
         edge("甲", "乙", "variant", "wikidata"), edge("働", "丙", "variant", "wikidata")]
+
+
+def test_a_ruling_settles_a_pair_whatever_the_rules_say_of_it():
+    table, several = forms(动=[("動", "")]), forms(发=[("發", ""), ("髮", "")])
+    variants = [edge("發", "发"), edge("髮", "发")]
+    assert decided(DONG, table)[1] == {"动": []}
+    assert decided(DONG, table, hand=ruled(("动", "動", "two")))[1] == {"动": ["ruled two characters: 動, owner 2026-11-25"]}
+    joined, reasons = decided(variants, several)
+    assert joined == {} and reasons == {"发": ["several characters: 發髮"]}
+    joined, reasons = decided(variants, several, hand=ruled(("发", "發", "one")))
+    assert sorted(joined.values()) == ["发發"] and reasons == {"发": []}
+
+
+def test_a_ruling_that_settles_nothing_stops_the_build():
+    with pytest.raises(ValueError, match="动甲"):
+        decided(DONG, forms(动=[("動", "")]), hand=ruled(("动", "甲", "two")))
+    # A pair an earlier pass joined is none of this one's.
+    with pytest.raises(ValueError, match="动動"):
+        decided([edge("動", "动")], forms(动=[("動", "")]), hand=ruled(("动", "動", "two")))
+    with pytest.raises(ValueError, match="once a pair"):
+        ruled(("动", "動", "perhaps"))
 
 
 def test_a_form_of_one_character_joins_whatever_else_relates_it():

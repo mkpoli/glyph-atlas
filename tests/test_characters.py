@@ -486,6 +486,7 @@ def write_shape_tables(vocab: Path, variants: str = "", equivalents: str = "", f
     (vocab / "tongyong-guifan.tsv").write_text("position\tcode_point\tchar\n", encoding="utf-8")
     (vocab / "tongyong-guifan-forms.tsv").write_text("position\tchar\tfull\tvariant\tnote\n", encoding="utf-8")
     (vocab / "headword-readings.tsv").write_text("dictionary\tentry\tchar\trole\treading\n", encoding="utf-8")
+    (vocab / "grapheme-rulings.tsv").write_text("form\tfull\truling\tby\tdate\tnote\n", encoding="utf-8")
 
 
 @pytest.fixture
