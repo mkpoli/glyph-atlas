@@ -32,7 +32,8 @@
     normalizeQuizTileSize, switchQuizView, resizeQuizTiles, cropSectionForm, groupRoundByForm,
   } from '../lib/reviewRounds.js'
   import { t, around, localize, delocalize } from '../lib/i18n.svelte.js'
-  import { unslug } from '../lib/addresses.js'
+  import { ledTo, unslug } from '../lib/addresses.js'
+  import { character as layerCharacter } from '../lib/layers.js'
   import { useSession } from '../lib/session.svelte.js'
   let { initialGrapheme = '', initialProduction = '', inspect } = $props()
   // The browser's reviewer id, which a form marking and its undo name like every other save.
@@ -222,7 +223,7 @@
         && each.onlySuspects === Boolean(round.suspects))
     if (index >= 0 && index === historyIndex) address('replace')
     else if (index >= 0) visit(index, { followed: true })
-    else load({ target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) })
+    else load({ target: round.grapheme || null, asked: true, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) })
   }
   async function chooseCategory(target) {
     categoryOpen = false
@@ -232,14 +233,18 @@
     if (previous >= 0) visit(previous)
     else load({ target })
   }
-  async function load({ target = null, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push', only = onlySuspects } = {}) {
+  /** Deals a round: of `target`, or the next. `asked` is a target an address or a history entry names, whose
+   *  key may have been a grapheme's and be a member's since: its grapheme's round is dealt. */
+  async function load({ target = null, asked = false, replace = false, scope = production, seed: dealt = null, how = replace ? 'replace' : 'push', only = onlySuspects } = {}) {
     checkpoint()
     // A round dealt again in place keeps its history entry.
     const kept = replace ? entry : null
     const id = ++requestId
     loading = true; loadingMore = false; error = ''; errorStatus = 0; categoryOpen = false
     try {
-      const summary = await catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending', ...suspectsParam(only) })
+      const [summary, named] = await Promise.all([
+        catalogue({ purpose: 'review', production: scope, limit: 0, state: 'pending', ...suspectsParam(only) }),
+        asked && target ? layerCharacter(target, 'none').then(ledTo).catch(() => target) : target])
       if (closed || id !== requestId) return
       // A summary of suspects alone counts for a round it deals, and not for the one on screen.
       if (!only || !grapheme) data = summary
@@ -254,7 +259,7 @@
       // A grapheme whose count promised crops that cannot be dealt gives way to the next one.
       let available = roundGraphemes(summary.categories).filter(c => c.pending > 0), chosen = null, seed = dealt ?? randomSeed(), result = null
       for (let tries = 0; tries < 8; tries++) {
-        chosen = tries === 0 && target && available.some(c => dealsFor(c, target)) ? target
+        chosen = tries === 0 && target && available.some(c => dealsFor(c, named) || dealsFor(c, target)) ? named
           : nextGrapheme(available, scope === production ? grapheme : '', history.filter(r => r.production === scope), randomSeed())
         if (!chosen) break
         result = await firstCrops(cursor => catalogue({ purpose: 'review', production: scope, grapheme: chosen, state: 'pending', limit: ROUND_BATCH, seed,
@@ -265,7 +270,7 @@
         chosen = null
       }
       // Opened on suspects alone, or taken to a material, with none to deal, a round deals the rest.
-      if (!chosen && only && (!grapheme || scope !== production)) return await load({ target, replace, scope, seed: dealt, how, only: false })
+      if (!chosen && only && (!grapheme || scope !== production)) return await load({ target, asked, replace, scope, seed: dealt, how, only: false })
       if (!chosen) {
         if (scope !== production) {
           restoreRound({ grapheme: '', members: [], items: [], choices: {}, selected: {}, skipped: {}, suggestions: {},
@@ -979,8 +984,8 @@
     groupByForm = stored('atlas.quiz.group-by-form', true) !== false
     const kept = carried(), round = page.state.round
     if (kept) resume(kept)
-    else load(round ? { target: round.grapheme || null, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
-      : { target: initialGrapheme || null, how: 'replace', only: locationRound().suspects })
+    else load(round ? { target: round.grapheme || null, asked: true, scope: materialOf(round.production), how: 'replace', only: Boolean(round.suspects) }
+      : { target: initialGrapheme || null, asked: true, how: 'replace', only: locationRound().suspects })
     return () => { closed = true }
   })
 </script>

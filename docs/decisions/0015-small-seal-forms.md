@@ -68,12 +68,14 @@ A seal character's own card opens on its own crops.
 
 ## Keys that name a member
 
-A seal character's key was a grapheme's, and is a member's. As for every member (ハ, 萅):
+A seal character's key was a grapheme's, and is a member's:
 
 - A round under a member's key (`/review/U+3D307`) deals that character's crops alone, on every page, and
-  saves no other. A round under the grapheme's key deals the seal characters with the rest; one narrowed
+  saves no other. An address or a history entry that names a member of the head's own script (ハ, 萅, or 国
+  once it is filed under 國) opens the head's round; a round already open goes on as that member's. A round under the grapheme's key deals the seal characters with the rest; one narrowed
   to a script deals the corpus glyphs of that script's members.
-- A listing under a member's key (`/?grapheme=U+3D307`) holds that character alone.
+- A listing under a seal character's key (`/?grapheme=U+3D307`) holds that character alone. Under any other
+  member's it is the grapheme's, and the address becomes the head's.
 - A new `has_grapheme` or `written_for` claim, one kept on a device among them, is recorded under the head.
   A `written_for` claim is taken back by the key it was recorded under, or by a member's.
 

@@ -1031,6 +1031,9 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
         document = document or None
         grapheme = " ".join(grapheme.upper().split()) if grapheme else None
+        # A listing under a member's key is its grapheme's, and a small seal character's is its own, as on the hosted site.
+        if grapheme and purpose != "review" and not refs.is_small_seal(refs.from_code_points(grapheme.split(" "))):
+            grapheme = refs.grapheme(grapheme) or grapheme
         # A round names its grapheme, and deals every character the character table files under it.
         members = grapheme_members(grapheme) if purpose == "review" and grapheme else None
         records = [(u, rev) for u, rev in units
@@ -1057,7 +1060,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         families = {name: grapheme_of(name) for name in categories}
-        # A member's key names that character alone, as on the hosted site.
+        # A member's key, of a round or a small seal character, names that character alone.
         alone = grapheme if grapheme and refs.grapheme(grapheme) not in (None, grapheme) else None
         selected = [(u, rev) for u, rev in searched if (character is None or shown(u) == character)
                     and (grapheme is None or (" ".join(refs.to_code_points(shown(u))) == alone if alone else families.get(shown(u)) == grapheme))
@@ -1090,7 +1093,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
                 **({"grapheme": {"code_point": grapheme, "char": refs.from_code_points(grapheme.split(" ")),
-                                 "members": members}} if members is not None else {}),
+                                 "members": members}} if members is not None else {"head": grapheme} if grapheme else {}),
                 "categories": [{"label": name, "grapheme": families[name], **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],
