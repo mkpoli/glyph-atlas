@@ -351,6 +351,12 @@ describe('the browse page', () => {
     expect((await get(env, '/atlas?limit=0')).categories.find((c: any) => c.label === 'ハ').grapheme).toBe('U+306F');
   });
 
+  it('refuses a key that names no text, in a listing and in a round', async () => {
+    const { env } = await setup();
+    for (const key of ['invalid', 'U%2B110000', '%E3%81%82']) for (const purpose of ['browse', 'review'])
+      await expect(get(env, `/atlas?purpose=${purpose}&grapheme=${key}`)).rejects.toThrow('Invalid grapheme.');
+  });
+
   it('goes on under the key of a member where a page of its own listing left off', async () => {
     const { env } = await setup();
     const { seen } = await every(env, '/atlas?seed=7&grapheme=U%2B306F', 3);

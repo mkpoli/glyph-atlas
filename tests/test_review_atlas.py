@@ -378,8 +378,11 @@ def test_a_round_is_dealt_for_a_grapheme_and_its_members(dataset):
     listed = [client.get('/atlas', params={"grapheme": key}).json() for key in ("U+3057", "U+30B7")]
     assert [(answer["head"], answer["total"]) for answer in listed] == [("U+3057", 4)] * 2
     assert client.get('/atlas', params={"purpose": "review", "grapheme": "U+30A2"}).json()["total"] == 0
-    for key in ("invalid", "U+110000"):
-        assert client.get('/atlas', params={"purpose": "review", "grapheme": key}).status_code == 422
+    for key in ("invalid", "U+110000", "あ", "U+3042 あ", "U+D800"):
+        for purpose in ("review", "browse"):
+            refused = client.get('/atlas', params={"purpose": purpose, "grapheme": key})
+            assert (refused.status_code, refused.json()["detail"]) == (422, "Invalid grapheme."), (key, purpose)
+    assert client.get('/atlas', params={"grapheme": " u+3057 "}).json()["head"] == "U+3057"
     payload = round_payload(client)
     payload['grapheme'] = "U+110000"
     assert client.post('/atlas/rounds', json=payload).status_code == 422
