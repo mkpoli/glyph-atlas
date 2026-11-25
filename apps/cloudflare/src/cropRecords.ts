@@ -6,7 +6,7 @@ import { bundle, publicId, pageOf, slotOf, type Entry } from './atlas3';
 import { readRecords, recordKey } from './records';
 import { formed, type UnitForm } from './forms';
 import { categoryOf, isGugyeol, isSeal } from './category';
-import { keyHeads } from './ledger';
+import { graphemeKey, keyText } from './ledger';
 import { drawnForm } from './representation';
 
 type Json = Record<string, any>;
@@ -117,18 +117,25 @@ export function writtenRecord(record: Json, written: string, head: string | null
     grapheme: codePoints(head ?? written), visual_group: null, category: categoryOf(written) };
 }
 
+// Texts of `graphemes` with the head each is filed under, null for one no table files yet.
+export const filedQuery = () => `SELECT g.text,h.text AS head FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text IN (SELECT value FROM json_each(?))`;
 /** Records that name a grapheme, each under the head it is filed under now: a record keeps the one its publication, or a
- *  forms decision, gave it, and a later table may file it elsewhere. A record written with its row's character is under
- *  that character's head (`head`, null for a row with none yet). Any other is under the head of the grapheme it names: a
- *  crop with no character, a form no table files (a description, a character named since the last reference load), and a
- *  crop whose row keeps another character than its form's. Those are looked up together, one read for all. */
+ *  forms decision, gave it, and a later table may file it elsewhere. A record is under the head of what it is written
+ *  with, a glyph with no character under its label's, as its runs are filed. One written with its row's character has
+ *  that head there (`head`); for the others the texts are looked up, one read for all. A form no table files (a
+ *  description, a character named since the last reference load) is of the grapheme the record names, under its head. */
 export async function underHeads(env: Env, found: { record: Json; char: string | null; head: string | null }[]): Promise<Json[]> {
-  const written = (record: Json) => record.written_character !== undefined ? record.written_character : record.char ?? record.label;
-  const names = ({ record }: { record: Json }) => typeof record.grapheme === 'string';
-  const own = (f: { record: Json; char: string | null; head: string | null }) => f.head !== null && f.char !== null && written(f.record) === f.char;
-  const asked = found.filter(f => names(f) && !own(f)).map(f => f.record.grapheme as string);
-  const heads = asked.length ? await keyHeads(env, asked) : new Map<string, string>();
-  return found.map(f => !names(f) ? f.record : { ...f.record, grapheme: own(f) ? codePoints(f.head!) : heads.get(f.record.grapheme) });
+  type Found = typeof found[number];
+  const names = ({ record }: Found) => graphemeKey(record.grapheme);
+  const written = ({ record }: Found): string | null => record.written_character ?? record.char ?? record.label ?? null;
+  const own = (f: Found) => f.head !== null && f.char !== null && written(f) === f.char;
+  const asked = [...new Set(found.filter(f => names(f) && !own(f)).flatMap(f => [written(f), keyText(f.record.grapheme)]).filter(text => text))];
+  const heads = new Map(asked.length ? (await env.ATLAS.prepare(filedQuery()).bind(JSON.stringify(asked)).all<{ text: string; head: string | null }>()).results.map(r => [r.text, r.head]) : []);
+  return found.map(f => {
+    if (!names(f)) return f.record;
+    const head = own(f) ? f.head : heads.get(written(f) ?? '') ?? heads.get(keyText(f.record.grapheme));
+    return head ? { ...f.record, grapheme: codePoints(head) } : f.record;
+  });
 }
 
 /** The record of a crop from its row and the published fields (`base`: the bundle entry, or the corpus

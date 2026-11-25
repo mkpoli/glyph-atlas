@@ -263,9 +263,33 @@ describe('a crop\'s record', () => {
     // Once a load files it, it is under its own head.
     db.exec(`UPDATE graphemes SET head=2 WHERE text='𦐈'`);
     expect(await named()).toEqual(['𦐈', 'U+4E8C']);
-    // A reviewed glyph keeps its row's character while its form says another: 翁's, under 翁's head.
+    // A reviewed glyph keeps its row's character, 一, while its form says 𦐈: the record is written 𦐈, so it is of 𦐈's
+    // grapheme, as its tile and its page say, and neither of its row's nor of the one its decision was made in.
     db.exec(`UPDATE crops SET char=1 WHERE id=${ids.glyph}; UPDATE graphemes SET head=1 WHERE id=1`);
-    expect(await named()).toEqual(['𦐈', 'U+7FC1']);
+    expect(await named()).toEqual(['𦐈', 'U+4E8C']);
+  });
+
+  it('is of the grapheme its label is filed under, where the label is all that names it, as its runs are', async () => {
+    const { get, ids, db, env } = setup();
+    // A glyph its source calls 备, under 留 when it was published, that no row gives a character.
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(20,'留',20),(21,'备',20),(22,'備',22); UPDATE crops SET char=NULL,cluster=NULL WHERE id=${ids.glyph}; UPDATE graphemes SET head=20 WHERE id=6`);
+    const named = async () => { const r = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any; return [r.written_character, r.grapheme]; };
+    expect(await named()).toEqual(['翁', 'U+7559']);
+    db.exec('UPDATE graphemes SET head=22 WHERE id=6');
+    expect(await named()).toEqual(['翁', 'U+5099']);
+    // One with no written form of its own is under its label's too; its record names 翁, which heads itself.
+    db.exec('UPDATE graphemes SET head=6 WHERE id=6');
+    const { underHeads } = await import('../cropRecords');
+    const unassigned = { written_character: null, char: '备', label: '备', identity_status: 'unassigned', grapheme: 'U+7559' };
+    const of = async (record: object, char: string | null = null, head: string | null = null) => (await underHeads(env, [{ record, char, head }]))[0].grapheme;
+    expect(await of(unassigned)).toBe('U+7559');
+    db.exec('UPDATE graphemes SET head=22 WHERE id=21');
+    expect(await of(unassigned)).toBe('U+5099');
+    // A reviewed glyph whose row keeps 留, its form decided 备 when 备 was under it.
+    expect(await of({ written_character: '备', char: '备', label: '备', grapheme: 'U+7559' }, '留', '留')).toBe('U+5099');
+    // A key or a text the table lacks stays as it is named, and what names no grapheme gains none.
+    expect(await of({ written_character: '⿰未未', grapheme: 'U+9999' })).toBe('U+9999');
+    expect(await of({ written_character: '备' })).toBeUndefined();
   });
 
   it('claims a described form’s grapheme over the one the form is of', async () => {
