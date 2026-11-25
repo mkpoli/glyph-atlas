@@ -67,9 +67,10 @@ under its card's one code point); and the citations of the sources behind them, 
 card's character or family head the layout lacks is numbered as the publisher numbers one, and every grapheme takes its card's family head.
 Graphemes are written as `publish.py` writes them, through `char_text`. Before anything is sent, and in a
 dry run, a load that moves a head is checked (`check_heads`), as are the remaining parts of one that
-stopped: it stops where it moves other than a small seal character's (`--heads` lets it), where a run is
-filed under a moved grapheme, and where a live `written_for` claim names one; `has_grapheme` claims are
-listed. The check reads D1 and writes nothing, and its report is printed again once the rows have landed.
+stopped: it stops where it moves other than a small seal character's (`--heads` lets it), and where a live
+`written_for` claim names a moved grapheme; `has_grapheme` claims are listed, and the runs the load files
+again under the heads it moves, with the rows that takes (`refile.py`, once the rows have landed, whatever
+run of the load lands them). The check reads D1 and writes nothing, and its report is printed again then.
 
 Only what differs is sent: the rows that differ from `out/atlas.sqlite`, as statements in parts
 under `out/reference-load/reference-<generation>-<digest>/`, each confirmed by its stamp in `imports`
@@ -103,11 +104,11 @@ import sys
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from contextlib import closing
 
+import refile
 from build import OUT, ROOT, char_text
 from load_history import built, deliver, row_statements, stamped
-from publish import BUCKET, CF, R2_REMOTE, RUNS_DATABASE, applied, graphemes_of, lit, query, send, upload
+from publish import BUCKET, CF, R2_REMOTE, applied, lit, query, send, upload
 
 from glyph_atlas import reference_input, refs
 from glyph_atlas import structures as structure_layer
@@ -698,16 +699,13 @@ HEAD_UPDATE = re.compile(r"^UPDATE graphemes SET head = (\d+) WHERE id = (\d+);$
 
 
 def moved_heads(atlas, changed, new):
-    """Each character whose family head this load moves and that head, by their texts: the changed heads but
-    those that only name a grapheme, until now under no head, as its own."""
+    """Each character whose family head this load moves with that head and the one it moves from, by their texts:
+    the changed heads but those that only name a grapheme, until now under no head, as its own."""
     held = {gid: (text, head) for gid, text, head in atlas.execute("SELECT id, text, coalesce(head, id) FROM graphemes")}
     texts = {gid: text for gid, (text, _) in held.items()} | {gid: text for text, gid in new.items()}
-    return {held[gid][0]: texts.get(head) for gid, head in sorted(changed.items()) if held[gid][1] != head}
+    return {held[gid][0]: (texts.get(held[gid][1]), texts.get(head)) for gid, head in sorted(changed.items()) if held[gid][1] != head}
 
 
-# The runs whose key a grapheme claim has moved since the last publish (`publish.take_moves`), as D1 files
-# them: per move, its row and the few runs its first crop starts, by `run_first_all`.
-MOVED_RUNS = "SELECT DISTINCT r.graphemes FROM run_moves m CROSS JOIN runs r ON r.first = m.first AND r.size = m.size"
 # The live claims that name a grapheme, by it: the `U+` range of `assertion_object`, two rows a claim and
 # one or two more for its actions.
 CLAIMED = """SELECT a.object, a.predicate, a.subject FROM assertions a WHERE a.object >= 'U+' AND a.object < 'U,'
@@ -715,47 +713,39 @@ CLAIMED = """SELECT a.object, a.predicate, a.subject FROM assertions a WHERE a.o
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion = a.id AND x.action = 'retract')"""
 
 
-def head_records(moved):
-    """What names a character of `moved`: the run keys, in the local copy of the runs and among those D1 has
-    moved since; the characters of live `has_grapheme` claims; and the characters and forms of live
+def head_records(atlas, moved):
+    """What names a character of `moved`: the runs the load files again (`refile.planned`), by kind of row and by
+    their keys; the characters of live `has_grapheme` claims; and the characters and forms of live
     `written_for` claims, but a form's that is filed under the new head as well."""
-    if not (OUT / "atlas-runs.sqlite").exists():
-        sys.exit("the local copy of the runs is missing: a run spelled with a moved grapheme cannot be found")
-    texts = set(moved)
-    with closing(sqlite3.connect(f"file:{OUT / 'atlas-runs.sqlite'}?mode=ro", uri=True)) as runs:
-        keys = {key for (key,) in runs.execute("SELECT graphemes FROM run_stats")}
-    keys |= {r["graphemes"] for r in query(RUNS_DATABASE, MOVED_RUNS)}
+    filed, keys = refile.planned(atlas, moved)
     claims = query("glyph-atlas-v3", CLAIMED)
     forms = {(r["subject"], r["object"]) for r in claims if r["predicate"] == "written_for"}
-    heads = {code_point_of(text): head and code_point_of(head) for text, head in moved.items()}
-    return (sorted(key for key in keys if not texts.isdisjoint(graphemes_of(key))),
-            sorted({r["object"] for r in claims if r["predicate"] == "has_grapheme" and r["object"] in heads}),
+    heads = {code_point_of(text): head and code_point_of(head) for text, (_, head) in moved.items()}
+    return (filed, keys, sorted({r["object"] for r in claims if r["predicate"] == "has_grapheme" and r["object"] in heads}),
             sorted(f"{form} for {key}" for form, key in forms if key in heads and (form, heads[key]) not in forms))
 
 
-def report_heads(moved):
-    """Print what names a character of `moved` (`head_records`), and answer with what a load stops for: a
-    `has_grapheme` claim is read by the head its key is filed under, and stops none."""
-    spelled, read, filed = head_records(moved)
-    for label, named in (("run keys", spelled), ("has_grapheme claims", read), ("written_for claims", filed)):
-        print(f"{label} on {len(moved):,} moved heads: {', '.join(named) or 'none'}", flush=True)
-    return spelled, filed
+def report_heads(atlas, moved):
+    """Print what names a character of `moved` (`head_records`), and answer with the `written_for` claims a load
+    stops for: the runs are filed again, and a `has_grapheme` claim is read by the head its key is filed under."""
+    changed, keys, read, named = head_records(atlas, moved)
+    for label, found in (("run keys", keys), ("has_grapheme claims", read), ("written_for claims", named)):
+        print(f"{label} on {len(moved):,} moved heads: {', '.join(found) or 'none'}", flush=True)
+    print("\n".join(f"{n:,} {kind}" for kind, n in changed.items()), flush=True)
+    return named
 
 
-def check_heads(moved, any_head):
+def check_heads(atlas, moved, any_head):
     """Stop a load whose moved heads the site's records do not follow: a head of other than a small seal
-    character, unless `any_head`; a run filed under a moved grapheme; or a live `written_for` claim on one."""
+    character, unless `any_head`; or a live `written_for` claim on one."""
     if not moved:
         return
     others = [text for text in moved if not refs.is_small_seal(text)]
     if others and not any_head:
         sys.exit(f"this load moves the heads of {len(others):,} characters that are not small seal, "
                  f"{' '.join(others[:20])}; --heads lets it")
-    spelled, filed = report_heads(moved)
-    if spelled:
-        sys.exit(f"{len(spelled):,} run keys hold a grapheme whose head moves: {' '.join(spelled)}")
-    if filed:
-        sys.exit(f"written_for claims name a grapheme whose head moves: {', '.join(filed)}")
+    if named := report_heads(atlas, moved):
+        sys.exit(f"written_for claims name a grapheme whose head moves: {', '.join(named)}")
 
 
 def finish(atlas, any_head):
@@ -774,7 +764,7 @@ def finish(atlas, any_head):
         if run.name in started or applied("glyph-atlas-v3", f"{run.name}.{parts[0].stem}"):
             print(f"finishing {run.name}", flush=True)
             heads = moved_heads(atlas, {int(gid): int(head) for p in rest for head, gid in HEAD_UPDATE.findall(p.read_text())}, {})
-            check_heads(heads, any_head)
+            check_heads(atlas, heads, any_head)
             deliver(run, atlas)
             moved.update(heads)
         else:
@@ -985,19 +975,24 @@ def main():
         built(run, "rows", groups)
     parts = len(list(run.glob("*.sql"))) if run else 0
     moved = moved_heads(atlas, changed_heads, new)
+    if run and moved:
+        # What `refile` files the runs by once the rows have landed: the heads as the load found them.
+        (run / refile.HEADS).write_text(json.dumps(moved, ensure_ascii=False))
     notes["characters whose family head moves"] = len(moved)
     text = report(ref, written, objects, gone, notes, parts)
     (OUT / "reference-report.txt").write_text(text)
     print(text + (f"{parts} parts -> {run}" if run else "the local copy already holds these rows"), flush=True)
-    check_heads(moved, args.heads)
+    check_heads(atlas, moved, args.heads)
     if not args.send:
         print("dry run: nothing sent", flush=True)
         return
     if run:
         deliver(run, atlas)
-    # What was recorded while the rows landed.
+    # The runs of the heads moved, now or by a load that stopped before its runs were filed; then what was
+    # recorded while they landed.
+    refile.refile_moved(atlas)
     if finished or moved:
-        report_heads(finished | moved)
+        report_heads(atlas, finished | moved)
     if objects.changed() or gone:
         ship(objects, stage, gone)
     print("reference data loaded", flush=True)

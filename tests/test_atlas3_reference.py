@@ -75,8 +75,8 @@ class Bucket:
         return self.objects.get("v3/reference/manifest.json.gz", {})
 
 
-def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES, group=None):
-    for name in ("reference", "load_history"):
+def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES, group=None, batch=None):
+    for name in ("reference", "refile", "load_history"):
         sys.modules.pop(name, None)
     module = importlib.import_module("reference")
     history = importlib.import_module("load_history")
@@ -92,6 +92,8 @@ def load(remote, monkeypatch, *flags, bucket=None, probes=PROBES, group=None):
     monkeypatch.setattr(module, "PROBES", probes)
     if group:
         monkeypatch.setattr(module, "GROUP", group)
+    if batch:
+        monkeypatch.setattr(module.refile, "BATCH", batch)
     monkeypatch.setattr(module, "SEND_LOCK", READINGS["path"].parent / "lock" / "reference.lock")
     monkeypatch.setattr(sys, "argv", ["reference.py", *flags])
     module.main()
@@ -218,13 +220,6 @@ def sealed(root, remote):
     sources(root, cards=[card("已", members=["已", SEAL]), card(SEAL, head="已", members=["已", SEAL])])
 
 
-def spell(root, remote, where, key):
-    """The fixture's run あい, filed under `key` in D1 or in the local copy."""
-    db = remote.dbs["glyph-atlas-v3-runs"] if where == "d1" else sqlite3.connect(root / "out" / "atlas-runs.sqlite")
-    db.executescript(f"UPDATE runs SET graphemes='{key}'; UPDATE run_stats SET graphemes='{key}';")
-    return db
-
-
 def test_a_load_that_files_a_seal_character_under_its_kanji_moves_that_head_alone(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sealed(root, remote)
@@ -233,22 +228,13 @@ def test_a_load_that_files_a_seal_character_under_its_kanji_moves_that_head_alon
     assert "characters whose family head moves: 1\n" in (root / "out" / "reference-report.txt").read_text()
 
 
-@pytest.mark.parametrize("flags", [(), ("--send",)])
-def test_a_load_stops_where_a_run_is_filed_under_a_grapheme_whose_head_moves(layout, monkeypatch, flags):  # noqa: F811
+def test_a_load_that_moves_heads_needs_the_local_copy_of_the_runs(layout, monkeypatch):  # noqa: F811
     root, _publish, remote = layout
     sealed(root, remote)
-    # Spelled so in the local copy, or only in D1, where a claim moved it since the last publish.
-    spell(root, remote, "local", SEAL + "い")
-    with pytest.raises(SystemExit, match=f"1 run keys hold .* {SEAL}い"):
-        load(remote, monkeypatch, *flags)
-    spell(root, remote, "local", "あい")
-    first = ids(root)["ex:a1"]
-    spell(root, remote, "d1", SEAL + "い").executescript(f"INSERT INTO run_moves VALUES({first}, 2, {first});")
-    with pytest.raises(SystemExit, match=f"1 run keys hold .* {SEAL}い"):
-        load(remote, monkeypatch, *flags)
     (root / "out" / "atlas-runs.sqlite").unlink()
-    with pytest.raises(SystemExit, match="local copy of the runs is missing"):
-        load(remote, monkeypatch, *flags)
+    for flags in ((), ("--send",)):
+        with pytest.raises(SystemExit, match="local copy of the runs is missing"):
+            load(remote, monkeypatch, *flags)
     assert remote.dbs["glyph-atlas-v3"].execute("SELECT head FROM graphemes WHERE id=100").fetchone() == (100,)
 
 
