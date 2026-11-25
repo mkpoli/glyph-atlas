@@ -383,6 +383,45 @@ def test_a_form_an_earlier_pass_joined_to_one_of_its_full_forms_is_parted_from_i
     assert any({"发", "發"} <= set(members) for members in found.values()) and not any({"发", "髮"} <= set(members) for members in found.values())
 
 
+def test_a_form_left_with_part_of_its_full_forms_is_parted_whatever_the_order_of_the_table():
+    """乙 parts from 甲 and leaves 丙 with 甲 alone of its full forms 甲 and 丁."""
+    rows = [edge("甲", "丙", "z"), edge("甲", "乙", "z"), edge("乙", "丁", "z")]
+    for order in ((("丙", [("甲", "甲"), ("丁", "丁")]), ("乙", [("乙", "乙"), ("甲", "甲")])), (("乙", [("乙", "乙"), ("甲", "甲")]), ("丙", [("甲", "甲"), ("丁", "丁")]))):
+        found, reasons = decided(rows, forms(**dict(order)), familiar="甲")
+        assert not any("丙" in members and "甲" in members for members in found.values()), order
+        assert reasons["丙"][0] == "several characters: 丁甲", order
+
+
+def test_a_form_joined_as_it_is_is_parted_from_its_full_forms_by_no_later_move():
+    """丙 is joined to 甲 and 乙 as it is; 甲, the 新字体 of 庚, would go to it and leave 丙 with 乙 alone."""
+    rows = [edge("甲", "丙", "z"), edge("丙", "乙", "z"), edge("甲", "乙", "z"), edge("甲", "庚", "variant", "cjkvi-variants", "甲→庚 joyo/variant"),
+            edge("庚", "辛", "variant", "wikidata"), edge("辛", "癸", "variant", "wikidata"), edge("甲", "壬", "variant", "wikidata"), edge("壬", "子", "variant", "wikidata")]
+    found, reasons = decided(rows, forms(丙=[("甲", "甲"), ("乙", "乙")]), familiar="乙庚")
+    assert any(set("甲乙丙") <= set(members) for members in found.values())
+    assert reasons["甲"] == ["it would part 甲 from 丙乙, joined before it"]
+
+
+def test_a_form_ruled_one_with_a_full_form_elsewhere_goes_there_with_what_hangs_on_it():
+    rows = [edge("丁", "丙", "z"), edge("丙", "戊", "z")]
+    found, reasons = decided(rows, forms(丙=[("丁", "丁"), ("甲", "甲")]), familiar="丁戊", hand=ruled(("丙", "甲", "one")))
+    assert set(found.values()) == {"".join(sorted("甲丙戊"))} and reasons["丙"] == []
+
+
+def test_a_form_ruled_two_with_a_character_it_holds_leaves_it_behind():
+    rows = [edge("甲", "丙", "z"), edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters")]
+    found, reasons = decided(rows, forms(丙=[("甲", "甲")]), familiar="丙", hand=ruled(("丙", "丁", "two")))
+    assert "".join(sorted("甲丙")) in found.values() and not any("丁" in members for members in found.values()) and reasons["丙"] == []
+    # With its full form elsewhere, the ruling holds all the same.
+    rows = [edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters"), edge("甲", "庚", "z")]
+    found, _ = decided(rows, forms(丙=[("甲", "甲")]), familiar="丙", hand=ruled(("丙", "丁", "two")))
+    assert not any({"丙", "丁"} <= set(members) for members in found.values())
+
+
+def test_full_forms_the_form_alone_holds_together_are_several_characters():
+    found, reasons = decided([edge("甲", "丙", "z"), edge("丙", "乙", "z")], forms(丙=[("甲", "甲"), ("乙", "乙")]))
+    assert found == {} and reasons["丙"][0] == "several characters: 乙甲"
+
+
 def test_what_stays_behind_keeps_the_ties_it_had():
     """后 and 𠂡 are stated one, and leave 後, which 𢔏 hangs on."""
     rows = [edge("後", "后"), edge("後", "𢔏", "z")]

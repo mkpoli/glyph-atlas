@@ -795,14 +795,19 @@ def _join_standard_forms(
     def against(form: str, full: set[str], further: set[str], table: StandardForm | None, own: set[str]) -> list[str]:
         """What keeps a form apart from its full forms; `own` is what goes with the form."""
         found: list[str] = []
-        families = {id(unit(char)) for char in full}
+        # The families of the full forms as they would stand without what goes with the form.
+        family = unit(form)
+        ties = _ties(family, family.members - own)
+        families = {frozenset(_reached(char, ties)) if unit(char) is family else id(unit(char)) for char in full}
         if table is not None and table.full and table.itself:
             found.append("the table gives it for itself too")
         if form in standalone and table is not None:
             found.append("OpenCC gives it for itself too")
         if len(families) > 1:
             found.append("several characters: " + "".join(sorted(full)))
+        # A character ruled another is no further one of it.
         outside = sorted(char for char in further - full - {form} if char in ideographs and unit(char) is not unit(form)
+                         and not ((form, char) in rulings and not rulings[form, char].one)
                          and id(unit(char)) not in families
                          and (table is not None and char in table.others or not any(related(char, one) for one in full)))
         if outside:
@@ -833,26 +838,35 @@ def _join_standard_forms(
         ties = _ties(family, family.members - {form})
         return family.members.difference(*(_reached(char, ties) for char in full))
 
-    def separate(form: str, full: set[str], further: set[str], table: StandardForm | None) -> None:
+    def separate(form: str, full: set[str], further: set[str], table: StandardForm | None) -> bool:
         """Part a form from its full forms, or from the one it was joined to, where an earlier pass joined them and the
-        table would not (rules 1 to 6)."""
+        table would not (rules 1 to 6), and from a character ruled another, with what hangs on the form alone. Whether it
+        parted anything."""
         family = unit(form)
-        here = full & family.members
-        ruled = {char: rulings[form, char] for char in (full | further) & family.members if (form, char) in rulings}
-        if not here or {form, *here} <= family.stated:
-            return
-        settled.update((form, char) for char in ruled)
-        own = part_with(form, here)
-        if any(ruling.one for ruling in ruled.values()) or own & family.stated and family.stated - own:
-            return
-        if ruled or against(form, full, further, table, own):
+        ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
+        # A form ruled one character with a full form goes there with what hangs on it (`decide`).
+        if any(ruling.one for ruling in ruled.values()):
+            settled.update((form, char) for char in ruled if char in family.members)
+            return False
+        here, apart = full & family.members, {char for char in ruled if char in family.members}
+        if not here | apart or {form, *here, *apart} <= family.stated:
+            return False
+        settled.update((form, char) for char in apart)
+        own = part_with(form, here | apart)
+        if own & family.stated and family.stated - own:
+            return False
+        if apart or here and against(form, full, further, table, own):
             _leave(family, own, group)
+            return True
+        return False
 
     def decide(form: str, full: set[str], further: set[str], edges: list[Edge], table: StandardForm | None) -> Decision | None:
         ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
         full = {char for char, ruling in ruled.items() if ruling.one} or full
         families = {id(unit(char)) for char in full}
         if families == {id(unit(form))}:
+            # Joined as it is: no later move parts it.
+            accepted.append(frozenset({form, *full}))
             return None
         settled.update((form, char) for char in ruled)
         edges += [Edge(row["a"], row["b"], row["relation"], row["source"], row["detail"])
@@ -893,8 +907,9 @@ def _join_standard_forms(
     for form, table in standard.items():
         for char in (form, *table.full):
             forms.setdefault(char, set()).add(form)
-    for form, full, further, _, table in given:
-        separate(form, full, further, table)
+    # Until no form is parted any more: a parting can leave another form with part of its full forms.
+    while [separate(form, full, further, table) for form, full, further, _, table in given].count(True):
+        pass
     for form, full, further, _, table in given:
         for one in sorted(full) if table is not None else ():
             for other in sorted(further - full - {form}):
