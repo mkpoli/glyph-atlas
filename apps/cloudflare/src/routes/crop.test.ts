@@ -362,7 +362,7 @@ describe('a crop\'s line', () => {
       [1, 'ム', 'checked', null], [2, '四', 'pending', null]]);
     expect(body.items[3].revision).toBe(1);
     expect(body.items[0]).toEqual({ id: publicId(ids.a), offset: -1, label: '一', image: '/atlas/media/19968.webp', revision: 0, image_sha256: hash,
-      crop_version: `${publicId(ids.a)}@${hash}@10,10,20,30`, state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
+      crop_version: `${publicId(ids.a)}@${hash}@10,10,20,30`, box: { x: 10, y: 10, w: 20, h: 30 }, state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
     // A neighbour's version is its own record's, a box redrawn and not yet cut included.
     for (const [item, id] of [[body.items[0], ids.a], [body.items[3], ids.d]]) expect(item.crop_version).toBe((await (await get(`/atlas/characters/${publicId(id)}`)).json() as any).crop_version);
   });

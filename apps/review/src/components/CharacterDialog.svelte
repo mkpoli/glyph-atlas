@@ -81,6 +81,8 @@
   const naming = $derived(issue === 'character' && writtenDirty && written !== charOf(data) && isSingle(written) ? written : null)
   let byForm = false
   let editingBox = $state(false), box = $state(null)
+  // The other crops of the run the reader is reading this one in, on the page.
+  let runBoxes = $state.raw([])
   let suggestions = $state(null), suggesting = $state(false), loaded = $state(false), imageFailed = $state(false)
   // The decision this page already saved for the crop, restored when the reader steps back to it. While
   // the choices on screen are still that decision, the save button shows it chosen and only moves on.
@@ -406,7 +408,7 @@
       <div class="inspector-page">
         <div class="inspector-figure" bind:this={figure}>
           {#if !unavailable}
-            {#key data.id + ':' + data.revision}<CropContext item={data} detail={data} page={pageLink(data)} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop} describedby="crop-keys"
+            {#key data.id + ':' + data.revision}<CropContext item={data} detail={data} page={pageLink(data)} run={runBoxes} cropBox={drawn ? toSource(drawn) : null} disabled={busy} editing={editingBox} onedit={edited} onexit={endCrop} describedby="crop-keys"
               onload={() => { loaded = true; imageFailed = false }} onerror={() => imageFailed = true} />{/key}
             {#if editingBox}<p class="crop-keys" id="crop-keys">{t('character.crop.keys')}<button type="button" disabled={busy} onclick={endCrop}>{t('character.crop.doneAdjusting')}</button></p>{/if}
           {:else}<div class="figure-note">{t('character.image.unavailable')}</div>{/if}
@@ -418,7 +420,7 @@
         <div class="inspector-title">{#if naming || !isUnassigned(data)}<CropTitle char={naming ?? data.written_character ?? data.label} script={data.script} reading={data.needs_segmentation || naming ? null : { item: data, disabled: busy || !fresh || !Object.hasOwn(data, 'grapheme_claim'), working: value => busy = value, saved: fieldSaved }} /><ZiLink character={naming ?? readAs(data)?.char ?? data.written_character ?? data.label} />{:else}<h2 class="unassigned-title copyable">{t('corpus.unassigned')}{#if graphemeChar(data)}<span class="title-grapheme" lang="ja" title={t('chips.grapheme')}>{labelParts(graphemeChar(data)).text}<span lang="zh-Hans">{labelParts(graphemeChar(data)).simplified}</span></span><CopyValue value={graphemeChar(data)} />{/if}</h2>{/if}{#if data.repair?.reason}<span class="repair-note" title={data.repair.reason}>{data.repair.withheld ? t('repair.withheld') : data.repair.verified ? t('repair.checked') : t('repair.machine')}</span>{:else if repairOf(data)?.label === 'no-class'}<span class="repair-note" title={t('repair.reason.noClass')}>{t('repair.noClass')}</span>{/if}{#if data.box_pending}<ReviewState tone="waiting" text={t('character.crop.pending')} />{/if}{#if naming}{:else if data.needs_segmentation}<ReviewState tone="waiting" text={t('corpus.state.needsSplitting')} />{:else if data.state === 'checked' || repairOf(data)?.kind === 'verified'}<ReviewState tone="checked" text={t('state.checked')} />{:else if data.state === 'flagged'}<ReviewState tone="flagged" text={t('state.flagged')} />{:else if data.state === 'hard'}<ReviewState tone="waiting" text={t('state.hard')} />{:else if data.state === 'stale'}<ReviewState tone="waiting" text={t('corpus.state.sourceChanged')} />{:else}<ReviewState text={t('state.unchecked')} />{/if}</div>
         {#if data.source_label != null && (data.needs_segmentation || isUnassigned(data) || (data.written_character ?? data.label) !== data.source_label)}<p class="corpus-source-label">{#if data.needs_segmentation}<span>{t('corpus.characterCount', { count: data.character_count })} · </span>{/if}{t('corpus.sourceLabel', { source: data.source?.corpus === 'codh-full' ? 'CODH' : (data.source?.corpus || t('corpus.genericName')) })} <b lang="ja">{data.source_label}</b> <ZiLink character={data.source_label} compact />{#if !isUnassigned(data) && (data.written_character ?? data.label) !== data.source_label}<span> → <b lang="ja">{data.written_character ?? data.label}</b> · {t('corpus.atlasCorrection')}</span>{/if}</p>{/if}
         <div class="inspector-words">
-          {#if !unassigned}{#key data.id + ':' + data.crop_version}<CropReading item={data} disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
+          {#if !unassigned}{#key data.id + ':' + data.crop_version}<CropReading item={data} outlined={boxes => runBoxes = boxes} disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />{/key}{/if}
           <StyleField item={data} editable disabled={busy || !fresh || unavailable} working={value => busy = value} saved={fieldSaved} />
         </div>
         {#if data.origin !== 'corpus' && (issue === 'character' || badCrop)}<LineStrip id={data.id} ready={fresh && loaded} disabled={busy || !fresh} working={value => busy = value} saved={relined} />{/if}
