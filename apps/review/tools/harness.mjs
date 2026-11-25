@@ -164,7 +164,8 @@ export async function boot(config) {
     // The page server renders the interface and forwards API paths to the service. It serves the
     // last build of `apps/review`, so a check runs against what `bun run build` produced.
     if (!existsSync(join(APP, '.svelte-kit', 'output'))) throw new Error('apps/review has no build; run `bun run build` there first')
-    web = Bun.spawn(['bunx', 'vite', 'preview', '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'], {
+    // Vite itself: killed outright, `bunx` would leave it running.
+    web = Bun.spawn([join(APP, 'node_modules', '.bin', 'vite'), 'preview', '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'], {
       cwd: APP, env: { ...process.env, ATLAS_REVIEW_API: api }, stdout: 'pipe', stderr: 'pipe',
     })
     for (const stream of [web.stdout, web.stderr]) {
