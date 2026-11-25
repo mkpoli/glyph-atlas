@@ -377,7 +377,7 @@ def test_a_crop_a_claim_reads_as_a_member_that_moves_goes_with_it(layout, monkey
 
 def test_a_load_stopped_before_its_new_heads_are_replayed_is_finished(layout, monkeypatch):  # noqa: F811
     """D1 has numbered 旾, which 萅 goes to, and the local copy has not."""
-    root, publish, remote = layout
+    root, _, remote = layout
     crops = spread(root, remote)
     sources(root, cards=[*(c for c in cards(萅="旾") if c[0] != "U+65FE"), card("旾", members=["旾", "萅"])])
     real = remote.send
