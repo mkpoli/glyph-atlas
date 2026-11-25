@@ -462,7 +462,7 @@
   "menu.typeface": "書體",
   "menu.typeface.sans": "고딕體",
   "menu.typeface.serif": "明朝體",
-"nav.design": "디자인 시스템",
+  "nav.design": "디자인 시스템",
   "nav.explore": "探索",
   "nav.flagged": "修正",
   "nav.forms": "字形",
@@ -1323,5 +1323,10 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "技術·科學 文獻",
-  "roadmap.stage.gazetteers": "地方志"
+  "roadmap.stage.gazetteers": "地方志",
+  "form.ids.variants.label": "{part}의 字形",
+  "form.ids.grass.head": "草頭머리",
+  "form.ids.grass.connected": "連書",
+  "form.ids.grass.split": "分書",
+  "form.ids.grass.inward": "豎畫이 안쪽"
 }

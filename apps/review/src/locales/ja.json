@@ -454,7 +454,7 @@
   "menu.typeface": "書体",
   "menu.typeface.sans": "ゴシック体",
   "menu.typeface.serif": "明朝体",
-"nav.design": "デザインシステム",
+  "nav.design": "デザインシステム",
   "nav.explore": "探索",
   "nav.flagged": "修正",
   "nav.forms": "字体",
@@ -1340,5 +1340,10 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雑著",
   "roadmap.stage.technical": "技術書・科学書",
-  "roadmap.stage.gazetteers": "地方志"
+  "roadmap.stage.gazetteers": "地方志",
+  "form.ids.variants.label": "{part}の字形",
+  "form.ids.grass.head": "くさかんむり",
+  "form.ids.grass.connected": "つなげる",
+  "form.ids.grass.split": "分ける",
+  "form.ids.grass.inward": "縦画が内側"
 }

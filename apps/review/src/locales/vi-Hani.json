@@ -1330,5 +1330,10 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "冊技術吧科學",
-  "roadmap.stage.gazetteers": "地方誌"
+  "roadmap.stage.gazetteers": "地方誌",
+  "form.ids.variants.label": "字樣𧵑{part}",
+  "form.ids.grass.head": "部艹",
+  "form.ids.grass.connected": "涅連",
+  "form.ids.grass.split": "涅索",
+  "form.ids.grass.inward": "涅邊𥪝"
 }

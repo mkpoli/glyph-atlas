@@ -473,7 +473,7 @@
   "menu.typeface": "Typeface",
   "menu.typeface.sans": "Sans",
   "menu.typeface.serif": "Serif",
-"nav.design": "Design system",
+  "nav.design": "Design system",
   "nav.explore": "Explore",
   "nav.flagged": "Needs fixing",
   "nav.forms": "Forms",
@@ -1388,5 +1388,10 @@
   "roadmap.stage.collections": "Collected works",
   "roadmap.stage.miscellanies": "Miscellanies",
   "roadmap.stage.technical": "Technical and scientific works",
-  "roadmap.stage.gazetteers": "Local gazetteers"
+  "roadmap.stage.gazetteers": "Local gazetteers",
+  "form.ids.variants.label": "Forms of {part}",
+  "form.ids.grass.head": "Grass radical",
+  "form.ids.grass.connected": "Connected",
+  "form.ids.grass.split": "Split",
+  "form.ids.grass.inward": "Inward uprights"
 }

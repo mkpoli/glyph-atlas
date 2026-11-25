@@ -448,7 +448,7 @@
   "menu.typeface": "Kiểu chữ",
   "menu.typeface.sans": "Không chân",
   "menu.typeface.serif": "Có chân",
-"nav.design": "Hệ thống thiết kế",
+  "nav.design": "Hệ thống thiết kế",
   "nav.explore": "Khám phá",
   "nav.flagged": "Cần sửa",
   "nav.forms": "Tự dạng",
@@ -1329,5 +1329,10 @@
   "roadmap.stage.collections": "Văn tập",
   "roadmap.stage.miscellanies": "Tạp trứ",
   "roadmap.stage.technical": "Sách kỹ thuật và khoa học",
-  "roadmap.stage.gazetteers": "Địa phương chí"
+  "roadmap.stage.gazetteers": "Địa phương chí",
+  "form.ids.variants.label": "Tự dạng của {part}",
+  "form.ids.grass.head": "Bộ 艹",
+  "form.ids.grass.connected": "Nét liền",
+  "form.ids.grass.split": "Nét tách",
+  "form.ids.grass.inward": "Nét bên trong"
 }

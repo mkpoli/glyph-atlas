@@ -462,7 +462,7 @@
   "menu.typeface": "字體",
   "menu.typeface.sans": "黑體",
   "menu.typeface.serif": "明體",
-"nav.design": "設計系統",
+  "nav.design": "設計系統",
   "nav.explore": "探索",
   "nav.flagged": "待修正",
   "nav.forms": "字樣",
@@ -1343,5 +1343,10 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "科技典籍",
-  "roadmap.stage.gazetteers": "地方志"
+  "roadmap.stage.gazetteers": "地方志",
+  "form.ids.variants.label": "{part}的字形",
+  "form.ids.grass.head": "草字頭",
+  "form.ids.grass.connected": "連寫",
+  "form.ids.grass.split": "分寫",
+  "form.ids.grass.inward": "豎畫在內"
 }

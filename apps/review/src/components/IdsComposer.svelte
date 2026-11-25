@@ -5,14 +5,9 @@
   //
   // The sequence is held twice, kept in step: as text in the field, which also takes the ASCII
   // operator names (LR or lr for ⿰), and as a tree of boxes laid out as the operators place their
-  // parts, where an empty slot shows (and is written) as ⬚. A sequence with an empty slot is not
-  // whole; ？ typed into a slot is the part no character names. One part of the tree is chosen at a time. An operator
-  // put on a slot splits it, the slot's part first (⿰ on 失 gives ⿰失⬚); put on an operator, it takes
-  // that operator's place and keeps its parts. × takes one level away, keeping its first filled part.
-  // A component found, typed into the part field or offered by the variant table replaces the chosen
-  // part, as does one of the part's registered figures (辶 with one dot, U+8FB6 U+E0101), and a component with a description of its own can be split into it (𠤕 into ⿱匕矢).
-  // The part picker under the tree has three tabs: a component found by name or reading, the parts
-  // palette (IdsParts), and the parts of any character or description typed (IdsFrom).
+  // parts, where an empty slot shows (and is written) as ⬚. A component with drawn variation
+  // sequences shows a corner toggle button opening a variant menu directly on its box, and a
+  // selected grass radical offers its Connected, Split and Inward-uprights forms.
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import CharacterSearch from './CharacterSearch.svelte'
@@ -25,7 +20,7 @@
     replaceAt, samePath, swapOp, unalias, unwrap, clear, wrap, write, namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar, regionNames, startCharacter, variants } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
-  import { figuresFor } from '../lib/partFigures.js'
+  import { componentVariantForms, figuresFor, grassForm, grassIVS, grassShape, variationSequenceMap } from '../lib/partFigures.js'
   import { base, t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
@@ -33,6 +28,8 @@
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
   const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
   const HISTORY = 100
+  const GRASS_FORMS = [grassIVS.connected, grassIVS.split, grassIVS.inward]
+  const grassLabel = form => form === grassIVS.connected ? t('form.ids.grass.connected') : form === grassIVS.split ? t('form.ids.grass.split') : t('form.ids.grass.inward')
   // Where the preview's drawings come from and the terms they carry.
   const SOURCES = 'https://github.com/mkpoli/glyph-atlas/blob/main/docs/licensing.md#composer-drawings'
 
@@ -57,7 +54,17 @@
     return asked
   }
   const sequencesOf = c => known[c]?.sequences ?? []
-  // The registered figures of each component met, asked with its descriptions; a failed read is asked again.
+  // Preload the export's variation-sequence index once so every component box in the tree knows
+  // immediately whether it has selectable IVS forms; retry twice on transient failure.
+  let variantMap = $state.raw(new Map())
+  $effect(() => {
+    let live = true, timer
+    const load = waits => variationSequenceMap().then(found => { if (live) variantMap = found },
+      () => { if (live && waits.length) timer = setTimeout(() => load(waits.slice(1)), waits[0]) })
+    load([2000, 8000])
+    return () => { live = false; clearTimeout(timer) }
+  })
+  // The registered MJ figures of each component met, asked with its descriptions; a failed read is asked again.
   let figures = $state({})
   const figuring = new Set()
   function readFigures(c) {
@@ -65,6 +72,14 @@
     figuring.add(c)
     figuresFor(c).then(found => { figures = { ...figures, [c]: found } }, () => figuring.delete(c))
   }
+  function formsFor(part) {
+    if (typeof part !== 'string') return []
+    const c = lookupChar(part)
+    const sequences = variantMap.get(c)
+    if (!sequences?.length) return []
+    return componentVariantForms(c, sequences, figures[c] ?? [])
+  }
+  const isVaried = part => typeof part === 'string' && part !== lookupChar(part)
 
   // Each crop starts again: from a description or single character the reader had typed into the
   // search, or else from the character's own. What is typed into the search afterwards leaves the
@@ -129,6 +144,7 @@
     : leaves(tree).some(leaf => !isComponent(leaf.char)) ? t('form.ids.problem.component') : '')
   const usable = $derived(isNode(tree) && !gap && !typed.problem && isDescription(whole))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
+  const grass = $derived(chosen ? grassForm(picked, chosen, tree) : null)
   const text = part => part === null || part === undefined ? '' : write(part)
 
   // A change to the tree, kept for undoing, a run of typing in the field as one; the field shows it
@@ -195,8 +211,8 @@
     const select = part === null ? [...at, 0] : arity(op) === 1 ? at : [...at, 1]
     change(replaceAt(tree, at, wrap(op, part)), select)
   }
-  function place(part) {
-    const at = target()
+  function place(part, explicitAt = undefined) {
+    const at = explicitAt === undefined ? target() : explicitAt
     if (!at) { note = t('form.ids.chooseFirst'); return }
     const next = replaceAt(tree, at, part)
     change(next, nextEmpty(next, at) ?? at)
@@ -215,8 +231,8 @@
     return [...(picked !== base && found.length ? [{ char: base, mj: null }] : []), ...found.filter(figure => figure.char !== picked)]
   })
   const point = text => [...text].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')
-  function choose(path) {
-    chosen = samePath(chosen, path) ? null : path
+  function choose(path, { toggle = true } = {}) {
+    chosen = path && toggle && samePath(chosen, path) ? null : path
     note = ''
     const part = chosen ? partAt(tree, chosen) : undefined
     piece = text(part)
@@ -224,6 +240,61 @@
   }
   function remove(path) { if (!disabled && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
+
+  // Floating variant-select menu opened from a component box's corner toggle button.
+  // Uses native popover="auto" (top-layer above <dialog>) with CSS Anchor Positioning when supported
+  // and a viewport-clamped fallback otherwise.
+  let variantMenu = $state(null), variantMenuEl = $state(null)
+  const variantPart = $derived(variantMenu ? partAt(tree, variantMenu.path) : undefined)
+  const variantForms = $derived(variantMenu ? formsFor(variantPart) : [])
+  async function openVariants(path, anchor) {
+    if (disabled) return
+    const part = partAt(tree, path)
+    if (typeof part !== 'string') return
+    readFigures(lookupChar(part))
+    const list = formsFor(part)
+    if (!list.length) return
+    const r = anchor.getBoundingClientRect()
+    const cols = Math.min(Math.max(list.length, 3), 6), rows = Math.ceil(list.length / 6)
+    const W = cols * 42 + 16, H = 30 + rows * 42 + 10
+    const x = Math.max(8, Math.min(r.left, innerWidth - W - 8))
+    const y = r.bottom + 4 + H > innerHeight - 8 ? Math.max(8, r.top - H - 4) : r.bottom + 4
+    variantMenu = { path, x, y }
+    choose(path, { toggle: false })
+    await tick()
+    if (variantMenuEl) {
+      if (variantMenuEl.matches(':popover-open')) variantMenuEl.hidePopover()
+      try { variantMenuEl.showPopover({ source: anchor }) } catch { variantMenuEl.showPopover() }
+      ;(variantMenuEl.querySelector('[aria-checked="true"]') ?? variantMenuEl.querySelector('[role="menuitemradio"]'))?.focus()
+    }
+  }
+  function closeVariants({ refocus = true } = {}) {
+    const path = variantMenu?.path ?? null
+    if (variantMenuEl?.matches(':popover-open')) variantMenuEl.hidePopover()
+    variantMenu = null
+    if (refocus && path) root?.querySelector(`.ids-forms-toggle[data-toggle-path="${CSS.escape(pathKey(path))}"]`)?.focus()
+  }
+  function pickVariant(char) {
+    const path = variantMenu?.path
+    if (!path) return
+    const current = partAt(tree, path)
+    if (typeof current === 'string' && current !== char) change(replaceAt(tree, path, char), path)
+    closeVariants()
+  }
+  function variantMenuKey(event) {
+    const items = [...(variantMenuEl?.querySelectorAll('[role="menuitemradio"]:not([disabled])') ?? [])]
+    const at = items.indexOf(document.activeElement)
+    const dir = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key]
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeVariants() }
+    else if (event.key === 'Tab') closeVariants({ refocus: false })
+    else if (dir) { event.preventDefault(); items[(at + dir + items.length) % items.length]?.focus() }
+    else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); items[event.key === 'Home' ? 0 : items.length - 1]?.focus() }
+  }
+  function pickGrass(form) {
+    if (disabled || !chosen) return
+    if (picked === form) return
+    change(replaceAt(tree, chosen, form), chosen)
+  }
 
   // The part field: Apply or Enter puts what it holds in the chosen slot and moves on to the next empty one.
   const pieceDirty = $derived(Boolean(piece.trim()) && (chosen === null || unalias(piece.trim()) !== text(picked)))
@@ -248,7 +319,7 @@
   // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-forms-menu')) return
     // Undo and redo work from anywhere in the editor; the focus stays in a picker or start-from-character search that has it.
     const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel, .ids-start'))
     const after = () => { if (!inPicker) focusChosen() }
@@ -316,10 +387,25 @@
     </div>
   {:else}
     {@const label = part === null ? t('form.ids.empty') : part}
+    {@const partForms = formsFor(part)}
     <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} aria-pressed={selected}
       data-path={pathKey(path)} {disabled} title={part === null ? label : t('form.ids.choose', { part })}
       aria-label={parent ? t('form.ids.part', { part: label, n: parent.n, name: name(parent.op) }) : label}
       onclick={() => choose(path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
+    {#if partForms.length}
+      {@const isOpen = variantMenu !== null && samePath(variantMenu.path, path)}
+      <button type="button" class="ids-forms-toggle" class:varied={isVaried(part)} {disabled}
+        data-toggle-path={pathKey(path)} aria-haspopup="menu" aria-expanded={isOpen}
+        aria-label={t('form.ids.variants.label', { part: lookupChar(part) })}
+        title={t('form.ids.variants.label', { part: lookupChar(part) })}
+        onkeydown={event => {
+          if (event.key === 'Backspace' || event.key === 'Delete') event.stopPropagation()
+          if (event.key === 'ArrowDown' && !isOpen) { event.preventDefault(); openVariants(path, event.currentTarget) }
+        }}
+        onclick={event => { if (isOpen) closeVariants(); else openVariants(path, event.currentTarget) }}>
+        <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      </button>
+    {/if}
   {/if}
 {/snippet}
 
@@ -370,9 +456,28 @@
   </div>
   <div class="ids-view">
     <div class="ids-tree" role="group" aria-label={t('form.ids.structure')}>
-      {@render box(tree, [], null)}
+      <div class="ids-tree-root">{@render box(tree, [], null)}</div>
     </div>
     <IdsPreview {tree} sequence={whole} {chosen} />
+  </div>
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div class="ids-forms-menu" popover="auto" role="menu" tabindex="-1" bind:this={variantMenuEl}
+    aria-label={variantForms.length ? t('form.ids.variants.label', { part: variantForms[0].char }) : ''}
+    style:--menu-x={variantMenu ? `${variantMenu.x}px` : undefined}
+    style:--menu-y={variantMenu ? `${variantMenu.y}px` : undefined}
+    ontoggle={event => { if (event.newState === 'closed' && variantMenu) variantMenu = null }}
+    onkeydown={variantMenuKey}>
+    {#if variantMenu && variantForms.length && typeof variantPart === 'string'}
+      <p class="ids-forms-title">{t('form.ids.variants.label', { part: variantForms[0].char })}</p>
+      <div class="ids-forms-grid" role="group" aria-label={t('form.ids.variants.label', { part: variantForms[0].char })}>
+        {#each variantForms as form (form.char)}
+          {@const label = [point(form.char), form.mj].filter(Boolean).join(' · ')}
+          <button type="button" role="menuitemradio" class="ids-forms-item" data-form={form.char}
+            aria-checked={variantPart === form.char} title={label} aria-label={`${form.char} ${label}`}
+            onclick={() => pickVariant(form.char)}><FigureText text={form.char} /></button>
+        {/each}
+      </div>
+    {/if}
   </div>
   <div class="ids-tools">
     <div class="ids-slot">
@@ -390,21 +495,36 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
-  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
-    <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
-      <span class="ids-title">{@render named('form.ids.swaps', picked)}</span>
-      <div class="ids-options">
-        {#each figured as figure (figure.char)}
-          <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
-            onclick={() => place(figure.char)}><FigureText text={figure.char} /></button>
-        {/each}
-        {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
-          <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
-        {/each}
-        {#each splits as sequence (sequence)}
-          <button type="button" class="ids-swap ids-split" {disabled} title={t('form.ids.split', { part: picked })} onclick={() => split(sequence)}>{sequence}</button>
-        {/each}
-      </div>
+  {#if grass || (typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length))}
+    <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: text(picked) })}>
+      {#if grass}
+        <div class="ids-grass-group" role="group" aria-labelledby={`${uid}-grass`}>
+          <span class="ids-title" id={`${uid}-grass`}>{t('form.ids.grass.head')}</span>
+          <div class="ids-options">
+            {#each GRASS_FORMS as form (form)}
+              <button type="button" class="ids-grass" aria-pressed={grass === grassShape(form)} {disabled}
+                title={point(form)} onclick={() => pickGrass(form)}>
+                <span class="ids-grass-glyph" aria-hidden="true">{grassShape(form)}</span>{grassLabel(form)}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
+        <span class="ids-title">{@render named('form.ids.swaps', picked)}</span>
+        <div class="ids-options">
+          {#each figured as figure (figure.char)}
+            <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
+              onclick={() => place(figure.char)}><FigureText text={figure.char} /></button>
+          {/each}
+          {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
+            <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
+          {/each}
+          {#each splits as sequence (sequence)}
+            <button type="button" class="ids-swap ids-split" {disabled} title={t('form.ids.split', { part: picked })} onclick={() => split(sequence)}>{sequence}</button>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
   <div class="ids-search">
@@ -463,9 +583,9 @@
   .ids-view > .ids-tree{flex:1;min-width:0}
   @media (max-width:520px){.ids-view{flex-direction:column-reverse;align-items:center}.ids-view > .ids-tree{align-self:stretch}}
   .ids-tree{display:grid;justify-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-subtle);min-height:72px}
+  .ids-tree-root{position:relative;display:grid;width:min(100%,360px)}
   .ids-node{position:relative;display:flex;flex-direction:column;min-width:0;padding:22px 6px 6px;
     border:1.5px dashed var(--line-strong);border-radius:8px}
-  .ids-tree > .ids-node,.ids-tree > .ids-part{width:min(100%,360px)}
   .ids-node.chosen{border-style:solid;border-color:var(--accent);background:var(--accent-light)}
   .ids-head{position:absolute;top:2px;left:4px;right:4px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
   .ids-head button{pointer-events:auto}
@@ -474,7 +594,7 @@
   .ids-unwrap{padding:0 5px;font-size:13px;line-height:1.2;color:var(--muted);border-color:transparent;background:none}
   .ids-unwrap:not(:disabled):hover{color:var(--wrong);border-color:var(--wrong)}
   .ids-parts{flex:1;display:flex;gap:6px;min-width:0}
-  .ids-cell{flex:1;display:grid;min-width:0}
+  .ids-cell{position:relative;flex:1;display:grid;min-width:0}
   .row > .ids-parts{flex-direction:row}
   .column > .ids-parts,.stack > .ids-parts{flex-direction:column}
   /* An enclosure: the first part fills the box, its glyph on the closed side, and the second sits
@@ -508,7 +628,37 @@
   .ids-part:not(:disabled):hover{border-color:var(--line-strong)}
   .ids-part.empty{font-size:18px;color:var(--muted);border-style:dashed;border-color:var(--line-strong);background:transparent}
   .ids-part.chosen{border:2px solid var(--accent);padding:1px 5px;background:var(--accent-light)}
-  .ids-op:focus-visible,.ids-part:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+  .ids-op:focus-visible,.ids-part:focus-visible,.ids-forms-toggle:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+
+  /* Corner variant-select toggle on each component box with drawn variation sequences. */
+  .ids-forms-toggle{position:absolute;z-index:2;right:3px;bottom:3px;display:grid;place-items:center;width:18px;height:18px;padding:0;
+    border-radius:5px;color:var(--muted);background:var(--surface)}
+  .ids-forms-toggle svg{width:12px;height:12px}
+  .ids-forms-toggle:not(:disabled):hover,.ids-forms-toggle[aria-expanded="true"],.ids-forms-toggle.varied{color:var(--accent);border-color:var(--accent)}
+  /* Keep an enclosing component's toggle inside its closed band, clear of the enclosed part. */
+  .enclosure > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{right:2px;bottom:2px;width:16px;height:16px}
+  .enclosure > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle svg{width:10px;height:10px}
+  :is([data-op="⿸"],[data-op="⿵"]) > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{bottom:auto;top:2px}
+  [data-op="⿹"] > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{right:auto;bottom:auto;left:2px;top:2px}
+  :is([data-op="⿷"],[data-op="⿽"]) > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{right:auto;left:2px}
+
+  /* Variant menu popover: CSS Anchor Positioning when supported, viewport-clamped fallback otherwise. */
+  .ids-forms-menu{padding:6px;width:max-content;max-width:min(280px,calc(100vw - 16px));
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px var(--shadow-menu)}
+  .ids-forms-menu:popover-open{display:flex;flex-direction:column;gap:4px}
+  @supports (position-area: block-end){
+    .ids-forms-menu{inset:auto;margin:4px 0 0;position-area:block-end span-inline-end;
+      position-try-fallbacks:flip-block,flip-inline,flip-block flip-inline}
+  }
+  @supports not (position-area: block-end){
+    .ids-forms-menu{position:fixed;inset:auto;margin:0;left:var(--menu-x,8px);top:var(--menu-y,8px)}
+  }
+  .ids-forms-title{margin:2px 4px;font-size:11px;color:var(--muted)}
+  .ids-forms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:4px;min-width:126px}
+  .ids-forms-item{display:grid;place-items:center;min-width:38px;min-height:38px;padding:2px 6px;font-size:24px;line-height:1.1;
+    font-family:var(--ids-font);border-radius:6px}
+  .ids-forms-item:not(:disabled):hover,.ids-forms-item:focus-visible{border-color:var(--accent);background:var(--accent-hover)}
+  .ids-forms-item[aria-checked="true"]{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
 
   .ids-tools{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px}
   .ids-slot{flex:1 1 160px;min-width:0}
@@ -518,11 +668,14 @@
   .ids-slot input:not(:placeholder-shown){font-size:18px;padding:5px 8px;font-family:var(--ids-font)}
   .ids-apply{flex:none;min-height:38px;padding:5px 11px;font-size:13px;white-space:nowrap}
   .ids-tools > button{min-height:38px;padding:5px 9px;font-size:13px}
-  .ids-swaps{display:flex;flex-direction:column;gap:4px}
+  .ids-swaps,.ids-grass-group{display:flex;flex-direction:column;gap:4px}
   .ids-options{display:flex;flex-wrap:wrap;gap:6px}
+  .ids-grass{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;font-size:13px}
+  .ids-grass-glyph{font:20px/1.2 var(--ids-font)}
+  .ids-grass[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
   .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:var(--ids-font)}
   .ids-split{font-size:16px;color:var(--muted)}
-  .ids-swap:not(:disabled):hover{border-color:var(--accent)}
+  .ids-swap:not(:disabled):hover,.ids-grass:not(:disabled):hover{border-color:var(--accent)}
   .ids-problem{margin:0;font-size:12px;color:var(--fault)}
   .ids-pending{margin:0;font-size:12px;color:var(--muted)}
   .ids-search{display:flex;flex-direction:column;gap:4px}

@@ -439,7 +439,7 @@
   "menu.typeface": "書體",
   "menu.typeface.sans": "黑體",
   "menu.typeface.serif": "宋體",
-"nav.design": "設計系統",
+  "nav.design": "設計系統",
   "nav.explore": "譜",
   "nav.flagged": "誤",
   "nav.forms": "體",
@@ -1335,5 +1335,10 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "技藝格致之書",
-  "roadmap.stage.gazetteers": "方志"
+  "roadmap.stage.gazetteers": "方志",
+  "form.ids.variants.label": "{part}之字形",
+  "form.ids.grass.head": "艸頭",
+  "form.ids.grass.connected": "連書",
+  "form.ids.grass.split": "分書",
+  "form.ids.grass.inward": "豎畫在內"
 }
