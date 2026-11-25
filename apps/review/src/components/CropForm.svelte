@@ -37,14 +37,15 @@
   // `others` leaves the crop's own form off the bar, where choosing a form marks the crop at once and
   // its own form would mark nothing. `onchoose` is given the form, and the character choosing it names.
   // `naming` is the character chosen for the crop in place of its own. `unformed` tells whether the crop is read as a
-  // grapheme none of whose forms is its character.
+  // grapheme none of whose forms is its own, null until that is known.
   let { crop, chosen = null, naming = null, onchoose, disabled = false, others = false, unformed = $bindable(false) } = $props()
   let offered = $state({ key: null, ...NO_FORMS }), added = $state([]), attempt = $state(0)
   let picking = $state(false), query = $state(''), root = $state(null), failed = $state(false), addButton = $state(null)
   let composing = $state(false)
   let arranging = $state(false), expanded = $state(false)
   const unassigned = $derived(isUnassigned(crop))
-  const claimed = $derived(readAs(crop))
+  // Where choosing a form marks the crop at once, the crop keeps the bar of its character.
+  const claimed = $derived(others ? null : readAs(crop))
   // The character chosen in place of the crop's own, where the bar before it offers none of its forms.
   let subject = $state(null)
   const whole = $derived(Boolean(unassigned || claimed || subject))
@@ -64,11 +65,15 @@
   const composed = (names, known = new Map(), of) => stands(names, known, of).catch(() => known)
   const formsIn = found => found.chips ?? [...found.members, ...found.variants, ...found.related]
   const { ready, listed } = $derived(listedOf(offered, key, asked, whole, subject))
-  // The crop's own form: on a grapheme it is read as, the one of it the bar offers.
+  // The crop's own form: on a grapheme it is read as, the one of it the bar offers, or a form claimed on it that is none of
+  // its character's.
   const own = $derived(formOf(crop))
-  const current = $derived(subject || whole && !unassigned && !listed.bases?.has(own) ? '' : own)
-  $effect(() => { unformed = Boolean(claimed && ready && !listed.bases?.has(own)) })
-  // A character chosen among the bar's own leaves the bar as it stands. Another bar takes the place of the one it
+  const character = $derived(crop?.written_character ?? crop?.label ?? '')
+  const apart = $derived(!listed.bases?.has(own || character) && (!own || own === character || [...own][0] === character))
+  const current = $derived(subject || claimed && apart ? '' : own)
+  $effect(() => { if (!subject) unformed = !claimed ? false : ready ? apart : null })
+  $effect(() => () => { unformed = false })
+  // A character chosen among a whole grapheme's own leaves the bar as it stands. Another bar takes the place of the one it
   // follows, so what is under it does not move, and comes into view.
   const held = $state({ height: 0 })
   $effect(() => {
@@ -77,7 +82,7 @@
   $effect(() => {
     const name = naming
     crop?.id
-    untrack(() => { if (!name) { subject = null; held.height = 0 } else if (!ready || !(listed.bases ? listed.bases.get(name) === name : listed.family?.includes(name))) { held.height = Math.max(held.height, root?.offsetHeight ?? 0); subject = name } })
+    untrack(() => { if (!name) { subject = null; held.height = 0 } else if (!ready || listed.bases?.get(name) !== name) { held.height = Math.max(held.height, root?.offsetHeight ?? 0); subject = name } })
   })
   $effect(() => {
     const id = crop?.id, bar = key, char = asked, all = whole, own = untrack(() => current)
