@@ -21,5 +21,6 @@ export default defineConfig({
   plugins: [externalWasm, sveltekit()],
   define: { __ORT_VERSION__: JSON.stringify(ort.version) },
   build: { target: 'es2022', sourcemap: false },
+  worker: { format: 'es' },
   server: { port: 5173, strictPort: true },
 })

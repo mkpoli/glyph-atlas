@@ -9,7 +9,7 @@
   // The preview only shows: a sequence with an empty slot is never saved (`IdsComposer`).
   import { fade } from 'svelte/transition'
   import { composerDrawer } from '../lib/composer/config.js'
-  import { tooLarge } from '../lib/composer/index.js'
+  import { tooLarge } from 'han-compose'
   import { FACE, STROKE, badge, placeholder } from '../lib/composer/preview.js'
   import { roughLayout } from '../lib/composer/rough.js'
   import { OP_NAMES, leaves, loadDrawing, samePath, EMPTY } from '../lib/ids.js'
@@ -31,6 +31,7 @@
     sketched = null
     if (large) { step = 'capped'; shown = null; composerDrawer().cancel(); return }
     step = 'loading'
+    composerDrawer().warm()
     let live = true
     const timer = setTimeout(() => {
       const whole = !text.includes(EMPTY)

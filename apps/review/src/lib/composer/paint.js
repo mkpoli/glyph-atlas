@@ -1,18 +1,14 @@
 // Descriptions the site holds no drawing of (`loadDrawing` in `ids.js` answers null), drawn in the
-// browser by the composer's port, so a form derived for a character page or typed after the last
-// drawing run is drawn where it is shown. Each is drawn once a page, as an SVG in the 1000-unit box the
-// stored drawings use, and kept as an object URL.
+// browser by han-compose, so a form derived for a character page or typed after the last drawing run
+// is drawn where it is shown. Each is drawn once a page, as an SVG in the 1000-unit box the stored
+// drawings use, and kept as an object URL.
+import { drawingSvg } from 'han-compose/drawing-svg'
 import { composerPainter } from './config.js'
 
 const painted = new Map(), painting = new Map()
 // A sequence that could not be drawn is tried again after five minutes, as `loadDrawing` asks again
 // after a miss, so a failed request does not keep it as text for the whole visit.
 const MISS_MS = 5 * 60 * 1000
-
-// The drawing as an SVG: what ㇯ takes away (`cut`) masks the ink out, as the editor's preview draws it.
-const svgOf = ({ d, cut }) => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">' + (cut
-  ? `<mask id="c"><rect width="1000" height="1000" fill="#fff"/><path d="${cut}" fill="#000"/></mask><path d="${d}" mask="url(#c)"/>`
-  : `<path d="${d}"/>`) + '</svg>'
 
 /** The browser's drawing of the description `text`: its URL, null where it cannot be drawn, undefined until known. */
 export const paintedDrawing = text => painted.get(text.normalize('NFC'))
@@ -23,7 +19,7 @@ export function paintDrawing(text) {
   if (painted.has(text)) return Promise.resolve(painted.get(text))
   if (typeof Worker === 'undefined') return Promise.resolve(null)
   if (!painting.has(text)) painting.set(text, composerPainter().paint(text).then(drawn => {
-    const url = drawn?.d ? URL.createObjectURL(new Blob([svgOf(drawn)], { type: 'image/svg+xml' })) : null
+    const url = drawn?.d ? URL.createObjectURL(new Blob([drawingSvg(drawn)], { type: 'image/svg+xml' })) : null
     painted.set(text, url)
     painting.delete(text)
     if (url === null) setTimeout(() => painted.delete(text), MISS_MS)
