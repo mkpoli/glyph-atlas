@@ -1854,7 +1854,7 @@ def test_a_called_turn_looks_something_up_before_it_answers(tmp_path, monkeypatc
     act = model.act("Room", "", [message_row("what is Tangut?")], {}, task="called", trigger=0,
                     bot_user_id=USER, lookup=lookup, on_step=lambda: steps.append(1))
     assert act.say == ("It is a script.",) and steps == [1] and web.queries == ["Tangut script"]
-    assert [tool["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "recall"]
+    assert [tool["name"] for tool in bodies[0]["tools"]] == ["web_search", "read_page", "characters", "unicode", "recall"]
     assert bodies[1]["previous_interaction_id"] == "v1_r1"
     assert bodies[1]["input"][0]["type"] == "function_result"
     assert bodies[1]["input"][0]["call_id"] == "call_0"
@@ -1943,11 +1943,106 @@ def test_config_reads_the_lookup_table(tmp_path):
     assert (config.lookup_enabled, config.lookup_per_hour) == (False, 30)
 
 
-def test_characters_are_described_from_the_database_with_derived_names():
-    described = fish_bot.describe_characters("𗼇字\U0003FFFD")
-    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "name": "TANGUT IDEOGRAPH-17F07"}
-    assert described[1]["name"] == "CJK UNIFIED IDEOGRAPH-5B57"
-    assert described[2]["name"].startswith("unassigned")
+def test_characters_are_described_from_the_current_database():
+    described = fish_bot.unicode_data().describe("𗼇字\U0003FFFD\ue000")
+    assert described[0] == {"char": "𗼇", "code_point": "U+17F07", "block": "Tangut", "name": "TANGUT IDEOGRAPH-17F07",
+                            "since": "Unicode 9.0"}
+    assert (described[1]["name"], described[1]["since"]) == ("CJK UNIFIED IDEOGRAPH-5B57", "Unicode 1.1")
+    assert described[2]["name"] == "not assigned in Unicode 18.0" and "since" not in described[2]
+    assert described[3]["block"] == "Private Use Area" and described[3]["name"].startswith("no name")
+
+
+@pytest.mark.parametrize(("point", "block", "name", "since"), [
+    (0x2EBF0, "CJK Unified Ideographs Extension I", "CJK UNIFIED IDEOGRAPH-2EBF0", "15.1"),
+    (0x323B0, "CJK Unified Ideographs Extension J", "CJK UNIFIED IDEOGRAPH-323B0", "17.0"),
+    (0x33479, "CJK Unified Ideographs Extension J", "CJK UNIFIED IDEOGRAPH-33479", "17.0"),
+    (0x2B81E, "CJK Unified Ideographs Extension D", "CJK UNIFIED IDEOGRAPH-2B81E", "18.0"),
+    (0x18E00, "Jurchen", "JURCHEN CHARACTER-18E00", "18.0"),
+    (0x3D000, "Seal", "SMALL SEAL CHARACTER-3D000", "18.0"),
+    (0x2FFC, "Ideographic Description Characters", "IDEOGRAPHIC DESCRIPTION CHARACTER SURROUND FROM RIGHT", "15.1")])
+def test_the_newest_characters_are_known_however_they_are_written(point, block, name, since):
+    for text in (chr(point), f"U+{point:X}", f"what is u+{point:x}?"):
+        entry = fish_bot.unicode_data().describe(text)[0]
+        assert (entry["code_point"], entry["block"], entry["name"], entry["since"]) == (
+            f"U+{point:04X}", block, name, f"Unicode {since}")
+
+
+def test_code_points_that_are_no_characters_are_described_safely():
+    described = fish_bot.unicode_data().describe("U+D800 U+110000 U+0007 U+FDD0")
+    assert [entry["code_point"] for entry in described[:4]] == ["U+D800", "U+110000", "U+0007", "U+FDD0"]
+    assert described[1]["name"].startswith("no code point") and described[3]["name"].startswith("a noncharacter")
+    json.dumps(described, ensure_ascii=False).encode()
+
+
+def test_blocks_are_found_by_the_words_of_their_names():
+    found = fish_bot.unicode_data().search("cjk extension")
+    assert (found["unicode"], found["released"], found["characters"], found["unified_ideographs"]) == (
+        "18.0", "2026-09-16", 172_808, 101_997)
+    extensions = {block["block"][-1]: block for block in found["blocks"] if "Unified" in block["block"]}
+    assert "".join(sorted(extensions)) == "ABCDEFGHIJ"
+    assert (extensions["J"]["range"], extensions["J"]["assigned"], extensions["J"]["versions"]) == ("U+323B0-U+3347F", 4298, ["17.0"])
+    assert extensions["D"]["versions"] == ["6.0", "18.0"]
+    assert [block["block"] for block in fish_bot.unicode_data().search("khitan")["blocks"]] == ["Khitan Small Script"]
+    missed = fish_bot.unicode_data().search("Proto-Cuneiform")
+    assert missed["blocks"] == [] and missed["note"]
+    assert len(fish_bot.unicode_data().search("")["blocks"]) == 13
+    assert len(json.dumps(fish_bot.unicode_data().search("a"), ensure_ascii=False)) < fish_bot.MAX_TOOL_RESULT
+
+
+def test_every_block_is_found_by_its_own_name():
+    data = fish_bot.unicode_data()
+    for low, high, name in data.blocks:
+        found = data.search(name)
+        assert name in [block["block"] for block in found["blocks"]] and "note" not in found
+
+
+def test_noncharacters_count_as_no_characters():
+    block = next(block for block in fish_bot.unicode_data().search("arabic presentation forms a")["blocks"])
+    assert (block["block"], block["assigned"]) == ("Arabic Presentation Forms-A", 656)
+
+
+def test_a_character_written_as_a_surrogate_pair_is_one():
+    assert fish_bot.unicode_data().describe("\\ud842\\udfb7")[0]["code_point"] == "U+20BB7"
+
+
+def test_the_facts_she_starts_from_agree_with_the_database():
+    data, prompt = fish_bot.unicode_data(), fish_bot.PERSONA_PROMPT
+    day = fish_bot.datetime.date.fromisoformat(data.released)
+    assert f"version {data.version}, released on {day.day} {day:%B} {day.year}" in prompt
+    assert f"{data.characters:,} characters, {data.unified:,} of them unified ideographs" in prompt
+    letters = sorted(row[2][-1] for row in data.blocks if row[2].startswith("CJK Unified Ideographs Extension"))
+    assert f"Extensions {letters[0]} to {letters[-1]}" in prompt
+    newest = max(data.ages, key=lambda row: [int(part) for part in row[2].split(".")])[2]
+    assert newest == data.version
+    in_blocks = sum(1 for row in data.blocks if row[2].startswith("CJK Unified") for point in range(row[0], row[1] + 1) if data.since(point))
+    assert f"{data.unified - in_blocks} of the unified ones" in prompt
+    blocks = {row[2] for row in data.blocks}
+    assert {"Jurchen", "Seal", "Tangut", "Khitan Small Script", "Nushu"} <= blocks
+    assert not any("Khitan Large" in name for name in blocks)
+    for name, version in (("Jurchen", "18.0"), ("Seal", "18.0"), ("Extension J", "17.0"), ("Extension I", "15.1")):
+        block = next(row for row in data.blocks if row[2].endswith(name))
+        assert data.since(block[0]) == version
+
+
+def test_the_unicode_tool_costs_no_budget_and_its_answers_reach_her(tmp_path):
+    lookup = fish_bot.Lookup(None, None, fish_bot.Store(tmp_path / "chat.sqlite3"), owner="mkpoli", rooms=lambda: set(),
+                             per_hour=0, memory=False)
+    assert lookup.run("unicode", {"query": "Extension J"})["blocks"][0]["assigned"] == 4298
+    assert lookup.run("unicode", {})["unicode"] == "18.0"
+
+
+def test_without_its_unicode_data_she_does_not_start(tmp_path, monkeypatch):
+    for name in ("matrix-token", "gemini-key"):
+        (tmp_path / name).write_text("secret")
+    config = tmp_path / "config.toml"
+    config.write_text('[matrix]\ntoken_file = "matrix-token"\n[gemini]\napi_key_file = "gemini-key"\n')
+
+    def missing():
+        raise FileNotFoundError("unicode-18.0.0.json.gz")
+
+    monkeypatch.setattr(fish_bot, "unicode_data", missing)
+    with pytest.raises(SystemExit, match="unicode-18"):
+        fish_bot.main(["--config", str(config), "--db", str(tmp_path / "chat.sqlite3")])
 
 
 def test_the_characters_tool_costs_no_budget(tmp_path):
@@ -1972,7 +2067,7 @@ def test_github_reads_stay_inside_the_named_repository(tmp_path):
 
 
 def test_characters_keep_whitespace():
-    lookup_text = fish_bot.describe_characters("　 a ")
+    lookup_text = fish_bot.unicode_data().describe("　 a ")
     assert [item["code_point"] for item in lookup_text] == ["U+3000", "U+0020", "U+0061", "U+00A0"]
 
 
