@@ -11,7 +11,9 @@
   import { t } from '../lib/i18n.svelte.js'
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
+  import ReadingPlaces from './ReadingPlaces.svelte'
   import ReadingRuby from './ReadingRuby.svelte'
+  import { otherPlaces, placesText, runPlaces } from '../lib/readingPlaces.js'
   import ScriptText from './ScriptText.svelte'
 
   let { item, disabled = false, working = null, saved = null } = $props()
@@ -34,6 +36,10 @@
 
   const chips = $derived(readingChips(item.reading))
   const words = $derived(item.word?.values ?? [])
+  // The reading that stands alone, whose run the other places of can be read alike; how many there are is asked after a save.
+  const standing = $derived(chips.length === 1 && item.reading.status !== 'disputed' ? chips[0].reading : null)
+  let placed = $state.raw(null), showing = $state(false)
+  const counted = $derived(placed && standing && placed.text === placesText(standing) ? placed : null)
   // A gallery's row has no reading yet; the slot stands empty, in its place, until the crop's record gives one.
   const known = $derived(Object.hasOwn(item, 'reading'))
   const mine = slot => Boolean(signedInUser()?.id && slot?.by?.includes(signedInUser().id))
@@ -179,8 +185,18 @@
       saved?.(await setReading(item, { run, at: line.at - from, reading: reading.map(plainKana), ruby: ruby.some(Boolean) ? ruby.map(text => text.normalize('NFC')) : null,
         left: leftText(), method, word: wordText(), crops: others }))
       leave()
+      count({ run })
     } catch (e) { error = e.message || t('client.saveFailed') }
     finally { pending = false; working?.(false) }
+  }
+  // The first places of the run just saved, for the button that shows them. They are of that run alone: another
+  // reading that stands here asks for its own.
+  let counting = 0
+  async function count(value) {
+    const text = placesText(value), turn = ++counting
+    placed = null
+    if (item.origin === 'corpus' || !text) return
+    try { const page = await runPlaces(text); if (turn === counting) placed = { text, page, others: otherPlaces(page, item.id) } } catch { /* The button stays without its count. */ }
   }
   async function clear() {
     if (busy) return
@@ -216,6 +232,7 @@
     {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-disputed">{t('reading.disputed')}</span>{/if}
     {#if !editing}<div class="reading-acts">
       <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{chips.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+      {#if standing && placesText(standing) && counted?.others !== 0}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if counted?.others}{' '}{counted.others}{/if}</button>{/if}
     </div>{/if}
   </div>
   {#if editing && line}
@@ -283,6 +300,7 @@
       </div>
     </div>
   {:else if error}<span class="reading-error" role="alert">{error}</span>{/if}
+  {#if showing && standing}<ReadingPlaces {item} value={standing} word={held?.word ? held : null} first={counted?.page ?? null} close={() => showing = false} />{/if}
 </div>
 
 <style>

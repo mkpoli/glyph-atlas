@@ -760,6 +760,17 @@ describe('a crop read in a run', () => {
     expect(await of(corpus)).toBeNull();
   });
 
+  it('is read for several crops at once, each with its version; one not published is left out', async () => {
+    const { local, corpus, retired, version, set, read: ledger } = read();
+    await set();
+    const of = async (crops: string) => await ledger('/atlas/readings?crops=' + crops) as any;
+    const { items } = await of([local, corpus, retired].map(publicId).join() + ',0,' + publicId(local));
+    expect(items.map((one: any) => [one.id, one.crop_version, one.text, one.reading.values[0].at, one.word])).toEqual([
+      [publicId(local), version(local), null, 1, null], [publicId(corpus), version(corpus, 'rev1'), null, 0, null]]);
+    await expect(of('')).rejects.toThrow('422 Name 1–48 crops.');
+    await expect(of(Array(49).fill(publicId(local)).join())).rejects.toThrow('422');
+  });
+
   it('may have one reading for all of its characters', async () => {
     const { set } = read();
     const answer = await set({ run: ['村', '落'], reading: ['ざいご'], ruby: ['ざいご'] });
