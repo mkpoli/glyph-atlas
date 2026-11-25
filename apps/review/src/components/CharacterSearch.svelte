@@ -65,25 +65,34 @@
   let flipped = $state(false), room = $state(null)
   const MIN_BELOW = 200   // less than this under the box shows too few rows to choose from
 
+  // A card's other forms, offered under it (`more`): those its grapheme is written with that the card does
+  // not list, as the candidate's grapheme names them.
+  const withMore = (card, grapheme) => {
+    const listed = new Set(card.members.map(member => member.label))
+    const more = (grapheme?.members ?? []).filter(member => !listed.has(member.char)).map(member => ({ label: member.char, count: countOf(member.char) ?? null }))
+    return { ...card, forms: card.members.length + more.length, more }
+  }
   // The graphemes the candidates belong to, once each and in the candidates' order, and the candidates
-  // that belong to none the page holds.
+  // that belong to none the page holds; those of a grapheme a card shows are among its other forms.
   const cards = $derived.by(() => {
     if (!groupOf) return []
     const seen = new Map()
-    for (const item of items) { const group = groupOf(item); if (group && !seen.has(group.key)) seen.set(group.key, group) }
+    for (const item of items) { const group = groupOf(item); if (group && !seen.has(group.key)) seen.set(group.key, withMore(group, item.grapheme)) }
     return [...seen.values()]
   })
-  const others = $derived(groupOf ? items.filter(item => !groupOf(item)) : [])
-  // Those in cards of their own, each of the forms the query found; what its grapheme holds in all is not said.
+  const shown = $derived(new Set(cards.flatMap(card => [card.key, card.grapheme])))
+  const others = $derived(groupOf ? items.filter(item => !groupOf(item) && !shown.has(item.grapheme?.code_point)) : [])
+  // Those in cards of their own, each of the forms the query found, then the rest; what its grapheme holds in
+  // all is not said.
   const unheld = $derived.by(() => {
     const found = new Map()
     for (const item of others) {
-      const { code_point: key, char, character_count: forms = 1 } = item.grapheme ?? item
-      const card = found.get(key) ?? { key, char: char ?? item.char, alone: false, forms, count: null, members: [] }
+      const { code_point: key, char } = item.grapheme ?? item
+      const card = found.get(key) ?? { key, char: char ?? item.char, alone: false, count: null, members: [], grapheme: item.grapheme }
       found.set(key, card)
       card.members.push({ label: item.char, count: countOf(item.char) ?? null })
     }
-    return [...found.values()]
+    return [...found.values()].map(({ grapheme, ...card }) => withMore(card, grapheme))
   })
   const carded = $derived(Boolean(groupOf))
   // The rows in the graphemes they belong to: the service lists a grapheme's forms together, the ones
@@ -380,7 +389,7 @@
   {:else if open}
     <!-- Pressing a link keeps focus in the box, as in the panel above, until its page opens. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="candidate-list" class:carded bind:this={list} onmousedown={e => { if (e.target.closest('a')) e.preventDefault() }} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
+    <div class="candidate-list" class:carded bind:this={list} onmousedown={e => { if (e.target.closest('a, .card-more')) e.preventDefault() }} onkeydown={e => { if (carded || (lead && document.activeElement?.closest('.candidate-lead'))) walk(e) }}>
       {#if lead}<div class="candidate-lead">{@render lead()}</div>{/if}
       <div id={listId} role={carded ? 'group' : 'listbox'} aria-label={t('search.candidates.label')}>
       {#if loading}<p class="candidate-status" role="status">{t('search.searching')}</p>{/if}
