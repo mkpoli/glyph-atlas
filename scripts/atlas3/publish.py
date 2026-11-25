@@ -556,18 +556,45 @@ def reconcile(m, run):
     return moved
 
 
-def settle_claims(run):
+# The mark of the pass that resolved every crop's claims by the box and image each rests on, once (`settle_claims`).
+SETTLED_BY_BOX = "claims settled by box"
+
+
+def published_entry(m, run, cid):
+    """A crop's bundle entry as this publish leaves it, or {}."""
+    p = m.atlas.execute("SELECT rev FROM pages WHERE id=?", (cid // PAGE,)).fetchone()
+    for folder in (run / "pages", OUT / "pages"):
+        if p and (path := folder / f"{cid // PAGE}-{p['rev']}.json.gz").exists():
+            return next((e for e in json.loads(gzip.decompress(path.read_bytes()))["crops"] if e["slot"] == cid % PAGE), {})
+    return {}
+
+
+def settle_claims(m, run):
     """Resolve the claims on the crops this publish cut again (`claims.settle_statements`): those made on the box published
-    hold, those on a box drawn since or before wait for it. Crops no claim is on are read and left."""
+    hold, those on a box drawn since or before wait for it. Crops no claim is on are read and left. The first publish to
+    run it resolves every crop a claim is on, once, for the slots resolved by cut alone before."""
     path = run / "recut.json"
     recut = {row[0]: row for row in json.loads(path.read_text())} if path.exists() else {}
     claimed, crops = [], sorted(recut)
+    once = not m.ids.execute("SELECT 1 FROM meta WHERE key=?", (SETTLED_BY_BOX,)).fetchone()
+    if once:
+        claimed = [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IS NOT NULL")]
+        for cid in claimed:
+            if cid not in recut and (row := m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()):
+                recut[cid] = claims.shown_as(cid, row["cut"], published_entry(m, run, cid))
+        claimed = [c for c in claimed if c in recut]
     for i in range(0, len(crops), 500):
         claimed += [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IN ("
                                              + ",".join(map(str, crops[i:i + 500])) + ")")]
-    if not claimed:
-        return
-    body = "\n".join(claims.settle_statements([recut[c] for c in sorted(claimed)]))
+    if claimed:
+        send_claims(run, [recut[c] for c in sorted(set(claimed))])
+    if once:
+        m.ids.execute("INSERT OR REPLACE INTO meta VALUES(?, ?)", (SETTLED_BY_BOX, run.name))
+        m.ids.commit()
+
+
+def send_claims(run, shown):
+    body = "\n".join(claims.settle_statements(shown))
     stamp = f"{run.name}.claims.{hashlib.sha256(body.encode()).hexdigest()[:12]}"
     path = run / f"claims-{stamp.rsplit('.', 1)[1]}.sql"
     path.write_text(body + f"\nINSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
@@ -1241,7 +1268,7 @@ def deliver(m, run):
             mark(run, "read back")
     # The claims on the crops cut again, which hold or wait by the box each rests on, now that the new cuts have landed.
     if "claims settled" not in journal(run):
-        settle_claims(run)
+        settle_claims(m, run)
         mark(run, "claims settled")
     # The runs of claimed and moved crops, filed from the claims as they stand once the publish's runs
     # have landed, whatever was claimed, disputed or redrawn while it was under way.
@@ -1743,7 +1770,7 @@ def main():
                                          [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous},
                                            **({"at": previous["cut_at"]} if previous.get("cut_at") else {})}])
             bundle["cut_at"] = cut_time
-            cut_again.append(claims.shown_as(cid, old_cut + 1, data))
+            cut_again.append(claims.shown_as(cid, old_cut + 1, bundle))
         elif row is None and previous.get("retired"):
             given["cut"] = old_cut
         for field in ("image", "context_image"):

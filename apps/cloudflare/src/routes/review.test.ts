@@ -13,7 +13,7 @@ import { foundCrop } from '../cropRecords';
 import { STALE_CODE } from '../atlas3Crops';
 import { catalogueKey, catalogueStamps } from '../atlas3Stamps';
 import { reviewsPage } from './reviews';
-import { reject } from './admin';
+import { CROP_QUERIES, reject, SUBMISSION_QUERIES } from './admin';
 import { actOnClaim, type LedgerTools } from '../ledger';
 import { rankingQuery } from './ranking';
 import { followCorpus } from './forms';
@@ -1259,6 +1259,52 @@ describe('a form claimed with its character', () => {
     expect(filed()).toBe('国い');
     // Read again, the claim is dated so, for a publisher whose filing here failed.
     expect(claimedAt() > '2026-01-01T00:00:00.000Z').toBe(true);
+  });
+
+  it('a saved redraw stays saved when the read for its filing fails, and its claim is dated for the publication', async () => {
+    const { db, env, ids, version } = formed();
+    db.exec("INSERT INTO graphemes(id,text,head) VALUES(20,'国',20)");
+    await setGrapheme(env, { id: uuid(1), crop_version: version(0), grapheme: 'U+56FD' }, publicId(ids[0]), 'u1', tools);
+    db.exec("UPDATE current_claims SET at='2026-01-01T00:00:00.000Z'");
+    const failing = { ...env, ATLAS: { ...env.ATLAS, prepare: (sql: string) => sql.includes("a.predicate='has_grapheme'") && sql.startsWith('SELECT DISTINCT a.crop')
+      ? { bind: () => ({ all: async () => { throw new Error('D1 unavailable') } }) } : env.ATLAS.prepare(sql) } } as unknown as Env;
+    const saved = await send(failing, `/atlas/characters/${publicId(ids[0])}`, { ...local(ids[0]), id: uuid(2), verdict: 'match', box: { x: 1, y: 0, w: 12, h: 10 } });
+    expect(saved.status).toBe(200);
+    expect((db.query("SELECT at FROM current_claims WHERE predicate='has_grapheme'").get() as { at: string } | null)?.at ?? 'gone').not.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('rejected, counts every query against the budget and leaves the filing to the publication', async () => {
+    const { db, env, ids, pick, version } = formed();
+    const runs = new Database(':memory:'); databases.push(runs);
+    const folder = new URL('../../migrations-atlas-runs/', import.meta.url);
+    for (const file of readdirSync(folder).filter(f => f.endsWith('.sql')).sort()) runs.exec(readFileSync(new URL(file, folder), 'utf8'));
+    Object.assign(env, { ATLAS_RUNS: d1(runs) });
+    db.exec("INSERT INTO graphemes(id,text,head) VALUES(20,'国',20)");
+    for (const [n, slot] of [[1, 0], [2, 1], [3, 2]]) {
+      await pick(10 + n, slot, '⿴囗啚');
+      await setGrapheme(env, { id: uuid(20 + n), crop_version: version(slot), grapheme: 'U+56FD' }, publicId(ids[slot]), 'u1', tools);
+      const saved = await send(env, `/atlas/characters/${publicId(ids[slot])}`, { ...local(ids[slot]), id: uuid(n), verdict: 'match', box: { x: 10 * slot + 1, y: 0, w: 12, h: 10 } });
+      expect(saved.status).toBe(200);
+    }
+    let made = 0, filed = 0;
+    const count = (db: D1Database) => ({ ...db, prepare: (sql: string) => { const one = db.prepare(sql); const wrap = (s: any): any => ({ ...s, bind: (...a: unknown[]) => wrap(s.bind(...a)),
+      first: () => { made++; return s.first() }, all: () => { made++; return s.all() }, run: () => { made++; return s.run() }, raw: () => { made++; return s.raw() } }); return wrap(one) },
+      batch: (list: any[]) => { made += list.length; return db.batch(list) } });
+    const counting = { ...env, ATLAS: count(env.ATLAS), ATLAS_RUNS: { ...count(env.ATLAS_RUNS), prepare: (sql: string) => { filed++; return env.ATLAS_RUNS.prepare(sql) } } } as unknown as Env;
+    const out = await reject(counting, 'admin', { actor: 'u1' }, { text } as any);
+    expect(out.rejected).toBe(3);
+    expect(filed).toBe(0);
+    expect(made).toBeLessThanOrEqual(3 * (SUBMISSION_QUERIES + CROP_QUERIES));
+    // A page stops before a submission that could pass the budget.
+    made = 0;
+    const again = formed();
+    for (const [n, slot] of [[1, 0], [2, 1], [3, 2]]) {
+      await again.pick(10 + n, slot, '⿴囗啚');
+      expect((await send(again.env, `/atlas/characters/${publicId(again.ids[slot])}`, { ...local(again.ids[slot]), id: uuid(n), verdict: 'match', box: { x: 10 * slot + 1, y: 0, w: 12, h: 10 } })).status).toBe(200);
+    }
+    const budget = SUBMISSION_QUERIES + CROP_QUERIES + 28;
+    const page = await reject({ ...again.env, ATLAS: count(again.env.ATLAS) } as unknown as Env, 'admin', { actor: 'u1' }, { text } as any, budget);
+    expect([page.rejected, typeof page.next, made <= budget]).toEqual([2, 'string', true]);
   });
 
   it('is saved in one submission, on a crop of another character and on one of none', async () => {

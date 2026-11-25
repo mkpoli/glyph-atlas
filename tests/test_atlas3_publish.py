@@ -810,6 +810,37 @@ def test_the_claims_of_the_crops_cut_again_alone_are_resolved_and_their_grapheme
     assert "claims settled" in drawn.publish.journal(run)
 
 
+def test_the_first_publish_resolves_every_claimed_crop_by_its_box_once(drawn):
+    """A slot resolved by cut alone before: a claim on a drawing the published box replaced, shown on it."""
+    drawn.publish_box(D)
+    # A copy kept from before the pass.
+    with sqlite3.connect(drawn.root / "out" / "mirror.sqlite") as mirror:
+        mirror.execute("DELETE FROM meta WHERE key=?", (drawn.publish.SETTLED_BY_BOX,))
+    drawn.claim("r1", B, "U+4E00")
+    drawn.site.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                       "VALUES('ex:a2','has_grapheme','','',?,1,'asserted','U+4E00','[]','[\"r1\"]','[]','ledger-r1','t')", (drawn.crop,))
+    drawn.site.commit()
+    assert drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+    other = drawn.root / "other.sqlite"
+    run(drawn.publish, drawn.monkeypatch, catalogue(other, [unit("ex:a4", "hl:p1", {"x": 0, "y": 60, "w": 10, "h": 10}, "お")]))
+    assert drawn.held() == []
+    first = sorted(path.name for path in (drawn.root / "out" / "publish").glob("*/claims-*.sql"))
+    assert len(first) == 1
+    other.unlink()
+    run(drawn.publish, drawn.monkeypatch, catalogue(other, [unit("ex:a5", "hl:p1", {"x": 0, "y": 80, "w": 10, "h": 10}, "か")]))
+    assert sorted(path.name for path in (drawn.root / "out" / "publish").glob("*/claims-*.sql")) == first
+
+
+def test_a_statement_writes_each_parameter_once_whatever_the_values_hold(drawn):
+    assert drawn.claims().statement("SELECT ?1, ?2", '["1?2x"]', "[]") == "SELECT '[\"1?2x\"]', '[]';"
+
+
+def test_a_crop_is_shown_in_every_encoding_of_its_cut_and_by_whole_numbers(drawn):
+    record = {"image_sha256": "q", "encodings": [{"pixels": "p"}], "box": {"x": 5.0, "y": 0, "w": 10, "h": 10}}
+    assert drawn.claims().shown_as(1, 2, record) == [1, 2, ["@q", "@p"], "@5,0,10,10"]
+    assert drawn.claims().shown_as(1, 2, {**record, "box": {"x": 5.5, "y": 0, "w": 10, "h": 10}})[3] is None
+
+
 def test_a_crop_cut_again_with_no_claim_sends_nothing_for_claims(drawn):
     drawn.publish_box(B)
     run, = (drawn.root / "out" / "publish").iterdir()

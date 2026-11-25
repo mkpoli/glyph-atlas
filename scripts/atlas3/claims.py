@@ -6,6 +6,7 @@ cut. A date slot's subject is a book, so both are NULL there.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -53,7 +54,10 @@ def v3_resolve(keys=KEYS):
 
 
 def statement(sql, keys="[]", shown="[]"):
-    return " ".join(line.strip() for line in sql.splitlines()).replace("?1", lit(keys)).replace("?2", lit(shown)) + ";"
+    """One statement of a file D1 imports, which binds nothing: each parameter of the SQL written as a literal, in one pass,
+    so a value that holds `?2` stays as it is."""
+    values = {"1": lit(keys), "2": lit(shown)}
+    return re.sub(r"\?([12])", lambda found: values[found[1]], " ".join(line.strip() for line in sql.splitlines())) + ";"
 
 
 def resolve_statements(slots):
@@ -69,12 +73,20 @@ def resolve_statements(slots):
     return out
 
 
+def whole(value):
+    """A box's number as a version writes it, or None: an integral float is that integer, as `Number.isSafeInteger` takes it."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or isinstance(value, float) and not value.is_integer():
+        return None
+    return int(value)
+
+
 def shown_as(crop, cut, record):
-    """A crop's row of `shown` at a new cut: the cut, and its record's pixels and box as a version ends (`cropNow`)."""
+    """A crop's row of `shown`: its cut, and its page record's pixels, in each encoding of that cut, and box as a version ends
+    (`cropNow`)."""
     pixels, box = record.get("image_sha256") or record.get("source_revision"), record.get("box")
-    values = [] if box is None else [box.get(k) for k in "xywh"]
-    whole = all(isinstance(v, int) for v in values)
-    return [crop, cut, [f"@{pixels}"] if pixels else None, "@" + ",".join(map(str, values)) if pixels and whole else None]
+    images = [f"@{pixels}", *(f"@{e['pixels']}" for e in record.get("encodings") or () if isinstance(e.get("pixels"), str))] if pixels else None
+    values = [] if box is None else [whole(box.get(k)) for k in "xywh"]
+    return [crop, cut, images, "@" + ",".join(map(str, values)) if images and None not in values else None]
 
 
 def settle_statements(shown, chunk=200):

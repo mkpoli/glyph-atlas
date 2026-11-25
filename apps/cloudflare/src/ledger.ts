@@ -139,16 +139,17 @@ const shownList = (crops: (CropNow | null)[]) => JSON.stringify(crops.flatMap(cr
 // Every slot of these crops, as the batch finds them: by `assertion_crop` and `current_claim_crop`.
 const KEYS = "SELECT DISTINCT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1)";
 if (RESOLVE.split(KEYS).length !== 2) throw new Error("data/ledger.json's resolver changed: its keys");
-const CROPS = "SELECT json_extract(value,'$[0]') FROM json_each(?2)";
-export const resolveCropsClearQuery = () => `DELETE FROM current_claims WHERE crop IN (${CROPS.replace('?2', '?1')})`;
+const CROPS = "SELECT json_extract(value,'$[0]') FROM json_each(?1)";
+export const resolveCropsClearQuery = () => `DELETE FROM current_claims WHERE crop IN (${CROPS})`;
+// ?1 and ?2 are both the crops, as `shown` reads them.
 export const resolveCropsWriteQuery = () => resolveWriteQuery().replace(KEYS,
-  "SELECT DISTINCT a.subject,a.predicate,a.scope,a.slot FROM json_each(?1) j JOIN assertions a ON a.crop=json_extract(j.value,'$[0]')").replaceAll('?2', '?1');
+  "SELECT DISTINCT a.subject,a.predicate,a.scope,a.slot FROM json_each(?1) j JOIN assertions a ON a.crop=json_extract(j.value,'$[0]')");
 /** The statements that resolve every claim on these crops again, to run after the rows that changed them. A grapheme claim
  *  that holds is dated `at`, for the publisher's filing. */
 export function resolveCrops(env: Env, crops: (CropNow | null)[], at: string): D1PreparedStatement[] {
   const shown = shownList(crops);
-  return [env.ATLAS.prepare(resolveCropsClearQuery()).bind(shown), env.ATLAS.prepare(resolveCropsWriteQuery()).bind(shown),
-    env.ATLAS.prepare(`UPDATE current_claims SET at=?2 WHERE crop IN (${CROPS.replace('?2', '?1')}) AND predicate='has_grapheme'`).bind(shown, at)];
+  return [env.ATLAS.prepare(resolveCropsClearQuery()).bind(shown), env.ATLAS.prepare(resolveCropsWriteQuery()).bind(shown, shown),
+    env.ATLAS.prepare(`UPDATE current_claims SET at=?2 WHERE crop IN (${CROPS}) AND predicate='has_grapheme'`).bind(shown, at)];
 }
 // A crop of `shown` that a publication has cut again since it was read; a write that finds one is refused whole.
 const CUT_SINCE = (list: string) => `EXISTS(SELECT 1 FROM json_each(${list}) j JOIN crops c ON c.id=json_extract(j.value,'$[0]') WHERE c.cut<>json_extract(j.value,'$[1]'))`;

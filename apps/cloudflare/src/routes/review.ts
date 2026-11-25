@@ -394,14 +394,17 @@ export function cropChanges(env: Env, actor: number, key: string, at: number, ch
 // Those of these crops a grapheme claim is on, by `assertion_crop`.
 export const graphemeClaimedQuery = () => `SELECT DISTINCT a.crop FROM json_each(?) j JOIN assertions a ON a.crop=j.value AND a.predicate='has_grapheme'`;
 /** The resolution of the claims of each crop a write gives another box, for the end of its batch, which finds them: a claim
- *  holds on the box it rests on, which a drawing leaves and an undo, or the same drawing again, returns to. `filed` files the
- *  runs of the crops a grapheme claim is on once the batch has landed. */
+ *  holds on the box it rests on, which a drawing leaves and an undo, or the same drawing again, returns to. A grapheme claim
+ *  read again is dated with the batch, so the next publication files its crop's runs (`reconcile`); `filed` files them at once,
+ *  once the batch has landed, and a filing that fails is logged and left to the publication. */
 async function redrawnSlots(env: Env, crops: number[], at: number): Promise<{ statements: D1PreparedStatement[]; filed: () => Promise<void> }> {
   if (!crops.length) return { statements: [], filed: async () => {} };
   const shown = await Promise.all(crops.map(crop => cropNow(env, crop)));
   return { statements: resolveCrops(env, shown, new Date(at).toISOString()), filed: async () => {
-    const claimed = (await env.ATLAS.prepare(graphemeClaimedQuery()).bind(JSON.stringify(crops)).all<{ crop: number }>()).results;
-    for (const { crop } of claimed) await filedRuns(env, crop);
+    try {
+      const claimed = (await env.ATLAS.prepare(graphemeClaimedQuery()).bind(JSON.stringify(crops)).all<{ crop: number }>()).results;
+      for (const { crop } of claimed) await filedRuns(env, crop);
+    } catch (error) { console.log(JSON.stringify({ event: 'refile_failed', crops, message: String(error) })) }
   } };
 }
 
@@ -713,8 +716,7 @@ export async function undo(env: Env, request: Request, user: string, id: string)
   if (JSON.parse(found.request).target === '@flags') throw new Problem(409, 'A flag is not a review, so it cannot be undone.');
   if (JSON.parse(found.request).target === STYLE_TARGET) throw new Problem(409, 'A style is not a review, so it cannot be undone. Choose another style instead.');
   const { request: _, ...submission } = found;
-  const { queries: _queries, ...undone } = await revert(env, submission, await actorFor(env, user), user);
-  return { id, ...undone };
+  return { id, ...await revert(env, submission, await actorFor(env, user), user) };
 }
 type Reviewed = { id: number; crop: number; revision: number; cut: number; label: number | null; shown: number | null; shown_text: string | null;
   was_state: number | null; was_issue: number | null; was_x: number | null; was_y: number | null; was_w: number | null; was_h: number | null;
@@ -732,8 +734,8 @@ const SET = { char: 1, state: 2, quiz: 4, cut: 8, kind: 16, flags: 32, all: 63 }
  *  the review set (its character, its state, the cut its box was drawn on), or where the crop moved on
  *  with no event, as older publications did; those crops are reported and stay undoable by an admin. The
  *  submission counts as undone only once every review in it is, and the reviewer's totals lose only the
- *  reviews undone. Answers with the `queries` its forms took beside those of its crops. */
-export async function revert(env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true; queries?: number }> {
+ *  reviews undone. A rejection leaves the filing of runs to the next publication, which a grapheme claim dated anew tells it of. */
+export async function revert(env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }, again = true): Promise<{ results: Json[]; duplicate?: true }> {
   if (submission.undone) return { results: [], duplicate: true };
   const reviewed = (await env.ATLAS.prepare(`SELECT e.id,e.crop,e.revision,e.cut,e.label,e.shown,g.text AS shown_text,e.was_state,e.was_issue,e.was_x,e.was_y,e.was_w,e.was_h,
     e.x,EXISTS(SELECT 1 FROM events u WHERE u.reverses=e.id) AS reversed
@@ -818,8 +820,8 @@ export async function revert(env: Env, submission: Submission, actor: number, by
     if (conflict(error)) throw new Problem(409, 'A later review changed this crop.');
     throw error;
   }
-  await redrawn.filed();
-  return { queries: forms.length + redrawn.statements.length, results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
+  if (!rejection) await redrawn.filed();
+  return { results: results.map(r => r.refused ? { id: null, target_id: publicId(r.crop), refused: r.refused }
     : { id: ids.get(r.crop) ?? null, target_id: publicId(r.crop), revision: r.revision,
       review: { id: ids.get(r.crop) ?? null, kind: 'undo', reverses: r.reverses, at: new Date(at).toISOString() } }) };
 }
