@@ -715,9 +715,10 @@ export const ownReadingsQuery = (owned: string) => `SELECT a.id,a.crop,a.subject
 export const savedRunsQuery = () => 'SELECT response FROM ledger_submissions WHERE id IN (SELECT value FROM json_each(?))';
 type OwnReading = { id: string; crop: number; subject: string; predicate: string; object: string | null; value: string | null;
   confidence: number | null; confidence_scheme: string | null; method: string | null; cut: number; submission: string };
-/** Set how a crop is read at its place: the run of characters it stands in (`run`, with the crop at
- *  `at`), the reading over each or over all of them, what it rests on (`method`) and, as the page writes
- *  them, the `ruby` and the 左訓 (`left`). The other crops of the run (`others`, each with its place and the
+/** Set what stands beside a crop at its place: the run of characters it stands in (`run`, with the crop at
+ *  `at`), the `ruby` and the 左訓 (`left`) as the page writes them, and the reader's note of how the run is
+ *  read (`reading`, over each character or over all of them) with what it rests on (`method`). Any of the
+ *  three may be left out, and one is given. The other crops of the run (`others`, each with its place and the
  *  version its reader saw) are claimed in the same write. `word` ({id, form, method}) names the dictionary word
  *  the run writes, on each of its crops (decision 0004): null takes the reader's back, and one without a method
  *  keeps the method the reader gave it. Without `word`, the word the reader holds on the crop goes with the run
@@ -732,18 +733,19 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   const saved = await savedSubmission(env, key, signature, tools.fail);
   if (saved) return answer(saved.crop, saved.crops ?? []);
   const clear = input.run === null, others: Json[] = clear ? [] : input.others ?? [];
-  const bad = (): never => tools.fail(422, 'Name the characters read together and the reading of each.');
+  const bad = (): never => tools.fail(422, 'Name the characters that stand together and what is written beside them or how they are read.');
   if (!Array.isArray(others) || others.length >= RUN_MAX || others.some(other => typeof other !== 'object' || other === null)) bad();
   const at = new Date().toISOString(), places: number[] = [input.at, ...others.map(other => other.at)];
   const member = (value: unknown): Member => ({ object: null, value, confidence: null, confidence_scheme: null });
   // What each crop of the run is claimed as, checked before any crop is read.
   type Claimed = { predicate: string; method: string | null; members: Member[] };
+  if (!clear && input.reading == null && input.ruby == null && input.left == null) bad();
   const claims: Claimed[][] = clear ? [] : places.map(place => [
-    { predicate: 'read_as', method: input.method as string | null, members: [member({ run: input.run, at: place, reading: input.reading })] },
+    ...(input.reading == null ? [] : [{ predicate: 'read_as', method: input.method as string | null, members: [member({ run: input.run, at: place, reading: input.reading })] }]),
     ...([['bears_ruby', input.ruby], ['bears_left_ruby', input.left]] as const).flatMap(([predicate, ruby]) =>
       ruby == null ? [] : [{ predicate, method: null, members: [member({ run: input.run, at: place, ruby })] }])]);
   for (const each of claims.flat()) checkClaims(each.predicate, each.members, {}, tools.fail, each.method);
-  if (!clear && input.ruby != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
+  if (!clear && input.ruby != null && input.reading != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
   const word = input.word as { id?: unknown; form?: unknown; method?: unknown } | null | undefined;
   if (word != null && clear) bad();
   if (word != null) {

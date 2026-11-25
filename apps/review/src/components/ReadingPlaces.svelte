@@ -3,10 +3,10 @@
   // page around the run. A place that is read already shows its reading, and nothing is written at any
   // place but by its own button.
   import { onMount } from 'svelte'
-  import { setReading } from '../lib/cropReadings.js'
+  import { readingChips, setReading } from '../lib/cropReadings.js'
   import { bookOf, placeReading, placesSaved, placesText, readingPlaces, readingsNow, runPlaces } from '../lib/readingPlaces.js'
   import { t } from '../lib/i18n.svelte.js'
-  import ReadingRuby from './ReadingRuby.svelte'
+  import ReadingChip from './ReadingChip.svelte'
   import RunImage from './RunImage.svelte'
 
   // `first` is a first page already read; `word` is the dictionary word the reader holds on the run.
@@ -72,7 +72,7 @@
 
 <dialog class="reading-places" bind:this={dialog} aria-labelledby="{uid}-title" onclose={closed} onclick={outside}>
   <header>
-    <h2 id="{uid}-title"><ReadingRuby {value} /> <span>{t('reading.places')}</span></h2>
+    <h2 id="{uid}-title"><span class="places-run">{value.run.join('')}</span> <span>{t('reading.label')} {value.reading.join('')}</span> <span>{t('reading.places')}</span></h2>
     <button type="button" class="icon-button" aria-label={t('structure.close')} onclick={() => dialog.close()}>×</button>
   </header>
   {#if word || (here > 1 && all > here)}<div class="places-tools">
@@ -99,7 +99,7 @@
             </div>
             <button type="button" class="place-confirm" disabled={Boolean(saving)} onclick={() => confirm(place)}>{saving === place.id ? t('common.saving') : t('reading.places.confirm', { reading: value.reading.join('') })}</button>
           {:else if place.read}
-            <span class="place-read">{#if place.read.values.length}{#each place.read.values as one}<ReadingRuby value={one} />{/each}{:else}{#each [...place.read.ruby?.values ?? [], ...place.read.left?.values ?? []] as one}<ReadingRuby value={one} field="ruby" />{/each}{/if}{#if place.read.status === 'disputed'}<span class="disputed">{t('reading.disputed')}</span>{/if}</span>
+            <span class="place-read">{#each readingChips(place.read) as chip}<ReadingChip {chip} />{/each}{#if place.read.status === 'disputed'}<span class="disputed">{t('reading.disputed')}</span>{/if}</span>
           {/if}
           {#if refused[place.id]}<span class="place-error" role="alert">{refused[place.id]}</span>{/if}
         </div>
@@ -118,7 +118,7 @@
   .reading-places::backdrop{background:light-dark(#16151f40, rgb(0 0 0 / 50%))}
   header{display:flex;align-items:center;justify-content:space-between;gap:12px}
   h2{display:flex;align-items:baseline;gap:12px;margin:0;font-size:13px;font-weight:500;color:var(--muted)}
-  h2 :global(.reading-run){font-family:var(--char-font);font-size:26px;line-height:1.25;color:var(--ink)}
+  .places-run{font-family:var(--char-font);font-size:26px;line-height:1.25;color:var(--ink)}
   .places-tools{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px}
   .places-scope{display:flex;gap:6px}
   button{font:inherit;font-size:12px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 11px;cursor:pointer}
@@ -141,7 +141,6 @@
   .place-methods input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
   .place-confirm{background:var(--accent-solid);border-color:var(--accent-solid);color:#fff;padding:7px 16px}
   .place-read{display:inline-flex;flex-wrap:wrap;gap:12px;align-items:center}
-  .place-read :global(.reading-run){font-family:var(--char-font);font-size:20px;line-height:1.25;color:var(--ink)}
   .disputed,.place-error{color:var(--wrong)}
   .place-error,.places-none{margin:0;font-size:12px}
   .places-none{color:var(--muted)}

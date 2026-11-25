@@ -746,6 +746,18 @@ describe('a crop read in a run', () => {
     expect(await held()).toEqual([['しょき', ['other', 'reader'], ['ruby']]]);
   });
 
+  it('is its ruby as the page writes it, whether or not a reader says how it is read', async () => {
+    const { corpus, set, of } = read();
+    const written = await set({ reading: null, method: undefined });
+    expect(written.reading).toMatchObject({ status: null, values: [], ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }] } });
+    expect((await of(corpus))?.ruby.values).toMatchObject([{ at: 0 }]);
+    // A note joins it, and goes without it.
+    expect((await set()).reading).toMatchObject({ values: [{ reading: ['しょ', 'き'] }], ruby: { values: [{ ruby: ['𛁈よ', 'き'] }] } });
+    expect((await set({ reading: null })).reading).toMatchObject({ values: [], ruby: { status: 'asserted' } });
+    expect((await set({ reading: null, ruby: null, left: ['うつわ'] })).reading).toMatchObject({ values: [], ruby: null, left: { status: 'asserted' } });
+    await expect(set({ reading: null, ruby: null })).rejects.toThrow('422');
+  });
+
   it('keeps a 左訓 beside the ruby, split its own way, and drops either the save leaves out', async () => {
     const { corpus, set, of } = read();
     const both = await set({ left: ['もろもろのうつわ'] });

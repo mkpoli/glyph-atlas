@@ -733,7 +733,7 @@
   "reading.places.none": "他ノ箇所ナシ",
   "reading.letters": "此ノ假名ノ字體",
   "reading.jibo": "字母{char}",
-  "reading.needed": "讀ミヲ記スベシ。",
+  "reading.needed": "振リ假名又ハ讀ミヲ記スベシ。",
   "reading.save": "讀ミヲ保存",
   "word.label": "語",
   "reading.method": "據リ所",

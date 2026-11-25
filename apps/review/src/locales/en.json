@@ -784,7 +784,7 @@
   "reading.places.none": "No other places",
   "reading.letters": "Letters of this kana",
   "reading.jibo": "Derived from {char}",
-  "reading.needed": "Write a reading.",
+  "reading.needed": "Write the ruby or a reading.",
   "reading.save": "Save reading",
   "word.label": "Word",
   "reading.method": "Evidence",

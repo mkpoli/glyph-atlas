@@ -4,7 +4,7 @@
   import Glyph from './Glyph.svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  import { readingLine } from '../lib/cropReadings.js'
+  import { rubyLine } from '../lib/cropReadings.js'
   import ReadingRuby from './ReadingRuby.svelte'
   import { toSource } from '../lib/cropBox.js'
   import { cropCut, isPaddedCrop } from '../lib/cropPaint.js'
@@ -76,8 +76,8 @@
     observer.observe(viewport)
     return () => observer.disconnect()
   })
-  // The reading of the crop's run, over the run on its line.
-  const read = $derived(readingLine(data))
+  // The ruby the page writes beside the crop's run, over the run on its line.
+  const read = $derived(rubyLine(data))
   const contextual = $derived(Boolean(data?.context !== false && data?.context_box && data?.crop_box && data?.context_image))
   const fullPage = $derived(contextual && !isCorpus && data?.full_page_available !== false && (expandPage || contextFailed) && Boolean(data?.image_sha256))
   const ready = $derived(contextual && (fullReady || contextReady))

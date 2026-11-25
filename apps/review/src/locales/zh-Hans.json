@@ -752,7 +752,7 @@
   "reading.places.none": "没有其他各处",
   "reading.letters": "此假名的字体",
   "reading.jibo": "字母“{char}”",
-  "reading.needed": "请填写读音。",
+  "reading.needed": "请填写旁注或读音。",
   "reading.save": "保存读音",
   "word.label": "词",
   "reading.method": "依据",

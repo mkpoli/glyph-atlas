@@ -744,7 +744,7 @@
   "reading.places.none": "ほかの箇所はありません",
   "reading.letters": "この仮名の字体",
   "reading.jibo": "字母{char}",
-  "reading.needed": "読みを入力してください。",
+  "reading.needed": "振り仮名か読みを入力してください。",
   "reading.save": "読みを保存",
   "word.label": "語",
   "reading.method": "根拠",
