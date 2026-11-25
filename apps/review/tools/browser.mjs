@@ -8,7 +8,7 @@
  * disk budget small. Nothing here is specific to the review interface.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromePath } from './harness.mjs'
@@ -35,11 +35,32 @@ function keyDescription(key) {
   return { code, keyCode, text: key }
 }
 
+// Runs a browser on the profile `$1` and deletes the profile once the browser has stopped, again while a
+// process of it still writes there. A signal stops the browser, and so does the end of standard input, which
+// comes with `close` and with the end of the tool itself, by an error, a timeout or a kill; it runs in a session
+// of its own, so a kill of the tool's process group leaves it to do this.
+const KEEPER = `profile=$1; shift
+exec 3<&0
+trap 'kill -9 $browser' TERM INT HUP
+"$@" </dev/null & browser=$!
+{ while read -r _ <&3; do :; done; kill -9 $browser; } 2>/dev/null & owner=$!
+wait $browser; code=$?
+trap '' TERM INT HUP
+kill -9 $browser $owner 2>/dev/null
+wait 2>/dev/null
+for _ in 1 2 3 4 5 6 7 8 9 10; do rm -rf -- "$profile" 2>/dev/null; sleep 0.2; [ -e "$profile" ] || break; done
+exit $code`
+
+/** Stop a browser and wait until its profile is gone. */
+async function stop(keeper) {
+  keeper.stdin.end()
+  await keeper.exited
+}
+
 export class Browser {
-  constructor(process, socket, directory) {
+  constructor(process, socket) {
     this.process = process
     this.socket = socket
-    this.directory = directory
     this.next = 1
     this.pending = new Map()
     this.listeners = []
@@ -62,6 +83,7 @@ export class Browser {
     const directory = mkdtempSync(join(tmpdir(), 'atlas-chrome-'))
     const process_ = Bun.spawn(
       [
+        'sh', '-c', KEEPER, 'browser', directory,
         binary,
         '--headless',
         '--no-sandbox',
@@ -77,8 +99,13 @@ export class Browser {
         `--user-data-dir=${directory}`,
         'about:blank',
       ],
-      { stdout: 'pipe', stderr: 'pipe' },
+      { stdin: 'pipe', stdout: 'ignore', stderr: 'ignore', detached: true },
     )
+    try { return await Browser.connect(process_, directory, width, height) }
+    catch (error) { await stop(process_); throw error }
+  }
+
+  static async connect(process_, directory, width, height) {
     const portFile = join(directory, 'DevToolsActivePort')
     const deadline = Date.now() + 30000
     while (!existsSync(portFile) && Date.now() < deadline) {
@@ -103,7 +130,7 @@ export class Browser {
       socket.addEventListener('open', resolve, { once: true })
       socket.addEventListener('error', () => reject(new Error('the DevTools socket failed')), { once: true })
     })
-    const browser = new Browser(process_, socket, directory)
+    const browser = new Browser(process_, socket)
     await browser.send('Page.enable')
     await browser.send('Runtime.enable')
     // `visit(path)` moves within the app the way a link does, without reloading the page.
@@ -300,8 +327,7 @@ export class Browser {
     } catch {
       /* already closed */
     }
-    this.process.kill()
-    rmSync(this.directory, { recursive: true, force: true })
+    await stop(this.process)
   }
 }
 
