@@ -1143,8 +1143,11 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         page = store.page(unit.page_id) if unit.page_id else None
         document = store.document(unit.document_id or page.document_id) if (unit.document_id or page) else None
         value, basis = style_module.resolve(unit, page, document)
+        # The style the unit takes when it states none of its own.
+        inherited, _ = style_module.resolve_values(
+            None, page.style if page else None, document.id if document else None, document.style if document else None)
         result.update({"context_image": result["image"] + "&context=true",
-                       "style": value, "style_basis": basis, "style_editable": True,
+                       "style": value, "style_basis": basis, "style_editable": True, "style_inherited": inherited,
                        "text": line.text if line else "", "source": document.title if document else "",
                        "page_number": page.seq + 1 if page else None,
                        "line": line.model_dump(mode="json") if line else None})

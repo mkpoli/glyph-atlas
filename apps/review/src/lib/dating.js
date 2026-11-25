@@ -11,7 +11,7 @@ export const HUTIME_FORM = 'https://www.hutime.jp/basicdata/calendar/form.html'
 /** The names of the sources a date comes from, as they name themselves. */
 const SOURCES = {
   kokusho: '国書データベース', 'ainu-records': 'アイヌ関連資料', 'honkoku-data': 'みんなで翻刻',
-  'hng-basic-data': 'HNG', 'hng-kiridashi-data': 'HNG', 'hdic-krm': 'HDIC', 'hdic-ktb': 'HDIC', 'hdic-tsj': 'HDIC', 'guangyun-zecuntang': 'nk2028',
+  'hng-basic-data': 'HNG', 'hng-kiridashi-data': 'HNG', 'hdic-krm': 'HDIC', 'hdic-ktb': 'HDIC', 'hdic-tsj': 'HDIC', 'guangyun-zecuntang': 'nk2028', 'longkan-shoujing': '中國國家圖書館',
   khs: '국가유산청', 'hangeul-museum': '국립한글박물관', nlk: '국립중앙도서관', wikisource: 'Wikisource',
   'codh-kokatsuji': '国立国会図書館', 'codh-tensho': '東方學デジタル圖書館',
 }

@@ -703,6 +703,7 @@ class TestShape:
         assert source_corpus_of("ktb:1_016_A51:seal") == "hdic-ktb"
         assert source_corpus_of("tsj:s0104a601:0") == "hdic-tsj"
         assert source_corpus_of("gy-ioc:w107b0601:0") == "guangyun-ioc"
+        assert source_corpus_of("lk-song:2611-0:0") == "longkan-song"
         assert source_corpus_of("gy-photographs:w107b0601:0") == "guangyun-photographs"
         assert source_corpus_of("eo:0123456789abcdef0123") == "nogeoldae-eonhae"
         assert source_corpus_of("ks:0123456789abcdef0123") == "wikisource-ko-glyphs"

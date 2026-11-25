@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import contextlib
 import dataclasses
 import datetime
 import difflib
@@ -40,7 +41,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -245,13 +246,22 @@ CGROUP = Path("/proc/self/cgroup")
 # Set aside for a call before it is sent: about 13,000 tokens in and 4,000 out. A call that costs more
 # may pass the day's limit by the difference, once.
 CALL_RESERVE = 0.05
-# As the day's money goes she saves in this order, so that what is left answers people and one voice
-# does it: she opens no rooms unasked while the day's spending is ahead of its pace, which rises from
-# the first share at midnight (JST) to the second at the day's end, so evenings keep their visits; past
-# THRIFT_SHORT she reads fewer lines and one picture, and leaves bystanders' lines in a conversation
-# alone; with nothing left she says so, once a day in a room that calls her.
-THRIFT_VISITS = (0.25, 0.80)
-THRIFT_SHORT = 0.85
+# A day's money is its own daily_usd, what the days before left or overdrew, and what it may borrow
+# from the days after: up to this many days' worth either way. Quiet days pay for busy ones, and over
+# time the spending averages at most daily_usd.
+SAVE_DAYS = 1.0
+BORROW_DAYS = 1.0
+# As the money goes she saves in this order, so that what is left answers people and one voice does it.
+# Her unasked visits have money of their own, VISIT_SHARE of a day's, let out as the rooms' day passes,
+# by the hours people wrote in over the last two weeks, so the busy evening keeps its visits; on a day
+# that starts in debt it is VISIT_SHARE_OWING. Below CALLER_FLOOR, kept for the people who call her, she
+# makes no visits and no digest, reads fewer lines and one picture, and leaves bystanders' lines in a
+# conversation alone. With nothing left she says so, once a day in a room that calls her.
+VISIT_SHARE = 0.35
+VISIT_SHARE_OWING = 0.15
+VISIT_START = 0.15
+ACTIVITY_DAYS = 14
+CALLER_FLOOR = 0.35
 THRIFT_CONTEXT = 15
 BROKE = {
     "zh-Hant": "今天的飯票花光啦，本鯨先去睡覺，明天再聊～🍚",
@@ -1182,6 +1192,10 @@ class Store:
                 posted_at INTEGER NOT NULL,
                 PRIMARY KEY (day, room_id)
             );
+            CREATE TABLE IF NOT EXISTS budget (
+                day TEXT PRIMARY KEY,
+                usd REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS usage (
                 day TEXT NOT NULL,
                 kind TEXT NOT NULL,
@@ -1311,17 +1325,52 @@ class Store:
             (day or local_day(now_ms()), kind, calls, 1 if failed else 0, tokens_in, tokens_out, cost))
         self.db.commit()
 
+    def hours(self, since: int, exclude: Iterable[str]) -> list[int]:
+        """How many lines people wrote in each hour of the day (JST) since a time."""
+        left_out = sorted(set(exclude))
+        counts = [0] * 24
+        for row in self.db.execute(
+                f"SELECT (ts + 32400000) / 3600000 % 24 AS hour, COUNT(*) AS lines FROM events "
+                f"WHERE ts>=? AND sender NOT IN ({','.join('?' * len(left_out))}) GROUP BY hour", (since, *left_out)):
+            counts[int(row["hour"])] = int(row["lines"])
+        return counts
+
+    def spent_on(self, work: str, day: str) -> float:
+        """What one kind of unasked work cost, its lookups included."""
+        return float(self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage WHERE day=? AND (kind=? OR kind LIKE ?)",
+                                     (day, work, f"{work} %")).fetchone()[0])
+
     def spent(self, day: str) -> float:
         return float(self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage WHERE day=?", (day,)).fetchone()[0])
 
-    def reserve(self, kind: str, amount: float, limit: float) -> str | None:
-        """Book an amount on today unless the day's total would pass the limit; returns the day."""
+    def budgets(self, before: str) -> list[tuple[float, float]]:
+        """The money and the cost of each day before one, from the first day with a budget. A day
+        nothing was called on has the money of the day before it."""
+        money = {str(row["day"]): float(row["usd"]) for row in self.db.execute(
+            "SELECT day, usd FROM budget WHERE day<? ORDER BY day", (before,))}
+        if not money:
+            return []
+        first = datetime.date.fromisoformat(min(money))
+        cost = {str(row["day"]): float(row["cost"]) for row in self.db.execute(
+            "SELECT day, SUM(cost) AS cost FROM usage WHERE day>=? AND day<? GROUP BY day", (first.isoformat(), before))}
+        days = []
+        usd = 0.0
+        for number in range((datetime.date.fromisoformat(before) - first).days):
+            day = (first + datetime.timedelta(days=number)).isoformat()
+            usd = money.get(day, usd)
+            days.append((usd, cost.get(day, 0.0)))
+        return days
+
+    def reserve(self, kind: str, amount: float, usd: float, limit: Callable[[str], float]) -> str | None:
+        """Book an amount on today, whose own money is `usd`, unless the day's total would pass its
+        limit; returns the day."""
         self.db.commit()
         self.db.execute("BEGIN IMMEDIATE")
         try:
             # The day is read under the lock, which may have been waited for past midnight.
             day = local_day(now_ms())
-            if self.spent(day) + amount > limit:
+            self.db.execute("INSERT INTO budget(day, usd) VALUES(?,?) ON CONFLICT(day) DO UPDATE SET usd=excluded.usd", (day, usd))
+            if self.spent(day) + amount > limit(day):
                 return None
             self.db.execute(
                 "INSERT INTO usage(day, kind, calls, cost) VALUES(?,?,1,?) "
@@ -2396,38 +2445,87 @@ def _require_service() -> None:
 
 
 class Purse:
-    """One day's money for model calls, kept in a database so that every process using it shares the
-    limit. A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at
-    its real cost afterwards; a process that dies in between leaves the reserve spent."""
+    """The money for model calls, kept in a database so that every process using it shares the limit. A
+    day may spend its own money, with what earlier days left and what it may borrow from later ones.
+    A call first sets CALL_RESERVE aside, in one transaction with the check, and is settled at its
+    real cost afterwards; a process that dies in between leaves the reserve spent."""
 
     def __init__(self, store: Store, daily_usd: float):
         self.store = store
         self.daily_usd = daily_usd
+        # The unasked work under way, which may not touch the callers' money.
+        self.work = ""
+
+    def _kind(self, kind: str) -> str:
+        return f"{self.work} {kind}" if self.work and kind != self.work else kind
+
+    def _limit(self, day: str) -> float:
+        return self.allowance(day) - (self.floor() if self.work else 0.0)
+
+    def floor(self) -> float:
+        """The money kept for callers. A budget too small for it keeps half."""
+        return min(CALLER_FLOOR, self.daily_usd / 2)
+
+    @contextlib.contextmanager
+    def unasked(self, work: str) -> Iterator[None]:
+        """Work nobody asked for: counted under its name, and never from the callers' money."""
+        self.work = work
+        try:
+            yield
+        finally:
+            self.work = ""
 
     def spent(self) -> float:
         return self.store.spent(local_day(now_ms()))
 
-    def share(self) -> float:
-        """How much of the day's money is gone, 1 when all of it is or the amount cannot be read."""
+    def carried(self, day: str) -> float:
+        """What the days before one saved, or overdrew when below zero."""
+        carried = 0.0
+        for usd, spent in self.store.budgets(day):
+            carried = min(carried + usd - spent, SAVE_DAYS * usd)
+        return carried
+
+    def allowance(self, day: str) -> float:
+        """What a day may spend: its own money, what the days before saved or overdrew, and a loan."""
+        return self.daily_usd + self.carried(day) + BORROW_DAYS * self.daily_usd
+
+    def remaining(self) -> float:
+        """The dollars left today, none when they cannot be read."""
         try:
-            return self.spent() / self.daily_usd if self.daily_usd > 0 else 1.0
+            return self.allowance(local_day(now_ms())) - self.spent()
         except sqlite3.Error:
             log.exception("reading the money spent")
-            return 1.0
+            return 0.0
+
+    def short(self) -> bool:
+        """Whether only the money kept for callers is left."""
+        return self.remaining() < self.floor()
+
+    def may_visit(self, passed: float) -> bool:
+        """Whether the visits' own money, let out as the day passes, has some left."""
+        if self.short():
+            return False
+        day = local_day(now_ms())
+        try:
+            share = VISIT_SHARE_OWING if self.carried(day) < 0 else VISIT_SHARE
+            return self.store.spent_on("visit", day) < self.daily_usd * share * (VISIT_START + (1 - VISIT_START) * passed)
+        except sqlite3.Error:
+            log.exception("reading the money spent on visits")
+            return False
 
     def reserve(self, kind: str) -> str:
         """Set money aside for one call, or refuse it. Returns the day it is booked on."""
         try:
-            day = self.store.reserve(kind, CALL_RESERVE, self.daily_usd)
+            day = self.store.reserve(self._kind(kind), CALL_RESERVE, self.daily_usd, self._limit)
         except sqlite3.Error as error:
             raise SpendError(f"the money spent could not be read: {error}") from None
         if day is None:
-            raise SpendError(f"today's ${self.daily_usd:.2f} for model calls is spent")
+            raise SpendError("the money for model calls is spent")
         return day
 
     def settle(self, kind: str, day: str, *, cost: float, failed: bool = False, tokens_in: int = 0,
                tokens_out: int = 0) -> None:
-        self.store.count_usage(kind, failed=failed, tokens_in=tokens_in, tokens_out=tokens_out,
+        self.store.count_usage(self._kind(kind), failed=failed, tokens_in=tokens_in, tokens_out=tokens_out,
                                cost=cost - CALL_RESERVE, day=day, calls=0)
 
     def add(self, kind: str, cost: float) -> None:
@@ -3709,6 +3807,7 @@ class Bot:
         self._spoke_at: dict[str, float] = {}
         self._visits: list[float] = []
         self._told_broke: dict[str, str] = {}
+        self._hours: tuple[str, list[int]] | None = None
         self._random = random.random
         self._aliases: dict[str, str] = {}
         self._alias_failed: dict[str, float] = {}
@@ -4191,7 +4290,7 @@ class Bot:
                 continue
             self._follows.append(now)
             partner = bool(talk.partner) and sender == talk.partner
-            if not partner and self.gemini.purse.share() >= THRIFT_SHORT:
+            if not partner and self.gemini.purse.short():
                 continue
             try:
                 act = self.turn(room_id, event_id, task="follow")
@@ -4215,11 +4314,19 @@ class Bot:
             except Exception:
                 log.exception("following in %s", room_id)
 
-    def _ahead_of_pace(self) -> bool:
-        """Whether the day's spending leaves nothing for visits at this hour."""
+    def _day_passed(self) -> float:
+        """How much of the rooms' day is over: the share of their lines people write by this time. A
+        few lines an hour are added to what was counted, so a quiet log makes it the clock."""
         now = self._clock()
-        day = (now.hour * 60 + now.minute) / 1440
-        return self.gemini.purse.share() >= THRIFT_VISITS[0] + (THRIFT_VISITS[1] - THRIFT_VISITS[0]) * day
+        today = now.strftime("%Y-%m-%d")
+        if self._hours is None or self._hours[0] != today:
+            try:
+                counts = self.store.hours(now_ms() - ACTIVITY_DAYS * 86_400_000, {self.user_id, *self.config.ignored_senders})
+                self._hours = (today, [count + ACTIVITY_DAYS for count in counts])
+            except sqlite3.Error:
+                log.exception("reading the hours people write in")
+        hours = self._hours[1] if self._hours is not None else [1] * 24
+        return (sum(hours[:now.hour]) + hours[now.hour] * now.minute / 60) / sum(hours)
 
     def visit(self) -> None:
         """Open the rooms whose time has come, and let the model decide whether to join in."""
@@ -4231,13 +4338,14 @@ class Bot:
                 unread["due"] = min(unread["last"] + VISIT_BURST, latest)
                 continue
             self._visits = [at for at in self._visits if now - at < 3600]
-            if self._ahead_of_pace() or len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
+            if not self.gemini.purse.may_visit(self._day_passed()) or len(self._visits) >= self.config.visits_per_hour or not self._chat_budget("", room_id):
                 unread["due"] = now + self._gap(room_id)
                 continue
             self._visits.append(now)
             del self._unread[room_id]
             try:
-                act = self.turn(room_id, str(unread["first"]), task="visit")
+                with self.gemini.purse.unasked("visit"):
+                    act = self.turn(room_id, str(unread["first"]), task="visit")
                 done = [name for name, part in (("spoke", act.say), ("reacted", act.react), ("sticker", act.sticker))
                         if part] if act is not None else []
                 log.info("visited %s: %s unread, interest %s, %s", room_id, unread["count"],
@@ -4405,6 +4513,9 @@ class Bot:
             if tried is not None and time.monotonic() - tried < 1800:
                 continue
             self._digest_tried[room_id] = time.monotonic()
+            if self.gemini.purse.short():
+                log.info("the digest waits for money")
+                return
             self.post_digest(day, room_id, language)
             return
 
@@ -4425,7 +4536,8 @@ class Bot:
             self.store.mark_digested(day, room_id)
             return
         room_name, _ = self._room(room_id)
-        digest = self.gemini.digest(language, room_name, changes, others)
+        with self.gemini.purse.unasked("digest"):
+            digest = self.gemini.digest(language, room_name, changes, others)
         self._post(room_id, digest, "fish-d-" + hashlib.sha256(f"{day}{room_id}".encode()).hexdigest()[:36])
         self.store.mark_digested(day, room_id)
 
@@ -4547,7 +4659,7 @@ class Bot:
             self.refresh(room_id, limit=CHAT_CONTEXT)
         except MatrixError as error:
             log.warning("refreshing %s: %s", room_id, error)
-        short = self.gemini.purse.share() >= THRIFT_SHORT
+        short = self.gemini.purse.short()
         lines = THRIFT_CONTEXT if short else VISIT_CONTEXT if task == "visit" else CHAT_CONTEXT
         events = self.store.context(room_id, now_ms() + 60_000, lines)
         trigger = next((index for index, row in enumerate(events) if row["event_id"] == event_id), None)

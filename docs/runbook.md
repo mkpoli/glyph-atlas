@@ -170,6 +170,18 @@ uv run scripts/cut_guangyun_headwords.py photographs work/guangyun-photographs -
 uv run scripts/cut_guangyun_headwords.py ioc work/guangyun-ioc --table cache/tshet-uinh-data --images cache/commons/guangyun-ioc --report work/guangyun-ioc.report.json
 ```
 
+龍龕手鏡's headwords are cut from the 宋刻本 (中國國家圖書館藏, 中華再造善本影印, on Wikimedia Commons) and labelled from 青雀古籍's
+table (`data/sources/longkan-shoujing.yaml`), which gives each entry's half-leaf and its order on it and no
+column. `glyph_atlas.tape` places the headwords of a half-leaf along its columns read as one tape, anchored on
+the likeness of each crop to its character drawn in a font, and the script says when one is kept:
+
+```sh
+mkdir -p cache/qingque-data/data/古辞书综合 && curl -L -o cache/qingque-data/data/古辞书综合/龙龛手镜.csv \
+  https://raw.githubusercontent.com/yingdazhao/qingque-data/2ca2e417a71038da2a34a3c9f0fba2991b4e57d5/data/古辞书综合/龙龛手镜.csv
+uv run scripts/cut_longkan_headwords.py song work/longkan-song --table cache/qingque-data --pdf <folder of the Commons PDF> \
+  --fonts <serif CJK font>,cache/fonts/PlangothicP1-Regular.ttf,cache/fonts/PlangothicP2-Regular.ttf --report work/longkan-song.report.json
+```
+
 ## 3. Images
 
 ```sh

@@ -225,8 +225,10 @@
   function remove(path) { if (!disabled && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
 
-  // The part field: Enter puts what it holds in the chosen slot and moves on to the next empty one.
+  // The part field: Apply or Enter puts what it holds in the chosen slot and moves on to the next empty one.
+  const pieceDirty = $derived(Boolean(piece.trim()) && (chosen === null || unalias(piece.trim()) !== text(picked)))
   function enter() {
+    if (disabled) return
     const typedText = unalias(piece.trim())
     if (!typedText) return
     const found = parse(typedText, { open: true })
@@ -351,12 +353,15 @@
       </div>
     {/if}
   </div>
-  <label class="ids-field">
-    <span class="ids-title">{t('form.ids.label')}</span>
-    <input bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off"
-      placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
-      onkeydown={event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); use() } }} />
-  </label>
+  <div class="ids-field">
+    <label class="ids-title" for={`${uid}-field`}>{t('form.ids.label')}</label>
+    <div class="ids-field-row">
+      <input id={`${uid}-field`} bind:this={field} value={draft} {disabled} lang="ja" spellcheck="false" autocomplete="off" enterkeyhint="done"
+        placeholder="⿰⿱匕失⿱コ疋" aria-invalid={Boolean(problem)} oninput={edit} oncompositionend={() => edit()} onblur={() => { run = false; if (!typed.problem && tree !== null) draft = write(tree) }}
+        onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); use() } }} />
+      <button type="button" class="ids-use" disabled={disabled || !usable} onclick={use}>{t('form.ids.use')}</button>
+    </div>
+  </div>
   <div class="ids-operators" role="group" aria-label={t('form.ids.operators')}>
     {#each OPERATORS as [op] (op)}
       <button type="button" class="ids-key" data-op={op} {disabled} aria-label={name(op)}
@@ -370,11 +375,14 @@
     <IdsPreview {tree} sequence={whole} {chosen} />
   </div>
   <div class="ids-tools">
-    <label class="ids-slot">
-      <span class="ids-title">{t('form.ids.slot')}</span>
-      <input bind:this={slot} bind:value={piece} {disabled} lang="ja" spellcheck="false" autocomplete="off"
-        placeholder={t('form.ids.slotHint')} onkeydown={event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); enter() } }} />
-    </label>
+    <div class="ids-slot">
+      <label class="ids-title" for={`${uid}-slot`}>{t('form.ids.slot')}</label>
+      <div class="ids-slot-row">
+        <input id={`${uid}-slot`} bind:this={slot} bind:value={piece} {disabled} lang="ja" spellcheck="false" autocomplete="off" enterkeyhint="done"
+          placeholder={t('form.ids.slotHint')} onkeydown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); enter() } }} />
+        <button type="button" class="ids-apply" disabled={disabled || !pieceDirty} onclick={enter}>{t('form.ids.apply')}</button>
+      </div>
+    </div>
     <button type="button" class="ids-clear" disabled={disabled || !chosen || picked === null} onclick={() => empty(chosen)}>{t('form.ids.clear')}</button>
     <button type="button" class="ids-remove" disabled={disabled || !isNode(picked)} onclick={() => remove(chosen)}>{t('form.ids.unwrap')}</button>
     <button type="button" class="ids-undo" disabled={disabled || !past.length} title={t('forms.undo.title')} onclick={undo}>{t('forms.undo')}</button>
@@ -419,10 +427,7 @@
       {/if}
     {/each}
   </div>
-  <div class="ids-actions">
-    <p class="ids-keys">{t('form.ids.keys')} <a class="ids-sources" href={SOURCES} rel="noopener" target="_blank">{t('form.ids.sources')}</a></p>
-    <button type="button" class="ids-use" disabled={disabled || !usable} onclick={use}>{t('form.ids.use')}</button>
-  </div>
+  <p class="ids-keys">{t('form.ids.keys')} <a class="ids-sources" href={SOURCES} rel="noopener" target="_blank">{t('form.ids.sources')}</a></p>
 </div>
 
 <style>
@@ -442,8 +447,13 @@
   .ids-shape.active{background:var(--accent-light)}
   .ids-field,.ids-slot{display:flex;flex-direction:column;gap:4px}
   .ids-title{font-size:11px;color:var(--muted)}
+  .ids-field-row{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+  .ids-field-row input{flex:1 1 200px;min-width:0}
   .ids-field input{font-size:20px;padding:6px 8px;font-family:var(--ids-font)}
   .ids-field input[aria-invalid="true"]{border-color:var(--fault)}
+  .ids-use{flex:none;min-height:40px;padding:6px 16px;font-size:13px;font-weight:500;white-space:nowrap;
+    border-color:var(--accent-solid);background:var(--accent-solid);color:var(--on-color)}
+  .ids-use:not(:disabled):hover{border-color:var(--accent-solid-hover);background:var(--accent-solid-hover)}
   .ids-operators{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px}
   @media (max-width:520px){.ids-operators{grid-template-columns:repeat(6,minmax(0,1fr))}}
   .ids-key{display:grid;place-items:center;padding:5px 0;min-width:0}
@@ -501,10 +511,13 @@
   .ids-op:focus-visible,.ids-part:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
 
   .ids-tools{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px}
-  .ids-slot{flex:1 1 180px;min-width:0}
+  .ids-slot{flex:1 1 160px;min-width:0}
+  .ids-slot-row{display:flex;align-items:stretch;gap:6px}
+  .ids-slot-row input{flex:1;min-width:0}
   .ids-slot input{font-size:14px;padding:7px 8px;min-height:38px}
   .ids-slot input:not(:placeholder-shown){font-size:18px;padding:5px 8px;font-family:var(--ids-font)}
-  .ids-tools > button{padding:5px 10px;font-size:13px}
+  .ids-apply{flex:none;min-height:38px;padding:5px 11px;font-size:13px;white-space:nowrap}
+  .ids-tools > button{min-height:38px;padding:5px 9px;font-size:13px}
   .ids-swaps{display:flex;flex-direction:column;gap:4px}
   .ids-options{display:flex;flex-wrap:wrap;gap:6px}
   .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:var(--ids-font)}
@@ -519,8 +532,6 @@
   .ids-pick-tabs button.active{background:var(--surface-selected);color:var(--ink)}
   .ids-pick-panel{min-width:0}
   .ids-pick-panel[hidden]{display:none}
-  .ids-actions{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
   .ids-keys{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
   .ids-sources{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
-  .ids-use{flex:none;padding:5px 14px}
 </style>

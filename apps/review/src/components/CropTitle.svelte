@@ -58,13 +58,12 @@
 
 <style>
   .crop-title-group{position:relative}
-  .crop-title{display:inline-flex;align-items:baseline;gap:10px}
-  .title-glyph{position:relative;display:inline-flex;align-items:baseline}
-  .title-glyph :global(.copy-value){position:absolute;top:2px;right:-26px}
+  .crop-title{display:inline-flex;align-items:center;gap:8px}
+  .title-glyph{display:inline-flex;align-items:center;gap:4px}
   .crop-title :global(.reference-glyph){font-size:42px;line-height:1.3}
   .character-link{color:inherit;text-decoration:none;border-radius:6px}
   .character-link:hover,.character-link:focus-visible{background:color-mix(in srgb, var(--accent) 12%, transparent)}
-  .glyph-button{display:inline-flex;align-self:center;margin-left:2px;padding:2px;border:0;border-radius:6px;background:transparent;font:inherit;line-height:1;color:inherit}
+  .glyph-button{display:inline-flex;padding:2px;border:0;border-radius:6px;background:transparent;font:inherit;line-height:1;color:inherit}
   .glyph-button:not(:disabled):hover,.glyph-button[aria-expanded="true"]{background:color-mix(in srgb, var(--accent) 12%, transparent)}
   .glyph-button:disabled{opacity:1;cursor:default}
   .read-as{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;font-size:24px;line-height:1;font-weight:400;color:var(--muted);
