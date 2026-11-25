@@ -7,6 +7,74 @@ export const MORE_BATCH = 24
 // Reference crops of one grapheme shown alongside a round: this many already-confirmed crops,
 // then up to this many more already-seen crops.
 export const REFERENCE_LIMIT = 12
+/** Tile widths (CSS px) offered by Quick Review's tile-size slider, smallest to largest. */
+export const QUIZ_TILE_SIZES = [48, 60, 76, 96, 124, 160, 200]
+/** Default tile width in standard card mode (6 columns on desktop). */
+export const QUIZ_CARDS_SIZE = 160
+/** Default tile width in compact thumbnail mode. */
+export const QUIZ_COMPACT_SIZE = 76
+/** Narrowest tile width that still fits full card metadata and action buttons. */
+export const QUIZ_CARDS_MIN = 124
+
+/** Coerce a persisted tile size to a valid stop, falling back when missing or out of set. */
+export function normalizeQuizTileSize(value, fallback = QUIZ_CARDS_SIZE) {
+  const n = Number(value)
+  return Number.isFinite(n) && QUIZ_TILE_SIZES.includes(n) ? n : fallback
+}
+
+/** Resolve view mode and tile width when the reader switches between Cards and Compact mode. */
+export function switchQuizView(nextView, { cardsSize = QUIZ_CARDS_SIZE, compactSize = QUIZ_COMPACT_SIZE } = {}) {
+  const view = nextView === 'compact' ? 'compact' : 'cards'
+  if (view === 'compact') return { view, size: normalizeQuizTileSize(compactSize, QUIZ_COMPACT_SIZE) }
+  const size = normalizeQuizTileSize(cardsSize, QUIZ_CARDS_SIZE)
+  return { view, size: size >= QUIZ_CARDS_MIN ? size : QUIZ_CARDS_SIZE }
+}
+
+/** Resolve view mode and tile width when the reader drags the tile-size slider. */
+export function resizeQuizTiles(size, currentView = 'cards') {
+  const fallback = currentView === 'compact' ? QUIZ_COMPACT_SIZE : QUIZ_CARDS_SIZE
+  const nextSize = normalizeQuizTileSize(size, fallback)
+  const view = nextSize < QUIZ_CARDS_MIN ? 'compact' : currentView === 'compact' ? 'compact' : 'cards'
+  return { view, size: nextSize }
+}
+
+/**
+ * The form key a crop is sectioned under in Quick Review: its standing claimed form when it has
+ * one, else its written character or label. Frozen as `dealtForm` when dealt so marking a crop
+ * during a round keeps the tile in place instead of jumping sections.
+ */
+export function cropSectionForm(item, fallback = '') {
+  if (item?.dealtForm) return item.dealtForm
+  const claimed = item?.form?.status !== 'disputed' && (item?.form?.values ?? []).find(v => v.text)?.text
+  return claimed || item?.written_character || item?.label || fallback
+}
+
+/**
+ * Partition a round's crops into sections by written form (字樣), ordered by `members` first and
+ * then by crop count descending (ties by code point). Within each section, crops keep their
+ * incoming order (shape order or dealt order).
+ */
+export function groupRoundByForm(items, members = [], fallback = '') {
+  const buckets = new Map()
+  for (const item of items) {
+    const form = cropSectionForm(item, fallback)
+    let bucket = buckets.get(form)
+    if (!bucket) {
+      bucket = { key: form || 'other', form, jibo: null, items: [] }
+      buckets.set(form, bucket)
+    }
+    if (!bucket.jibo && item?.jibo) bucket.jibo = item.jibo
+    bucket.items.push(item)
+  }
+  const rank = new Map(members.map((m, i) => [m, i]))
+  return [...buckets.values()].sort((a, b) => {
+    const ra = rank.has(a.form) ? rank.get(a.form) : Infinity
+    const rb = rank.has(b.form) ? rank.get(b.form) : Infinity
+    if (ra !== rb) return ra - rb
+    if (b.items.length !== a.items.length) return b.items.length - a.items.length
+    return a.form < b.form ? -1 : a.form > b.form ? 1 : 0
+  })
+}
 export const automaticCategories = categories => categories.filter(c => c.pending >= MIN_ROUND_SIZE)
 
 /** A round's address, as the site writes a grapheme's (`U+85CF`, `U+304B-U+309A`), with its material and whether
