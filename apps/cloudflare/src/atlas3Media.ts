@@ -21,12 +21,20 @@ const EXPIRES = 'x-shard-expires';
 // `expires` is SHARD_SECONDS after the copy was read from R2.
 type Read<T> = { shard: T | null; expires: number };
 
+// When each shard read is due to be read from R2 again.
+const due = new WeakMap<object, number>();
+/** When an answer read from `shards` is due, in milliseconds: the earliest of theirs, and at most SHARD_SECONDS
+ *  from now, as one that found nothing is. */
+export const answerDue = (shards: (object | null)[], now = Date.now()) =>
+  Math.min(now + SHARD_SECONDS * 1000, ...shards.map(shard => shard && due.get(shard) || Infinity));
+
 async function decoded<T>(bytes: ArrayBuffer): Promise<T> {
   const value = await new Response(new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'))).json();
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('A shard is not a JSON object.');
   return value as T;
 }
 
+const dated = <T>(shard: T, expires: number): T => { due.set(shard as object, expires); return shard };
 const settle = (put: Promise<unknown>, ctx?: ExecutionContext) => ctx ? (ctx.waitUntil(put), undefined) : put;
 
 // A shard from the edge copy, or from R2 when there is none, it has expired or it does not decode, or
@@ -37,7 +45,7 @@ async function readShard<T>(env: Env, name: string, now: number, direct: boolean
     const cached = await caches.default.match(cacheKey);
     const expires = Number(cached?.headers.get(EXPIRES));
     if (cached && expires > now) {
-      try { return { shard: await decoded<T>(await cached.arrayBuffer()), expires }; }
+      try { return { shard: dated(await decoded<T>(await cached.arrayBuffer()), expires), expires }; }
       catch { await settle(caches.default.delete(cacheKey), ctx); }
     }
   }
@@ -51,7 +59,7 @@ async function readShard<T>(env: Env, name: string, now: number, direct: boolean
   catch (error) { throw new StorageUnavailable(`${name} does not decode`, { cause: error }); }
   await settle(caches.default.put(cacheKey, new Response(bytes, { headers: {
     'cache-control': `public, max-age=${SHARD_SECONDS}`, [EXPIRES]: String(expires) } })), ctx);
-  return { shard, expires };
+  return { shard: dated(shard, expires), expires };
 }
 
 // A token bucket of reads straight to R2: whether one more fits at `now`.

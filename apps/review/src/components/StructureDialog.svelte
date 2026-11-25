@@ -43,7 +43,7 @@
   const home = new Map()
   // What names a tray's 構形 in a save: an encoded character its description puts there, else a
   // described form, else a regional shape of `of`, else its id.
-  const naming = form => form.regions ? [1, { char: form.char, of }] : isDescription(form.char) ? [2, { char: form.char }] : [3, { char: form.char }]
+  const naming = form => form.regions ? [1, { char: form.char, of: form.of ?? of }] : isDescription(form.char) ? [2, { char: form.char }] : [3, { char: form.char }]
   function absorb(found) {
     const next = [...trays], links = new Map(), filled = new Set()
     const trayOf = (id, label) => next.find(tray => tray.id === id) ?? next[next.push({ id, label, rank: 0, target: { structure: id } }) - 1]

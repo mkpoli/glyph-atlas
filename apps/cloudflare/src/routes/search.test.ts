@@ -399,6 +399,9 @@ describe("the IDS editor's structure", () => {
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月'] }] });
     expect(await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨', '滑')).toEqual({ items: [
       { id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月', '⿰氵骨'] }] });
+    // Named with several, each has its own character's.
+    const several = await structuresOf(newEnv, ctx, 'https://new.test', '⿰氵⿵冖月⿰氵骨', '遇滑骨');
+    expect(several.items).toEqual([{ id: 'st:00000000000000000000000000000001', label: '⿰水骨', chars: ['⿰氵⿵冖月', '⿰氵骨'] }]);
     await expect(structuresOf(newEnv, ctx, 'https://new.test', '')).rejects.toThrow('Name a character.');
   });
 

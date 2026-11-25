@@ -1,8 +1,10 @@
 import { request, character as readCrop } from './client.js'
-import { character as readCard, ids as readIds } from './layers.js'
+import { character as readCard, graphemeForms as readGrapheme, ids as readIds } from './layers.js'
 import { drawFigure, figuresOf } from './mjFigures.js'
 import { sealsLast } from './cardTiers.js'
 import { sortForms } from './formOffers.js'
+import { graphemeChips, langOf } from './graphemeBar.js'
+import { isUnassigned } from './identity.js'
 import { compatibility } from '../../../cloudflare/src/representation.ts'
 
 /**
@@ -24,9 +26,6 @@ const derivedEntry = item => ({ ...entry(item), code_point: item.code_point ?? n
 const carriedEntry = item => ({ char: item.char, code_point: null, script: 'han', lang: '', form: item.form, count: item.count, corpus_count: item.corpus_count })
 
 const HAN = /^\p{Script=Han}$/u
-// The language whose fonts draw a BabelStone region's shape (U+6236 戶 is drawn as 戸 under `ja`).
-const REGION_LANG = { G: 'zh-Hans', H: 'zh-HK', M: 'zh-MO', T: 'zh-Hant', J: 'ja', K: 'ko', P: 'ko-KP', V: 'vi' }
-const langOf = regions => [...regions].map(region => REGION_LANG[region]).find(Boolean) ?? ''
 const cards = new Map()
 // A description or a figure claimed on a crop, or taken back, changes its grapheme's forms, so the cards
 // read here are read again. A character of its own is on its cards whatever is claimed.
@@ -96,9 +95,28 @@ export function listForms(char) {
   return cards.get(char)
 }
 
-/** The character a form offered for `char` is a form of where it is one of its grapheme's (仮 and 假, は and 𛂞),
- *  which choosing it names; null for a form that names no character. */
-export const baseOf = (form, { family = [] }) => family.includes(form) ? form : null
+// What the site answers of a grapheme, with each member's figures once their font is loaded; one whose font
+// or figures could not be read is offered without them, and that answer is not kept.
+function readWhole(char) {
+  const key = 'grapheme ' + char
+  if (!cards.has(key)) {
+    let partial = false
+    const loaded = readGrapheme(pointOf(char)).then(async found => [found, new Map(await Promise.all(found.members.filter(member => HAN.test(member.char)).map(async ({ char }) =>
+      [char, await figuresOf(char).then(async figures => (figures.length && await drawFigure(figures[0].char), figures)).catch(() => { partial = true; return [] })])))])
+    cards.set(key, loaded.then(whole => (partial && cards.delete(key), whole), error => { cards.delete(key); throw error }))
+  }
+  return cards.get(key)
+}
+/** The forms offered for a crop of the grapheme `char` is of, whose own character nobody has assigned: those of
+ *  the whole grapheme (`graphemeChips`), the 構形 of the characters its source names it by (`focal`) first. */
+export async function listGrapheme(char, focal = []) {
+  const [found, figures] = await readWhole(char)
+  return { members: [], variants: [], ...graphemeChips(found, figures, focal) }
+}
+
+/** The character choosing a form names: on a grapheme's bar the chip's own `base`, and on a character's
+ *  (`listForms`) a member of its grapheme (仮 and 假, は and 𛂞). Null for a form that names no character. */
+export const baseOf = (form, { family = [], bases = null }) => bases ? bases.get(form) ?? null : family.includes(form) ? form : null
 
 /** The names a crop's form shows: each form's representation, or each competing one when people
  *  disagree; empty for a crop nobody has sorted, or one whose candidates were all rejected. */
@@ -111,9 +129,10 @@ export function formNames(form) {
 export const builtAs = crop => formNames(crop?.form).length ? [] : crop?.structure?.values ?? []
 
 /** The form a crop is shown as now: the form the site holds for it, or the character it is written
- *  as; none while people disagree or while only its structure is given, so that any form chosen is a claim. */
+ *  as; none while people disagree, while only its structure is given or while nobody has assigned its
+ *  character, so that any form chosen is a claim. */
 export const formOf = crop => crop?.form?.status === 'disputed' || builtAs(crop).length ? ''
-  : formNames(crop?.form)[0] ?? crop?.written_character ?? crop?.label ?? ''
+  : formNames(crop?.form)[0] ?? (isUnassigned(crop) ? '' : crop?.written_character ?? crop?.label ?? '')
 
 const reread = async crop => {
   const record = await readCrop(crop.id)

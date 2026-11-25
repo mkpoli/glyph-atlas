@@ -12,6 +12,19 @@ describe('a form chosen on an assigned crop', () => {
   })
 })
 
+describe('a form chosen on a crop with no character', () => {
+  const of = (form, base, issue, written) => characterNamed({ form, base, character: '', issue, unassigned: true, written })
+  it('names its character while that is the one shown chosen', () => {
+    expect([of('圖\u{E0100}', '圖', 'character', '圖'), of('⿴囗啚', '圖', 'character', '圖')]).toEqual(['圖', '圖'])
+  })
+  it('names none once another character is chosen, or the choice taken back', () => {
+    expect([of('圖\u{E0100}', '圖', 'character', '図'), of('圖\u{E0100}', '圖', null, ''), of('圖\u{E0100}', '圖', 'merged', '')]).toEqual([null, null, null])
+  })
+  it('names none where the form is of none, so it is claimed alone', () => {
+    expect([of('啚', null, null, ''), of('⿰木木', null, null, ''), of(null, null, 'character', '圖')]).toEqual([null, null, null])
+  })
+})
+
 describe('the review that names a character and claims its form', () => {
   const crop = { revision: 3, crop_version: 'v1' }, named = { character: '圖', form: '圖\u{E0100}' }
   it('is one save, on the version the reader saw', () => {
