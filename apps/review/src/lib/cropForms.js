@@ -126,14 +126,24 @@ export function formNames(form) {
   return (form?.values ?? []).filter(value => value.text).map(value => value.text)
 }
 
+/** The states a crop's form holds: `unresolved` (the form is unknown) or `unreadable` (the ink is),
+ *  each once, in the slot's order. Empty when it names only forms, or holds none. */
+export const formStates = form => (form?.values ?? []).filter(value => value.state).map(value => value.state)
+/** The state the slot holds as its one value: none while people disagree, and none for an
+ *  alternative set such as "取 or unresolved", where the reader can choose instead. */
+export const formState = form => form?.status === 'disputed' || (form?.values ?? []).length !== 1 ? null : formStates(form)[0] ?? null
+/** The value the unknown-variant choice claims: a reader looked and cannot name the shape. */
+export const UNRESOLVED = 'unresolved'
+export const isFormState = value => value === UNRESOLVED || value === 'unreadable'
+
 /** What a crop is built as where no form names its shape (`built_as`): its structures `{ structure, label, by }`,
  *  several while people disagree; none once the crop has a form. */
 export const builtAs = crop => formNames(crop?.form).length ? [] : crop?.structure?.values ?? []
 
 /** The form a crop is shown as now: the form the site holds for it, or the character it is written
- *  as; none while people disagree, while only its structure is given or while nobody has assigned its
- *  character, so that any form chosen is a claim. */
-export const formOf = crop => crop?.form?.status === 'disputed' || builtAs(crop).length ? ''
+ *  as; none while people disagree, while only its structure is given, while its form is a state or
+ *  while nobody has assigned its character, so that any form chosen is a claim. */
+export const formOf = crop => crop?.form?.status === 'disputed' || formStates(crop?.form).length || builtAs(crop).length ? ''
   : formNames(crop?.form)[0] ?? (isUnassigned(crop) ? '' : crop?.written_character ?? crop?.label ?? '')
 
 const reread = async crop => {

@@ -27,7 +27,7 @@
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsComposer from './IdsComposer.svelte'
   import StructureDialog from './StructureDialog.svelte'
-  import { baseOf, builtAs, listForms, listGrapheme, formOf } from '../lib/cropForms.js'
+  import { baseOf, builtAs, listForms, listGrapheme, formOf, formState, isFormState, UNRESOLVED } from '../lib/cropForms.js'
   import { proposed, standing, structureTarget } from '../lib/structures.js'
   import { chipsOf, groupForms } from '../lib/formOffers.js'
   import { NO_FORMS, barKey, foldGroups, listedOf } from '../lib/graphemeBar.js'
@@ -71,6 +71,9 @@
   const character = $derived(crop?.written_character ?? crop?.label ?? '')
   const apart = $derived(!listed.bases?.has(own || character) && (!own || own === character || [...own][0] === character))
   const current = $derived(subject || claimed && apart ? '' : own)
+  // The form slot holds no shape: the reader looked, and the variant is unknown.
+  const state = $derived(formState(crop?.form))
+  const unknown = $derived(chosen === UNRESOLVED || (chosen == null && state === UNRESOLVED))
   $effect(() => { if (!subject) unformed = !claimed ? false : ready ? apart : null })
   $effect(() => () => { unformed = false })
   // A character chosen among a whole grapheme's own leaves the bar as it stands. Another bar takes the place of the one it
@@ -140,6 +143,12 @@
   ].map(([key, title, items]) => [key, title, items.filter(matches)]).filter(([, , items]) => items.length))
   const give = char => onchoose(char, baseOf(char, listed))
   function choose(char) { if (char === chosen) onchoose(null); else give(char) }
+  // A state another reader holds can be chosen too: the claim records that this reader looked and
+  // agrees. Clicking it again drops the unsaved choice.
+  function chooseUnknown() {
+    if (disabled) return
+    onchoose(chosen === UNRESOLVED ? null : UNRESOLVED)
+  }
   function leaveOpen(block) { onchoose(open?.structure === block.id ? null : { structure: block.id, label: block.label, target: targets.get(block.id) }) }
   // The bar's 構形 a save can name, by id.
   const targets = $derived(new Map(others || subject ? [] : barGroups.flatMap(group => group.blocks.filter(block => block.label).map(block => [block.id, structureTarget(group, block, structureOf, written)])).filter(([, target]) => target)))
@@ -195,7 +204,9 @@
   <div class="form-row copyable" class:captioned>
     {#if !ready && failed}<p class="form-unread" role="alert">{t('layers.readError')}<button type="button" class="quiet-link" onclick={() => attempt++}>{t('common.retry')}</button></p>{/if}
     <FormChips groups={shownGroups} open={shapes} onopen={leaveOpen} {chosen} {current} {disabled} label={whole && !current ? t('corpus.assign.label') : t('quiz.forms.label', { char: written })} title={chipTitle} onchoose={choose}>
-      {#if !others}<CopyValue value={open ? open.label ?? written : chosen ?? (current || (unassigned ? '' : subject ?? written))} />{/if}
+      {#if !others}<CopyValue value={isFormState(chosen) ? written : open ? open.label ?? written : chosen ?? (current || (unassigned ? '' : subject ?? written))} />{/if}
+      <button type="button" class="form-unknown" class:chosen={unknown} aria-pressed={unknown} {disabled}
+        title={t('form.unknown.hint')} onclick={chooseUnknown}>{t('form.unknown')}</button>
       {#if hidden}<button type="button" class="form-more" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? '−' : '+'}{hidden}<small>· {t('chips.structure')} {folded.hidden.length}</small></button>{/if}
     </FormChips>
     <button type="button" class="form-add" bind:this={addButton} disabled={disabled || !ready} aria-expanded={picking} aria-label={t('form.add')} title={t('form.add')} onclick={() => picking = !picking}>+⌕</button>
@@ -268,6 +279,9 @@
   .form-more small{font-size:11px}
   .form-add{flex:none;min-width:40px;min-height:36px;padding:4px 10px;font-size:20px;line-height:1.2;color:var(--muted);border-style:dashed}
   .form-add[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
+  .form-unknown{display:inline-flex;flex:none;align-items:center;align-self:flex-end;padding:4px 10px;font:inherit;font-size:12px;line-height:1.2;color:var(--muted);border-style:dashed}
+  .form-unknown.chosen{border:2px solid var(--accent);padding:3px 9px;background:var(--accent-light);color:var(--accent)}
+  .form-unknown:not(:disabled):hover{color:var(--ink);border-color:var(--accent)}
   .form-picker{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
   .form-picker :global(.character-search){width:100%;min-width:0}
   .form-built{display:flex;align-items:baseline;gap:8px;font-size:14px;line-height:22px}

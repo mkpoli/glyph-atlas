@@ -112,12 +112,17 @@ const PROBLEMS: Record<FormProblem | 'private', string> = {
   extra: 'This description has more components than its operators take.',
   private: 'A private-use character names nothing without the namespace of its mapping.',
 };
+// The values `has_form` takes when the reader looked and cannot name the shape: the form unknown, or
+// the ink unreadable.
+const FORM_STATES = new Set<string>(PREDICATES.has_form.values ?? []);
 // The reader's own latest live claim in a crop's single-valued slot: one range of `assertion_crop`.
-export const ownClaimQuery = (predicate: 'has_form' | 'has_grapheme' | 'built_as', owned: string) => `SELECT a.id,a.object,a.method,a.confidence,a.confidence_scheme,
+export const ownClaimQuery = (predicate: 'has_form' | 'has_grapheme' | 'built_as', owned: string) => `SELECT a.id,a.object,a.method,a.confidence,a.confidence_scheme,a.value,
   ${predicate === 'has_form' ? '(SELECT r.value FROM forms f JOIN representations r ON r.id=f.anchor WHERE f.id=a.object)' : 'NULL'} AS text
   FROM assertions a WHERE a.crop=? AND a.predicate='${predicate}' AND a.scope='' AND a.slot='' AND (a.asserted_by=? OR a.asserted_by IN ${owned})
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid DESC LIMIT 1`;
-type Own = { id: string; object: string | null; method: string; confidence: number | null; confidence_scheme: string | null; text: string | null };
+type Own = { id: string; object: string | null; method: string; confidence: number | null; confidence_scheme: string | null; text: string | null; value: string | null };
+/** The value of a reader's own form claim: the form's representation, or its state. */
+const ownValue = (own: Own | null): string | null => own?.text ?? (own?.value == null ? null : JSON.parse(own.value));
 
 /** Set (or with `form` null, clear) `actor`'s form for one crop, and answer with the crop's form and
  *  `replaced`: the value of the actor's own claim the save took back, or null, so a client can put it back.
@@ -133,15 +138,16 @@ export async function setForm(env: Env, input: Json, named: string, actor: strin
     return { id: publicId(crop), form: await formOfCrop(env, crop), replaced: saved.replaced ?? null };
   }
   const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
-  const representation = typedForm ? typed(tools.literal(typedForm)) : null;
+  const state = typedForm && FORM_STATES.has(typedForm) ? typedForm : null;
+  const representation = typedForm && !state ? typed(tools.literal(typedForm)) : null;
   if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
   const crop = await ledger.crop(env, named);
   const own = await env.ATLAS.prepare(ownClaimQuery('has_form', ownedActors(actor))).bind(crop.id, actor).first<Own>();
-  if (!representation && !own) tools.fail(409, 'You have no form on this crop to clear.');
+  if (!representation && !state && !own) tools.fail(409, 'You have no form on this crop to clear.');
   sameVersion(crop, input.crop_version, tools.fail);
   const at = new Date().toISOString(), plan: Plan = { statements: [], keys: [] };
-  await planForm(env, { key, actor, crop, representation, own, at }, plan, new Set(), ledger);
-  const replaced = own?.text ?? null;
+  await planForm(env, { key, actor, crop, representation, state, own, at }, plan, new Set(), ledger);
+  const replaced = ownValue(own);
   await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, crop: crop.id, cut: crop.cut, replaced }, ledger);
   return { id: publicId(crop.id), form: await formOfCrop(env, crop.id), replaced };
 }
@@ -167,14 +173,19 @@ async function planNaming(env: Env, naming: { key: string; actor: string; repres
 // retraction of their own claim `own`. A value the reviewer picks or types names a representation and
 // that value's broad form, which the first such choice creates together with the claim that the
 // representation names it; `named` holds the forms a batch has already created, so it names each once.
-async function planForm(env: Env, pick: { key: string; actor: string; crop: CropNow; representation: Representation | null; own: Own | null; at: string },
+async function planForm(env: Env, pick: { key: string; actor: string; crop: CropNow; representation: Representation | null; state: string | null; own: Own | null; at: string },
   plan: Plan, named: Set<string>, ledger: LedgerTools) {
-  const { key, actor, crop, representation, own, at } = pick;
+  const { key, actor, crop, representation, state, own, at } = pick;
   const add = (part: { statements: D1PreparedStatement[]; keys: Plan['keys'] }) => { plan.statements.push(...part.statements); plan.keys.push(...part.keys) };
   plan.crops = [...plan.crops ?? [], crop.id];
-  if (!representation) return add(await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger));
-  const form = await anchoredForm(await representationId(representation));
-  if (!named.has(form)) { named.add(form); await planNaming(env, { key, actor, representation, at }, plan); }
+  if (!representation && !state) return add(await planAction(env, { key, actor, target: own!.id, action: 'retract', reason: 'cleared', admin: false, at }, ledger));
+  if (state) {
+    add(await planClaim(env, { key, actor, crop, predicate: 'has_form', scope: '', at, method: 'form-picker',
+      members: [{ object: null, value: state, confidence: null, confidence_scheme: null }] }, ledger));
+    return;
+  }
+  const form = await anchoredForm(await representationId(representation!));
+  if (!named.has(form)) { named.add(form); await planNaming(env, { key, actor, representation: representation!, at }, plan); }
   add(await planClaim(env, { key, actor, crop, predicate: 'has_form', scope: '', at, method: 'form-picker',
     members: [{ object: form, value: null, confidence: null, confidence_scheme: null }] }, ledger));
 }
@@ -196,7 +207,7 @@ export async function planReviewForm(env: Env, review: { key: string; actor: str
   const crop = box ? { ...shown, cut: cut + 1, version: shown.version!.replace(/[^@]*$/, [box.x, box.y, box.w, box.h].join(',')) } : shown;
   const ledger = { fail, canonical, owned: ownedActors } as LedgerTools;
   const plan: Plan = { statements: [], keys: [] };
-  await planForm(env, { key, actor, crop, representation, own: null, at }, plan, new Set(), ledger);
+  await planForm(env, { key, actor, crop, representation, state: null, own: null, at }, plan, new Set(), ledger);
   return [...plan.statements, ...resolveSlots(env, plan.keys), env.ATLAS.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
     .bind(key, actor, signature, JSON.stringify({ submission: key, crop: crop.id, cut: crop.cut }), at)];
 }
@@ -252,12 +263,14 @@ export async function setForms(env: Env, input: Json, actor: string, tools: Clai
   if (saved) return answer(saved.picked ?? []);
   const raw = input.crops;
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > FORM_BATCH_MAX) tools.fail(422, `A batch names 1–${FORM_BATCH_MAX} crops.`);
-  const representations = raw.map((entry: Json) => {
+  const representations: (Representation | null)[] = [], states: (string | null)[] = [];
+  for (const entry of raw as Json[]) {
     const typedForm = entry?.form == null ? null : tools.text(entry.form, 256, 'form');
-    const representation = typedForm ? typed(tools.literal(typedForm)) : null;
+    const state = typedForm && FORM_STATES.has(typedForm) ? typedForm : null;
+    const representation = typedForm && !state ? typed(tools.literal(typedForm)) : null;
     if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
-    return representation as Representation | null;
-  });
+    representations.push(representation as Representation | null); states.push(state);
+  }
   const crops = await Promise.all(raw.map((entry: Json) => ledger.crop(env, entry?.id)));
   if (new Set(crops.map(crop => crop.id)).size !== crops.length) tools.fail(422, 'A batch names each crop once.');
   const recut = crops.filter((crop, i) => !crop.version || raw[i].crop_version !== crop.version);
@@ -265,9 +278,9 @@ export async function setForms(env: Env, input: Json, actor: string, tools: Clai
   const owns = await Promise.all(crops.map(crop => env.ATLAS.prepare(ownClaimQuery('has_form', ownedActors(actor))).bind(crop.id, actor).first<Own>()));
   const at = new Date().toISOString(), plan: Plan = { statements: [], keys: [] }, named = new Set<string>(), picked: { crop: number; replaced: string | null }[] = [];
   for (const [i, crop] of crops.entries()) {
-    if (!representations[i] && !owns[i]) continue;
-    await planForm(env, { key, actor, crop, representation: representations[i], own: owns[i], at }, plan, named, ledger);
-    picked.push({ crop: crop.id, replaced: owns[i]?.text ?? null });
+    if (!representations[i] && !states[i] && !owns[i]) continue;
+    await planForm(env, { key, actor, crop, representation: representations[i], state: states[i], own: owns[i], at }, plan, named, ledger);
+    picked.push({ crop: crop.id, replaced: ownValue(owns[i]) });
   }
   // The response saved is the answer: a retry that landed first saved what it replaced.
   const committed = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, picked }, ledger);

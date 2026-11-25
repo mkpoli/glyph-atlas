@@ -2082,8 +2082,22 @@ def test_a_form_is_a_claim_that_leaves_the_character_and_the_review_alone(datase
     confirmed = client.post(path, json={**body, "id": str(uuid4()), "form": detail["label"]}).json()
     assert [v["text"] for v in confirmed["form"]["values"]] == [detail["label"]]
     assert confirmed["replaced"] == "⿺辶𦊷", "the answer names the reviewer's own form it replaced"
+    # A form the reader cannot name is held as the slot's state, not as a form, and leaves the crop
+    # its character and review.
+    unknown = client.post(path, json={**body, "id": str(uuid4()), "form": "unresolved"})
+    assert unknown.status_code == 200, unknown.text
+    assert unknown.json()["form"]["values"] == [{"state": "unresolved", "confidence": None}]
+    assert unknown.json()["replaced"] == detail["label"]
+    held = client.get(f"/atlas/characters/{quote(unit, safe='')}").json()
+    assert held["form"]["values"] == [{"state": "unresolved", "confidence": None}]
+    assert {key: held[key] for key in ("label", "revision", "state")} == \
+        {key: detail[key] for key in ("label", "revision", "state")}
+    # A named form replaces the state, and answers with the value it took back.
+    named_again = client.post(path, json={**body, "id": str(uuid4()), "form": "⿺辶𦊷"}).json()
+    assert [v["text"] for v in named_again["form"]["values"]] == ["⿺辶𦊷"]
+    assert named_again["replaced"] == "unresolved"
     cleared = client.post(path, json={**body, "id": str(uuid4()), "form": None}).json()
-    assert (cleared["form"], cleared["replaced"]) == (None, detail["label"])
+    assert (cleared["form"], cleared["replaced"]) == (None, "⿺辶𦊷")
     assert client.post(path, json={**body, "id": str(uuid4()), "form": None}).status_code == 409
     review = {"id": str(uuid4()), "client_id": "fixture-reviewer", "revision": detail["revision"],
               "image_sha256": detail["image_sha256"], "verdict": "match"}

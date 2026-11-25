@@ -348,6 +348,27 @@ describe('the crop form picker', () => {
     await expect(pick('⿰木')).rejects.toThrow('422 This description is missing a component.');
     expect(await formOfCrop(env, local)).toMatchObject({ by: ['other'] });
   });
+
+  it('holds an unnamed variant as the slot state, alone or in a batch, and names it when replaced', async () => {
+    const { db, env, tools, local, corpus, version } = setup();
+    const pick = (form: string | null, actor = 'reader') => setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form }, publicId(local), actor, tools);
+    const unknown = await pick('unresolved');
+    expect(unknown).toMatchObject({ id: publicId(local), replaced: null,
+      form: { status: 'asserted', values: [{ state: 'unresolved', confidence: null }], by: ['reader'] } });
+    expect(db.query('SELECT count(*) AS n FROM forms').get()).toEqual({ n: 0 });
+    expect(db.query("SELECT count(*) AS n FROM representations").get()).toEqual({ n: 0 });
+    expect((await pick('還')).replaced).toBe('unresolved');
+    expect((await pick('unresolved')).replaced).toBe('還');
+    await pick('還');
+    const marked = await setForms(env, { id: crypto.randomUUID(), crops: [
+      { id: publicId(local), crop_version: version(local), form: 'unresolved' },
+      { id: publicId(corpus), crop_version: version(corpus, 'rev1'), form: 'unresolved' }] }, 'reader', tools);
+    expect(marked.crops.map((c: any) => [c.id, c.form.values[0].state, c.replaced]))
+      .toEqual([[publicId(local), 'unresolved', '還'], [publicId(corpus), 'unresolved', null]]);
+    const undone = await setForms(env, { id: crypto.randomUUID(), crops: marked.crops.map((c: any) => ({ id: c.id,
+      crop_version: version(c.id === publicId(local) ? local : corpus, c.id === publicId(local) ? 'px' : 'rev1'), form: c.replaced })) }, 'reader', tools);
+    expect(undone.crops.map((c: any) => [c.id, c.form?.values[0]?.text ?? null])).toEqual([[publicId(local), '還'], [publicId(corpus), null]]);
+  });
 });
 
 describe('a form written for a grapheme', () => {

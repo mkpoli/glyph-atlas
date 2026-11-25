@@ -24,6 +24,9 @@ from .ledger import Claim, LedgerError
 METHOD = "form-picker"
 #: The statuses of a slot whose claim holds.
 FILED = ("asserted", "accepted", "adjudicated")
+#: The values `has_form` takes when the reader looked and cannot name the shape. `unresolved` is the
+#: form unknown; `unreadable` is the ink itself.
+FORM_STATES = frozenset(ledger.PREDICATES["has_form"].get("values", ()))
 
 
 def ensure_structure(conn: sqlite3.Connection, structure: Structure, *, actor: str, at: str) -> str:
@@ -54,6 +57,13 @@ def ensure_form(conn: sqlite3.Connection, named: representation.Representation, 
     return form
 
 
+def _own_value(row: tuple | None) -> str | None:
+    """The value of a reader's own form claim: the form's representation, or its state."""
+    if row is None:
+        return None
+    return row[1] if row[1] is not None else json.loads(row[2]) if row[2] is not None else None
+
+
 def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str, Any], crop: str, crop_version: str,
              form: str | None, at: str | None = None, prefix: str = "lc", legacy: str | None = None,
              method: str = METHOD, version_of: Callable[[str], str | None] | None = None,
@@ -70,7 +80,7 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
         return saved
     at = at or ledger.now()
     own = conn.execute(
-        "SELECT a.id, r.value FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
+        "SELECT a.id, r.value, a.value FROM assertions a LEFT JOIN forms f ON f.id=a.object LEFT JOIN representations r ON r.id=f.anchor "
         "WHERE a.subject=? AND a.predicate='has_form' AND a.scope='' AND a.slot='' AND a.asserted_by=? "
         "AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') "
         "ORDER BY a.rowid DESC LIMIT 1", (crop, actor)).fetchone()
@@ -80,6 +90,10 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
         ledger.act(conn, key=f"{key}/retract", actor=actor, request={"target": own[0], "action": "retract"}, target=own[0],
                    action="retract", reason="cleared", version_of=version_of or (lambda unit: crop_version if unit == crop else None),
                    prefix=prefix, at=at, mint=mint)
+    elif form in FORM_STATES:
+        ledger.write_claims(conn, key=f"{key}/has_form", actor=actor, request={"crop": crop, "form": form}, subject=crop,
+                            predicate="has_form", claims=[Claim(value=form)], crop_version=crop_version,
+                            method=method, legacy=legacy, prefix=prefix, at=at, mint=mint)
     else:
         try:
             named = representation.typed(form)
@@ -89,7 +103,8 @@ def set_form(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping
         ledger.write_claims(conn, key=f"{key}/has_form", actor=actor, request={"crop": crop, "form": chosen}, subject=crop,
                             predicate="has_form", claims=[Claim(object=chosen)], crop_version=crop_version,
                             method=method, legacy=legacy, objects={chosen: "form"}, prefix=prefix, at=at, mint=mint)
-    response = {"submission": key, "subject": crop, "replaced": own[1] if own else None}
+    replaced = _own_value(own)
+    response = {"submission": key, "subject": crop, "replaced": replaced}
     conn.execute("INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)",
                  (key, actor, signature, ledger.canonical(response), at))
     return response
