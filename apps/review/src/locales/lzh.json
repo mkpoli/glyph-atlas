@@ -729,7 +729,7 @@
   "state.unchecked": "未校",
   "reading.label": "讀",
   "reading.add": "注讀",
-  "reading.edit": "改讀",
+  "reading.edit": "改",
   "reading.run": "連讀之字",
   "reading.extend": "連讀「{char}」",
   "reading.of": "「{char}」之讀",

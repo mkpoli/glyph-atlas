@@ -63,6 +63,20 @@ export function readingLine(crop) {
 
 const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.stringify(b.run)
 /**
+ * What the inspector shows of a crop's readings: each reading with the rubies beside its run, then the
+ * rubies beside a run nobody reads, each a run of its own.
+ */
+export function readingChips(slot) {
+  const chips = (slot?.values ?? []).map(value => ({ run: value, reading: value, ruby: [], left: [] }))
+  for (const side of ['ruby', 'left']) for (const value of slot?.[side]?.values ?? []) {
+    let chip = chips.find(one => together(one.run, value))
+    if (!chip) chips.push(chip = { run: value, reading: null, ruby: [], left: [] })
+    chip[side].push(value.ruby.join(''))
+  }
+  return chips
+}
+
+/**
  * What the editor opens with, for a reader: the reading and the rubies they hold, or, holding none, the
  * ones nobody disputes. A ruby beside another run says nothing of this one. `value` names the run.
  */

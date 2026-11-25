@@ -741,7 +741,7 @@
   "state.flagged": "待修正",
   "reading.label": "讀音",
   "reading.add": "標註讀音",
-  "reading.edit": "修改讀音",
+  "reading.edit": "修改",
   "reading.run": "連讀的字",
   "reading.extend": "與「{char}」連讀",
   "reading.of": "「{char}」的讀音",
