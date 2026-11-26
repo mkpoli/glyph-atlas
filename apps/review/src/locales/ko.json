@@ -489,7 +489,7 @@
   "menu.typeface": "글꼴",
   "menu.typeface.sans": "고딕체",
   "menu.typeface.serif": "명조체",
-"nav.design": "디자인 시스템",
+  "nav.design": "디자인 시스템",
   "nav.explore": "탐색",
   "nav.flagged": "수정",
   "nav.forms": "자형",
@@ -1340,5 +1340,11 @@
   "roadmap.stage.collections": "문집",
   "roadmap.stage.miscellanies": "잡저",
   "roadmap.stage.technical": "기술·과학 문헌",
-  "roadmap.stage.gazetteers": "지방지"
+  "roadmap.stage.gazetteers": "지방지",
+  "form.ids.dragSibling": "다른 가지의 부품으로 끌어 자리 바꾸기, Alt+방향키로 같은 단계 순서 변경",
+  "form.ids.menu.label": "{part} 작업",
+  "form.ids.menu.split": "나누기",
+  "form.ids.menu.swap": "바꾸기",
+  "form.ids.menu.copy": "복사",
+  "form.ids.problem.draft": "입력란의 글자가 아직 기술열이 아닙니다. 먼저 마무리하거나 지우세요."
 }

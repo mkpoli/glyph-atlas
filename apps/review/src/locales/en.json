@@ -473,7 +473,7 @@
   "menu.typeface": "Typeface",
   "menu.typeface.sans": "Sans",
   "menu.typeface.serif": "Serif",
-"nav.design": "Design system",
+  "nav.design": "Design system",
   "nav.explore": "Explore",
   "nav.flagged": "Needs fixing",
   "nav.forms": "Forms",
@@ -1398,5 +1398,11 @@
   "roadmap.stage.collections": "Collected works",
   "roadmap.stage.miscellanies": "Miscellanies",
   "roadmap.stage.technical": "Technical and scientific works",
-  "roadmap.stage.gazetteers": "Local gazetteers"
+  "roadmap.stage.gazetteers": "Local gazetteers",
+  "form.ids.dragSibling": "Drag onto a part of another branch to switch places, or press Alt+arrow to reorder siblings",
+  "form.ids.menu.label": "Actions for {part}",
+  "form.ids.menu.split": "Split with",
+  "form.ids.menu.swap": "Change to",
+  "form.ids.menu.copy": "Copy",
+  "form.ids.problem.draft": "The field holds text that is not a description yet. Finish it or clear it first."
 }

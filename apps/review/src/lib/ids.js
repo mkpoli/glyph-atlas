@@ -209,14 +209,96 @@ export function unwrap(tree, path) {
 /**
  * `tree` with the node at `path` under the operator `op` instead, its parts kept in order: answers
  * `{ tree }`, or `{ problem: 'drop' }` when `op` takes fewer parts and one it would drop is filled.
+ * With `drop`, filled parts move to the front and parts past `op`'s arity are dropped.
  * Parts it takes beyond the old ones are empty slots (⿰亻木 as ⿲ is ⿲亻木⬚).
  */
-export function swapOp(tree, path, op) {
+export function swapOp(tree, path, op, { drop = false } = {}) {
   const node = partAt(tree, path), n = arity(op)
   if (!isNode(node) || !n) return { tree }
-  if (node.parts.slice(n).some(part => part !== null)) return { problem: 'drop' }
-  const parts = Array.from({ length: n }, (_, i) => node.parts[i] ?? null)
+  const surplus = node.parts.slice(n).some(part => part !== null)
+  if (surplus && !drop) return { problem: 'drop' }
+  const kept = surplus ? node.parts.filter(part => part !== null) : node.parts
+  const parts = Array.from({ length: n }, (_, i) => kept[i] ?? null)
   return { tree: replaceAt(tree, path, { op, parts }) }
+}
+
+/** Whether `path` names the part at `of` or one below it. */
+const within = (path, of) => path.length >= of.length && of.every((n, i) => path[i] === n)
+
+/** Whether two paths name distinct children of the same parent node. */
+export const siblings = (from, to) => from.length > 0 && from.length === to.length
+  && from.at(-1) !== to.at(-1) && from.slice(0, -1).every((n, i) => n === to[i])
+
+/** Whether two parts may exchange places: both sit below the root and neither holds the other. */
+export const swappable = (from, to) => from.length > 0 && to.length > 0 && !within(from, to) && !within(to, from)
+
+/** An adjacent sibling path, or null at the edge. */
+export function neighbor(tree, path, step) {
+  if (!path.length) return null
+  const parent = partAt(tree, path.slice(0, -1)), index = path[path.length - 1] + step
+  return isNode(parent) && index >= 0 && index < parent.parts.length ? [...path.slice(0, -1), index] : null
+}
+
+/** Move a part within its parent, retaining the order of the other siblings. */
+export function reorderSiblings(tree, from, to) {
+  if (!siblings(from, to)) return tree
+  const parentPath = from.slice(0, -1), parent = partAt(tree, parentPath)
+  const start = from[from.length - 1], end = to[to.length - 1]
+  if (!isNode(parent) || start < 0 || end < 0 || start >= parent.parts.length || end >= parent.parts.length) return tree
+  const parts = [...parent.parts]
+  parts.splice(end, 0, parts.splice(start, 1)[0])
+  return replaceAt(tree, parentPath, { ...parent, parts })
+}
+
+/** `tree` with the parts at `from` and `to` exchanged. Neither may be the root or lie inside the other. */
+export function swapParts(tree, from, to) {
+  if (!swappable(from, to)) return tree
+  const a = partAt(tree, from), b = partAt(tree, to)
+  if (a === undefined || b === undefined) return tree
+  const next = replaceAt(replaceAt(tree, from, b), to, a)
+  return write(next) === write(tree) ? tree : next
+}
+
+/**
+ * `text` split into UTF-16 offset spans matching `parse(text, { open: true })` path-for-path: each
+ * operator and each component (including optional variation selector) gets `{ path, start, end, tokenEnd }`.
+ * Missing trailing operands get zero-width spans at the end. Unparseable text returns `[]`.
+ */
+export function tokenize(text) {
+  if (!text) return []
+  if (parse(text, { open: true }).problem) return []
+  const chars = [...text]
+  const out = []
+  let ci = 0, offset = 0
+  function read(path) {
+    const start = offset
+    const char = chars[ci]
+    if (char === undefined) {
+      out.push({ path, start, end: start, tokenEnd: start })
+      return
+    }
+    ci++
+    offset += char.length
+    const n = arity(char)
+    if (!n) {
+      if (!EMPTY_READ.has(char) && isSelector(chars[ci])) offset += chars[ci++].length
+      out.push({ path, start, end: offset, tokenEnd: offset })
+      return
+    }
+    const token = { path, start, end: offset, tokenEnd: offset }
+    out.push(token)
+    for (let i = 0; i < n; i++) read([...path, i])
+    token.end = offset
+  }
+  read([])
+  return out
+}
+
+/** The smallest subtree token in `spans` covering a non-empty UTF-16 text range `[start, end]`. */
+export function rangeToken(spans, start, end) {
+  if (start === end) return null
+  return spans.filter(token => token.start <= start && token.end >= end)
+    .sort((a, b) => b.path.length - a.path.length)[0] ?? null
 }
 
 // The composer's drawing of a description is stored under `ids/<sha256 of its NFC form>.svg`, the

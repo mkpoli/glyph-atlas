@@ -1340,5 +1340,11 @@
   "roadmap.stage.collections": "文集",
   "roadmap.stage.miscellanies": "雜著",
   "roadmap.stage.technical": "冊技術吧科學",
-  "roadmap.stage.gazetteers": "地方誌"
+  "roadmap.stage.gazetteers": "地方誌",
+  "form.ids.dragSibling": "捁𨖅分𡨸恪底對位置，或刃乏Alt/⌥+𪖫𥏍底對次序共層",
+  "form.ids.menu.label": "𫾗朱{part}",
+  "form.ids.menu.split": "索成",
+  "form.ids.menu.swap": "對成",
+  "form.ids.menu.copy": "抄劄",
+  "form.ids.problem.draft": "烏入𣗓沛圮𥱬𡨸。唉曰冲或挅𠓀。"
 }
