@@ -484,6 +484,7 @@
   "run.order.hand": "手書き優先",
   "run.order.source": "資料順",
   "run.near.label": "関連する文字列",
+  "run.near.iteration": "踊り字による表記",
   "run.near.inside": "含まれる文字列",
   "run.near.longer": "より長い文字列",
   "run.near.siblings": "{lead}で始まる他の文字列",

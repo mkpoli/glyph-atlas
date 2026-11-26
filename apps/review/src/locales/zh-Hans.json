@@ -492,6 +492,7 @@
   "run.order.hand": "手写优先",
   "run.order.source": "按文献",
   "run.near.label": "相关字串",
+  "run.near.iteration": "重文号写法",
   "run.near.inside": "包含的字串",
   "run.near.longer": "更长的字串",
   "run.near.siblings": "同以“{lead}”开头",

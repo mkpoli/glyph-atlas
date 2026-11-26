@@ -469,6 +469,7 @@
   "run.order.hand": "寫先",
   "run.order.source": "依書",
   "run.near.label": "類",
+  "run.near.iteration": "重文體",
   "run.near.inside": "含列",
   "run.near.longer": "長列",
   "run.near.siblings": "同首{lead}",
