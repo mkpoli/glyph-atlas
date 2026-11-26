@@ -464,6 +464,40 @@ def test_a_ruling_a_curated_family_breaks_stops_the_build():
         decided(rows, forms(丙=[("甲", "甲")]), curated={"丙": ["丙", "丁"]}, hand=ruled(("丙", "丁", "two")))
 
 
+def test_a_form_parted_from_a_character_ruled_apart_takes_no_other_family_to_its_full_form():
+    rows = [edge("留", "畱", "z"), edge("留", "备", "z"), edge("备", "丁", "z"), edge("丁", "备", "simplified", "opencc", "STCharacters")]
+    found, _ = decided(rows, forms(备=[("備", "備")]), familiar="留", hand=ruled(("备", "備", "one"), ("备", "丁", "two")))
+    assert found == {"備": "".join(sorted("備备")), "留": "".join(sorted("留畱"))}
+
+
+def test_a_full_form_tied_to_the_one_a_form_is_ruled_with_stays_with_both():
+    rows = [edge("丙", "甲", "z"), edge("甲", "丁", "z")]
+    found, _ = decided(rows, forms(丙=[("甲", "甲"), ("丁", "丁")]), familiar="丙甲", hand=ruled(("丙", "甲", "one")))
+    assert found == {"丙": "".join(sorted("丁丙甲"))}
+    found, _ = decided([*rows, edge("戊", "丙", "z")], forms(丙=[("甲", "甲"), ("丁", "丁")]), familiar="丙甲",
+                       hand=ruled(("丙", "甲", "one")), words=headwords(*apart_in_both("戊", "丁")))
+    assert found == {"丙": "".join(sorted("丁丙戊甲"))}
+
+
+def test_a_full_form_hanging_on_a_form_curated_with_another_leaves_the_curated_family():
+    found, _ = decided([edge("甲", "丙", "z"), edge("丙", "乙", "z")], forms(丙=[("甲", "甲"), ("乙", "乙")]), curated={"甲": ["甲", "丙"]})
+    assert found == {"甲": "".join(sorted("甲丙"))}
+
+
+def test_a_join_of_full_forms_brings_back_no_character_a_form_is_ruled_apart_from():
+    rows = [edge("駡", "骂", "z"), edge("骂", "罵", "z"), edge("罵", "骂", "shinjitai", "cjkvi-variants", "x"),
+            edge("駡", "罵", "variant", "wikidata"), edge("駡", "罵", "variant", "cjkvi-variants", "x")]
+    found, _ = decided(rows, forms(骂=[("駡", "駡"), ("駡", "罵")]), hand=ruled(("骂", "罵", "two")),
+                       words=headwords(("guangyun", "1", "駡", "ma"), ("guangyun", "1", "罵", "ma")))
+    assert not any({"骂", "罵"} <= set(members) for members in found.values())
+
+
+def test_a_move_that_would_split_what_stays_of_a_join_is_refused():
+    rows = [edge("甲", "丙", "z"), edge("丙", "乙", "z"), edge("丙", "丁", "variant", "cjkvi-variants", "丙→丁 joyo/variant")]
+    found, reasons = decided(rows, forms(乙=[("甲", "甲")]), familiar="甲", words=headwords(*apart_in_both("乙", "丁")))
+    assert found == {"甲": "".join(sorted("丙乙甲"))} and reasons["丙"] == ["it would part 乙 from 甲, joined before it"]
+
+
 def test_full_forms_the_form_alone_holds_together_are_several_characters():
     found, reasons = decided([edge("甲", "丙", "z"), edge("丙", "乙", "z")], forms(丙=[("甲", "甲"), ("乙", "乙")]))
     assert found == {} and reasons["丙"][0] == "several characters: 乙甲"

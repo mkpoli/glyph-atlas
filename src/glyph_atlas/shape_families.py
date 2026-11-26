@@ -852,17 +852,24 @@ def _join_standard_forms(
         # other full forms; the rules weigh the full forms of a form with no such ruling. Each is parted on its own.
         other = (full - one) & family.members - two if one else set()
         here = set() if one else full & family.members
-        for targets, weighed in ((two, False), (other, False), (here, True)):
+        # A character tied without the form to what must stay (the curated family the form is in, and for its other
+        # full forms the one it is ruled with) stays with that.
+        ties = _ties(family, family.members - {form})
+        stated = family.stated if form in family.stated else frozenset()
+        for targets, keep, weighed in ((two, stated, False), (other, stated | one, False), (here, stated, True)):
+            targets = {char for char in targets if not _reached(char, ties) & keep}
             if not targets or {form, *targets} <= family.stated:
                 continue
             own = part_with(form, targets)
             if own & family.stated and family.stated - own:
                 continue
+            # No parting undoes a join made before it.
+            pieces = [part for side in (own, family.members - own) for part in _parts(side, _ties(family, side))]
+            if any(pair <= family.members and not any(pair <= piece for piece in pieces) for pair in accepted):
+                continue
             if not weighed or against(form, full, further, table, own):
-                if targets is two:
-                    settled.update((form, char) for char in targets)
                 _leave(family, own, group)
-                if one and not one <= own:
+                if one and targets & (full - one) and not one <= own:
                     carried[form, frozenset(one)] = own
                 return True
         return False
@@ -926,6 +933,11 @@ def _join_standard_forms(
                            for row in between.get(frozenset((other, rest)), ()))
                 if printed and not tied and other in ideographs and forms[other] == {form}:
                     join_full(one, other)
+    # A join of full forms can bring back a character a form is ruled apart from.
+    while [separate(form, full, further, table) for form, full, further, _, table in given].count(True):
+        pass
+    # The piece each form ruled one with a full form parted with, as it stands: a form joining it later goes too.
+    whole = {key: unit(key[0]) for key, own in carried.items() if unit(key[0]).members <= own}
     decided: list[Decision] = []
     for form, full, further, edges, table in given:
         # A pair of the 常用漢字表 the Chinese table gives too is decided by that one.
@@ -943,7 +955,7 @@ def _join_standard_forms(
         if found.reasons:
             refuse("a standard form: " + found.reasons[0].partition(":")[0], edge)
         elif why := _take_in(found, group, between, headwords, familiarity, accepted,
-                             unit(found.form).members <= carried.get((found.form, found.full), set())):
+                             unit(found.form) is whole.get((found.form, found.full))):
             found.reasons.append(why)
             refuse("a standard form: " + why, edge)
         else:
@@ -1044,14 +1056,16 @@ def _take_in(
     curated = bool(moved & source.stated)
     if curated and (target.curated or not source.stated <= moved):
         return "two curated families" if target.curated else "it would leave part of a curated family behind"
-    for pair in accepted:
-        if pair & moved and pair & (source.members - moved):
-            return f"it would part {''.join(sorted(pair & moved))} from {''.join(sorted(pair - moved))}, joined before it"
-    heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
     stays, stated_edges = source.members - moved, source.edges
+    parts = _parts(stays, _ties(source, stays))
+    for pair in accepted:
+        if pair <= source.members and not any(pair <= part for part in (moved, *parts)):
+            first = pair & moved or next(part & pair for part in parts if part & pair)
+            return f"it would part {''.join(sorted(first))} from {''.join(sorted(pair - first))}, joined before it"
+    heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
     taken = [edge for edge in stated_edges if edge.a in moved and edge.b in moved]
     # What stays is as many families as its ties hold together; a curated one is the family it was.
-    for part in _parts(stays, _ties(source, stays)):
+    for part in parts:
         kept = source if part & source.stated else Family(min(part), part)
         kept.members, kept.edges = part, [edge for edge in stated_edges if edge.a in part and edge.b in part]
         kept.kept_head = source.kept_head if source.kept_head in part else None
