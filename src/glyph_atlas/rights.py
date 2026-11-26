@@ -127,6 +127,7 @@ def _parse_entries(path: Path) -> list[dict]:
                 "licence": licence.value,
                 "label": str(item.get("label") or licence.value),
                 "evidence": item.get("evidence"),
+                "text": item.get("text"),
                 "eligible": eligible,
                 "obligations": str(item["obligations"]),
                 "checked": checked,

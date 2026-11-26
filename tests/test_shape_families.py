@@ -184,9 +184,9 @@ def test_the_site_puts_kan_and_its_mj_figure_in_one_grapheme():
             "detail": OYAJI.format(figure="MJ058863")} in cited["mj-shrink-map"]["edges"]
 
 
-def test_the_site_keeps_kan_apart_from_its_simplification_and_its_partial_variant():
-    assert refs.grapheme("还") == "U+8FD8" and refs.grapheme("𢕼") == "U+2257C"
-    assert refs.grapheme_info("还")["relation"] == refs.grapheme_info("𢕼")["relation"] == "self"
+def test_the_site_keeps_kan_apart_from_its_partial_variant():
+    assert refs.grapheme("还") == "U+9084" and refs.grapheme("𢕼") == "U+2257C"
+    assert refs.grapheme_info("𢕼")["relation"] == "self"
 
 
 def test_every_source_a_family_cites_has_a_source_record():

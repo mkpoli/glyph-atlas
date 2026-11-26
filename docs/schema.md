@@ -18,7 +18,8 @@ characters and occurrence counts remain separate. The 271 one-to-one Japanese
 old/new pairs are cited in `graphemes.yaml`. `glyph_atlas.shape_families` adds the
 rest from `kanji-variants.tsv`: characters a source defines as one character in
 another shape, then the 異寫字, a simplified, 新字体 or other variant form that
-writes one character only (时 for 時). A form that writes two characters (寸 for 時
+writes one character only (时 for 時), then the forms the 通用规范汉字表 and the 常用漢字表
+prescribe for one character (动 for 動, 状 for 狀). A form that writes two characters (寸 for 時
 and 算, 后 for 後 and 后) stays a character of its own, and shared pronunciations
 do not create browsing families. A small seal character is a form of the grapheme of
 its Han character, Unicode's `kSEAL_MCJK`: 𽌇 belongs to 春 with 萅

@@ -24,8 +24,9 @@
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.7",
     "@better-auth/passkey": "^1.7.7",
+    "@glyph-atlas/design-system": "file:../../packages/design-system",
     "better-auth": "^1.7.7",
-    "onnxruntime-web": "1.30.0",
-    "@glyph-atlas/design-system": "file:../../packages/design-system"
+    "han-compose": "github:mkpoli/han-compose#9c2269f2",
+    "onnxruntime-web": "1.30.0"
   }
 }

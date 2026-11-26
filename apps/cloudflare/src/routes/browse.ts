@@ -446,6 +446,9 @@ export async function page(env: Env, stages: Stage[], start: number, cursor: str
 // characters after every other: the interface's number keys follow the list.
 export const graphemeQuery = () => 'SELECT id,text,head FROM graphemes WHERE text=?';
 export const membersQuery = () => 'SELECT id,text FROM graphemes WHERE head=? ORDER BY id';
+// The family of the grapheme a key's text is filed under: its head, and each character filed under it.
+export const familyQuery = () => `SELECT g.id AS own,h.id AS head,h.text,m.id AS member FROM graphemes g JOIN graphemes h ON h.id=coalesce(g.head,g.id)
+  LEFT JOIN graphemes m ON m.head=h.id WHERE g.text=?`;
 export async function graphemeMembers(env: Env, key: string): Promise<{ ids: number[]; texts: string[] }> {
   const own = compose(graphemeText(key));
   const row = await env.ATLAS.prepare(graphemeQuery()).bind(own).first<{ id: number; text: string; head: number | null }>();
@@ -559,16 +562,23 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   const productions = scopeIds(production, keys);
 
   // The characters a listing names: a round's grapheme members, a browse page's family (every character
-  // filed under the grapheme, or, under a member's key, that character alone), a character, a search. A
-  // name the site holds no crop of names none.
+  // filed under the grapheme), a character, a search. A member's key, the key a head had before a table filed
+  // it under another among them, lists the family it is a member of; a small seal character's lists that
+  // character alone. A family is as the tables stand, whatever graphemes the publication counted its
+  // characters under (`familyQuery`). A name the site holds no crop of names none.
   const byText = new Map([...chars].map(([id, info]) => [info.text, id]));
   let named: Set<number> | null = null, written: Set<number> | null = null;
   const narrow = (ids: Iterable<number>) => { const next = new Set(ids); named = named === null ? next : new Set([...named].filter(id => next.has(id))); };
   if (members) narrow(members.ids);
-  const family = grapheme && !scoped ? new Set([...chars].filter(([, info]) => info.grapheme === grapheme).map(([id]) => id)) : null;
-  const member = family && !family.size ? byText.get(graphemeText(grapheme!)) : undefined;
-  if (member !== undefined) family!.add(member);
-  if (family) narrow(family);
+  let head = grapheme, family: Set<number> | null = null, member: number | undefined;
+  if (grapheme && !scoped) {
+    const own = compose(graphemeText(grapheme));
+    const rows = (await env.ATLAS.prepare(familyQuery()).bind(own).all<{ own: number; head: number; text: string; member: number | null }>()).results;
+    if (rows.length && rows[0].own !== rows[0].head && isSeal(own)) member = rows[0].own;
+    else if (rows.length) head = codePoints(rows[0].text);
+    family = new Set((member !== undefined ? [member] : rows.flatMap(row => [row.head, row.member ?? row.head])).filter(id => chars.has(id)));
+    narrow(family);
+  }
   for (const value of [character, searched]) if (value) {
     const id = byText.get(value) ?? (await env.ATLAS.prepare(graphemeQuery()).bind(value).first<{ id: number }>())?.id;
     const ids = id === undefined ? [] : [id];
@@ -579,12 +589,12 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   let filing: Promise<FiledAt[]> | null = null;
   const claimsRead = () => filing ??= filedClaimsKept(env, version);
   // Browsing a family, a crop a grapheme claim files under it is listed with it, and a crop of its
-  // characters a claim files under another family is not, as the family's gallery lists them; a member
-  // alone lists its character's crops, whatever claims file them under. A character or a search narrows
+  // characters a claim files under another family is not, as the family's gallery lists them; a small seal
+  // character alone lists its crops, whatever claims file them under. A character or a search narrows
   // either as it narrows the rest. A crop with no character is counted under none, and is listed by none.
   const claims = family && member === undefined ? await claimsRead() : [];
-  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== grapheme).map(r => r.id));
-  const here = claims.filter(r => r.kind === 0 && r.head === grapheme && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
+  const away = new Set(claims.filter(r => r.kind === 0 && r.char !== null && family!.has(r.char) && r.head !== head).map(r => r.id));
+  const here = claims.filter(r => r.kind === 0 && r.head === head && r.char !== null && !family!.has(r.char) && (written === null || written.has(r.char))
     && r.state !== null && r.quiz !== null).map(r => ({ ...r, char: r.char!, state: r.state!, quiz: r.quiz! }));
   // -2 matches nothing: a book, script or state the site does not know.
   const book = documentKey ? (await env.ATLAS.prepare(bookQuery()).bind(documentKey).first<{ id: number }>())?.id ?? -2 : null;
@@ -703,7 +713,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
   }
   const body = { total, next: dealt.next, has_more: dealt.next !== null, available: Object.values(facets.counts).reduce((a, b) => a + b, 0),
     counts: facets.counts, purpose, production, review_limit: ROUND_MAX, review_epoch: await siteValue(env, 'review_epoch') || 0,
-    query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : {}),
+    query: q.get('q'), ...(scoped ? { grapheme: { code_point: grapheme, char: graphemeText(grapheme), members: members!.texts } } : head ? { head } : {}),
     // `facets=counts` leaves out the counts by character and by work, a few hundred kilobytes a page that
     // shows its rows first and reads them after (`limit=0`) does not wait for.
     ...(q.get('facets') === 'counts' ? { categories: [], documents: [] } : { categories, documents: facets.documents }),

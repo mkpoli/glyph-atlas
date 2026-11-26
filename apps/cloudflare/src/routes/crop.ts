@@ -176,7 +176,7 @@ export const lineQuery = (reach = LINE_REACH) => `WITH RECURSIVE ahead(id,d) AS 
     SELECT p.first,b.d-1 FROM behind b CROSS JOIN runs p ON p.second=b.id AND p.size=2 WHERE b.d>-${reach})
   SELECT d,id FROM ahead UNION ALL SELECT d,id FROM behind WHERE d<0`;
 // What the inspector's line strip needs of each neighbour: the crop as the review path judges it (revision
-// and pixels), the version a claim on it names, the label it carries now, and what is painted in its place until it loads. A crop with no
+// and pixels), the version a claim on it names, its box on the page, the label it carries now, and what is painted in its place until it loads. A crop with no
 // neighbours has an empty line.
 export function lineItems(steps: { d: number; id: number }[], crops: Map<number, { row: Listed; entry: Json }>): Json[] {
   const seen = new Set<number>();
@@ -186,14 +186,14 @@ export function lineItems(steps: { d: number; id: number }[], crops: Map<number,
     seen.add(step.id);
     const { row, entry } = found;
     return [{ id: publicId(row.id), offset: step.d, label: row.char ?? entry.label ?? null, image: entry.image ?? null, revision: row.revision,
-      image_sha256: entry.image_sha256 ?? null, crop_version: cropVersion(publicId(row.id), { ...entry, box: boxOf(row, entry) }),
+      image_sha256: entry.image_sha256 ?? null, crop_version: cropVersion(publicId(row.id), { ...entry, box: boxOf(row, entry) }), box: boxOf(row, entry),
       state: recordState(row.state), issue: recordIssue(row.issue), tone: entry.tone ?? null, image_size: entry.image_size ?? null }];
   });
   return items.length > 1 ? items : [];
 }
 // The edge keeps a copy per catalogue version; a review or an undo makes a new key.
 // `LINE_SHAPE` is part of its key: it moves when the answer gains or changes a field.
-const LINE_SHAPE = 2;
+const LINE_SHAPE = 3;
 async function line(env: Env, ctx: ExecutionContext, url: URL, id: number, name: string, reach: number) {
   const key = new Request(`${url.origin}${url.pathname}?r=${reach}&v=${encodeURIComponent(`${LINE_SHAPE}:${await catalogueVersion(env)}`)}`);
   const cached = await caches.default.match(key);

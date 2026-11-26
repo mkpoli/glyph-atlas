@@ -1,17 +1,17 @@
 // The claim ledger's routes on glyph-atlas-v3 (decision record 0006): claims and actions, a crop's
 // form and reading as the pickers set them, the ledger's reads and export, and a book's dates with the
 // claims they rest on. Crops are named by public id at this boundary and by integer id inside.
-import { bundle, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
+import { bundle, cropOf, pageOf, publicId, slotOf as cropSlot } from '../atlas3';
 import { aliasCrop } from '../atlas3Aliases';
 import { characterIds, structureSource } from '../atlas3Reference';
 import { StaleCrop, cropQueryParam, movedQueryResponse, staleResponse, writtenCropField } from '../atlas3Crops';
 import { formSlot } from '../cropForms';
-import { cropGraphemes, cropStructures, structureLabelsQuery } from '../cropPanels';
+import { cropGraphemes, cropStructures, structureLabelsQuery, cropWords } from '../cropPanels';
 import { cropReadings, READING_PREDICATES } from '../cropReadings';
 import { slotBacking, wordSlot } from '../cropWords';
 import { axisOf } from '../dating';
 import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveCut, graphemeKey, headKeys, keyHeads, keyText, ledgerPage, type LedgerTools, type Member,
-  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, resolveSlots, retractOwn, RUN_MAX, sameVersion, savedSubmission, SQL_UUID, submissionId, withCrop, writeClaim } from '../ledger';
+  ownedActors, planAction, planClaim, planSubjectClaim, PREDICATES, type Plan, resolveSlots, restsOn, retractOwn, RUN_MAX, sameVersion, savedSubmission, SQL_UUID, submissionId, withCrop, writeClaim } from '../ledger';
 import { canonical, literal } from '../input';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
@@ -44,10 +44,15 @@ export async function cropNow(env: Env, id: number): Promise<CropNow | null> {
   if (!record) return null;
   const box = row.x !== null ? { x: row.x, y: row.y, w: row.w, h: row.h } : record.box;
   const pixels = record.image_sha256 ?? record.source_revision ?? null;
-  const values = box == null ? null : ['x', 'y', 'w', 'h'].map(key => box[key]);
-  const version = typeof pixels !== 'string' ? null : values === null ? `${publicId(id)}@${pixels}@`
-    : values.every(Number.isSafeInteger) ? `${publicId(id)}@${pixels}@${values.join(',')}` : null;
-  return { id, cut: row.cut + (row.x !== null ? 1 : 0), version, text: entry.id, kind: row.kind };
+  const boxed = (box: Json | null | undefined) => {
+    const values = box == null ? null : ['x', 'y', 'w', 'h'].map(key => box[key]);
+    return values === null ? '@' : values.every(Number.isSafeInteger) ? '@' + values.join(',') : null;
+  };
+  const end = boxed(box), shown = typeof pixels === 'string' ? '@' + pixels : null;
+  const images = shown === null ? null : [shown, ...((entry.encodings ?? []) as Json[]).flatMap(e => typeof e.pixels === 'string' ? ['@' + e.pixels] : [])];
+  const version = shown === null || end === null ? null : publicId(id) + shown + end;
+  return { id, cut: row.cut + (row.x !== null ? 1 : 0), version, text: entry.id, kind: row.kind, line: record.text ?? null,
+    published: { cut: row.cut, pixels: images, box: shown === null ? null : boxed(record.box) } };
 }
 
 const NOT_HERE = 'This character is not in the published collection.';
@@ -63,12 +68,17 @@ async function namedCrop(env: Env, named: unknown, fail: ClaimTools['fail'], ctx
   return fail(404, NOT_HERE);
 }
 
-const ledgerTools = (env: Env, tools: ClaimTools, ctx?: ExecutionContext): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
-  owned: ownedActors, crop: (env, named) => namedCrop(env, named, tools.fail, ctx), alias: text => aliasCrop(env, text, ctx),
+const ledgerTools = (env: Env, tools: ClaimTools, ctx?: ExecutionContext, read = new Map<number, CropNow>()): LedgerTools => ({ fail: tools.fail, text: tools.text, canonical: tools.canonical,
+  owned: ownedActors, alias: text => aliasCrop(env, text, ctx),
+  crop: async (env, named) => { const crop = await namedCrop(env, named, tools.fail, ctx); read.set(crop.id, crop); return crop },
+  now: async (id, afresh) => !afresh && read.get(id) || await cropNow(env, id),
   // A claim is saved in glyph-atlas-v3 and its runs filed in glyph-atlas-v3-runs, which cannot share a
   // transaction: a filing that fails is logged and the claim answers as saved, and the publisher files
   // the crop's runs from the claims as they stand once it next publishes.
-  refile: crop => refileRuns(env, crop).catch(error => console.log(JSON.stringify({ event: 'refile_failed', crop, message: String(error) }))) });
+  refile: crop => filedRuns(env, crop) });
+/** Files a crop's runs from the claims as they stand; a failure is logged. */
+export const filedRuns = (env: Env, crop: number) => refileRuns(env, crop)
+  .catch(error => console.log(JSON.stringify({ event: 'refile_failed', crop, message: String(error) })));
 
 // A crop's slot that holds on its effective cut: one key of `current_claims` per crop, by `current_claim_crop`.
 export const cropSlotsQuery = (predicate: 'has_form' | 'writes_word') => `SELECT c.crop,c.status,c.object,c.value,c.members,c.claims,c.supporting
@@ -197,13 +207,13 @@ export async function planReviewForm(env: Env, review: { key: string; actor: str
   const ledger = { fail, canonical, owned: ownedActors } as LedgerTools;
   const plan: Plan = { statements: [], keys: [] };
   await planForm(env, { key, actor, crop, representation, own: null, at }, plan, new Set(), ledger);
-  return [...plan.statements, ...resolveSlots(env, plan.keys), env.ATLAS.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
+  return [...plan.statements, ...resolveSlots(env, plan.keys, [crop]), env.ATLAS.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
     .bind(key, actor, signature, JSON.stringify({ submission: key, crop: crop.id, cut: crop.cut }), at)];
 }
 
 // The form claims a review's submission wrote on its crops that nobody has taken back, each with the claims of the
 // same reader it replaced: the submission's ledger row, then each crop's forms by `assertion_crop`, then their actions by theirs.
-export const reviewFormsQuery = () => `SELECT a.id,a.subject,(SELECT json_group_array(json_object('id',o.id,'set',o.alternative_set)) FROM assertions o
+export const reviewFormsQuery = () => `SELECT a.id,a.subject,a.crop,(SELECT json_group_array(json_object('id',o.id,'set',o.alternative_set)) FROM assertions o
     JOIN assertion_actions x ON x.assertion=o.id AND x.action='retract' WHERE o.crop=a.crop AND o.predicate='has_form' AND x.submission=?1) AS replaced
   FROM ledger_submissions l CROSS JOIN json_each(?2) j CROSS JOIN assertions a ON a.crop=j.value AND a.predicate='has_form'
   WHERE l.id=?1 AND a.submission=?1 AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`;
@@ -215,8 +225,9 @@ export const reviewFormsQuery = () => `SELECT a.id,a.subject,(SELECT json_group_
  *  other crops may name. */
 export async function planFormUndo(env: Env, undone: { key: string; by: string; crops: number[]; at: string }): Promise<D1PreparedStatement[]> {
   const { key, by, crops, at } = undone;
-  const claims = (await env.ATLAS.prepare(reviewFormsQuery()).bind(key, JSON.stringify(crops)).all<{ id: string; subject: string; replaced: string }>()).results;
+  const claims = (await env.ATLAS.prepare(reviewFormsQuery()).bind(key, JSON.stringify(crops)).all<{ id: string; subject: string; crop: number; replaced: string }>()).results;
   if (!claims.length) return [];
+  const shown = await Promise.all([...new Set(claims.map(claim => claim.crop))].map(crop => cropNow(env, crop)));
   const undo = key + ':undo', standing = (claim: string) => `NOT EXISTS(SELECT 1 FROM assertion_actions x WHERE x.assertion=${claim} AND x.action='retract')`;
   const statements = claims.flatMap(claim => {
     const sets = new Map<string, string>(), again = (set: string | null) => set && (sets.get(set) ?? sets.set(set, 'cf:' + crypto.randomUUID()).get(set)!);
@@ -232,7 +243,7 @@ export async function planFormUndo(env: Env, undone: { key: string; by: string; 
     }), env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) SELECT ?1,?2,?3,'retract',?4,?5,'undone' WHERE ${standing('?3')}`)
       .bind('cf:' + crypto.randomUUID(), undo, claim.id, by, at)];
   });
-  return [...statements, ...resolveSlots(env, [...new Set(claims.map(claim => claim.subject))].map(subject => [subject, 'has_form', '', ''])),
+  return [...statements, ...resolveSlots(env, [...new Set(claims.map(claim => claim.subject))].map(subject => [subject, 'has_form', '', '']), shown),
     env.ATLAS.prepare('INSERT INTO ledger_submissions(id,actor,request,response,at) VALUES(?,?,?,?,?)')
       .bind(undo, by, JSON.stringify({ undo: key }), JSON.stringify({ submission: undo }), at)];
 }
@@ -708,16 +719,18 @@ export async function setFold(env: Env, input: Json, actor: string, tools: Claim
 
 // The reader's own live readings, rubies and words on these crops, with the save each came from: ranges of `assertion_crop`.
 const RUN_PREDICATES = [...READING_PREDICATES, 'writes_word'];
-export const ownReadingsQuery = (owned: string) => `SELECT a.id,a.crop,a.subject,a.predicate,a.object,a.value,a.confidence,a.confidence_scheme,a.method,a.cut,a.submission FROM json_each(?1) j
+export const ownReadingsQuery = (owned: string) => `SELECT a.id,a.crop,a.subject,a.predicate,a.object,a.value,a.confidence,a.confidence_scheme,a.method,a.cut,a.submission,
+  (SELECT e.ref FROM assertion_evidence e WHERE e.assertion=a.id AND e.kind='crop') AS version FROM json_each(?1) j
   JOIN assertions a ON a.crop=j.value AND a.predicate IN (${RUN_PREDICATES.map(p => `'${p}'`).join()}) WHERE a.scope='' AND a.slot=''
   AND (a.asserted_by=?2 OR a.asserted_by IN ${owned})
   AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')`;
 export const savedRunsQuery = () => 'SELECT response FROM ledger_submissions WHERE id IN (SELECT value FROM json_each(?))';
 type OwnReading = { id: string; crop: number; subject: string; predicate: string; object: string | null; value: string | null;
-  confidence: number | null; confidence_scheme: string | null; method: string | null; cut: number; submission: string };
-/** Set how a crop is read at its place: the run of characters it stands in (`run`, with the crop at
- *  `at`), the reading over each or over all of them, what it rests on (`method`) and, as the page writes
- *  them, the `ruby` and the 左訓 (`left`). The other crops of the run (`others`, each with its place and the
+  confidence: number | null; confidence_scheme: string | null; method: string | null; cut: number; submission: string; version: string | null };
+/** Set what stands beside a crop at its place: the run of characters it stands in (`run`, with the crop at
+ *  `at`), the `ruby` and the 左訓 (`left`) as the page writes them, and the reader's note of how the run is
+ *  read (`reading`, over each character or over all of them) with what it rests on (`method`). Any of the
+ *  three may be left out, and one is given, or a word. The other crops of the run (`others`, each with its place and the
  *  version its reader saw) are claimed in the same write. `word` ({id, form, method}) names the dictionary word
  *  the run writes, on each of its crops (decision 0004): null takes the reader's back, and one without a method
  *  keeps the method the reader gave it. Without `word`, the word the reader holds on the crop goes with the run
@@ -732,18 +745,20 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   const saved = await savedSubmission(env, key, signature, tools.fail);
   if (saved) return answer(saved.crop, saved.crops ?? []);
   const clear = input.run === null, others: Json[] = clear ? [] : input.others ?? [];
-  const bad = (): never => tools.fail(422, 'Name the characters read together and the reading of each.');
+  const bad = (): never => tools.fail(422, 'Name the characters that stand together and what is written beside them or how they are read.');
   if (!Array.isArray(others) || others.length >= RUN_MAX || others.some(other => typeof other !== 'object' || other === null)) bad();
   const at = new Date().toISOString(), places: number[] = [input.at, ...others.map(other => other.at)];
   const member = (value: unknown): Member => ({ object: null, value, confidence: null, confidence_scheme: null });
   // What each crop of the run is claimed as, checked before any crop is read.
   type Claimed = { predicate: string; method: string | null; members: Member[] };
+  if (!clear && (!Array.isArray(input.run) || input.run.length > RUN_MAX || places.some(place => !Number.isSafeInteger(place) || place < 0 || place >= input.run.length))) bad();
+  if (!clear && input.reading == null && input.ruby == null && input.left == null && input.word == null) bad();
   const claims: Claimed[][] = clear ? [] : places.map(place => [
-    { predicate: 'read_as', method: input.method as string | null, members: [member({ run: input.run, at: place, reading: input.reading })] },
+    ...(input.reading == null ? [] : [{ predicate: 'read_as', method: input.method as string | null, members: [member({ run: input.run, at: place, reading: input.reading })] }]),
     ...([['bears_ruby', input.ruby], ['bears_left_ruby', input.left]] as const).flatMap(([predicate, ruby]) =>
       ruby == null ? [] : [{ predicate, method: null, members: [member({ run: input.run, at: place, ruby })] }])]);
   for (const each of claims.flat()) checkClaims(each.predicate, each.members, {}, tools.fail, each.method);
-  if (!clear && input.ruby != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
+  if (!clear && input.ruby != null && input.reading != null && input.ruby.length !== input.reading.length) tools.fail(422, 'The ruby is split as the reading is.');
   const word = input.word as { id?: unknown; form?: unknown; method?: unknown } | null | undefined;
   if (word != null && clear) bad();
   if (word != null) {
@@ -769,7 +784,7 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   }
   // The word the reader holds on the crop's cut now, its alternatives and its certainty with it, claimed on each
   // other crop of the run that does not already hold the same.
-  const held = (crop: CropNow) => here.filter(claim => isWord(claim) && claim.crop === crop.id && claim.cut === crop.cut);
+  const held = (crop: CropNow) => here.filter(claim => isWord(claim) && claim.crop === crop.id && restsOn(crop, claim.cut, claim.version));
   const worded = (list: OwnReading[]) => tools.canonical(list.map(one => [one.object, one.value, one.confidence, one.confidence_scheme, one.method]).sort());
   const carried = word === undefined && !clear ? held(crops[0]) : [];
   if (carried.length) for (const [i, crop] of crops.entries()) if (worded(held(crop)) !== worded(carried)) claims[i].push({ predicate: 'writes_word', method: carried[0].method,
@@ -782,7 +797,7 @@ export async function setReading(env: Env, input: Json, named: string, actor: st
   const told = new Set(here.filter(isWord).map(claim => tools.canonical([claim.object, claim.value])));
   const earlier = [...here, ...(beyond.length ? await own(beyond) : []).filter(claim => saves.has(claim.submission)
     || (isWord(claim) && told.has(tools.canonical([claim.object, claim.value]))))];
-  const plan: Plan = { statements: [], keys: [], crops: ids };
+  const plan: Plan = { statements: [], keys: [], crops: [...new Set([...ids, ...earlier.map(claim => claim.crop)])] };
   for (const [i, crop] of crops.entries()) for (const each of claims[i] ?? []) {
     const part = await planClaim(env, { key, actor, crop, predicate: each.predicate, scope: '', members: each.members, at, method: each.method }, ledger);
     plan.statements.push(...part.statements); plan.keys.push(...part.keys);
@@ -860,13 +875,29 @@ async function cropShaped(env: Env, subject: string) {
   return !subject.includes(':') || !await env.ATLAS.prepare(bookKeyQuery()).bind(subject).first();
 }
 
-/** A read of the ledger: a subject's claims, or the export a page at a time. `null` for another path. */
+// At most this many crops in one reading of them.
+export const READ_MAX = 48;
+/** How each of some crops is read now: its version, the line its source gives, and its reading and word. A
+ *  crop that is not published is left out. Each crop is a few key lookups, as a claim on it is, and the
+ *  readings of them all are one query more. */
+export async function readingsOf(env: Env, named: string[]): Promise<Json[]> {
+  const ids = [...new Set(named.flatMap(name => cropOf(name) ?? []))];
+  const [crops, readings, words] = await Promise.all([Promise.all(ids.map(id => cropNow(env, id))), cropReadings(env, ids), cropWords(env, ids)]);
+  return crops.flatMap(crop => crop ? [{ id: publicId(crop.id), crop_version: crop.version, text: crop.line ?? null, reading: readings.get(crop.id) ?? null, word: words.get(crop.id) ?? null }] : []);
+}
+
+/** A read of the ledger: a subject's claims, crops' readings, or the export a page at a time. `null` for another path. */
 export async function claimRead(env: Env, url: URL, tools: ClaimTools, ctx?: ExecutionContext): Promise<Json | Response | null> {
   const path = url.pathname, q = url.searchParams;
   if (path === '/atlas/ledger' || path === '/atlas/ledger.json') {
     const page = await ledgerPage(env, q, tools.integer);
     return Response.json(page, { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
       ...(path.endsWith('.json') ? { 'content-disposition': 'attachment; filename="atlas-ledger.json"' } : {}) } });
+  }
+  if (path === '/atlas/readings') {
+    const named = (q.get('crops') ?? '').split(',').filter(Boolean);
+    if (!named.length || named.length > READ_MAX) tools.fail(422, `Name 1–${READ_MAX} crops.`);
+    return { items: await readingsOf(env, named) };
   }
   if (path !== '/atlas/claims') return null;
   const subject = tools.text(q.get('subject'), 512, 'subject', true)!;

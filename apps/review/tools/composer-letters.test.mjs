@@ -6,13 +6,14 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { compose, createSource } from '../src/lib/composer/index.js'
+import { compose, createSource } from 'han-compose'
 
 const folder = process.env.COMPOSER_EXPORT
 const hex = text => createHash('sha256').update(text).digest('hex')
 const recorded = key => {
-  const shard = folder && join(folder, 'g', `${hex(key).slice(0, 3)}.json`)
-  return Boolean(shard && existsSync(shard) && JSON.parse(gunzipSync(readFileSync(shard)).toString())[hex(key)])
+  const h = hex(key)
+  const shard = folder && join(folder, 'g', h.slice(0, 2), `${h.slice(0, 4)}.json`)
+  return Boolean(shard && existsSync(shard) && JSON.parse(gunzipSync(readFileSync(shard)).toString())[key])
 }
 const letters = recorded('K') && recorded('O')
 if (!letters) console.log('composer letters skipped: set COMPOSER_EXPORT to a han-compose export that records K and O')

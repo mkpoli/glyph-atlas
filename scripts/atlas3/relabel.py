@@ -11,8 +11,8 @@ with the crops that start them listed as they stand. Nothing is cut again, so a 
 exported for the few of its crops a relabel touches.
 
 A crop is left out, and listed, when the site holds it under another character than `label`, no longer
-pending or in a style a reviewer gave it, when the site does not hold the new character, or when either
-character is not a Han one: an export computes more for the rest. The catalogue names the revision of each
+pending or in a style a reviewer gave it, when the site does not hold the new character, or when the new
+character is neither Han nor kana. Its script, category and 字母 are the new character's. The catalogue names the revision of each
 crop and page it was made from (`based_on`), and the publisher refuses it once one of them has moved on.
 The relabel goes to the crop's store as well, or its next export leaves the crop behind the site's
 revision. Every file but the catalogue is only read here.
@@ -28,12 +28,20 @@ from build import OUT, PAGE
 from publish import SUSPECT, graphemes_of, logical_sql
 
 from glyph_atlas import refs
+from glyph_atlas.review.atlas import script_of_identity
 from glyph_atlas.schema import Script
 
 COLUMNS = ("id", "origin", "character", "family", "visual_group", "production", "category", "state", "revision",
            "quiz", "document", "style", "data")
 BASED = ("id", "revision", "page_rev")
 RUNS = ("size", "graphemes", "text", "hand_order", "first", "second", "third", "document", "vertical")
+# The category of a crop filed under a character of each script, as an export gives it.
+CATEGORIES = {Script.HAN: "kanji", Script.HIRAGANA: "kana", Script.KATAKANA: "kana", Script.HENTAIGANA: "kana"}
+
+
+def script_of(character):
+    """The script of a character, that of its base whatever marks it carries (ツ゚)."""
+    return Script(script_of_identity(character))
 
 
 def entry_of(atlas, cid):
@@ -62,9 +70,14 @@ def unit(atlas, text, crop, to=None):
     # A crop on no page stands on its book's: the publisher makes that page's key itself.
     page = {} if crop["page_key"] == f"book:{crop['document']}" else {"page_id": crop["page_key"]}
     # A suspect mark is of the label it was judged under.
-    data = {**entry, **page, **({"label": to[0]} if to else {}), "suspect": not to and bool(crop["flags"] & SUSPECT)}
+    data = {**entry, **page, "suspect": not to and bool(crop["flags"] & SUSPECT)}
+    category = crop["category_key"]
+    if to:
+        script, jibo = script_of(to[0]), refs.jibo_of_unit(" ".join(refs.to_code_points(to[0])))
+        data = {**{k: v for k, v in data.items() if k != "jibo"}, "label": to[0], "script": str(script), **({"jibo": jibo} if jibo else {})}
+        category = CATEGORIES[script]
     character, family = to or (crop["character"], crop["family_text"])
-    return (text, "local", character, family, None if to else crop["visual_key"], crop["production_key"], crop["category_key"],
+    return (text, "local", character, family, None if to else crop["visual_key"], crop["production_key"], category,
             crop["state_key"] or "pending", crop["logical"] + bool(to), crop["quiz"], crop["document"], crop["style_key"],
             json.dumps(data, ensure_ascii=False, separators=(",", ":")))
 
@@ -94,8 +107,8 @@ def units(relabels, mirror, atlas):
             left[text] = f"is {crop['state_key']}"
         elif to is None:
             left[text] = f"the site holds no {other}"
-        elif {refs.script_of(other), refs.script_of(item["label"])} != {Script.HAN}:
-            left[text] = f"{item['label']} and {other} are not both Han"
+        elif script_of(other) not in CATEGORIES:
+            left[text] = f"{other} is neither Han nor kana"
         elif styled(atlas, crop["id"]):
             left[text] = "has a reviewer's style"
         else:

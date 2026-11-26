@@ -3,13 +3,13 @@
 The 旧字体 is the older form the 常用漢字表 (2010) prints beside the head, as 仮（假）. Its pairs are the
 `joyo/variant` edges of `data/vocab/kanji-variants.tsv`, which CJKVI names 異体字（常用漢字表）, and they are
 those of the 文化庁 index of the table (`joyo-2010` in `graphemes.yaml`). A pair whose older form is of another
-grapheme (状 狀, 弁 辨) gives none, as the two are counted apart, and neither does a compatibility ideograph.
+grapheme (弁 辨) gives none, as the two are counted apart, and neither does a compatibility ideograph.
 
 The 简体字 is a character of the same grapheme that the 通用规范汉字表 (2013) lists and that Unihan gives as the
 simplified form of another of its characters (kSimplifiedVariant and kTraditionalVariant, the `simplified`
 edges of source `unihan`), the first in the table's order where there are more (线 before 缐). There is none
 where the table lists the head too (确), nor where the simplified form it lists of the head or of the 旧字体 is
-of another grapheme (豊 豐: 丰; 閣: 阁): a 简体字 left in the grapheme is then some other member's.
+of another grapheme (豊 豐: 丰; 発 發: 发): a 简体字 left in the grapheme is then some other member's.
 
 A head the 常用漢字表 prints no older form of stands after the character Unihan simplifies to the 简体字 instead,
 where the head is neither that character nor another that simplifies in the grapheme (線): 彎弯, whose head is
