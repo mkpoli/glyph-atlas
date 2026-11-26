@@ -49,12 +49,12 @@ export function cropLine(crop, neighbours = []) {
 }
 
 /**
- * A crop's reading on the line its source gives: the line before and after the run, and the reading the
- * run holds. Null while readers disagree, or where the line does not hold the run, or holds it twice.
+ * The ruby the page writes beside a crop's run, on the line its source gives: the line before and after the
+ * run, and the ruby. Null while readers disagree on it, or where the line does not hold the run, or holds it twice.
  */
-export function readingLine(crop) {
-  const [value, ...others] = crop?.reading?.values ?? []
-  if (!value || others.length || crop.reading.status === 'disputed') return null
+export function rubyLine(crop) {
+  const slot = crop?.reading?.ruby, [value, ...others] = slot?.values ?? []
+  if (!value || others.length || slot.status === 'disputed') return null
   const parts = textParts(crop.text)
   const starts = parts.flatMap((_, i) => value.run.every((part, j) => parts[i + j] === part) ? [i] : [])
   if (starts.length !== 1) return null
@@ -62,6 +62,20 @@ export function readingLine(crop) {
 }
 
 const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.stringify(b.run)
+/**
+ * What the inspector shows of a crop's runs: each run with the rubies the page writes beside it, and the notes
+ * readers make of how it is read.
+ */
+export function readingEntries(slot) {
+  const entries = []
+  for (const [field, values] of [['ruby', slot?.ruby?.values], ['left', slot?.left?.values], ['notes', slot?.values]]) for (const value of values ?? []) {
+    let entry = entries.find(one => together(one.run, value))
+    if (!entry) entries.push(entry = { run: value, ruby: [], left: [], notes: [] })
+    entry[field].push(value)
+  }
+  return entries
+}
+
 /**
  * What the editor opens with, for a reader: the reading and the rubies they hold, or, holding none, the
  * ones nobody disputes. A ruby beside another run says nothing of this one. `value` names the run.

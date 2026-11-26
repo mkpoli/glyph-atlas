@@ -260,19 +260,19 @@ describe('a character search', () => {
   });
 
   it('lists a small seal character only where every other form has its place', () => {
-    // 殺's family and 箕's, from the character table: 52 Han forms and 12 small seal characters.
+    // 殺's family and 箕's, from the character table: 53 Han forms and 12 small seal characters.
     const table = readFileSync(new URL('../../../../data/vocab/characters.tsv', import.meta.url), 'utf8').split('\n').map(line => line.split('\t'));
     const family = (head: string) => ({ code_point: head, grapheme: { code_point: head,
       members: table.filter(row => row[10] === head).map(row => ({ code_point: row[0], char: row[1] })).reverse() } });
     const found = [family('U+6BBA'), family('U+7B95')], cards = new Map(found.flatMap(f => f.grapheme.members).map(m => [m.code_point, m]));
-    expect([found[0].grapheme.members.length, found[1].grapheme.members.length]).toEqual([41, 23]);
+    expect([found[0].grapheme.members.length, found[1].grapheme.members.length]).toEqual([42, 23]);
     const seal = (code: string) => /^U\+3[D-F]/.test(code);
     const listed = [...unlistedForms(found, cards).keys()];
     expect(listed.length).toBe(48);
     expect(listed.some(seal)).toBe(false);
     // 殺 alone leaves room for all of them, after the rest.
     const alone = [...unlistedForms([found[0]], cards).keys()];
-    expect([alone.length, alone.slice(-6).every(seal), alone.slice(0, -6).some(seal)]).toEqual([40, true, false]);
+    expect([alone.length, alone.slice(-6).every(seal), alone.slice(0, -6).some(seal)]).toEqual([41, true, false]);
   });
 
   it('finds the unified ideograph a compatibility ideograph stands for, and lists one only with crops', async () => {

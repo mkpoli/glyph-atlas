@@ -51,10 +51,10 @@ const EVIDENCE_KINDS = new Set(['page', 'source']), EVIDENCE_MAX = 8, GLOSS_MAX 
 export type Evidence = { kind: string; ref: string; locator: string | null };
 
 /** A crop as a claim on it rests on: its cut now, its evidence version as its record shows it (null
- *  for a crop with no image), its text id (the ledger's subject) and its kind; `published` is what its
- *  page's record gives it apart from a redrawn box: its cut, and its pixels, in each encoding of that cut, and
- *  its box as a version ends (`@<pixels>`, `@<x,y,w,h>`). */
-export type CropNow = { id: number; cut: number; version: string | null; text: string; kind: number;
+ *  for a crop with no image), its text id (the ledger's subject), its kind and the line its source gives;
+ *  `published` is what its page's record gives it apart from a redrawn box: its cut, and its pixels, in each
+ *  encoding of that cut, and its box as a version ends (`@<pixels>`, `@<x,y,w,h>`). */
+export type CropNow = { id: number; cut: number; version: string | null; text: string; kind: number; line?: string | null;
   published: { cut: number; pixels: string[] | null; box: string | null } };
 export type LedgerTools = {
   fail: (status: number, message: string, extra?: Json) => never;

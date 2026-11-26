@@ -66,7 +66,8 @@ through みんなで翻刻.
   and neither a holder nor terms; they reproduce flat printed pages, so the rule above records them as
   public domain with `unknown` kept as the holder's terms. 東京大學東洋文化研究所's scan of the same
   printing is marked public domain on Wikimedia Commons.
-- Unicode data files and the IVD: Unicode License v3, notice reproduced in `ATTRIBUTION.md`.
+- Unicode data files and the IVD: Unicode License v3, notice and text in `LICENSES/Unicode-3.0.txt` and reproduced in
+  `ATTRIBUTION.md`.
 - GlyphWiki glyphs: free for any use without attribution, per the site's licence page.
 - CHISE IDS: GPL-2.0-or-later, excluded from the CC BY-SA core; a separately licensed aggregate is
   possible in principle and is not planned.
@@ -81,7 +82,7 @@ through みんなで翻刻.
   Taichi's IDS, which derives from CHISE; the atlas reads only BabelStone's file.
 - IDS parts palette (`apps/review/static/palette/ids-parts.json`, record `data/sources/ids-parts.yaml`):
   the components of BabelStone's sequences (public domain), the ones hfhchan/ids v1.0.2 leaves
-  undecomposed (MIT, notice in the record), stroke counts and the 常用漢字 and 通用规范汉字表 sets from
+  undecomposed (MIT, `LICENSES/MIT-hfhchan-ids.txt`), stroke counts and the 常用漢字 and 通用规范汉字表 sets from
   Unihan 18.0.0 (Unicode License v3), and each part's first-stroke class from KanjiVG r20260714. That
   column adapts KanjiVG and is shared alike under CC BY-SA 3.0 with the 3.0 notice kept, so the file is
   released under CC BY-SA 3.0. Its two webfont subsets, Plangothic and Noto Sans CJK JP, are under the
@@ -91,6 +92,11 @@ through みんなで翻刻.
   (CC BY-SA 4.0) and cjkvi-variants. A variant relation between two characters is a fact without
   creative expression, so a relation table that states no licence (cjkvi-variants) is used as public
   domain, and Wikidata's statements are used under CC0 whichever dictionary they cite.
+- 通用规范汉字表 附件1 (`data/vocab/tongyong-guifan-forms.tsv`): a law of the People's Republic of China, outside copyright
+  (著作权法第五条), in mandel59's transcription (CC0) of Wikisource's (public domain).
+- Headwords of the 說文解字 and the 廣韻 (`data/vocab/headword-readings.tsv`): shuowen.org's data (Apache-2.0,
+  `LICENSES/Apache-2.0.txt`) and nk2028's tshet-uinh-data (CC0). Of shuowen.org's entries the table keeps the 親字, the 重文
+  and the 反切, rearranged one row a reading; neither its repository nor OpenCC's holds a NOTICE file.
 - 通用规范汉字表 (`data/vocab/tongyong-guifan.tsv`): the positions of its 8,105 characters, from Unihan 18.0.0 kTGH
   (Unicode License v3). The labels of graphemes (`apps/cloudflare/src/graphemeLabels.json`) draw on it, on Unihan's
   simplified forms and on the 常用漢字表's older forms as CJKVI gives them.
@@ -122,7 +128,10 @@ The editor names the fonts and KanjiVG beside its preview and links here. Drawin
 
 Each release carries `ATTRIBUTION.md`, generated from the rights fields: one entry per source and per
 holder present in the release, with the attribution string the holder asks for. The CODH string is
-『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340.
+『日本古典籍くずし字データセット』（国文研ほか所蔵／CODH加工）doi:10.20676/00000340. Where a source's licence asks that a copy
+carry its text (Apache-2.0, Unicode License v3), the text in `LICENSES/` follows in full, and the tables of `data/vocab/`
+made from such a source are distributed with that folder. The Creative Commons licences and KOGL ask for a credit and a
+link, and CC0 and public-domain sources for nothing.
 
 ## Copyright in crops
 

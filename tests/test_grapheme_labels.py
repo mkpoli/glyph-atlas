@@ -43,6 +43,11 @@ def test_the_labels_are_the_older_form_the_head_and_the_simplified_form(labels):
     }  # fmt: skip
 
 
+def test_a_form_a_standard_joined_stands_in_the_label(labels):
+    assert [labels[head] for head in "対実動備状黄温戻開閣"] == [
+        "對対对", "實実实", "動动", "備备", "狀状", "黃黄", "溫温", "戾戻", "開开", "閣阁"]
+
+
 def test_a_label_holds_its_head_and_characters_of_its_grapheme_once(labels):
     for head, label in labels.items():
         assert head in label and len(set(label)) == len(label)
@@ -79,21 +84,23 @@ def test_the_older_forms_are_the_jouyou_tables(edges, older):
     families = yaml.safe_load((ROOT / "data" / "vocab" / "graphemes.yaml").read_text(encoding="utf-8"))["families"].values()
     listed = {family["members"][0]: family["members"][1] for family in families if family["relation"] == "shinjitai-kyujitai"}
     assert len(listed) == 271 and listed.items() <= older.items()
-    assert older.keys() - listed.keys() == set("徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺")
+    assert older.keys() - listed.keys() == set("徴巣掲撃晩暦歩歴毎渉渇痩研縁録闘麺併即戻概涙状虚錬餅温黄")
 
 
 def test_a_pair_of_two_graphemes_gives_no_older_form(edges, older):
     apart = {new for new, old in edges[0] if build.grapheme(new) != build.grapheme(old)}
-    assert apart == set("併即戻概涙状虚錬餅温黄弁")
+    assert apart == {"弁"}
     assert not apart & older.keys()
 
 
 def test_no_simplified_form_of_another_member_stands_for_the_grapheme(labels):
-    # 豐 and 閣 simplify to 丰 and 阁, of other graphemes, and 滷 to 卤; 确, 黹, 砷, 簧 and 晅 are listed as they are.
+    # 豐 simplifies to 丰, of another grapheme, and 滷 to 卤; 确, 黹, 砷, 簧 and 晅 are listed as they are.
     assert labels["豊"] == "豐豊"
-    assert not set("閣滷确黹砷簧晅") & labels.keys()
-    # 发, 历 and 艺 are other graphemes' too, and 寇 and 冦 are forms no table calls a simplification.
-    assert [labels[head] for head in "発歴芸"] == ["發発", "歷歴", "藝芸"]
+    assert not set("滷确黹砷簧晅") & labels.keys()
+    # 发 and 历 are other graphemes' too, and 寇 and 冦 are forms no table calls a simplification.
+    assert [labels[head] for head in "発歴"] == ["發発", "歷歴"]
+    # 艺 is 藝's, but the table lists the head 芸 itself.
+    assert labels["芸"] == "藝芸"
     assert not set("寇宼") & labels.keys()
 
 

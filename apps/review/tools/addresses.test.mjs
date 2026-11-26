@@ -1,13 +1,23 @@
 import { describe, expect, it, mock } from 'bun:test'
 
 mock.module('../src/lib/i18n.svelte.js', () => ({ t: key => key }))
-const { canonicalAddress, characterAddress, expandFor, galleryAddress, galleryPage, graphemeAddress } = await import('../src/lib/addresses.js')
+const { canonicalAddress, characterAddress, expandFor, galleryAddress, galleryPage, graphemeAddress, ledTo } = await import('../src/lib/addresses.js')
 
 const member = char => ({ char, code_point: 'U+' + char.codePointAt(0).toString(16).toUpperCase() })
 const grapheme = (members, sole) => ({ ...members[0], members, sole })
 const KA = grapheme([member('仮'), member('假'), member('𪝒')], null)
 const GU = grapheme([member('遇'), member('𨔆')], 'U+9047')
 const ka = { code_point: 'U+5047', char: '假', grapheme: KA }, gu = { code_point: 'U+9047', char: '遇', grapheme: GU }
+
+describe('a key an address names', () => {
+  it('leads to its grapheme, and a small seal character\'s to itself', () => {
+    const CHUN = grapheme([member('春'), member('\u{3D307}')], null)
+    expect([KA.members[0], ka].map(card => ledTo({ ...card, grapheme: KA }))).toEqual(['U+4EEE', 'U+4EEE'])
+    expect(ledTo({ ...member('萅'), grapheme: CHUN })).toBe('U+6625')
+    expect(ledTo({ ...member('\u{3D307}'), grapheme: CHUN })).toBe('U+3D307')
+    expect(ledTo(member('あ'))).toBe('U+3042')
+  })
+})
 
 describe('an address', () => {
   it('names one subject: a grapheme, a character, or a character with its variants', () => {
