@@ -844,19 +844,24 @@ def _join_standard_forms(
         parted anything."""
         family = unit(form)
         ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
-        # A form ruled one character with a full form goes there with what hangs on it (`decide`).
-        if any(ruling.one for ruling in ruled.values()):
-            settled.update((form, char) for char in ruled if char in family.members)
-            return False
-        here, apart = full & family.members, {char for char in ruled if char in family.members}
+        one = {char for char, ruling in ruled.items() if ruling.one}
+        apart = {char for char in ruled if char not in one and char in family.members}
+        # A form ruled one character with a full form goes there with what hangs on it (`decide`), and leaves its
+        # other full forms; the rules weigh the full forms of a form with no such ruling.
+        here = set() if one else full & family.members
+        if one:
+            apart |= (full - one) & family.members
         if not here | apart or {form, *here, *apart} <= family.stated:
             return False
-        settled.update((form, char) for char in apart)
         own = part_with(form, here | apart)
         if own & family.stated and family.stated - own:
             return False
         if apart or here and against(form, full, further, table, own):
+            settled.update((form, char) for char in apart if char in ruled)
             _leave(family, own, group)
+            if one:
+                # What hangs on the form alone goes with it to the character it is ruled one with.
+                unit(form).kept_head = form
             return True
         return False
 
@@ -865,7 +870,8 @@ def _join_standard_forms(
         full = {char for char, ruling in ruled.items() if ruling.one} or full
         families = {id(unit(char)) for char in full}
         if families == {id(unit(form))}:
-            # Joined as it is: no later move parts it.
+            # Joined as it is: no later move parts it. A ruling it keeps is settled; one held in its family is not.
+            settled.update((form, char) for char, ruling in ruled.items() if ruling.one or unit(char) is not unit(form))
             accepted.append(frozenset({form, *full}))
             return None
         settled.update((form, char) for char in ruled)

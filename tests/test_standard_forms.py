@@ -417,6 +417,27 @@ def test_a_form_ruled_two_with_a_character_it_holds_leaves_it_behind():
     assert not any({"丙", "丁"} <= set(members) for members in found.values())
 
 
+def test_a_ruling_on_a_character_outside_a_form_already_joined_is_kept():
+    """丙 is one with 甲 already; OpenCC also gives 丙 for 丁, which a ruling holds apart."""
+    rows = [edge("甲", "丙", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters")]
+    for hand in (ruled(("丙", "丁", "two")), ruled(("丙", "丁", "two"), ("丙", "甲", "one"))):
+        found, _ = decided(rows, forms(丙=[("甲", "甲")]), familiar="丙", hand=hand)
+        assert "".join(sorted("甲丙")) in found.values() and not any("丁" in members for members in found.values())
+
+
+def test_a_form_ruled_one_with_a_character_and_two_with_another_it_holds_leaves_the_second():
+    rows = [edge("甲", "丙", "z"), edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters")]
+    found, _ = decided(rows, forms(丙=[("甲", "甲")]), familiar="丙", hand=ruled(("丙", "甲", "one"), ("丙", "丁", "two")))
+    assert "".join(sorted("甲丙")) in found.values() and not any("丁" in members for members in found.values())
+
+
+def test_a_form_ruled_one_with_a_full_form_elsewhere_leaves_its_other_full_form_whoever_heads_the_family():
+    rows = [edge("丁", "丙", "z"), edge("丙", "戊", "z")]
+    for familiar in ("丙", "戊", "丙戊"):
+        found, reasons = decided(rows, forms(丙=[("丁", "丁"), ("甲", "甲")]), familiar=familiar, hand=ruled(("丙", "甲", "one")))
+        assert set(found.values()) == {"".join(sorted("甲丙戊"))} and reasons["丙"] == []
+
+
 def test_full_forms_the_form_alone_holds_together_are_several_characters():
     found, reasons = decided([edge("甲", "丙", "z"), edge("丙", "乙", "z")], forms(丙=[("甲", "甲"), ("乙", "乙")]))
     assert found == {} and reasons["丙"][0] == "several characters: 乙甲"
