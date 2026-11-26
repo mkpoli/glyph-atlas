@@ -3,21 +3,26 @@
 // Ideographic Description Sequence for a shape Unicode does not encode (⿺辶𦊷 is 辶 wrapped round 𦊷).
 // Each of BabelStone's operators takes its own number of descriptions; a component is an ideograph, a
 // radical, a stroke, a katakana letter standing for a component of that shape (コ in ⿱コ疋, which no
-// ideograph writes), a private-use character, or ？ for a part no character names, and may carry a
-// variation selector. The review app checks what a reader types by the same rules (`lib/ids.js`).
+// ideograph writes), a private-use character, ？ for a part no character names, or a part no code point
+// names written as its identifier (`&X-00087;`, the top of 合), and may carry a variation selector. A
+// description holding such a part has one spelling (`spelt`): ⿱{88}龴 and ⿱⿵𠆢一龴 are ⿱&X-00087;龴. The review app checks what a reader types by the same rules (`lib/ids.js`).
 // A private-use character names a form only where the site's own mapping gives it: the drawn forms
 // (data/vocab/drawn-forms.yaml, docs/decisions/0014-drawn-forms.md).
 import { MOJI_JOHO } from './compatibilityData';
+import { customPart, spelt, unknownParts } from './customParts';
 import { DRAWN, DRAWN_NAMESPACE, DRAWN_VERSION } from './drawnFormsData';
+import { arity, units } from './idsOperators';
 
 export const FORM_LONGEST = 64;
-const BINARY = new Set([...'⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯']), TERNARY = new Set([...'⿲⿳']), UNARY = new Set([...'⿾⿿〾']);
-const arity = (c: string) => BINARY.has(c) ? 2 : TERNARY.has(c) ? 3 : UNARY.has(c) ? 1 : 0;
 // Radicals, katakana letters, strokes, the ideograph blocks, private use and ？. Planes 2 and 3 hold
 // ideographs only.
 const COMPONENTS: [number, number][] = [[0x2E80, 0x2FDF], [0x30A1, 0x30FA], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],
   [0xE000, 0xF8FF], [0xF900, 0xFAFF], [0xFF1F, 0xFF1F], [0x20000, 0x3FFFD], [0xF0000, 0x10FFFD]];
-const component = (c: string) => { const n = c.codePointAt(0)!; return COMPONENTS.some(([low, high]) => n >= low && n <= high) };
+const component = (c: string) => {
+  if (c.length > 2) return customPart(c) === c.slice(1, -1);
+  const n = c.codePointAt(0)!;
+  return COMPONENTS.some(([low, high]) => n >= low && n <= high);
+};
 const selector = (c: string | undefined) => c !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(c);
 // One character: one base, and after it only combining marks and variation selectors, as Python counts it.
 const single = (value: string) => /^\P{M}[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]*$/u.test(value);
@@ -27,7 +32,7 @@ export const isSequence = (value: string) => arity([...value][0] ?? '') > 0;
  *  operators are satisfied, so 說⿰月兊説 names three. What follows a description cut short, or one
  *  longer than a form may be, is left out. */
 export function written(text: string): string[] {
-  const chars = [...text], found: string[] = [];
+  const chars = units(text), found: string[] = [];
   let at = 0;
   const described = (): boolean => {
     const c = chars[at++];
@@ -70,7 +75,7 @@ export function standsFor(char: string): string {
  *  than its operators take); null when it is one. */
 export type FormProblem = 'character' | 'component' | 'missing' | 'extra';
 export function formProblem(value: string): FormProblem | null {
-  const chars = [...value];
+  const chars = units(value);
   if (!chars.length || chars.length > FORM_LONGEST || value !== value.trim() || /[\p{Cc}\p{Cf}\p{Cs}\p{Z}]/u.test(value)) return 'character';
   if (!isSequence(value)) return /^\p{M}/u.test(value) || !single(value) ? 'character' : null;
   let at = 0;
@@ -105,6 +110,10 @@ export const drawnFormsOf = (head: string) => drawnForms().filter(char => DRAWN[
  *  which a picker cannot give, so it is refused. A compatibility ideograph is what it stands for
  *  (`standsFor`). */
 export function typed(written: string): Representation | FormProblem | 'private' {
+  if (isSequence(written)) {
+    if (unknownParts(written).length) return 'component';
+    written = spelt(standsFor(written));
+  }
   const problem = formProblem(written);
   if (problem) return problem;
   const value = standsFor(written), chars = [...value];

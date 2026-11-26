@@ -12,8 +12,10 @@ naming it, and never its identity. A scheme says how the value is read:
   written (⿺辶𦊷 is 辶 wrapped round 𦊷). Its operators are BabelStone's as `han_components` reads
   them, each with its own number of operands; its components are ideographs, radicals, strokes,
   katakana letters standing for a component of that shape (コ in ⿱コ疋, which no ideograph writes),
-  private-use characters, or ？ for a part no character names. A normalised IDS would only be a
-  versioned search key, so none is made here.
+  private-use characters, ？ for a part no character names, or a part no code point names written as
+  its identifier (`&X-00087;`, the top of 合). A description holding such a part has one spelling
+  (`custom_parts.spelt`): ⿱{88}龴, ⿱&CDP-…;龴 and ⿱⿵𠆢一龴 are all ⿱&X-00087;龴. Any other
+  description is kept as written.
 - `mj`: an MJ 文字図形名 (`MJ012345`), with the MJ文字情報一覧表 version it was read from when known.
 - `glyphwiki`: a GlyphWiki glyph name (`u2e7c3-j`), with its version when known.
 - `pua`: one private-use character, with the namespace of the mapping it belongs to and that
@@ -36,7 +38,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from . import drawn_forms
+from . import custom_parts, drawn_forms
 from .han_components import BINARY, TERNARY, UNARY
 
 MJ_TSV = Path(__file__).resolve().parents[2] / "data" / "vocab" / "mj-kanji.tsv"
@@ -60,6 +62,8 @@ COMPONENTS = (
 )
 PRIVATE_USE = ((0xE000, 0xF8FF), (0xF0000, 0xFFFFD), (0x100000, 0x10FFFD))
 MJ = re.compile(r"MJ\d{6}")
+#: A part no code point names, in the one spelling a description holds it in.
+PART = re.compile(r"&X-[0-9]{5};")
 GLYPHWIKI = re.compile(r"[a-z0-9][a-z0-9_@-]{0,63}")
 
 
@@ -82,6 +86,11 @@ def _arity(char: str) -> int:
     return 2 if char in BINARY else 3 if char in TERNARY else 1 if char in UNARY else 0
 
 
+def _length(value: str) -> int:
+    """How long `value` is, in code points, with each part no code point names counted as one."""
+    return len(PART.sub("？", value))
+
+
 def is_sequence(value: str) -> bool:
     """Whether `value` is written as a description, which starts with an operator."""
     return bool(value) and _arity(value[0]) > 0
@@ -92,6 +101,10 @@ def _described(value: str, at: int = 0) -> int:
     if at >= len(value):
         raise ValueError("This description is missing a component.")
     arity = _arity(value[at])
+    if (part := PART.match(value, at)) is not None:
+        if custom_parts.identifier(part.group()) != part.group()[1:-1]:
+            raise ValueError(f"{part.group()} is no part in use.")
+        return part.end()
     if not arity:
         if not _component(value[at]):
             raise ValueError(f"{value[at]} cannot be a component of a description.")
@@ -105,7 +118,7 @@ def _described(value: str, at: int = 0) -> int:
 
 def described(value: str) -> bool:
     """Whether `value` is one well-formed description, which names one character Unicode lacks."""
-    if not is_sequence(value) or len(value) > LONGEST:
+    if not is_sequence(value) or _length(value) > LONGEST:
         return False
     try:
         return _described(value) == len(value)
@@ -124,7 +137,7 @@ def written(text: str) -> list[str]:
                 end = _described(text, at)
             except (ValueError, RecursionError):
                 break
-            if end - at > LONGEST:
+            if _length(text[at:end]) > LONGEST:
                 break
         else:
             end = at + 1
@@ -144,7 +157,7 @@ def _single(value: str) -> bool:
 
 def check_text(value: str) -> str:
     """`value` when it is one character or a description; ValueError naming what is wrong otherwise."""
-    if not value or len(value) > LONGEST or value != value.strip():
+    if not value or _length(value) > LONGEST or value != value.strip():
         raise ValueError("Write one character or an ideographic description sequence.")
     if any(unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zs", "Zl", "Zp") for c in value):
         raise ValueError("A form has no spaces or control characters.")
@@ -243,8 +256,13 @@ def typed(value: str) -> Representation:
 
     A private-use character is a drawn form where the site's table gives it (`drawn_forms`); any other
     is refused, since a picker cannot say which mapping it belongs to. A compatibility ideograph is
-    what it stands for (`stands_for`).
+    what it stands for (`stands_for`), and a description is written in its one spelling
+    (`custom_parts.spelt`).
     """
+    if is_sequence(value):
+        if unknown := custom_parts.unknown(value):
+            raise ValueError(f"{' '.join(unknown)}: no such part is known.")
+        value = custom_parts.spelt(stands_for(value))
     text = stands_for(check_text(value))
     if is_sequence(text):
         return check(Representation("ids", text))

@@ -91,3 +91,17 @@ def test_the_workers_figures_are_those_of_the_mj_table():
     build = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(build)
     assert build.MODULE.read_text(encoding="utf-8") == build.module()
+
+
+def test_a_form_holding_a_part_no_code_point_names_is_typed_in_its_one_spelling():
+    one = Representation("ids", "⿱&X-00087;龴")
+    assert representation.typed("⿱{88}龴") == representation.typed("⿱⿵𠆢一龴") == representation.typed("⿱&X-00087;龴") == one
+    assert representation.typed("⿱&X-00087;龴").id == one.id
+    assert representation.described("⿱&X-00087;龴") and representation.written("⿱&X-00087;龴令") == ["⿱&X-00087;龴", "令"]
+    # A part is one component however long its identifier: sixteen of them fit in a form.
+    assert representation.check_text("⿰" * 15 + "&X-00087;" * 16)
+    with pytest.raises(ValueError, match="no such part"):
+        representation.typed("⿱{999}龴")
+    for stale in ("⿱&X-01653;龴", "⿱&X-99999;龴", "⿱&CDP-8BD0;龴"):
+        with pytest.raises(ValueError):
+            representation.check(Representation("ids", stale))

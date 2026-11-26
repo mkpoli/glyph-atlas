@@ -1,7 +1,9 @@
 // Parts no code point names, as `glyph_atlas.custom_parts` reads them: BabelStone's numbered parts
 // (`{88}`, the top of 合), CHISE's entities (`&CDP-8BD0;`) and zi.tools' stroke chains (`#(-𠃌㇉)`),
-// each written with the identifier ids-input gives the shape (`&X-00087;`).
-import { CUSTOM_PARTS, CUSTOM_PART_DRAWN, CUSTOM_PART_NAMES, CUSTOM_PART_RETIRED } from './customPartsData';
+// each written with the identifier ids-input gives the shape (`&X-00087;`), and a form holding one in
+// its one spelling.
+import { CUSTOM_PARTS, CUSTOM_PART_DRAWN, CUSTOM_PART_FOLDS, CUSTOM_PART_NAMES, CUSTOM_PART_RETIRED, CUSTOM_PART_SPELLING } from './customPartsData';
+import { arity, units } from './idsOperators';
 
 const IN_USE = new Set(CUSTOM_PARTS);
 /** One part no code point names, in ids-input's grammar (src/core/custom.js): a number of up to four
@@ -21,9 +23,32 @@ export function customPart(name: string): string | null {
   return IN_USE.has(key) ? key : null;
 }
 
-/** `text` with every part no code point names written as its identifier (`⿱{88}龴` is `⿱&X-00087;龴`);
- *  one the table does not know stays as it was typed. */
-export const spelt = (text: string) => text.replace(CUSTOM_PART, name => { const key = customPart(name); return key ? `&${key};` : name });
+/** `text` in its one spelling: every part no code point names written as its identifier, or a part
+ *  ids-input knows only as a description of encoded characters as that description, and then every
+ *  part of the text that draws one named part as that part (`⿱{88}龴` and `⿱⿵𠆢一龴` are
+ *  `⿱&X-00087;龴`). One the table does not know stays as it was typed. */
+export const spelt = (text: string) => folded(text.replace(CUSTOM_PART, name => {
+  const key = customPart(name);
+  return key ? (Object.hasOwn(CUSTOM_PART_SPELLING, key) ? CUSTOM_PART_SPELLING[key] : `&${key};`) : name;
+}));
+
+/** `text` with every part of it that draws one named part written as that part; the whole text is never
+ *  replaced, and a text that is no one description is left as it is. */
+function folded(text: string): string {
+  const parts = units(text);
+  let at = 0;
+  const read = (top: boolean): string | null => {
+    const unit = parts[at++];
+    if (unit === undefined) return null;
+    const n = arity(unit);
+    if (!n) return unit;
+    let node = unit;
+    for (let i = 0; i < n; i++) { const part = read(false); if (part === null) return null; node += part }
+    return !top && Object.hasOwn(CUSTOM_PART_FOLDS, node) ? `&${CUSTOM_PART_FOLDS[node]};` : node;
+  };
+  const out = read(true);
+  return out !== null && at === parts.length ? out : text;
+}
 
 /** The parts of `text` no code point names that the table does not know. */
 export const unknownParts = (text: string) => [...text.matchAll(CUSTOM_PART)].map(found => found[0]).filter(name => customPart(name) === null);

@@ -93,3 +93,13 @@ test('a typed compatibility ideograph is the figure it was encoded for, or its u
   expect(typed('\ufa55\u{e0103}')).toEqual({ scheme: 'ivs', value: '\u7a81\u{e0103}', namespace: null, version: null })
   expect(typed('⿰\ufa55木')).toEqual({ scheme: 'ids', value: '⿰\u7a81木', namespace: null, version: null })
 })
+
+test('a form holding a part no code point names is typed in its one spelling', () => {
+  const one = { scheme: 'ids', value: '⿱&X-00087;龴', namespace: null, version: null };
+  for (const value of ['⿱{88}龴', '⿱⿵𠆢一龴', '⿱&X-00087;龴']) expect(typed(value)).toEqual(one);
+  expect(written('⿱&X-00087;龴令')).toEqual(['⿱&X-00087;龴', '令']);
+  expect(formProblem('⿰'.repeat(15) + '&X-00087;'.repeat(16))).toBeNull();
+  expect(typed('⿱{999}龴')).toBe('component');
+  expect(['⿱&X-01653;龴', '⿱&X-99999;龴', '⿱&CDP-8BD0;龴'].map(formProblem)).toEqual(['component', 'component', 'component']);
+  expect(typed('⿱&X-01653;一')).toEqual({ ...one, value: '⿱&X-00026;一' });
+});
