@@ -39,7 +39,11 @@ describe('the one spelling', () => {
     expect(spelt('⿱⿻日乚一')).toBe('⿱⿻日乚一');
   });
   it('writes a part known only as a description as it', () => {
-    expect(spelt('⿱&X-01788;一')).toBe('⿱⿹&X-00022;灬一');
-    expect(spelt('⿱⿹⿺㇉一灬一')).toBe('⿱⿹&X-00022;灬一');
+    expect(spelt('⿱&X-01546;一')).toBe('⿱⿰&X-00024;⿶&X-00111;丨一');
+    expect(spelt('⿱⿰{24}⿶{112}丨一')).toBe('⿱⿰&X-00024;⿶&X-00111;丨一');
+  });
+  it('writes a description joined to a named part as that part', () => {
+    expect(spelt('⿱&X-01788;一')).toBe('⿱&X-00001;一');
+    expect(spelt('⿱⿹⿺㇉一灬一')).toBe('⿱&X-00001;一');
   });
 });

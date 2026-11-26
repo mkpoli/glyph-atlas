@@ -23,9 +23,9 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMIT = "6b790780628b7d7d2a0bbc2f69d51ef0061ed58f"
+COMMIT = "c50e5a50f4a514ceae682f9143bedc186b818605"
 URL = f"https://raw.githubusercontent.com/mkpoli/ids-input/{COMMIT}/data/custom-components.json.gz"
-SHA256 = "22c430de0326d61d05cd868341acecadd320fa2528dd2e1f7f734cc099d50d3f"
+SHA256 = "c35221d7b3032a7371bec070c437e15d6f9aafaf70ae1a0ef29ddb8550330fd3"
 CACHE = ROOT / "cache" / "ids-input" / f"custom-components-{COMMIT[:12]}.json.gz"
 TABLE = ROOT / "data" / "vocab" / "custom-parts.tsv"
 MODULE = ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts"
