@@ -17,6 +17,8 @@ entry, the rubies of its lines in packs of 32 pages under `v3/rubies/<entry>/<n>
 
 Nothing is written to D1. `--send` uploads the packs whose bytes differ from the manifest R2 holds
 (`v3/rubies/manifest.json.gz`, {path: hash}) and then the manifest; without it the run only counts.
+While packs are replaced the manifest held names none of them, so a run that stops is finished by
+the next one, and a run with nothing to change writes nothing.
 
     uv run python scripts/atlas3/rubies.py                 # count, write nothing to R2
     uv run python scripts/atlas3/rubies.py --send          # upload what changed
@@ -163,6 +165,23 @@ def held() -> dict[str, str]:
     return json.loads(gzip.decompress(read.stdout))
 
 
+def plan(before: dict[str, str], manifest: dict[str, str]) -> tuple[list[str], list[str], dict[str, str]]:
+    """The packs to upload, the packs to delete, and the manifest to hold while that runs.
+
+    The interim manifest drops every pack about to be replaced, so a run that
+    stops half way leaves those packs unvouched and the next run uploads them again.
+    """
+    changed = sorted(path for path, h in manifest.items() if before.get(path) != h)
+    gone = sorted(set(before) - set(manifest))
+    interim = {path: h for path, h in before.items() if manifest.get(path, h) == h}
+    return changed, gone, interim
+
+
+def send_manifest(stage: Path, manifest: dict[str, str]) -> None:
+    (stage / MANIFEST).write_bytes(gzip.compress(json.dumps(manifest, sort_keys=True).encode(), mtime=0))
+    upload([stage / MANIFEST], PREFIX)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--text", type=Path, default=TEXT, help="the text build to read")
@@ -175,10 +194,14 @@ def main() -> None:
     if not args.send:
         return
     before = held()
-    changed = sorted(path for path, h in manifest.items() if before.get(path) != h)
-    gone = sorted(set(before) - set(manifest))
-    print(f"to upload: {len(changed):,} objects and the manifest; no longer made: {len(gone):,}")
+    changed, gone, interim = plan(before, manifest)
+    print(f"to upload: {len(changed):,} objects; no longer made: {len(gone):,}")
+    if before == manifest:
+        return
     stage = OUT / "rubies"
+    stage.mkdir(parents=True, exist_ok=True)
+    if interim != before:
+        send_manifest(stage, interim)
     for path in changed:
         (stage / path).parent.mkdir(parents=True, exist_ok=True)
         (stage / path).write_bytes(objects[path])
@@ -192,9 +215,7 @@ def main() -> None:
                               input="\n".join(gone) + "\n", text=True, check=False)
         if done.returncode != 0:
             sys.exit(f"deleting from {PREFIX} failed; rerun to finish")
-    (stage / MANIFEST).write_bytes(gzip.compress(json.dumps(manifest, sort_keys=True).encode(), mtime=0))
-    upload([stage / MANIFEST], PREFIX)
-
+    send_manifest(stage, manifest)
 
 if __name__ == "__main__":
     main()
