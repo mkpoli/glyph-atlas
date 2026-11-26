@@ -15,7 +15,7 @@ const delocalize = pathname => {
   const [, tag, ...rest] = pathname.split('/')
   return { tag, path: '/' + rest.join('/') }
 }
-const language = { LOCALES, HREFLANG, localize, delocalize, t: key => key, locale: () => delocalize(page.url.pathname).tag }
+const language = { isLocale: tag => LOCALES.some(locale => locale.tag === tag), LOCALES, HREFLANG, localize, delocalize, t: key => key, locale: () => delocalize(page.url.pathname).tag }
 mock.module('../src/lib/i18n.svelte.js', () => language)
 mock.module('$lib/i18n.svelte.js', () => language)
 const page = { url: new URL('https://atlas.test/en') }
@@ -39,6 +39,10 @@ mock.module('$lib/session.svelte.js', () => ({ useSession: () => ({ state: { ink
 const { default: Collection } = await import('../src/routes/[lang=locale]/+page.svelte')
 const { characterPaths, pagePaths, urlset } = await import('../src/lib/sitemap.js')
 const { GET: robots } = await import('../src/routes/robots.txt/+server.js')
+const sitemap = await import('../src/lib/sitemap.js')
+const { index } = sitemap
+mock.module('$lib/sitemap.js', () => sitemap)
+const { GET: pagesSitemap } = await import('../src/routes/sitemaps/pages/[tag].xml/+server.js')
 
 describe('search indexing', () => {
   it('indexes the collection and tracking links, excluding search and filter results', () => {
@@ -103,6 +107,17 @@ describe('search indexing', () => {
     }
     expect(body).not.toContain('hreflang="lzh"')
     expect(body).not.toContain('/review</loc>')
+  })
+  it('lists each language\'s pages and character pages as separate sitemap files', async () => {
+    const body = await index('https://atlas.test').text()
+    for (const { tag } of LOCALES) {
+      expect(body).toContain(`<loc>https://atlas.test/sitemaps/pages/${tag}.xml</loc>`)
+      expect(body).toContain(`<loc>https://atlas.test/sitemaps/characters/${tag}.xml</loc>`)
+    }
+    expect(body).not.toContain('/sitemaps/pages.xml')
+    const file = await pagesSitemap({ fetch: () => {}, params: { tag: 'ja' }, url: new URL('https://atlas.test/sitemaps/pages/ja.xml') }).then(response => response.text())
+    expect(file).toContain('<loc>https://atlas.test/ja/contact</loc>')
+    expect(file).not.toContain('<loc>https://atlas.test/en/contact</loc>')
   })
   it('keeps crawlers out of run pages in every language', async () => {
     const body = await robots({ url: new URL('https://atlas.test/robots.txt') }).text()
