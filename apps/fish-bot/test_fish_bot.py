@@ -239,6 +239,7 @@ def make_bot(tmp_path, *, decision_value=None, github=None, config=None, matrix=
     bot = fish_bot.Bot(config, store, fake_matrix, FakeGemini(decision_value, act=act), github,
                        fish_bot.State(tmp_path / "state.json"))
     bot._pace = 0.0
+    bot._call_pause = 0.0
     return bot, fake_matrix, store
 
 
@@ -1087,6 +1088,79 @@ def test_carries_on_a_conversation_without_being_named_again(tmp_path, monkeypat
     assert len(matrix.sent) == 2 and "m.relates_to" not in matrix.sent[1][1]
     hear(bot, clock, "thanks, and the last week?", "$again")
     assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow", "follow"]
+
+
+def test_a_call_waits_for_what_its_caller_sends_right_after(tmp_path, monkeypatch):
+    bot, matrix, store, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "大肥魚 那加唄", "$call", after=1.0)
+    assert bot.gemini.turns == [] and matrix.typed == [ROOM]
+    hear(bot, clock, "[群聊的聊天记录] https://example.org/post", "$post", after=1.0)
+    hear(bot, clock, "scan.jpeg", "$scan", after=1.0, msgtype="m.image", url="mxc://example/scan")
+    assert bot.gemini.turns == []
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    assert bot.gemini.turns == [("called", 0, ["$call", "$post", "$scan"])]
+    assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$call"}}
+    assert store.outcome("$call")[0] == "chatted"
+    clock["now"] += fish_bot.TALK_PAUSE_LIMIT
+    bot.tick()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_a_held_call_is_answered_by_its_limit_and_before_another_persons(tmp_path, monkeypatch):
+    bot, _, store, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "大肥魚 look", "$call", after=2.0)
+    for number in range(6):
+        hear(bot, clock, f"part {number}", f"$p{number}", after=2.0)
+    assert bot.gemini.turns[0] == ("called", 0, ["$call", "$p0", "$p1", "$p2", "$p3"])
+    bot, _, store, clock = reading_bot(tmp_path / "two", monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "大肥魚 one", "$one", after=1.0)
+    hear(bot, clock, "大肥魚 one more thing", "$more", after=1.0)
+    assert bot.gemini.turns == [] and store.outcome("$one")[0] == "joined"
+    hear(bot, clock, "大肥魚 two", "$two", sender="@other:example", after=0.0)
+    assert [turn[:2] for turn in bot.gemini.turns] == [("called", 1)]
+    assert bot._sync_wait_ms() == int(fish_bot.CALL_PAUSE * 1000)
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    assert [turn[:2] for turn in bot.gemini.turns] == [("called", 1), ("called", 2)]
+
+
+def test_a_held_call_keeps_the_room_from_other_turns_and_goes_with_its_message(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "I mean the other one", "$more", after=0.0)
+    hear(bot, clock, "大肥魚 I mean the other one", "$again", after=2.5)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    clock["now"] += fish_bot.TALK_PAUSE_LIMIT
+    bot.tick()
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "called"]
+    hear(bot, clock, "大肥魚 never mind", "$gone", after=1.0)
+    bot.redact({"type": "m.room.redaction", "redacts": "$gone"})
+    clock["now"] += fish_bot.CALL_PAUSE_LIMIT
+    bot.tick()
+    assert len(bot.gemini.turns) == 2 and bot._held == {}
+
+
+def test_a_line_after_the_call_that_says_not_to_add_shuts_the_tools(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    bot.lookup = fish_bot.Lookup(bot.gemini, None, bot.store, owner="mkpoli", compendium=object())
+    hear(bot, clock, "大肥魚 把這個字加進珍字集覽", "$call", after=1.0)
+    hear(bot, clock, "啊不要加了", "$no", after=1.0)
+    hear(bot, clock, "謝謝", "$thanks", after=fish_bot.CALL_PAUSE)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    assert bot.lookup.offer_compendium and not bot.lookup.may_write
+    bot, _, _, clock = reading_bot(tmp_path / "yes", monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    bot.lookup = fish_bot.Lookup(bot.gemini, None, bot.store, owner="mkpoli", compendium=object())
+    hear(bot, clock, "大肥魚 幫個忙", "$call", after=1.0)
+    hear(bot, clock, "把這個字加進珍字集覽", "$what", after=fish_bot.CALL_PAUSE)
+    assert bot.lookup.may_write and bot.lookup.caller == "@reader:example"
 
 
 def test_waits_for_someone_to_finish_before_following(tmp_path, monkeypatch):

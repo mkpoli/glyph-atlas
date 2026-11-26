@@ -286,6 +286,9 @@ mautrix-discord then shows it for accounts logged in to it, as hers is. mautrix-
 passes on no typing for relayed accounts, and QQ's bot API has none for groups
 (@tencent-connect/qqbot-nodejs 1.0.6, `sendTyping`).
 
+A call is answered once its caller has been quiet for three seconds, ten at most, with typing shown
+from the start. A forwarded post or a picture sent right after the call is read in the same turn.
+
 She stays in a conversation. For four minutes after she speaks, she reads each new line in that room
 after a pause of a few seconds and decides whether it is for her: a follow-up, a correction such as
 "I mean the whole server!", or a thank-you gets an answer or an emoji without anyone naming her

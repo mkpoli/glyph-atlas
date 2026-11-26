@@ -113,6 +113,11 @@ TALK_PAUSE = (2.0, 5.0)
 TALK_PAUSE_LIMIT = 12.0
 TALK_QUIET_PARTNER = 3
 TALK_QUIET_OTHERS = 2
+# A call is answered once its caller has been quiet this long, and no later than the limit. People send
+# the call first and what it is about right after, as a forwarded post or a picture; a turn that read
+# the room before those arrived asks for what is already there.
+CALL_PAUSE = 3.0
+CALL_PAUSE_LIMIT = 10.0
 # Answers in one conversation before she needs to be called again, so two bots cannot keep it going.
 TALK_TURNS = 12
 FOLLOW_PER_HOUR = 40
@@ -809,6 +814,17 @@ class Talk:
     body: str = ""
     since: float = 0.0
     due: float = 0.0
+
+
+@dataclasses.dataclass
+class Held:
+    """A call that waits for its caller to finish writing."""
+
+    event: dict[str, Any]
+    call: Call
+    sender: str
+    since: float
+    due: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -2137,7 +2153,8 @@ Set "remember" to true when the newest lines hold something to keep in your long
 CHAT_TASKS = {
     "called": ("Message {trigger} talks to you. Answer that person as yourself; `say` must not be empty. "
                "Answer that message itself, even if the log shows the same question answered before: when "
-               "it needs facts and you have tools, look them up now."),
+               "it needs facts and you have tools, look them up now. What that person sent right after it, "
+               "a forwarded post, a link or a picture, is what the message is about."),
     "follow": ("You spoke in this room moments ago and are still in the conversation. Message {trigger} is "
                "the newest line, and it does not name you. Work out from the lines before it whom it is "
                "for. When it carries on with you (an answer, a follow-up question, a correction, a new "
@@ -4252,6 +4269,8 @@ class Bot:
         self._rooms_met: set[str] = set()
         self._sync_until = 0.0
         self._talks: dict[str, Talk] = {}
+        self._held: dict[str, Held] = {}
+        self._call_pause = CALL_PAUSE
         self._follows: list[float] = []
         self._spoke_at: dict[str, float] = {}
         self._visits: list[float] = []
@@ -4388,6 +4407,9 @@ class Bot:
             redacts = content.get("redacts")
         if isinstance(redacts, str):
             self.store.delete_event(redacts)
+            for room in [room for room, held in self._held.items() if held.event.get("event_id") == redacts]:
+                del self._held[room]
+                self.matrix.typing(room, self.user_id, timeout_ms=0)
 
     def ingest(self, room_id: str, event: dict[str, Any], *, backfilled: bool) -> None:
         """Keep the readable text of one event in the room's log, with the link to its picture when
@@ -4455,32 +4477,8 @@ class Bot:
                 self.store.mark_handled(event_id, "chat-limit")
                 return
             self.store.mark_handled(event_id, "started")
-            try:
-                if call.mode == "intro":
-                    self.introduce(room_id, event_id)
-                elif call.mode == "recap":
-                    self.post_recap(room_id, reply_to=event_id,
-                                    request=human_message(event, self.user_id, self.config.ignored_senders) or "")
-                    self._listen(room_id, sender)
-                elif call.mode in ("forget", "remember"):
-                    self.forget(room_id, event_id, sender, keep=call.mode == "remember")
-                else:
-                    self.chat(room_id, event_id, call, sender)
-            except ModelError as error:
-                outcome = self.store.outcome(event_id)
-                if outcome is not None and outcome[0] != "started":
-                    # She answered; what failed is the issue desk after it.
-                    log.warning("the issue desk in %s: %s", room_id, error)
-                    return
-                log.warning("the answer in %s waits: %s", room_id, error)
-                self.store.defer(event_id, room_id, sender, 60_000)
-                if isinstance(error, SpendError):
-                    self._say_broke(room_id, event_id, human_message(event, self.user_id, self.config.ignored_senders) or "")
-                else:
-                    self.matrix.typing(room_id, self.user_id, timeout_ms=0)
-            except Exception as error:
-                log.exception("chatting in %s", room_id)
-                self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
+            if call.mode != "chat" or not self._hold(room_id, event, call, sender):
+                self._take(room_id, event, call, sender)
             return
         pending = None
         if call.mode == "issue" and not call.prompt:
@@ -4510,6 +4508,62 @@ class Bot:
             log.exception("deciding for %s", event_id)
             self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
             self._tell(room_id, event_id, "I couldn't read that discussion just now. Try calling me again in a minute.")
+
+    def _take(self, room_id: str, event: dict[str, Any], call: Call, sender: str) -> None:
+        """Answer a call in the chat, keeping it for later when the model cannot be asked now."""
+        event_id = str(event["event_id"])
+        try:
+            if call.mode == "intro":
+                self.introduce(room_id, event_id)
+            elif call.mode == "recap":
+                self.post_recap(room_id, reply_to=event_id,
+                                request=human_message(event, self.user_id, self.config.ignored_senders) or "")
+                self._listen(room_id, sender)
+            elif call.mode in ("forget", "remember"):
+                self.forget(room_id, event_id, sender, keep=call.mode == "remember")
+            else:
+                self.chat(room_id, event_id, call, sender)
+        except ModelError as error:
+            outcome = self.store.outcome(event_id)
+            if outcome is not None and outcome[0] != "started":
+                # She answered; what failed is the issue desk after it.
+                log.warning("the issue desk in %s: %s", room_id, error)
+                return
+            log.warning("the answer in %s waits: %s", room_id, error)
+            self.store.defer(event_id, room_id, sender, 60_000)
+            if isinstance(error, SpendError):
+                self._say_broke(room_id, event_id, human_message(event, self.user_id, self.config.ignored_senders) or "")
+            else:
+                self.matrix.typing(room_id, self.user_id, timeout_ms=0)
+        except Exception as error:
+            log.exception("chatting in %s", room_id)
+            self.store.mark_handled(event_id, f"failed: {type(error).__name__}")
+
+    def _hold(self, room_id: str, event: dict[str, Any], call: Call, sender: str) -> bool:
+        """Keep a call until its caller has stopped writing; false when it is answered at once. A second
+        call from the same person joins the first, and another person's sends the first one out."""
+        pause = self._call_pause
+        if pause <= 0:
+            return False
+        now = time.monotonic()
+        held = self._held.get(room_id)
+        if held is not None and held.sender != sender:
+            self.release(room_id)
+            held = None
+        if held is not None:
+            self.store.mark_handled(str(held.event["event_id"]), "joined")
+        since = held.since if held is not None else now
+        self._held[room_id] = Held(event=event, call=call, sender=sender, since=since,
+                                   due=min(now + pause, since + CALL_PAUSE_LIMIT))
+        self.matrix.typing(room_id, self.user_id)
+        return True
+
+    def release(self, room_id: str | None = None) -> None:
+        """Answer the calls whose callers have gone quiet, or the one kept in a room whatever its wait."""
+        now = time.monotonic()
+        for room in [room for room, held in self._held.items() if room == room_id or (room_id is None and held.due <= now)]:
+            held = self._held.pop(room)
+            self._take(room, held.event, held.call, held.sender)
 
     def _say_broke(self, room_id: str, event_id: str, line: str) -> None:
         """Tell a room that calls her that the day's money is gone, once a day."""
@@ -4556,9 +4610,14 @@ class Bot:
         if isinstance(ts, int) and now_ms() - ts > CHAT_WINDOW_SECONDS * 1000:
             return
         sender = str(event.get("sender"))
+        now = time.monotonic()
+        held = self._held.get(room_id)
+        if held is not None and held.sender == sender:
+            # More from the person whose call waits: the answer reads it, and waits a little longer.
+            held.due = min(now + self._call_pause, held.since + CALL_PAUSE_LIMIT)
+            return
         if self._hear(room_id, event_id, sender, body, addressed_elsewhere=reply_target(event) is not None):
             return
-        now = time.monotonic()
         unread = self._unread.get(room_id)
         if unread is None:
             unread = self._unread[room_id] = {"first": event_id, "count": 0, "lively": False, "due": now + self._gap(room_id)}
@@ -4739,7 +4798,9 @@ class Bot:
     def follow(self) -> None:
         """Look at the lines waiting in the conversations she is in."""
         now = time.monotonic()
-        for room_id in [room for room, talk in self._talks.items() if talk.event_id and talk.due <= now]:
+        # A room where a call waits is read by that call's turn.
+        for room_id in [room for room, talk in self._talks.items()
+                        if talk.event_id and talk.due <= now and room not in self._held]:
             talk = self._talks[room_id]
             event_id, sender, body = talk.event_id, talk.sender, talk.body
             talk.event_id = ""
@@ -4794,7 +4855,7 @@ class Bot:
     def visit(self) -> None:
         """Open the rooms whose time has come, and let the model decide whether to join in."""
         now = time.monotonic()
-        for room_id in [room for room, unread in self._unread.items() if unread["due"] <= now]:
+        for room_id in [room for room, unread in self._unread.items() if unread["due"] <= now and room not in self._held]:
             unread = self._unread[room_id]
             latest = unread.setdefault("latest", unread["due"] + VISIT_BURST_WAIT)
             if now - unread["last"] < VISIT_BURST and now < latest:
@@ -4823,6 +4884,7 @@ class Bot:
         dues += [box[0]["due"] for box in self._outbox.values() if box]
         dues += [waiting["due"] for waiting in self._newcomers.values()]
         dues += [talk.due for talk in self._talks.values() if talk.event_id]
+        dues += [held.due for held in self._held.values()]
         if not dues:
             return SYNC_TIMEOUT_MS
         soonest = min(dues)
@@ -4844,6 +4906,7 @@ class Bot:
                 log.info("calls: %s", answer_report({day: counts for day, counts in self.store.outcomes(2).items()
                                                     if day == self._reported_day}) or "none")
             self._reported_day = day
+        self.release()
         self.follow()
         try:
             self.catch_up()
@@ -5193,15 +5256,21 @@ class Bot:
             if asked is None:
                 asked = [(str(row["sender"]), str(row["body"])) for row in events[max(0, (trigger or 0) - 3):(trigger or 0) + 1]
                          if direct and row["sender"] == events[trigger]["sender"]]
+            # What the callers sent after the call belongs to it: it can open the compendium, and a line
+            # among it that says not to add shuts the tools, whatever they wrote next.
+            callers = {sender for sender, _ in asked}
+            after = [(str(row["sender"]), str(row["body"])) for row in events[(trigger or 0) + 1:]
+                     if direct and row["sender"] in callers]
+            withdrawn = {sender for sender, line in after if COMPENDIUM_NOT.search(line)}
             # A call opens the compendium when the callers' lines, the line they answer or the talk just
             # before speak of it or of adding. Whether an addition was asked for is hers to read from the
             # callers' words; the tools to add stay shut only for a caller whose newest line says not to.
             around = ([str(row["body"]) for row in events[max(0, (trigger or 0) - COMPENDIUM_RECENT):(trigger or 0)]]
                       + [_column(events[trigger], "reply_body")] if direct else [])
             newest = dict(asked)
-            willing = [sender for sender, line in newest.items() if not COMPENDIUM_NOT.search(line)]
-            asking = [sender for sender in willing if any(COMPENDIUM_ADD.search(line) for who, line in asked if who == sender)]
-            self.lookup.offer_compendium = direct and bool(COMPENDIUM_WORDS.search("\n".join([*(line for _, line in asked), *around])))
+            willing = [sender for sender, line in newest.items() if not COMPENDIUM_NOT.search(line) and sender not in withdrawn]
+            asking = [sender for sender in willing if any(COMPENDIUM_ADD.search(line) for who, line in [*asked, *after] if who == sender)]
+            self.lookup.offer_compendium = direct and bool(COMPENDIUM_WORDS.search("\n".join([*(line for _, line in [*asked, *after]), *around])))
             self.lookup.may_write = self.lookup.offer_compendium and bool(willing)
             self.lookup.caller = (asking[:1] or willing[-1:] or list(newest)[-1:] or [""])[0]
             self.lookup.told = False
