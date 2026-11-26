@@ -99,6 +99,23 @@ def marks(text: str) -> list[Mark]:
     return [found[element.id] for element in elements]
 
 
+def document(text: str) -> list[tuple[int, str]]:
+    """The document characters of a raw line with their offsets: the text the page writes in its lines,
+    without rubies' readings, notes, and what a 見せ消ち strikes out."""
+    parsed = koji.parse(text)
+    rubies = [element for element in koji.walk(parsed.nodes) if element.kind == "ruby"]
+    fields = {element.id: _fields(text, element) for element in rubies}
+    struck = _struck(text, parsed) if rubies or "《" in text else set()
+    found = []
+    for char in parsed.chars:
+        if char.role not in BASE_ROLES or char.start in struck:
+            continue
+        if any(node in fields and _field_at(fields[node], char.start) is not None for node in char.path):
+            continue
+        found.append((char.start, char.text))
+    return found
+
+
 def _attached(char: str) -> bool:
     point = ord(char)
     return bool(unicodedata.combining(char)) or 0xFE00 <= point <= 0xFE0F or 0xE0100 <= point <= 0xE01EF
