@@ -756,6 +756,8 @@ def _join_standard_forms(
 
     #: What this pass has joined: no later move parts it.
     accepted: list[frozenset[str]] = []
+    #: What parted with a form ruled one with a full form, to go with it there whole.
+    carried: dict[tuple[str, frozenset[str]], set[str]] = {}
 
     def unit(char: str) -> Family:
         return group.setdefault(char, Family(char, {char}))
@@ -795,14 +797,19 @@ def _join_standard_forms(
     def against(form: str, full: set[str], further: set[str], table: StandardForm | None, own: set[str]) -> list[str]:
         """What keeps a form apart from its full forms; `own` is what goes with the form."""
         found: list[str] = []
-        families = {id(unit(char)) for char in full}
+        # The families of the full forms as they would stand without what goes with the form.
+        family = unit(form)
+        ties = _ties(family, family.members - own)
+        families = {frozenset(_reached(char, ties)) if unit(char) is family else id(unit(char)) for char in full}
         if table is not None and table.full and table.itself:
             found.append("the table gives it for itself too")
         if form in standalone and table is not None:
             found.append("OpenCC gives it for itself too")
         if len(families) > 1:
             found.append("several characters: " + "".join(sorted(full)))
+        # A character ruled another is no further one of it.
         outside = sorted(char for char in further - full - {form} if char in ideographs and unit(char) is not unit(form)
+                         and not ((form, char) in rulings and not rulings[form, char].one)
                          and id(unit(char)) not in families
                          and (table is not None and char in table.others or not any(related(char, one) for one in full)))
         if outside:
@@ -828,30 +835,55 @@ def _join_standard_forms(
         return found
 
     def part_with(form: str, full: set[str]) -> set[str]:
-        """What goes with a form out of the family it shares with its full form: what is tied to that without it stays."""
+        """What goes with a form out of the family it shares with `full`: what is tied to one of those without it stays."""
         family = unit(form)
-        return set(family.members) - _reached(min(full), _ties(family, family.members - {form}))
+        ties = _ties(family, family.members - {form})
+        return family.members.difference(*(_reached(char, ties) for char in full))
 
-    def separate(form: str, full: set[str], further: set[str], table: StandardForm | None) -> None:
-        """Part a form from its full form where an earlier pass joined them and the table would not (rules 1 to 6)."""
+    def separate(form: str, full: set[str], further: set[str], table: StandardForm | None) -> bool:
+        """Part a form from its full forms, or from the one it was joined to, where an earlier pass joined them and the
+        table would not (rules 1 to 6), and from a character ruled another, with what hangs on the form alone. Whether it
+        parted anything."""
         family = unit(form)
-        ruled = {char: rulings[form, char] for char in (full | further) & family.members if (form, char) in rulings}
-        if {id(unit(char)) for char in full} != {id(family)} or {form, *full} <= family.stated:
-            return
-        settled.update((form, char) for char in ruled)
-        own = part_with(form, full)
-        if any(ruling.one for ruling in ruled.values()) or own & family.stated and family.stated - own:
-            return
-        if ruled or against(form, full, further, table, own):
-            _leave(family, own, group)
+        ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
+        one = {char for char, ruling in ruled.items() if ruling.one}
+        two = {char for char in ruled if char not in one and char in family.members}
+        # A form ruled one character with a full form goes there with what hangs on it (`decide`), and leaves its
+        # other full forms; the rules weigh the full forms of a form with no such ruling. Each is parted on its own.
+        other = (full - one) & family.members - two if one else set()
+        here = set() if one else full & family.members
+        # A character tied without the form to what must stay (the curated family the form is in, and for its other
+        # full forms the one it is ruled with) stays with that.
+        ties = _ties(family, family.members - {form})
+        stated = family.stated if form in family.stated else frozenset()
+        for targets, keep, weighed in ((two, stated, False), (other, stated | one, False), (here, stated, True)):
+            targets = {char for char in targets if not _reached(char, ties) & keep}
+            if not targets or {form, *targets} <= family.stated:
+                continue
+            own = part_with(form, targets)
+            if own & family.stated and family.stated - own:
+                continue
+            # No parting undoes a join made before it.
+            pieces = [part for side in (own, family.members - own) for part in _parts(side, _ties(family, side))]
+            if any(pair <= family.members and not any(pair <= piece for piece in pieces) for pair in accepted):
+                continue
+            if not weighed or against(form, full, further, table, own):
+                _leave(family, own, group)
+                if one and targets & (full - one) and not one <= own:
+                    carried[form, frozenset(one)] = own
+                return True
+        return False
 
     def decide(form: str, full: set[str], further: set[str], edges: list[Edge], table: StandardForm | None) -> Decision | None:
         ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
         full = {char for char, ruling in ruled.items() if ruling.one} or full
         families = {id(unit(char)) for char in full}
+        # A ruling it keeps is settled; one held in its family is not.
+        settled.update((form, char) for char, ruling in ruled.items() if ruling.one or unit(char) is not unit(form))
         if families == {id(unit(form))}:
+            # Joined as it is: no later move parts it.
+            accepted.append(frozenset({form, *full}))
             return None
-        settled.update((form, char) for char in ruled)
         edges += [Edge(row["a"], row["b"], row["relation"], row["source"], row["detail"])
                   for char in sorted(full) for row in between.get(frozenset((form, char)), ())
                   if row["b"] == form and row["relation"] in REDUCED_FORM or "joyo/variant" in row["detail"]]
@@ -890,8 +922,9 @@ def _join_standard_forms(
     for form, table in standard.items():
         for char in (form, *table.full):
             forms.setdefault(char, set()).add(form)
-    for form, full, further, _, table in given:
-        separate(form, full, further, table)
+    # Until no form is parted any more: a parting can leave another form with part of its full forms.
+    while [separate(form, full, further, table) for form, full, further, _, table in given].count(True):
+        pass
     for form, full, further, _, table in given:
         for one in sorted(full) if table is not None else ():
             for other in sorted(further - full - {form}):
@@ -900,6 +933,11 @@ def _join_standard_forms(
                            for row in between.get(frozenset((other, rest)), ()))
                 if printed and not tied and other in ideographs and forms[other] == {form}:
                     join_full(one, other)
+    # A join of full forms can bring back a character a form is ruled apart from.
+    while [separate(form, full, further, table) for form, full, further, _, table in given].count(True):
+        pass
+    # The piece each form ruled one with a full form parted with, as it stands: a form joining it later goes too.
+    whole = {key: unit(key[0]) for key, own in carried.items() if unit(key[0]).members <= own}
     decided: list[Decision] = []
     for form, full, further, edges, table in given:
         # A pair of the 常用漢字表 the Chinese table gives too is decided by that one.
@@ -916,11 +954,17 @@ def _join_standard_forms(
             found.reasons += [f"ruled two characters: {char}, {rulings[found.form, char].by} {rulings[found.form, char].date}" for char in barred]
         if found.reasons:
             refuse("a standard form: " + found.reasons[0].partition(":")[0], edge)
-        elif why := _take_in(found, group, between, headwords, familiarity, accepted):
+            continue
+        source = unit(found.form)
+        if why := _take_in(found, group, between, headwords, familiarity, accepted, source is whole.get((found.form, found.full))):
             found.reasons.append(why)
             refuse("a standard form: " + why, edge)
-        else:
-            accepted.append(frozenset({found.form, *found.full}))
+            continue
+        # A form leaving a carried piece leaves the rest of it carried.
+        for key, piece in whole.items():
+            if piece is source and unit(key[0]) is not unit(found.form):
+                whole[key] = unit(key[0])
+        accepted.append(frozenset({found.form, *found.full}))
     if parted := [pair for pair in accepted if len({id(unit(char)) for char in pair}) > 1]:
         raise ValueError("joined and parted again: " + ", ".join("".join(sorted(pair)) for pair in parted))
     return decided
@@ -948,13 +992,12 @@ def _ties(family: Family, among: set[str]) -> list[tuple[str, str]]:
 def _leave(family: Family, gone: set[str], group: dict[str, Family]) -> None:
     """Part `gone` from a family: each side is as many families as its ties hold together, a curated one the family it was."""
     edges, kept_head = family.edges, family.kept_head
-    for side in (gone, family.members - gone):
-        for part in _parts(side, _ties(family, side)):
-            kept = family if part & family.stated else Family(min(part), part)
-            kept.members, kept.edges = part, [edge for edge in edges if edge.a in part and edge.b in part]
-            kept.kept_head = kept_head if kept_head in part else None
-            for char in part:
-                group[char] = kept
+    for part in [part for side in (gone, family.members - gone) for part in _parts(side, _ties(family, side))]:
+        kept = family if part & family.stated else Family(min(part), part)
+        kept.members, kept.edges = part, [edge for edge in edges if edge.a in part and edge.b in part]
+        kept.kept_head = kept_head if kept_head in part else None
+        for char in part:
+            group[char] = kept
 
 
 def _parts(members: set[str], pairs: Iterable[tuple[str, str]]) -> list[set[str]]:
@@ -995,16 +1038,16 @@ def _kept_apart(
 
 def _take_in(
     found: Decision, group: dict[str, Family], between: Mapping[frozenset[str], list[Mapping[str, str]]],
-    headwords: Headwords, familiarity: Mapping[str, int], accepted: Iterable[frozenset[str]] = (),
+    headwords: Headwords, familiarity: Mapping[str, int], accepted: Iterable[frozenset[str]] = (), whole: bool = False,
 ) -> str | None:
     """Join one standard form to the family of its full form, or say why what it brings along cannot. `accepted` are the
-    joins a move does not part."""
+    joins a move does not part; `whole` moves all of the form's family, which parted with it to go there."""
     form = found.form
     source = group.get(form) or Family(form, {form})
     target = group.get(min(found.full)) or Family(min(found.full), {min(found.full)})
     if source is target:
         return None
-    moved = _part_of(form, source, familiarity)
+    moved = set(source.members) if whole and not source.curated else _part_of(form, source, familiarity)
     # A member the dictionaries hold apart from the family stays behind, with what hangs on it alone.
     left = {char for char in moved - {form} if any(headwords.two(char, member) for member in target.members)}
     if left:
@@ -1018,14 +1061,16 @@ def _take_in(
     curated = bool(moved & source.stated)
     if curated and (target.curated or not source.stated <= moved):
         return "two curated families" if target.curated else "it would leave part of a curated family behind"
-    for pair in accepted:
-        if pair & moved and pair & (source.members - moved):
-            return f"it would part {''.join(sorted(pair & moved))} from {''.join(sorted(pair - moved))}, joined before it"
-    heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
     stays, stated_edges = source.members - moved, source.edges
+    parts = _parts(stays, _ties(source, stays))
+    for pair in accepted:
+        if pair <= source.members and not any(pair <= part for part in (moved, *parts)):
+            first = pair & moved or next(part & pair for part in parts if part & pair)
+            return f"it would part {''.join(sorted(first))} from {''.join(sorted(pair - first))}, joined before it"
+    heads = [_head(source, familiarity) if moved == source.members else form, _head(target, familiarity)]
     taken = [edge for edge in stated_edges if edge.a in moved and edge.b in moved]
     # What stays is as many families as its ties hold together; a curated one is the family it was.
-    for part in _parts(stays, _ties(source, stays)):
+    for part in parts:
         kept = source if part & source.stated else Family(min(part), part)
         kept.members, kept.edges = part, [edge for edge in stated_edges if edge.a in part and edge.b in part]
         kept.kept_head = source.kept_head if source.kept_head in part else None
