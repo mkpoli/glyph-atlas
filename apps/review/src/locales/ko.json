@@ -515,6 +515,7 @@
   "run.order.hand": "필사 우선",
   "run.order.source": "자료순",
   "run.near.label": "관련 글자열",
+  "run.near.iteration": "반복 부호 표기",
   "run.near.inside": "안에 든 글자열",
   "run.near.longer": "더 긴 글자열",
   "run.near.siblings": "첫머리가 {lead}인 다른 글자열",

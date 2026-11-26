@@ -501,6 +501,7 @@
   "run.order.hand": "Handwritten first",
   "run.order.source": "By work",
   "run.near.label": "Related sequences",
+  "run.near.iteration": "Iteration-mark forms",
   "run.near.inside": "Sequences inside",
   "run.near.longer": "Longer sequences",
   "run.near.siblings": "Also starting {lead}",

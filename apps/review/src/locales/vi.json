@@ -474,6 +474,7 @@
   "run.order.hand": "Viết tay trước",
   "run.order.source": "Theo tác phẩm",
   "run.near.label": "Dãy chữ liên quan",
+  "run.near.iteration": "Cách viết dùng dấu lặp",
   "run.near.inside": "Dãy chữ bên trong",
   "run.near.longer": "Dãy chữ nhiều chữ hơn",
   "run.near.siblings": "Cùng mở đầu bằng {lead}",

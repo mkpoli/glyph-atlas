@@ -493,6 +493,7 @@
   "run.order.hand": "筆寫 優先",
   "run.order.source": "資料順",
   "run.near.label": "關聯 文字列",
+  "run.near.iteration": "反復符號 表記",
   "run.near.inside": "안에 든 文字列",
   "run.near.longer": "더 긴 文字列",
   "run.near.siblings": "첫머리가 {lead}인 다른 文字列",

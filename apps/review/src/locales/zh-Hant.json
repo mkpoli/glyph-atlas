@@ -488,6 +488,7 @@
   "run.order.hand": "手寫優先",
   "run.order.source": "按文獻",
   "run.near.label": "相關字串",
+  "run.near.iteration": "重文號寫法",
   "run.near.inside": "內含的字串",
   "run.near.longer": "更長的字串",
   "run.near.siblings": "同以「{lead}」開頭",
