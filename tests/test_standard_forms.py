@@ -498,6 +498,14 @@ def test_a_move_that_would_split_what_stays_of_a_join_is_refused():
     assert found == {"甲": "".join(sorted("丙乙甲"))} and reasons["丙"] == ["it would part 乙 from 甲, joined before it"]
 
 
+def test_a_piece_carried_to_a_full_form_goes_whole_whatever_leaves_it_first():
+    """丙 is ruled one with 甲 and parts from 丁 with 戊 and 庚; 戊 then goes to 辛, before or after 丙 goes."""
+    rows = [edge("丁", "丙", "z"), edge("丙", "戊", "z"), edge("丙", "庚", "z")]
+    for order in ((("戊", [("辛", "辛")]), ("丙", [("丁", "丁"), ("甲", "甲")])), (("丙", [("丁", "丁"), ("甲", "甲")]), ("戊", [("辛", "辛")]))):
+        found, _ = decided(rows, forms(**dict(order)), familiar="丁庚", hand=ruled(("丙", "甲", "one")))
+        assert found == {"庚": "".join(sorted("丙庚甲")), "辛": "".join(sorted("戊辛"))}
+
+
 def test_full_forms_the_form_alone_holds_together_are_several_characters():
     found, reasons = decided([edge("甲", "丙", "z"), edge("丙", "乙", "z")], forms(丙=[("甲", "甲"), ("乙", "乙")]))
     assert found == {} and reasons["丙"][0] == "several characters: 乙甲"

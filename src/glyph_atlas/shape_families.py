@@ -954,12 +954,17 @@ def _join_standard_forms(
             found.reasons += [f"ruled two characters: {char}, {rulings[found.form, char].by} {rulings[found.form, char].date}" for char in barred]
         if found.reasons:
             refuse("a standard form: " + found.reasons[0].partition(":")[0], edge)
-        elif why := _take_in(found, group, between, headwords, familiarity, accepted,
-                             unit(found.form) is whole.get((found.form, found.full))):
+            continue
+        source = unit(found.form)
+        if why := _take_in(found, group, between, headwords, familiarity, accepted, source is whole.get((found.form, found.full))):
             found.reasons.append(why)
             refuse("a standard form: " + why, edge)
-        else:
-            accepted.append(frozenset({found.form, *found.full}))
+            continue
+        # A form leaving a carried piece leaves the rest of it carried.
+        for key, piece in whole.items():
+            if piece is source and unit(key[0]) is not unit(found.form):
+                whole[key] = unit(key[0])
+        accepted.append(frozenset({found.form, *found.full}))
     if parted := [pair for pair in accepted if len({id(unit(char)) for char in pair}) > 1]:
         raise ValueError("joined and parted again: " + ", ".join("".join(sorted(pair)) for pair in parted))
     return decided
