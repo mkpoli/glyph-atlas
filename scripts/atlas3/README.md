@@ -447,6 +447,10 @@ a redeploy of the previous Worker. Steps marked *not built* must exist before th
    paths that manifest lists and the translation lacks; figures go to `out/reference-report.txt`. A
    load that stopped partway is finished on the next run, also one whose part D1 applied and the
    local copy missed: the run checks D1 for the stamps of every load the local copy has not finished.
+   A load that moves a family head files the runs of glyph-atlas-v3-runs again under it once its rows
+   have landed (`refile.py`), and uploads their answers; a run that stops between goes on at the next.
+   Explore finds a run by the head a typed character is folded to, so between the two a run with a
+   moved head is not found.
 
    The run reads about 1 GB of input and writes as much again to scratch files and the stage
    folder; it holds one object at a time (190 MB resident at most on the copies of 19–20 October

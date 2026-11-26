@@ -107,13 +107,14 @@ The figures are of the committed tables, before any other change the input holds
 rest of a stopped load is, and stops (`check_heads`) where
 
 - the head of a character that is not small seal moves (`--heads` lets it): no Han head may;
-- a run is filed under a grapheme whose head moves, in the local copy of the runs, which must be there, or
-  among the runs D1 has moved since the last publish;
 - a live `written_for` claim names such a grapheme, whose key it was recorded under. The claimant is
   asked to take it back, or the owner files the form under the head as well, which leaves the claim be.
 
 A `has_grapheme` claim is read by the head its key is filed under, so the report lists it and goes on. The
-report of run keys and claims is printed again once the rows have landed.
+runs filed under a grapheme whose head moves, in the local copy of the runs, which must be there, or among the
+runs D1 has moved since the last publish, are filed again under the new head once the rows have landed
+(`refile.py`, 2026-11-25; until then they stopped the load). The report of run keys and claims is printed
+again then.
 
 It writes nothing. In D1 it reads each `run_moves` row with the few runs its first crop starts (the local
 copy of 24 November holds no such row), and each claim that names a grapheme, through `assertion_object`,
