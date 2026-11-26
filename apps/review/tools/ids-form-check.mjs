@@ -20,6 +20,7 @@
  * `export-web` folder), which the browser is served in place of /atlas/composer/. Without it the
  * composed step is skipped.
  *
+ * Build the review UI with VITE_COMPOSER_BASE=/atlas/composer/ so the fixture controls the export.
  * Run through devrun:
  *   devrun bun apps/review/tools/ids-form-check.mjs [--shots DIR]
  */
@@ -532,6 +533,9 @@ try {
   await reopenComposer()
   await typeSequence('⿰率率')
   await focusPath('1')
+  for (const face of ['sans', 'serif']) {
+    await browser.waitFor(`new Set([...document.querySelectorAll('.ids-rate-option .rate-${face}')].map(path => path.getAttribute('d')).filter(Boolean)).size === 4`)
+  }
   const spellings = ['⿱亠⿱⿲冫幺⿱丿丶十', '⿱亠⿱⿲𰀪幺⺀十', '率󠄀', '率󠄁']
   for (const [i, form] of spellings.entries()) {
     await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].click()`)
