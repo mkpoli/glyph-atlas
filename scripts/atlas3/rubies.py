@@ -7,8 +7,9 @@ entry, the rubies of its lines in packs of 32 pages under `v3/rubies/<entry>/<n>
     {"<page>": {"<line key>": [[start, length, side, reading], ...]}}
 
 - A line is named by its key: its document characters that are letters or numbers, so punctuation and
-  spacing a dataset changed do not part a published line from its transcription. Two lines of a page
-  with one key and different rubies are left out.
+  spacing a dataset changed do not part a published line from its transcription. Lines of a page with
+  one key and different rubies, or one with rubies and one with none, are left out. The line is read in
+  NFC, as the site reads a published line.
 - `start` and `length` count characters of the key. `side` is 0 for the right (振り仮名) and 1 for the
   left (左訓). A ruby whose base is not one stretch of the key is left out.
 - `reading` is the ruby as typed, without spaces: one string over the whole base, or a list with one
@@ -98,6 +99,7 @@ def split(base: list[str], reading: str, known: dict[str, frozenset[str]]) -> li
 
 def line_rubies(raw: str, known: dict[str, frozenset[str]], counts: Counter) -> tuple[str, list[list]]:
     """A raw line's key and its rubies over the key."""
+    raw = unicodedata.normalize("NFC", raw)
     chars = [(offset, char) for offset, char in rubies.document(raw) if keyed(char)]
     place = {offset: i for i, (offset, _) in enumerate(chars)}
     found = []
@@ -122,20 +124,20 @@ def packs(text: Path) -> tuple[dict[str, bytes], Counter]:
     db = sqlite3.connect(f"file:{text}?mode=ro", uri=True)
     pages: dict[tuple[str, int], dict[str, list | None]] = defaultdict(dict)
     rows = db.execute("SELECT p.entry, p.page, l.raw FROM lines l JOIN pages p ON p.id = l.page "
-                      "WHERE EXISTS (SELECT 1 FROM rubies r WHERE r.page = l.page AND r.line = l.line) ORDER BY p.entry, p.page, l.line")
+                      "WHERE l.page IN (SELECT DISTINCT page FROM rubies) ORDER BY p.entry, p.page, l.line")
     for entry, page, raw in rows:
         key, found = line_rubies(raw, known, counts)
-        if not key or not found:
+        if not key:
             continue
         lines = pages[entry.lower(), page]
         if key in lines and lines[key] != found:
-            counts["lines left out: one key, different rubies"] += 1 + (lines[key] is not None)
+            counts["lines left out: one key, different rubies"] += bool(found) + bool(lines[key])
             lines[key] = None
         else:
             lines[key] = found
     made: dict[str, dict[str, dict]] = defaultdict(dict)
     for (entry, page), lines in pages.items():
-        kept = {key: found for key, found in lines.items() if found is not None}
+        kept = {key: found for key, found in lines.items() if found}
         if kept:
             made[f"{entry}/{(page - 1) // PACK_PAGES}.json.gz"][str(page)] = kept
             counts["pages"] += 1
