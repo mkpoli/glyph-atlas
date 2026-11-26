@@ -38,15 +38,17 @@ describe('groupMessages', () => {
   it('merges consecutive messages from the same sender within five minutes', () => {
     const base = new Date('2026-11-25T17:40:00Z').getTime()
     const groups = groupMessages([
-      { name: 'Telegram', body: 'one', at: base },
-      { name: 'Telegram', body: 'two', at: base + 120_000 },
-      { name: 'Telegram', body: 'later', at: base + 10 * 60_000 },
-      { name: 'Discord', body: 'reply', at: base + 10 * 60_000 + 1000 },
+      { name: 'Telegram', by: 's1', body: 'one', at: base },
+      { name: 'Telegram', by: 's1', body: 'two', at: base + 120_000 },
+      { name: 'Telegram', by: 's2', body: 'other person', at: base + 180_000 },
+      { name: 'Telegram', by: 's2', body: 'later', at: base + 10 * 60_000 },
+      { name: 'Discord', by: 's3', body: 'reply', at: base + 10 * 60_000 + 1000 },
     ])
-    expect(groups).toHaveLength(3)
+    expect(groups).toHaveLength(4)
     expect(groups[0].items.map(m => m.body)).toEqual(['one', 'two'])
-    expect(groups[1].items.map(m => m.body)).toEqual(['later'])
-    expect(groups[2].name).toBe('Discord')
+    expect(groups[1].items.map(m => m.body)).toEqual(['other person'])
+    expect(groups[2].items.map(m => m.body)).toEqual(['later'])
+    expect(groups[3].name).toBe('Discord')
   })
 })
 

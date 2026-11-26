@@ -142,9 +142,9 @@
           <div class="preview-panels">
             {#each preview as room, index (room.alias)}
               {@const active = room.alias === activeRoom}
-              <div class="preview-panel" role="tabpanel" aria-labelledby="preview-tab-{index}" tabindex={active ? 0 : undefined}
+              <div class="preview-panel" role="tabpanel" aria-labelledby="preview-tab-{index}"
                 hidden={active ? undefined : 'until-found'} onbeforematch={() => selectRoom(room.alias)}>
-                <ol class="preview-feed">
+                <ol class="preview-feed" tabindex={active ? 0 : undefined}>
                   {#each groupMessages(room.messages) as group, gIndex (gIndex)}
                     <li class="preview-group">
                       <div class="preview-meta">
@@ -291,13 +291,13 @@
   .preview-tabs [role="tab"][aria-selected="true"]::after { content: ''; position: absolute; inset: auto 11px 0; border-block-end: 2px solid var(--accent); }
   .preview-panels { display: grid; }
   .preview-panel { grid-area: 1 / 1; min-width: 0; }
-  .preview-panel:focus-visible { outline-offset: -3px; }
   /* A message may hold an IDS description (⿰𠤕⿱龴疋). Plangothic draws the rare ideographs it names, but no
      bundled font draws the operators themselves (U+2FF0-2FFB), so those come from a reader's own fonts where
      it has them (`apps/review/static/fonts/README.md`). */
   @font-face { font-family: "IDS Parts"; src: url("/fonts/Plangothic-ids-parts.woff2") format("woff2"); font-display: swap; unicode-range: U+2E80-2EFF, U+31E4-31EF, U+20000-3FFFF; }
   @font-face { font-family: "IDS Strokes"; src: url("/fonts/NotoSansCJKjp-ids-strokes.woff2") format("woff2"); font-display: swap; unicode-range: U+31C0-31E3; }
   .preview-feed { list-style: none; margin: 0; padding: 14px 16px 18px; max-block-size: 420px; overflow-y: auto; display: grid; gap: 12px; }
+  .preview-feed:focus-visible { outline-offset: -3px; }
   .preview-group { min-width: 0; }
   .preview-group:not(:first-child) { border-block-start: 1px solid var(--line); padding-block-start: 12px; }
   .preview-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin-block-end: 4px; }

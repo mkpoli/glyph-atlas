@@ -77,7 +77,7 @@ describe('preview room messages', () => {
     ]);
     const found = await messages();
     expect(found.map(message => message.body)).toEqual(['oldest', 'middle', 'newest']);
-    expect(found[0]).toEqual({ name: 'reader', body: 'oldest', at: 1000 });
+    expect(found[0]).toEqual({ name: 'reader', by: 's1', body: 'oldest', at: 1000 });
   });
 
   it('reads by room ID, never by alias, since that is all /messages takes', async () => {
@@ -139,7 +139,30 @@ describe('preview room messages', () => {
       },
       { event_id: '$orig', type: 'm.room.message', sender: '@discord_1:glyphatlas.org', origin_server_ts: 1000, content: { msgtype: 'm.text', body: 'first' } },
     ]);
-    expect(await messages()).toEqual([{ name: 'Discord', body: 'latest', at: 1000 }]);
+    expect(await messages()).toEqual([{ name: 'Discord', by: 's1', body: 'latest', at: 1000 }]);
+  });
+
+  it('breaks same-timestamp edit ties by lexicographically larger event_id regardless of chunk order', async () => {
+    serving([
+      {
+        event_id: '$a', type: 'm.room.message', sender: '@alice:matrix.org', origin_server_ts: 3000,
+        content: {
+          msgtype: 'm.text', body: '* earlier id',
+          'm.new_content': { msgtype: 'm.text', body: 'earlier id' },
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$orig' },
+        },
+      },
+      {
+        event_id: '$z', type: 'm.room.message', sender: '@alice:matrix.org', origin_server_ts: 3000,
+        content: {
+          msgtype: 'm.text', body: '* later id',
+          'm.new_content': { msgtype: 'm.text', body: 'later id' },
+          'm.relates_to': { rel_type: 'm.replace', event_id: '$orig' },
+        },
+      },
+      { event_id: '$orig', type: 'm.room.message', sender: '@alice:matrix.org', origin_server_ts: 1000, content: { msgtype: 'm.text', body: 'first' } },
+    ]);
+    expect(await messages()).toEqual([{ name: 'alice', by: 's1', body: 'later id', at: 1000 }]);
   });
 
   it('drops bridge echoes with identical text and keeps the original sender', async () => {
@@ -148,7 +171,7 @@ describe('preview room messages', () => {
       event('@discord_1:glyphatlas.org', 'Hello digest', 2000),
       event('@bigfatfish:glyphatlas.org', 'Hello digest', 1000),
     ]);
-    expect(await messages()).toEqual([{ name: 'bigfatfish', body: 'Hello digest', at: 1000 }]);
+    expect(await messages()).toEqual([{ name: 'bigfatfish', by: 's1', body: 'Hello digest', at: 1000 }]);
   });
 
   it('keeps identical short replies minutes apart while still folding replayed long digests', async () => {
@@ -160,9 +183,9 @@ describe('preview room messages', () => {
       event('@bigfatfish:glyphatlas.org', digest, 500),
     ]);
     expect(await messages()).toEqual([
-      { name: 'bigfatfish', body: digest, at: 500 },
-      { name: 'mkpoli', body: '謝謝', at: 1000 },
-      { name: 'reader', body: '謝謝', at: 600_000 },
+      { name: 'bigfatfish', by: 's1', body: digest, at: 500 },
+      { name: 'mkpoli', by: 's2', body: '謝謝', at: 1000 },
+      { name: 'reader', by: 's3', body: '謝謝', at: 600_000 },
     ]);
   });
 
@@ -186,7 +209,20 @@ describe('preview room messages', () => {
       },
       { event_id: '$orig', type: 'm.room.message', sender: '@alice:matrix.org', origin_server_ts: 1000, content: { msgtype: 'm.text', body: 'original' } },
     ]);
-    expect(await messages()).toEqual([{ name: 'alice', body: 'real edit', at: 1000 }]);
+    expect(await messages()).toEqual([{ name: 'alice', by: 's1', body: 'real edit', at: 1000 }]);
+  });
+
+  it('assigns distinct opaque author keys to different puppets on the same network without exposing Matrix IDs', async () => {
+    serving([
+      event('@discord_2:glyphatlas.org', 'second person', 2000),
+      event('@discord_1:glyphatlas.org', 'first person', 1000),
+    ]);
+    const found = await messages();
+    expect(found.map(m => m.name)).toEqual(['Discord', 'Discord']);
+    expect(found[0].by).toBeTruthy();
+    expect(found[1].by).toBeTruthy();
+    expect(found[0].by).not.toBe(found[1].by);
+    expect(found[0].by).not.toContain('discord_1');
   });
 
   it('keeps short replies from distinct native users within a minute and distinct long messages sharing a 400-char prefix', async () => {

@@ -43,15 +43,16 @@ export const senderMark = name => NETWORK_MARKS[name] ?? 'matrix'
 export function groupMessages(messages) {
   const groups = []
   for (const message of messages ?? []) {
+    const key = message.by ?? message.name
     const prev = groups.at(-1)
     const last = prev?.items.at(-1)
-    const sameSender = prev && prev.name === message.name
+    const sameSender = prev && prev.by === key
     const closeInTime = last && Math.abs(message.at - last.at) <= GROUP_WINDOW_MS
       && new Date(message.at).toDateString() === new Date(last.at).toDateString()
     if (sameSender && closeInTime) {
       prev.items.push(message)
     } else {
-      groups.push({ name: message.name, mark: senderMark(message.name), at: message.at, items: [message] })
+      groups.push({ name: message.name, by: key, mark: senderMark(message.name), at: message.at, items: [message] })
     }
   }
   return groups

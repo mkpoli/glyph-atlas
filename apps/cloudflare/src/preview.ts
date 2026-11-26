@@ -22,9 +22,10 @@ const FETCH_LIMIT = LIMIT * 5;
 // The longest message body kept; a longer one is cut with an ellipsis.
 const MAX_BODY = 400;
 
-// A message as the panel draws it: who said it, what they said, and when. `name` falls back to the local
-// part of the sender's Matrix ID when they have set no display name.
-export type PreviewMessage = { name: string; body: string; at: number };
+// A message as the panel draws it: who said it, an opaque per-room author key for grouping without
+// exposing bridge puppet IDs, what they said, and when. `name` falls back to the local part of the
+// sender's Matrix ID when they have set no display name.
+export type PreviewMessage = { name: string; by?: string; body: string; at: number };
 export type PreviewRoom = { alias: string; name: string; messages: PreviewMessage[] };
 
 type PreviewEnv = Pick<Env, 'MATRIX_HOMESERVER'> & { MATRIX_INBOX_TOKEN?: string };
@@ -111,16 +112,19 @@ export async function roomMessages(env: PreviewEnv, alias: string, signal?: Abor
   );
   if (!response.ok) return [];
   const chunk = (await response.json() as { chunk?: RawMessageEvent[] }).chunk ?? [];
-  // Chunk is newest-first: record the latest `m.replace` edit keyed by `(sender, target)` so an edit
-  // only replaces a message sent by the same account, as required by the Matrix spec.
-  const replacements = new Map<string, string | null>();
+  // Record the latest `m.replace` edit keyed by `(sender, target)`: highest `origin_server_ts`, breaking
+  // ties by lexicographically larger `event_id`, as required by the Matrix spec.
+  const replacements = new Map<string, { ts: number; eventId: string; text: string | null }>();
   for (const item of chunk) {
     if (item.type !== 'm.room.message' || typeof item.sender !== 'string') continue;
     const target = replacementTarget(item.content);
     if (!target) continue;
     const key = `${item.sender}\0${target}`;
-    if (!replacements.has(key)) {
-      replacements.set(key, rawMessageText(item.content ?? {}, item.sender));
+    const ts = item.origin_server_ts ?? 0;
+    const eventId = item.event_id ?? '';
+    const prev = replacements.get(key);
+    if (!prev || ts > prev.ts || (ts === prev.ts && eventId > prev.eventId)) {
+      replacements.set(key, { ts, eventId, text: rawMessageText(item.content ?? {}, item.sender) });
     }
   }
   // Walk oldest-first so when a bridge echoes an earlier message with the same text, the original sender wins.
@@ -130,13 +134,14 @@ export async function roomMessages(env: PreviewEnv, alias: string, signal?: Abor
   const LONG_DUPLICATE = 40;
   const messages: PreviewMessage[] = [];
   const lastSeen = new Map<string, { at: number; sender: string }>();
+  const authors = new Map<string, string>();
   for (let i = chunk.length - 1; i >= 0; i--) {
     const item = chunk[i];
     if (item.type !== 'm.room.message' || typeof item.sender !== 'string') continue;
     if (replacementTarget(item.content)) continue;
     const replaceKey = item.event_id ? `${item.sender}\0${item.event_id}` : null;
     const raw = replaceKey && replacements.has(replaceKey)
-      ? replacements.get(replaceKey)!
+      ? replacements.get(replaceKey)!.text
       : rawMessageText(item.content ?? {}, item.sender);
     if (raw === null) continue;
     const at = item.origin_server_ts ?? 0;
@@ -147,7 +152,12 @@ export async function roomMessages(env: PreviewEnv, alias: string, signal?: Abor
     );
     if (duplicate) continue;
     lastSeen.set(raw, { at, sender: item.sender });
-    messages.push({ name: senderName(item.sender), body: truncateText(raw), at });
+    let by = authors.get(item.sender);
+    if (!by) {
+      by = `s${authors.size + 1}`;
+      authors.set(item.sender, by);
+    }
+    messages.push({ name: senderName(item.sender), by, body: truncateText(raw), at });
   }
   return messages.slice(-LIMIT);
 }
