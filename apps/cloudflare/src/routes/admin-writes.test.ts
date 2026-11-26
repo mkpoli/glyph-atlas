@@ -14,10 +14,13 @@ import type { CropChange, Submission } from './review';
 const reverted: [number, number, { by: string; reason: string; reviewer?: number[] } | undefined][] = [];
 let blocked = new Set<number>(), queries = 0;
 mock.module('./review', () => ({
-  revert: async (_env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }) => {
+  revert: async (env: Env, submission: Submission, actor: number, by: string, rejection?: { reason: string; reviewer?: number[] }) => {
     if (blocked.has(submission.id)) throw new Problem(409, 'A later review changed this crop. It cannot be undone.');
     reverted.push([submission.id, actor, rejection && { by, ...rejection }]);
-    return { results: [], queries };
+    // The queries an undo makes, some alone and the rest in a batch.
+    for (let n = 0; n < queries % 4; n++) await env.ATLAS.prepare('SELECT 1').first();
+    if (queries >= 4) await env.ATLAS.batch(Array.from({ length: queries - queries % 4 }, () => env.ATLAS.prepare('SELECT 1')));
+    return { results: [] };
   },
   actorFor: async (env: Env, user: string) => (await env.ATLAS.prepare('SELECT id FROM actors WHERE key=?').bind(user).first<{ id: number }>())!.id,
   cropChanges: (env: Env, actor: number, key: string, at: number, changes: CropChange[]) => changes.flatMap(c => [
@@ -27,7 +30,7 @@ mock.module('./review', () => ({
     env.ATLAS.prepare('UPDATE crops SET state=?,revision=revision+1 WHERE id=? AND revision=?').bind(c.state, c.crop, c.expected)]),
   actorStats: () => { throw new Error('a flag counts no review') },
 }));
-const { flagCorpus, reject } = await import('./admin');
+const { flagCorpus, reject, REJECT_QUERIES } = await import('./admin');
 
 const tools = { text: (value: unknown, max: number, name: string, required = false) => {
   if (value == null && !required) return null;
@@ -67,19 +70,25 @@ describe('rejecting', () => {
     expect(out.next).toBeNull();
     await expect(reject(env, 'admin', { submissions: [] }, tools)).rejects.toMatchObject({ status: 422 });
   });
-  it('ends a page before the queries of its forms pass what a request may make, and goes on after it', async () => {
+  it('ends a page before the queries its rejections make pass what a request may make, and goes on after it', async () => {
     const db = atlas();
     const add = db.prepare("INSERT INTO submissions(id,key,actor,request,response,at,undone) VALUES(?,?,2,'{}','{}',?,0)");
     for (let i = 1; i <= 40; i++) add.run(i, 'u1:f' + i, i);
-    const env = { ATLAS: d1(db) } as unknown as Env;
-    queries = 9;
+    let made = 0;
+    const real = d1(db), env = { ATLAS: { ...real, prepare: (sql: string) => { const one = real.prepare(sql); return { ...one, bind: (...a: unknown[]) => one.bind(...a),
+      first: () => { made++; return one.first() } } }, batch: (list: any[]) => { made += list.length; return real.batch(list) } } } as unknown as Env;
+    queries = 30;
     const first = await reject(env, 'admin', { user: 'u1' }, tools);
-    expect([first.rejected, typeof first.next]).toEqual([28, 'string']);
+    expect([first.rejected, typeof first.next]).toEqual([30, 'string']);
+    expect(made).toBeLessThanOrEqual(REJECT_QUERIES);
     const rest = await reject(env, 'admin', { user: 'u1', next: first.next }, tools);
-    expect([rest.rejected, rest.next, reverted.map(r => r[0])]).toEqual([12, null, Array.from({ length: 40 }, (_, i) => 40 - i)]);
-    // Named, the rest are handed back.
+    expect([rest.rejected, rest.next, reverted.map(r => r[0])]).toEqual([10, null, Array.from({ length: 40 }, (_, i) => 40 - i)]);
+    // Named, the rest are handed back; and a smaller budget holds too.
     const named = await reject(env, 'admin', { submissions: Array.from({ length: 40 }, (_, i) => 'u1:f' + (i + 1)) }, tools);
-    expect([named.rejected, named.left.length]).toEqual([28, 12]);
+    expect([named.rejected, named.left.length]).toEqual([30, 10]);
+    made = 0;
+    expect((await reject(env, 'admin', { user: 'u1' }, tools, 200)).rejected).toBe(6);
+    expect(made).toBeLessThanOrEqual(200);
   });
   it('never takes up an admin\'s flag request: one named is refused, and one among a reviewer\'s is passed over', async () => {
     const db = atlas(); submissions(db);

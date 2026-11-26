@@ -20,7 +20,7 @@
   import CharacterChips from '../components/CharacterChips.svelte'
   import WorkFilter from '../components/WorkFilter.svelte'
   import GraphemeGrid from '../components/GraphemeGrid.svelte'
-  import { charOf, codesOf, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
+  import { charOf, codesOf, countedUnder, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../lib/graphemeGroups.js'
   import NgramGrid from '../components/NgramGrid.svelte'
   import { NGRAM_KINDS, ngramCounts, runAddress, runOccurrences } from '../lib/ngrams.js'
   import { runText } from '../lib/runs.js'
@@ -214,8 +214,8 @@
   // Without them a tile shows no count: the catalogue's own leave out the corpus.
   const tileCounts = $derived.by(() => {
     if (!cropCounts) return null
-    const { forms, groups, keys, shapes } = cropTotals(cropCounts)
-    return { forms, groups, keys, shapes, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
+    const { forms, groups, keys, shapes, under } = cropTotals(cropCounts)
+    return { forms, groups, keys, shapes, under, formRank: ranking(forms.values()), groupRank: ranking(groups.values()) }
   })
   /** Each count's place among `counts`, most first; equal counts share a place. */
   function ranking(counts) {
@@ -229,7 +229,7 @@
    *  crop that names no grapheme takes its form's from the counts. */
   function tileCount(item) {
     if (!tileCounts || isUnassigned(item)) return null
-    const key = item.grapheme?.code_point ?? item.grapheme ?? tileCounts.keys.get(item.label)
+    const key = countedUnder(tileCounts, item.label, item.grapheme?.code_point ?? item.grapheme)
     const form = tileCounts.forms.get(item.label), all = tileCounts.groups.get(key)
     if (!form) return null
     const place = { form: item.label, count: form, rank: tileCounts.formRank.of(form), total: tileCounts.formRank.total }
@@ -237,7 +237,7 @@
     if (all > form) {
       const percent = form / all * 100
       const share = percent < 1 ? t('tile.countShareBelow', { percent: 1 }) : percent > 99 ? t('tile.countShareAbove', { percent: 99 }) : t('tile.countShare', { percent: Math.round(percent) })
-      const group = { grapheme: graphemeLabel(graphemeChar(item) || charOf(key)), count: all, forms: tileCounts.shapes.get(key) ?? 0,
+      const group = { grapheme: graphemeLabel(charOf(key)), count: all, forms: tileCounts.shapes.get(key) ?? 0,
         rank: tileCounts.groupRank.of(all), total: tileCounts.groupRank.total, share }
       lines.push(t('tile.countGrapheme', group)); ranks.push(t('tile.rankGrapheme', group))
     }

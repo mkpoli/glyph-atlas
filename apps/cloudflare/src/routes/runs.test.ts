@@ -6,7 +6,7 @@ import { bundleKey, cropId, publicId } from '../atlas3';
 import { currentPointer } from '../atlas3Answers';
 import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
-import { redrawLimits } from '../cropRecords';
+import { filedQuery, redrawLimits } from '../cropRecords';
 import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, runCountQuery,
   reviewedQuery, cropRunsQuery, refileRuns, runGraphemesQuery, runHasQuery, runHeadsQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
 
@@ -37,7 +37,8 @@ function bucket(objects: Map<string, Uint8Array>) {
 // with んし written across the page, and two corpus glyphs んし (ndl:book), book ids in key order as the first build gave them, whose record lives in a pack.
 let pages = 5000;
 const DOC_PAGE = 'hk:83b29132c6d01a596a847de5ba3b0b0d:3';
-function fixture() {
+// `named`: the corpus glyphs' records name the grapheme they were published under.
+function fixture(named = false) {
   const doc = ++pages, other = ++pages, corpus = ++pages;
   const id = (page: number, slot: number) => cropId(page, slot);
   const crops: { text: string; id: number; label: string; book: number; page: number; kind: number; char: number; x: number }[] = [
@@ -57,7 +58,7 @@ function fixture() {
   const record = (c: typeof at[number]): Json => withEditable(c, { id: c.text, label: c.label, production: c.kind === 1 ? 'printed' : 'handwritten', state: 'pending', revision: 0,
     page_id: pageKey(c), box: { x: c.x, y: c.y, w: 10, h: 10 }, crop_box: { x: c.x, y: c.y, w: 10, h: 10 }, image: `/atlas/media/${c.id}.webp`,
     context_image: `/atlas/media/ctx${c.page}.webp`, context_box: { x: 0, y: 0, w: 100, h: 200 }, page_number: 4,
-    ...(c.kind === 1 ? { source: { document_id: 'ndl:book', corpus: 'codh', page_id: pageKey(c) } }
+    ...(c.kind === 1 ? { ...(named ? { char: c.label, written_character: c.label, grapheme: c.label === 'ん' ? 'U+3093' : 'U+3057' } : {}), source: { document_id: 'ndl:book', corpus: 'codh', page_id: pageKey(c) } }
       : { source: source(c), context: true, source_scale: [1, 1] }) });
   // The export writes whether a reviewer may redraw any crop's box, by the Worker's rule.
   const withEditable = (_c: typeof at[number], r: Json) => ({ ...r, crop_editable: Boolean(redrawLimits(r)) });
@@ -299,6 +300,37 @@ describe('runs on the new layout', () => {
     // The same form carried from a cluster decision of an earlier clustering is the glyph's cluster form.
     f.atlas.exec(`UPDATE form_glyphs SET carried='old' WHERE crop=${crop}`);
     for (const item of await shown()) expect(item).toMatchObject({ label: 'ん', identity_basis: 'form_cluster' });
+  });
+
+  it('names the grapheme a glyph\'s character is filed under now in runs and listings, over its record\'s and its form\'s', async () => {
+    const f = fixture(), crop = f.at[6].id;
+    f.atlas.exec(`INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
+      VALUES(${crop},'U+3093',NULL,'ん',NULL,NULL,'U+3093','old')`);
+    const named = async () => [(await (await ask(f.newEnv, '/atlas/runs?text=' + encodeURIComponent('んし'))).json()).items
+      .flatMap((item: Json) => item.crops).find((item: Json) => item.id === publicId(crop)), ...(await listingItems(f.newEnv, [crop]))].map(item => item.grapheme);
+    expect(await named()).toEqual(['U+3093', 'U+3093']);
+    // The load that moves the head files the runs under it again.
+    f.atlas.exec(`UPDATE graphemes SET head=(SELECT id FROM graphemes WHERE text='し') WHERE id=(SELECT char FROM crops WHERE id=${crop})`);
+    f.runsDb.exec(`UPDATE runs SET graphemes='しし' WHERE first=${crop}`);
+    expect(await named()).toEqual(['U+3057', 'U+3057']);
+  });
+
+  it('looks up the graphemes of a page\'s glyphs no row files together, and none where their rows say', async () => {
+    const f = fixture(true), glyphs = [f.at[6].id, f.at[7].id], asked: string[] = [];
+    const prepare = (f.newEnv as any).ATLAS.prepare.bind((f.newEnv as any).ATLAS);
+    (f.newEnv as any).ATLAS.prepare = (sql: string) => { asked.push(sql); return prepare(sql); };
+    const listed = async () => { asked.length = 0; return [(await listingItems(f.newEnv, glyphs)).map(item => item.grapheme), asked.filter(sql => sql === filedQuery()).length]; };
+    // Published as ん and し, each under itself; a later table files both under 𛁅, which their rows say.
+    f.atlas.exec(`UPDATE graphemes SET head=id`);
+    expect(await listed()).toEqual([['U+3093', 'U+3057'], 0]);
+    f.atlas.exec(`UPDATE graphemes SET head=3`);
+    expect(await listed()).toEqual([['U+1B045', 'U+1B045'], 0]);
+    // Decided as forms no table files: the graphemes they were decided in, under their heads, in one read.
+    f.atlas.exec(glyphs.map((crop, i) => `INSERT INTO form_glyphs(crop,family,cluster,form,issue,character,written_family,decision)
+      VALUES(${crop},'U+3093',NULL,'⿰ん${crop}',NULL,NULL,'${['U+3093', 'U+3057'][i]}','old');`).join(''));
+    expect(await listed()).toEqual([['U+1B045', 'U+1B045'], 1]);
+    f.atlas.exec(`UPDATE graphemes SET head=id`);
+    expect(await listed()).toEqual([['U+3093', 'U+3057'], 1]);
   });
 
   it('does not add review revisions when a round mark is undone', async () => {

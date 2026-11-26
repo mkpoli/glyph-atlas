@@ -43,7 +43,7 @@ export const STAGES = [
       { edition: '乙種本（Инв. № 208, 209, 4775），《俄藏黑水城文獻》第7冊', holder: IOM, book: '音同（乙種本）', status: 'published' }] },
     { title: '龍龕手鏡', by: '釋行均', editions: [
       { edition: '高麗本（京城帝國大學法文學部影印，1929）', holder: NDL, href: ndl(1194507), status: 'planned' },
-      { edition: '宋刻本（中華再造善本影印）', holder: NLC, href: commons('ZHSY000072 龍龕手鑑四卷 (遼)釋行均 撰 宋刻本.pdf'), status: 'planned' },
+      { edition: '宋刻本（中華再造善本影印）', holder: NLC, href: commons('ZHSY000072 龍龕手鑑四卷 (遼)釋行均 撰 宋刻本.pdf'), status: 'underway' },
       { edition: '宋本（日本古典全集刊行會影印，1934）', holder: NDL, href: ndl(1126592), status: 'planned' }] },
     { title: '改併五音類聚四聲篇海', by: '韓孝彥、韓道昭', editions: [
       { edition: '元前至元間刊本', holder: NCL, href: commons('NCL-01089 改併五音類聚四聲篇.pdf'), status: 'planned' },

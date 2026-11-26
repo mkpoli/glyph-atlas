@@ -173,7 +173,8 @@ uv run scripts/cut_guangyun_headwords.py ioc work/guangyun-ioc --table cache/tsh
 龍龕手鏡's headwords are cut from the 宋刻本 (中國國家圖書館藏, 中華再造善本影印, on Wikimedia Commons) and labelled from 青雀古籍's
 table (`data/sources/longkan-shoujing.yaml`), which gives each entry's half-leaf and its order on it and no
 column. `glyph_atlas.tape` places the headwords of a half-leaf along its columns read as one tape, anchored on
-the likeness of each crop to its character drawn in a font, and the script says when one is kept:
+the likeness of each crop to its character drawn in a font, and the script says when one is kept. Headwords the
+table itself makes doubtful (`glyph_atlas.longkan.unsettled`) are left out:
 
 ```sh
 mkdir -p cache/qingque-data/data/古辞书综合 && curl -L -o cache/qingque-data/data/古辞书综合/龙龛手镜.csv \
