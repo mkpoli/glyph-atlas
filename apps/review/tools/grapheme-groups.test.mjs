@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { categoryOf } from '../../cloudflare/src/category.ts'
-import { cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../src/lib/graphemeGroups.js'
+import { countedUnder, cropTotals, gatherGraphemes, rowNamed, tileOpens } from '../src/lib/graphemeGroups.js'
 
 // 大 with its small seal character 𾶱, 民 with two of its own, and は with ハ, as the catalogue and the
 // corpus count them.
@@ -21,6 +21,20 @@ describe('the totals a tile states', () => {
     // As many under each: the lower key, whichever row comes first.
     const tied = [['か', 'U+52A0', 2, 0, 1], ['か', 'U+304B', 2, 0, 1]]
     for (const rows of [tied, [...tied].reverse()]) expect(cropTotals(rows).keys.get('か')).toBe('U+304B')
+  })
+})
+
+describe('the grapheme a tile counts a form under', () => {
+  it('is the one the counts file it under until they file it under the one its crop names', () => {
+    // 备 goes from 留 to 備: its crops name 備 from the load on, and the counts file it so from the next publication.
+    const before = cropTotals([['留', 'U+7559', 9, 0], ['备', 'U+7559', 2, 1], ['備', 'U+5099', 5, 0]])
+    const after = cropTotals([['留', 'U+7559', 9, 0], ['备', 'U+5099', 2, 1], ['備', 'U+5099', 5, 0]])
+    const counted = totals => { const key = countedUnder(totals, '备', 'U+5099'); return [key, totals.forms.get('备'), totals.groups.get(key)] }
+    expect(counted(before)).toEqual(['U+7559', 3, 12])
+    expect(counted(after)).toEqual(['U+5099', 3, 8])
+    // A form counted under two is counted under the one its crop names; a crop that names none, under the fuller.
+    const two = cropTotals([['扵', 'U+65BC', 4, 0], ['扵', 'U+6275', 1, 0]])
+    expect([countedUnder(two, '扵', 'U+6275'), countedUnder(two, '扵', undefined), countedUnder(two, '未', 'U+672A')]).toEqual(['U+6275', 'U+65BC', 'U+672A'])
   })
 })
 

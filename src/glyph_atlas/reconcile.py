@@ -968,7 +968,8 @@ def attribution(directory: Path) -> str:
 
     One entry per source and per holder present, each with the credit line, the licence, the URL that
     states it and the obligations of `data/vocab/licences.yaml`, and with the material the dataset
-    republishes unchanged told apart from the material it modifies.
+    republishes unchanged told apart from the material it modifies. A licence whose text a copy must
+    carry follows in full.
     """
     directory = Path(directory)
     documents = tables.Dataset(directory).read("documents")
@@ -992,10 +993,13 @@ def attribution(directory: Path) -> str:
         "## Sources",
         "",
     ]
+    texts: dict[str, dict] = {}
     for source_id in sources_present(documents, known, imported):
         source = known[source_id]
         entry = entry_for_rights(Rights(licence=source.licence, attribution=source.attribution, evidence=None))
         licence_url = entry["evidence"] if entry and entry["evidence"] else source.url
+        if entry and entry.get("text"):
+            texts[entry["licence"]] = entry
         lines += [
             f"### {_line(source.name)} ({source.id})",
             "",
@@ -1055,4 +1059,9 @@ def attribution(directory: Path) -> str:
             "- Material modified: the crop cut from that image, and the line boxes drawn on it.",
             "",
         ]
+    if texts:
+        lines += ["## Licence texts", ""]
+    for licence, entry in sorted(texts.items()):
+        text = (ROOT / entry["text"]).read_text(encoding="utf-8").strip("\n")
+        lines += [f"### {entry['label']} ({licence})", "", "```text", text, "```", ""]
     return "\n".join(lines).rstrip("\n") + "\n"

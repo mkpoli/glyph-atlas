@@ -14,7 +14,7 @@ import { Problem } from '../busy';
 import { bookDating } from '../dating';
 import { formed, type UnitForm } from '../forms';
 import { honkokuPage } from '../honkoku';
-import { MARKS, WRITTEN, redrawLimits, writtenRecord } from '../cropRecords';
+import { MARKS, WRITTEN, redrawLimits, underHeads, writtenRecord } from '../cropRecords';
 import { integer, text } from '../input';
 import { keyHeads, keyText } from '../ledger';
 import { readRecords, recordKey } from '../records';
@@ -270,10 +270,12 @@ async function runCrops(env: Env, ids: number[]): Promise<Map<number, { item: Js
   const forms = new Map(decided.map(row => [row.id, { ...row, id: publicId(row.id) } as UnitForm]));
   const crop = new Map(listed.map(id => [publicId(id), id]));
   const since = new Map(reviewed.map(row => [row.crop, row]));
-  for (const item of items) {
+  const reviewOf = (item: Json) => since.get(crop.get(item.id)!);
+  const shownRecords = items.map(item => item.origin === 'corpus' ? formed(item, forms.get(crop.get(item.id)!) ?? null, { codePoints }) : item);
+  const filed = await underHeads(env, items.map((item, i) => ({ record: shownRecords[i], char: reviewOf(item)?.char ?? null, head: reviewOf(item)?.head ?? null })));
+  for (const [i, item] of items.entries()) {
     const id = crop.get(item.id)!, whole = given.get(id)!, review = since.get(id);
-    let shown = item.origin === 'corpus' ? formed(item, forms.get(id) ?? null, { codePoints }) : item;
-    if (review?.written && review.char) shown = writtenRecord(shown, review.char, review.head);
+    const shown = review?.written && review.char ? writtenRecord(shownRecords[i], review.char, review.head) : filed[i];
     found.set(id, { whole, item: { ...shown, state: shownState(shown.state), revision: shown.revision - (review?.marks ?? 0),
       // A corpus glyph's record names the page of its source; its row names the page the layout files it on.
       page_id: whole.page_id ?? shown.page_id,

@@ -114,12 +114,13 @@ never a value anyone asserts. `atlas review sense-candidates` lists the crops wo
 person filed under another Han character than their source text gives, with the 異体字 relation
 between the two and the rubies over the crop.
 
-A crop's `read_as` claim says how it is read at its place: the run of characters it is read in, its
-own place in the run (from 0) and the reading, over each character (諸器 しょ・き) or over them all
-(村落 ざいご). The reading is in ordinary kana or letters, as the reader reads it, and `method` names what it
-rests on, as for `writes_word`. A `bears_ruby` claim gives the 振り仮名 beside the same run as the page
-writes it, hentaigana included (𛁈よ・き), and a `bears_left_ruby` claim the 左訓 on its left (もろもろのうつわ), split
-as the page splits it. Each is a slot of its own, so two readers who read a run
+A crop's `bears_ruby` claim gives the 振り仮名 beside the run of characters it stands in as the page writes
+it, hentaigana included (諸器 𛁈よ・き), with the crop's own place in the run (from 0). A `bears_left_ruby`
+claim gives the 左訓 on its left (もろもろのうつわ), split as the page splits it. These are the text, and stand
+over the run wherever it is shown. A `read_as` claim is a reader's note on the same run: how it is read, in
+ordinary kana or letters, over each character (しょ・き) or over them all (村落 ざいご), with what that rests
+on (`method`, as for `writes_word`). It is shown as a note and never in place of the text. Any of the three
+may stand without the others. Each is a slot of its own, so two readers who read a run
 alike agree whatever each records of the ruby. A save claims the same run on each of its crops that is
 published, at the version its reader saw, and replaces the reader's earlier runs that it meets, whole.
 A character of the run with no published crop is named in the run alone. A reading names no word: the word

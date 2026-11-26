@@ -82,6 +82,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import claims
 import media_map
 import votes
 from build import (
@@ -350,17 +351,21 @@ CLAIMED = ("SELECT c.crop, c.object FROM current_claims c CROSS JOIN crops k ON 
            f"AND c.status IN ({','.join(map(repr, FILING))}) AND c.cut = k.cut + (r.x IS NOT NULL)")
 
 
-def claimed_heads(atlas, recut, crops=None):
+def claimed_heads(atlas, recut, crops=None, moved=None):
     """{crop: head} of the crops a grapheme claim reads as a grapheme, of `crops` alone where named:
     the head of the family that grapheme is filed under in the local copy, else the grapheme itself.
     A crop this publish cuts again leaves its claims on the old cut, as the Worker reads them once the
-    new cut lands."""
-    heads = {}
+    new cut lands. `moved` ({character: (old head, new head)}) are heads a load moves, whether or not the
+    local copy holds them moved."""
+    heads, moved = {}, moved or {}
     named = "" if crops is None else f" AND c.crop IN ({','.join(map(str, crops)) or 'NULL'})"
     for r in query("glyph-atlas-v3", CLAIMED + named):
         if r["crop"] in recut:
             continue
         text = char_text(r["object"])
+        if text in moved:
+            heads[r["crop"]] = moved[text][1]
+            continue
         row = atlas.execute("SELECT coalesce(h.text, g.text) FROM graphemes g LEFT JOIN graphemes h ON h.id = g.head WHERE g.text = ?",
                             (text,)).fetchone()
         heads[r["crop"]] = row[0] if row else text
@@ -446,7 +451,9 @@ def snapshot(runs, keys):
             continue
         counted = sorted({(r["size"], r["graphemes"]) for r in live + held})
         crops = sorted({r[c] for r in live + held for c in ("first", "second", "third") if r[c] is not None})
-        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(f"(size={n} AND graphemes={lit(g)})" for n, g in counted))
+        # A list a size: D1 takes an expression a hundred deep at most, and a term a key is one deeper each.
+        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(
+            f"(size={size} AND graphemes IN ({','.join(lit(g) for n, g in counted if n == size)}))" for size in sorted({n for n, _ in counted}))) if counted else []
         written = query(RUNS_DATABASE, f"SELECT crop, char FROM run_written WHERE crop IN ({','.join(map(str, crops))})")
         runs.executemany("DELETE FROM runs WHERE first=? AND size=?", [(r["first"], r["size"]) for r in held])
         runs.executemany(f"INSERT INTO runs({','.join(RUN_COLS)}) VALUES({','.join('?' * len(RUN_COLS))})", [[r[c] for c in RUN_COLS] for r in live])
@@ -504,6 +511,7 @@ def reconcile(m, run):
     changed = query("glyph-atlas-v3", "SELECT crop, max(at) AS at FROM current_claims WHERE predicate = 'has_grapheme' "
                                       f"AND crop IS NOT NULL AND at > {lit(after)} GROUP BY crop")
     newest = max([since, *(r["at"] for r in changed)])
+    listed = {(r["first"], r["size"], r["crop"]) for r in logged}
     crops = sorted({r["crop"] for r in logged} | {r["crop"] for r in changed})
     read, moved = set(), 0
     for i in range(0, len(crops), 100):
@@ -523,6 +531,10 @@ def reconcile(m, run):
             if len(parts) != len(run_members):
                 continue
             fold = {c: heads.get(c) or own[c]["head"] for c in run_members if c in heads or (c in own and own[c]["head"])}
+            # A run a claim files otherwise than its crop's own family is listed, as the Worker lists one it moves, so
+            # that a claim that stops reading its crop files the run back, whoever filed it here.
+            statements += [f"INSERT OR IGNORE INTO run_moves(first,size,crop) VALUES({r['first']},{r['size']},{c});" for c in run_members
+                           if c in batch and c in heads and heads[c] != own.get(c, {}).get("head") and (r["first"], r["size"], c) not in listed]
             graphemes = "".join(fold.get(c, part) for c, part in zip(run_members, parts, strict=True))
             if graphemes != r["graphemes"]:
                 statements += move_sql(r, graphemes)
@@ -548,6 +560,52 @@ def reconcile(m, run):
     m.runs.execute("INSERT OR REPLACE INTO reconciled VALUES(0, ?)", (newest,))
     m.runs.commit()
     return moved
+
+
+# The mark of the pass that resolved every crop's claims by the box and image each rests on, once (`settle_claims`).
+SETTLED_BY_BOX = "claims settled by box"
+
+
+def published_entry(m, run, cid):
+    """A crop's bundle entry as this publish leaves it, or {}."""
+    p = m.atlas.execute("SELECT rev FROM pages WHERE id=?", (cid // PAGE,)).fetchone()
+    for folder in (run / "pages", OUT / "pages"):
+        if p and (path := folder / f"{cid // PAGE}-{p['rev']}.json.gz").exists():
+            return next((e for e in json.loads(gzip.decompress(path.read_bytes()))["crops"] if e["slot"] == cid % PAGE), {})
+    return {}
+
+
+def settle_claims(m, run):
+    """Resolve the claims on the crops this publish cut again (`claims.settle_statements`): those made on the box published
+    hold, those on a box drawn since or before wait for it. Crops no claim is on are read and left. The first publish to
+    run it resolves every crop a claim is on, once, for the slots resolved by cut alone before."""
+    path = run / "recut.json"
+    recut = {row[0]: row for row in json.loads(path.read_text())} if path.exists() else {}
+    claimed, crops = [], sorted(recut)
+    once = not m.ids.execute("SELECT 1 FROM meta WHERE key=?", (SETTLED_BY_BOX,)).fetchone()
+    if once:
+        claimed = [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IS NOT NULL")]
+        for cid in claimed:
+            if cid not in recut and (row := m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()):
+                recut[cid] = claims.shown_as(cid, row["cut"], published_entry(m, run, cid))
+        claimed = [c for c in claimed if c in recut]
+    for i in range(0, len(crops), 500):
+        claimed += [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IN ("
+                                             + ",".join(map(str, crops[i:i + 500])) + ")")]
+    if claimed:
+        send_claims(run, [recut[c] for c in sorted(set(claimed))])
+    if once:
+        m.ids.execute("INSERT OR REPLACE INTO meta VALUES(?, ?)", (SETTLED_BY_BOX, run.name))
+        m.ids.commit()
+
+
+def send_claims(run, shown):
+    body = "\n".join(claims.settle_statements(shown))
+    stamp = f"{run.name}.claims.{hashlib.sha256(body.encode()).hexdigest()[:12]}"
+    path = run / f"claims-{stamp.rsplit('.', 1)[1]}.sql"
+    path.write_text(body + f"\nINSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+    if not send("glyph-atlas-v3", path, stamp):
+        sys.exit(f"{path.name} did not apply; rerun to finish {run.name}")
 
 
 def applied(database, stamp):
@@ -1214,6 +1272,10 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The claims on the crops cut again, which hold or wait by the box each rests on, now that the new cuts have landed.
+    if "claims settled" not in journal(run):
+        settle_claims(m, run)
+        mark(run, "claims settled")
     # The runs of claimed and moved crops, filed from the claims as they stand once the publish's runs
     # have landed, whatever was claimed, disputed or redrawn while it was under way.
     if "reconciled" not in journal(run):
@@ -1495,6 +1557,8 @@ def main():
     # A box a reviewer redrew on the site waits in `reviews` for its cut; a re-cut to exactly that box is the
     # reviewer's, whatever it covers (as `box_pending` says in a catalogue taken from the site).
     drawn = pending_boxes([m.known(i) for i in recut])
+    # Each crop cut again as the claims on it find it (`settle_claims`).
+    cut_again = []
 
     def redrawn(rid, data):
         box = data.get("box")
@@ -1712,6 +1776,7 @@ def main():
                                          [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous},
                                            **({"at": previous["cut_at"]} if previous.get("cut_at") else {})}])
             bundle["cut_at"] = cut_time
+            cut_again.append(claims.shown_as(cid, old_cut + 1, bundle))
         elif row is None and previous.get("retired"):
             given["cut"] = old_cut
         for field in ("image", "context_image"):
@@ -2228,6 +2293,8 @@ def main():
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
+    if cut_again:
+        (run / "recut.json").write_text(json.dumps(cut_again))
     (run / "run-answers.json").write_text(json.dumps({"books": sorted(scope["books"]), "shards": sorted(scope["shards"]),
                                                       "texts": [[*k, v] for k, v in sorted(texts.items())]}))
     statements = sum(len(g) for g in groups)

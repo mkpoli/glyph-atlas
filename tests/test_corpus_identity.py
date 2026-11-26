@@ -173,3 +173,32 @@ def test_a_character_unicode_lacks_is_its_own_grapheme() -> None:
     fields = identity_fields({"text_source": "⿰亻胃", "unicode": None, "id": "krm:F00024:0"}, "hdic-krm")
     assert fields["written_character"] == "⿰亻胃"
     assert fields["grapheme"] == "U+2FF0 U+4EBB U+80C3"
+
+
+def test_a_block_whose_jibo_has_several_code_points_is_written_as_its_shape(monkeypatch):
+    from glyph_atlas import refs
+    from glyph_atlas.corpus.identity import identity_fields
+
+    monkeypatch.setattr(refs, "kokatsuji_forms", lambda: {"7": {"id": "7", "kana": "の", "jibo": "能", "code_point": "U+1B09B"}})
+    row = {"id": "codh-omt:001:7", "unicode": None, "text_source": "の"}
+    found = identity_fields(row, "kokatsuji")
+    assert (found["written_character"], found["identity_basis"], found["grapheme"]) == ("𛂛", "glyph_shape", "U+306E")
+    assert found["identity_evidence"] == "data/vocab/kokatsuji-forms.tsv" and found["source_code_point"] is None
+    assert identity_fields(row, "kokatsuji", human_character="𛂜")["identity_basis"] == "human_review"
+    # A record of the block, judged again, still credits its source with no code point.
+    record = {**row, **found, "code_point": "U+1B09B", "source_label": "の"}
+    for judged in (identity_fields(record, "kokatsuji"), identity_fields(record, "kokatsuji", human_character="𛂜")):
+        assert judged["source_code_point"] is None
+    # A block the source names, one of another kana and one of another archive keep what the source gives.
+    for other in ({"unicode": "U+306E"}, {"text_source": "は"}, {"id": "codh-omt:002:7"}):
+        assert identity_fields({**row, **other}, "kokatsuji")["identity_basis"] == "source_transcription"
+
+
+def test_the_forms_table_names_one_of_the_several_code_points_of_each_jibo():
+    from glyph_atlas import refs
+    from glyph_atlas.importers import kokatsuji
+
+    forms = refs.kokatsuji_forms()
+    assert len(forms) == 1895
+    for row in forms.values():
+        assert row["code_point"] in {candidate.unicode for candidate in kokatsuji.labels_of(row["kana"], row["jibo"]).candidates}

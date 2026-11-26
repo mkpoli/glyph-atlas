@@ -8,7 +8,7 @@
   "[subject, predicate, scope, slot] keys. Lines starting with -- are comments.",
   "A `date_*` predicate dates a document: its value is a date as `glyph_atlas.dates` reads it ({of, text, start, end, precision, qualifier, uncertain, day, calendar, conversion, note}), and it lists no `values` because only a publication writes one, from a data/sources record (`scripts/export_dates_cloudflare.py`).",
   "`writes_word` says which word a crop writes at its place in the text (decision 0004): its object is a word of data/vocab/words.tsv, or its value a `{\"gloss\": …}` where no word row fits yet. `method` names the strongest evidence for the sense, from `methods`, strongest first; each item of it is an evidence row (a ruby as `source` `rubies:<id>`, a note or a parallel witness as `page`). Its confidence, in the `form` scheme of `confidence`, says how sure the reader is that the crop is the character it is filed under. Disputed is never asserted: it is what the resolver finds when standing claims differ.",
-  "`read_as` says how a crop is read at its place: {run, at, reading}, the characters read together in order, which of them the crop is (from 0), and the reading of each, or one reading of the whole run (村落 ざいご). `bears_ruby` gives the ruby beside the same run as the page writes it, hentaigana included: {run, at, ruby}, split as the reading is. `bears_left_ruby` gives the 左訓 on the left of the run the same way, split as the page splits it or whole."
+  "`read_as` is a reader's note of how a crop is read at its place, and `bears_ruby` the text the page gives; the note never stands for the text. `read_as`: {run, at, reading}, the characters read together in order, which of them the crop is (from 0), and the reading of each, or one reading of the whole run (村落 ざいご). `bears_ruby` gives the ruby beside the same run as the page writes it, hentaigana included: {run, at, ruby}, split as the reading is. `bears_left_ruby` gives the 左訓 on the left of the run the same way, split as the page splits it or whole."
  ],
  "resolver": "ledger-r1",
  "tiers": [
@@ -91,7 +91,7 @@
    "alternatives": false
   },
   "read_as": {
-   "label": "the run of characters a crop is read in and the reading of that run at its place; each crop of the run carries the whole run and its own place in it",
+   "label": "a reader's note of how the run of characters a crop stands in is read at its place, beside what the page writes; each crop of the run carries the whole run and its own place in it",
    "subject": "crop",
    "objects": [],
    "values": [],
@@ -221,6 +221,19 @@
    "value_shape": "date"
   }
  },
+ "holds": [
+  "-- Whether crop evidence `e` of assertion `a` holds in glyph-atlas-v3, where a crop's version is its page's record: the caller gives",
+  "-- it in `shown` (crop, cut, pixels, box) for the cut the crop has, `@<pixels>` (a JSON array: a cut may have several encodings) and",
+  "-- `@<x,y,w,h>` as an evidence version ends. Evidence holds on that image and on the box the crop has, the redrawn one while it",
+  "-- waits, so a claim on another box waits for that box to come back. A corpus glyph's record can change on one cut, whose claims",
+  "-- stay; a crop whose version is not given (it has no record or no image) goes by its cut alone.",
+  "EXISTS (SELECT 1 FROM (SELECT c.cut,c.kind,rv.crop AS waits,n.pixels,coalesce('@'||rv.x||','||rv.y||','||rv.w||','||rv.h,n.box) AS box FROM crops c",
+  "    LEFT JOIN reviews rv ON rv.crop=c.id AND rv.x IS NOT NULL LEFT JOIN shown n ON n.crop=c.id AND n.cut=c.cut WHERE c.id=a.crop) s",
+  "  WHERE e.crop=a.crop AND CASE WHEN s.waits IS NULL AND (s.box IS NULL OR s.kind=1)",
+  "    THEN e.cut=s.cut OR EXISTS(SELECT 1 FROM json_each(s.pixels) p WHERE substr(e.ref,-length(p.value||s.box))=p.value||s.box)",
+  "    ELSE substr(e.ref,-length(s.box))=s.box AND ((s.kind=1 OR s.pixels IS NULL) AND e.cut=s.cut+(s.waits IS NOT NULL)",
+  "      OR EXISTS(SELECT 1 FROM json_each(s.pixels) p WHERE substr(e.ref,-length(p.value||s.box))=p.value||s.box)) END)"
+ ],
  "resolve": [
   "keys(subject,predicate,scope,slot) AS (",
   "  SELECT DISTINCT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?1)),",
@@ -228,7 +241,7 @@
   "live AS (",
   "  SELECT a.id,a.subject,a.predicate,a.scope,a.slot,a.object,a.value,a.confidence,a.confidence_scheme,a.asserted_by,a.asserted_at,",
   "    coalesce(a.alternative_set,a.id) AS claim",
-  "  FROM keys k JOIN assertions a ON a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope AND a.slot=k.slot",
+  "  FROM keys k CROSS JOIN assertions a ON a.subject=k.subject AND a.predicate=k.predicate AND a.scope=k.scope AND a.slot=k.slot",
   "  WHERE NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract')",
   "    AND NOT EXISTS (SELECT 1 FROM assertion_evidence e WHERE e.assertion=a.id AND e.kind='crop'",
   "      AND e.ref IS NOT (SELECT c.version FROM crop_now c WHERE c.unit=a.subject))),",

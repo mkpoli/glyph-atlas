@@ -568,6 +568,17 @@ def review_catalogue_suspects(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("rejudge-suspects")
+def review_rejudge_suspects(
+    source: Annotated[Path, typer.Argument(help="marks file")],
+    target: Annotated[Path, typer.Option(help="file the marks are written to")],
+) -> None:
+    """Write a marks file again under the current rule on expected readings, without the classifier."""
+    from .review import quiz_suspects
+
+    typer.echo(json.dumps(quiz_suspects.rejudge(source, target), ensure_ascii=False))
+
+
 @review_app.command("shift-repair")
 def review_shift_repair(
     directory: Annotated[Path, typer.Argument(help="dataset directory whose blocks are checked")],
