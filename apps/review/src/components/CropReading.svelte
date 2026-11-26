@@ -83,7 +83,7 @@
     await sessionStarted()
     error = ''; chosen = undefined; changed = false; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
     const said = opening(item.reading, signedInUser()?.id), nobody = !said.value && !item.reading
-    let opened = nobody ? openingTranscribed(item, cropLine(item).also.length ? -1 : null) ?? said : said
+    let opened = nobody ? openingTranscribed(item) ?? said : said
     method = opened.method ?? untrack(() => method)
     place(cropLine(item), opened)
     editing = true
@@ -95,7 +95,7 @@
       if (touched) return
       // With its neighbours the crop's place on the line is known, and so is the ruby the transcription gives it.
       const placed = cropLine(item, items)
-      if (nobody) opened = openingTranscribed(item, placed.at) ?? said
+      if (nobody) opened = (placed.held && placed.sure ? openingTranscribed(item, placed.at) : null) ?? said
       place(placed, opened)
     }).catch(() => { /* The run is then saved on this crop alone. */ })
   }

@@ -33,15 +33,17 @@ export function beside(parts, at, neighbours) {
 /**
  * Where a crop stands on its line: the line's characters, its place among them, and under `also` the
  * line's other places of its character. A character the line has several times is the one whose neighbours
- * agree most. A crop whose line does not hold its character stands among the labels of its neighbours, or alone.
+ * agree most (`sure` says whether the place is known). A crop whose line does not hold its character (`held`) stands
+ * among the labels of its neighbours, or alone.
  */
 export function cropLine(crop, neighbours = []) {
   const parts = textParts(crop.text), chars = charsOf(crop)
   const places = parts.flatMap((part, i) => chars.some(char => same(part, char)) ? [i] : [])
   if (places.length) {
     const agreeing = places.map(place => beside(parts, place, neighbours).size)
-    const at = places[agreeing.indexOf(Math.max(...agreeing))]
-    return { parts, at, also: places.filter(place => place !== at) }
+    const most = Math.max(...agreeing), at = places[agreeing.indexOf(most)]
+    // The place is sure where the line writes the character once, or one place alone agrees most with the neighbours.
+    return { parts, at, also: places.filter(place => place !== at), held: true, sure: places.length === 1 || (most > 0 && agreeing.filter(n => n === most).length === 1) }
   }
   const line = neighbours.filter(one => one.offset === 0 || one.label).sort((a, b) => a.offset - b.offset)
   const here = line.findIndex(one => one.offset === 0), own = composed(crop.written_character ?? crop.label)
@@ -83,7 +85,7 @@ export function transcribedRubies(crop) {
 export function transcribedEntries(crop, at = null) {
   if (!crop?.transcribed_ruby?.length) return []
   const line = cropLine(crop)
-  if (at === null && line.also.length) return []
+  if (!line.held || (at === null && !line.sure)) return []
   const place = at ?? line.at, entries = []
   for (const ruby of transcribedRubies(crop)) {
     if (place < ruby.from || place > ruby.to) continue
@@ -104,7 +106,7 @@ export function lineRubies(crop) {
   if (claimed) { const from = textParts(claimed.before).length; spans.push({ from, to: from + claimed.value.run.length - 1, value: claimed.value }) }
   const given = transcribedRubies(crop)
   if (given.length) {
-    const place = cropLine(crop), own = place.also.length ? -1 : place.at
+    const place = cropLine(crop), own = place.held && place.sure ? place.at : -1
     for (const ruby of given) {
       if (ruby.side !== 'right' || spans.some(span => ruby.from <= span.to && ruby.to >= span.from)) continue
       spans.push({ from: ruby.from, to: ruby.to, value: { run: ruby.run, at: own >= ruby.from && own <= ruby.to ? own - ruby.from : -1, ruby: ruby.ruby }, transcribed: true })
@@ -155,7 +157,7 @@ export function opening(slot, user) {
 
 /** What the editor opens with where no reader has said anything: the ruby and 左訓 the transcription gives the
  *  crop's place on its line (`at`), over their run, or null. */
-export function openingTranscribed(crop, at) {
+export function openingTranscribed(crop, at = null) {
   const [entry] = transcribedEntries(crop, at)
   return entry ? { value: entry.run, reading: [], ruby: entry.ruby[0]?.ruby ?? [], left: entry.left[0]?.ruby ?? [], method: null } : null
 }

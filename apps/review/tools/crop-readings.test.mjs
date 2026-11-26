@@ -123,6 +123,17 @@ describe('the rubies a transcription gives a line', () => {
     expect(transcribedEntries(twice, 3)).toMatchObject([{ run: { run: ['諸', '器'], at: 1, ruby: ['しよき'] } }])
     expect(lineRubies(twice)[1].value.at).toBe(-1)
   })
+  it('are none for a crop its line does not hold', () => {
+    const other = { label: '火', text: '山川', transcribed_ruby: [[0, 1, 0, 'やま']] }
+    expect([transcribedEntries(other), transcribedEntries(other, 0), openingTranscribed(other)]).toEqual([[], [], null])
+    expect(lineRubies(other)[0].value.at).toBe(-1)
+  })
+  it('wait for neighbours that tell two places of one character apart', () => {
+    const twice = { label: '器', text: '器を器に' }
+    expect(cropLine(twice, near([[0, '器']]))).toMatchObject({ held: true, sure: false })
+    expect(cropLine(twice, near([[-1, 'を'], [0, '器'], [1, 'に']]))).toMatchObject({ at: 2, sure: true })
+    expect(cropLine({ label: '器', text: '諸器' })).toMatchObject({ sure: true })
+  })
   it('fill the editor where nobody has said anything', () => {
     expect(openingTranscribed(given, 7)).toEqual({ value: { run: ['諸', '器'], at: 1, ruby: ['しよ', 'き'] }, reading: [], ruby: ['しよ', 'き'], left: ['うつわ'], method: null })
     expect([openingTranscribed(given, 4), openingTranscribed({ label: '器', text: '諸器' }, 1)]).toEqual([null, null])
