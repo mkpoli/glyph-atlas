@@ -45,7 +45,7 @@ export const setStyle = (item, style) => request(`/atlas/characters/${encodeURIC
 /** The most crops one style request names, as the site takes them. */
 export const STYLE_BATCH = 48
 // One submission id per batch of crops, revisions and style, so a retry after a lost answer is the same write.
-// A batch the site answered drops its id: the same batch sent again later is a new write.
+// A batch the site answered or refused drops its id: the same batch sent again later is a new write.
 const batches = new Map()
 const batchKey = (crops, style) => [style, ...crops.map(crop => `${crop.id}@${crop.revision ?? ''}`)].join('\u0000')
 function batchId(key) {
@@ -73,7 +73,8 @@ export async function styleCrops(crops, style) {
         crops: part.map(crop => crop.revision == null ? { id: crop.id } : { id: crop.id, revision: crop.revision }) })
     } catch (error) {
       if (error?.kept) { kept.push(...part); continue }
-      if (error?.status) batches.delete(key)
+      // A refusal saved nothing; a server error may have saved some crops, which a retry with the same id answers.
+      if (error?.status && error.status < 500) batches.delete(key)
       throw Object.assign(error ?? new Error(), { styled, refused, kept })
     }
     batches.delete(key)
