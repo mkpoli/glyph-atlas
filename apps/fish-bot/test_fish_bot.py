@@ -3938,13 +3938,19 @@ def test_an_unreachable_compendium_leaves_the_other_tools(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize(("lines", "offered", "adds"), [
     (["大肥魚，把這個加進珍字集覽"], True, True), (["大肥魚 這個 via 也加上 https://x.com/a/status/1"], True, True),
-    (["大肥魚 R+06C2 是什麼字"], True, False), (["大肥魚 早安"], False, False),
-    (["今天收錄了好多", "大肥魚 你覺得呢"], True, True), (["大肥魚 珍字集覽裡有沒有這個字"], True, False),
+    (["大肥魚 R+06C2 是什麼字"], True, True), (["大肥魚 早安"], False, False),
+    (["今天收錄了好多", "大肥魚 你覺得呢"], True, True), (["大肥魚 珍字集覽裡有沒有這個字"], True, True),
     (["大肥魚 不要加進珍字集覽"], True, False), (["大肥魚 這個要不要收錄到珍字集覽"], True, False),
-    (["大肥魚 看看珍字集覽 R+06C2", "把這個 via 加上"], True, True), (["Fish, how is this record in the compendium?"], True, False),
+    (["大肥魚 別把這個放進珍字集覽"], True, False), (["大肥魚 別的字也加進去"], True, True),
+    (["大肥魚，不要再幫我加進珍字集覽"], True, False), (["大肥魚、珍字集覽への追加はやめてください"], True, False),
+    (["Fish, no need to add this to the compendium"], True, False), (["大肥魚，別把這個字的出處忘了加進珍字集覽"], True, True),
+    (["大肥魚 別忘了加進去"], True, True),
+    (["大肥魚 看看珍字集覽 R+06C2", "把這個 via 加上"], True, True), (["Fish, how is this record in the compendium?"], True, True),
     (["Fish, add this to the compendium please"], True, True), (["Fish, don't add this to the compendium"], True, False),
+    (["大肥魚我現在應該已經給你權限了，幫我加好不好喵"], True, True), (["大肥魚 能不能幫我加一下"], True, True),
+    (["大肥魚 可不可以放上去，補一下"], True, True), (["大肥魚 不要加進珍字集覽", "大肥魚 好啦還是加吧"], True, True),
 ])
-def test_the_compendium_opens_when_asked_about_and_takes_additions_when_asked_for(tmp_path, lines, offered, adds):
+def test_a_call_that_speaks_of_the_compendium_or_of_adding_may_add_unless_told_not_to(tmp_path, lines, offered, adds):
     bot, _, store = make_bot(tmp_path)
     bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
                                  compendium=fish_bot.Compendium("https://rare.example/mcp", store))
@@ -3957,7 +3963,31 @@ def test_the_compendium_opens_when_asked_about_and_takes_additions_when_asked_fo
     assert not bot.lookup.may_write and bot.lookup.caller == ""
 
 
-def test_a_quoted_request_is_not_the_repliers(tmp_path):
+def test_a_yes_to_her_own_question_may_add(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    start = fish_bot.now_ms() - 60_000
+    store.add_event("$offer", ROOM, USER, start, "要本鯨把它放到珍字集覽嗎？", "m.text", backfilled=False)
+    store.add_event("$yes", ROOM, "@asker:example", start + 1, "大肥魚 好", "m.text", backfilled=False)
+    bot.turn(ROOM, "$yes", task="called")
+    assert (bot.lookup.offer_compendium, bot.lookup.may_write, bot.lookup.caller) == (True, True, "@asker:example")
+
+
+def test_talk_long_before_a_call_does_not_open_the_compendium(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    start = fish_bot.now_ms() - 60_000
+    store.add_event("$old", ROOM, "@other:example", start, "珍字集覽今天更新了", "m.text", backfilled=False)
+    for number in range(fish_bot.COMPENDIUM_RECENT):
+        store.add_event(f"$chat{number}", ROOM, "@other:example", start + 1 + number, "哈哈", "m.text", backfilled=False)
+    store.add_event("$hi", ROOM, "@asker:example", start + 20, "大肥魚 早安", "m.text", backfilled=False)
+    bot.turn(ROOM, "$hi", task="called")
+    assert not bot.lookup.offer_compendium and not bot.lookup.may_write
+
+
+def test_an_answer_to_a_line_about_the_compendium_opens_it_for_the_replier(tmp_path):
     bot, _, store = make_bot(tmp_path)
     bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
                                  compendium=fish_bot.Compendium("https://rare.example/mcp", store))
@@ -3965,7 +3995,18 @@ def test_a_quoted_request_is_not_the_repliers(tmp_path):
     store.add_event("$ask", ROOM, "@asker:example", start, "把這個加進珍字集覽", "m.text", backfilled=False)
     store.add_event("$what", ROOM, "@other:example", start + 1, "大肥魚 這是什麼意思？", "m.text", backfilled=False, reply_to="$ask")
     bot.turn(ROOM, "$what", task="called")
-    assert bot.lookup.offer_compendium and not bot.lookup.may_write and bot.lookup.caller == "@other:example"
+    assert bot.lookup.offer_compendium and bot.lookup.caller == "@other:example"
+
+
+def test_a_catch_up_counts_an_addition_against_who_asked_to_add(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    call_her(bot, "$has", "大肥魚 珍字集覽裡有沒有這個字", sender="@other:example")
+    call_her(bot, "$add", "大肥魚 把這個加進珍字集覽 https://x.com/a/status/1", sender="@asker:example")
+    wake()
+    bot.catch_up()
+    assert (bot.lookup.may_write, bot.lookup.caller) == (True, "@asker:example")
 
 
 def test_a_catch_up_asks_on_behalf_of_who_asked_for_the_addition(tmp_path, monkeypatch):
