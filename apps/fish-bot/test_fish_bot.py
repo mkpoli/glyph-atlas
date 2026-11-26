@@ -1129,7 +1129,7 @@ def test_a_held_call_is_answered_by_its_limit_and_before_another_persons(tmp_pat
 
 
 def test_a_held_call_keeps_the_room_from_other_turns_and_goes_with_its_message(tmp_path, monkeypatch):
-    bot, matrix, _, clock = talking(tmp_path, monkeypatch)
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
     bot._call_pause = fish_bot.CALL_PAUSE
     hear(bot, clock, "I mean the other one", "$more", after=0.0)
     hear(bot, clock, "大肥魚 I mean the other one", "$again", after=2.5)
