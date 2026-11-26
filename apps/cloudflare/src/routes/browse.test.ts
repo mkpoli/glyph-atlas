@@ -692,6 +692,10 @@ describe('rounds of doubted crops', () => {
     // a0 and the doubted a1 are agreed; b0 is agreed under a label it no longer holds.
     for (const id of [crop(a, 0), crop(a, 1)]) db.query('INSERT INTO agreed VALUES(?,?)').run(id, text(id));
     db.query('INSERT INTO agreed VALUES(?,?)').run(crop(b, 0), '別');
+    // A crop whose box is repaired loses its mark.
+    db.query('INSERT INTO agreed VALUES(?,?)').run(crop(a, 6), text(crop(a, 6)));
+    db.query('UPDATE crops SET cut=cut+1 WHERE id=?').run(crop(a, 6));
+    expect(db.query('SELECT count(*) AS n FROM agreed WHERE crop=?').get(crop(a, 6))).toEqual({ n: 0 });
     for (const seed of [10, 11, 12]) for (const limit of [1, 3, 20]) {
       const { seen, body } = await every(env, `${path}&seed=${seed}`, limit);
       expect(seen.length).toBe(8);
@@ -781,7 +785,8 @@ describe('the queries', () => {
       [{ ...base, book: 3 }, 0, 'crop_book', false]] as [Filter, 0 | 1, string, boolean][]) {
       const texts = new Map([[1, 'は']]);
       for (const range of [...ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier, filter.book === 3),
-        ...(filter.chars ? [true, false].flatMap(marked => ranges(filter, kind, [2, 3, 5], [0, 1, 2], tier, false, { marked, texts })) : [])]) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
+        ...(filter.chars ? ([[true, null], [false, null], [false, false], [false, true], [null, false], [null, true]] as const)
+          .flatMap(([marked, agreed]) => ranges(filter, kind, [2, 3, 5], [0, 1, 2], tier, false, { marked, agreed, texts })) : [])]) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
         const detail = plan(sideQuery(range, side, after), [...range.values, 0, ...(after ? [5, 9] : []), 10]);
         expect(detail).toContain(`USING ${index === 'crop_book' ? 'INDEX' : 'COVERING INDEX'} ${index}`);
         expect(detail).not.toContain('TEMP B-TREE');

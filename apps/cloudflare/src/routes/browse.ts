@@ -353,7 +353,7 @@ export type Range = { from: string; values: (number | string)[] };
  *  text: those marked suspect or the rest (`marked`), those marked agreed or the rest (`agreed`); `null`
  *  leaves a mark unasked. */
 export type Doubt = { marked: boolean | null; agreed: boolean | null; texts: ReadonlyMap<number, string> };
-const markSql = (table: string, held: boolean | null) => held === null ? ''
+const markSql = (table: 'suspects' | 'agreed', held: boolean | null) => held === null ? ''
   : ` AND ${held ? '' : 'NOT '}EXISTS (SELECT 1 FROM ${table} s WHERE s.crop=crops.id AND s.label=?)`;
 export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false, glyphs = false, doubt: Doubt | null = null): Range[] {
   if (f.chars !== null) {
@@ -663,7 +663,7 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     // either list; the fifth deals them all together. `suspects=only` deals the doubted alone, uncounted.
     // On every seed a grapheme's collected crops marked agreed (`agreed`: their nearest crops carry
     // their character and their form) come after its other crops and its corpus glyphs, a doubted one
-    // among them with the doubted.
+    // among them with the doubted. A mark holds for the character it was given on, and a repaired box drops it.
     const only = scoped && doubting;
     const head = review && wantsRows && !only ? (await othersSkips(env, reviewer, version))
       .filter(row => !exclude.has(row.id) && (row.kind === 0 ? matches(filter, row) : corpus && matches(corpusFilter, row)))

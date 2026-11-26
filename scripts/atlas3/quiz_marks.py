@@ -12,7 +12,8 @@ the shape order (`shapes`) and the agreed crops (`agreed`), each crop named by i
   answer, marked or not: a file lists what it scored in `scored_ids`, else only its marks count as
   scored. So the hosted catalogue's marks go first and the corpus glyphs' last.
 - `--shapes`: the `quiz-shapes.json` of the dataset the published catalogue was exported from.
-- `--agreed`: the `agreed-marks.json` of `atlas review agreed-marks`; its `agreed` crops are loaded.
+- `--agreed`: the `agreed-marks.json` of `atlas review agreed-marks`; its `agreed` crops are loaded,
+  but for one whose cut the local copy holds differently.
 
 Each table given is replaced whole; a table not given is left as it is. Every text id resolves through
 out/mirror.sqlite, which is only read; a mark on a crop the mirror lacks is left out with a count.
@@ -81,12 +82,13 @@ def shapes(path):
 
 
 def agreed(path):
-    """Each agreed text id's label from an agreed-marks.json."""
+    """Each agreed text id's label and the cut it was judged on, from an agreed-marks.json."""
     marks = json.loads(Path(path).read_text())["agreed"]
-    for identity, label in marks.items():
-        if not isinstance(label, str) or not label:
-            sys.exit(f"{path}: {identity}: an agreed crop names the label it was judged under")
-    return {identity: (label,) for identity, label in marks.items()}
+    for identity, mark in marks.items():
+        label, cut = (mark.get("label"), mark.get("cut")) if isinstance(mark, dict) else (None, None)
+        if not isinstance(label, str) or not label or not isinstance(cut, int) or isinstance(cut, bool) or cut < 0:
+            sys.exit(f"{path}: {identity}: an agreed crop names the label and the cut it was judged under")
+    return {identity: (mark["label"], mark["cut"]) for identity, mark in marks.items()}
 
 
 def by_crop(marks, ids, table, left):
@@ -181,6 +183,8 @@ def main():
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
+    if args.agreed and not has(atlas, "agreed"):
+        sys.exit("the local copy has no agreed table; apply migrations-atlas/0022_agreed.sql to it and to glyph-atlas-v3 first")
     catch_up(atlas, keep=args.send)
     ids = dict(mirror.execute("SELECT text, id FROM ids"))
     left, wanted = {}, {}
@@ -189,9 +193,12 @@ def main():
     if args.shapes:
         wanted["shapes"] = by_crop(shapes(args.shapes), ids, "shapes", left)
     if args.agreed:
-        if not has(atlas, "agreed"):
-            sys.exit("the local copy has no agreed table; apply migrations-atlas/0022_agreed.sql to it and to glyph-atlas-v3 first")
-        wanted["agreed"] = by_crop(agreed(args.agreed), ids, "agreed", left)
+        # A crop repaired since it was judged is no longer the image the mark was given on.
+        cuts = dict(atlas.execute("SELECT id, cut FROM crops WHERE kind = 0"))
+        rows = by_crop(agreed(args.agreed), ids, "agreed", left)
+        wanted["agreed"] = {crop: (crop, label) for crop, (_, label, cut) in rows.items() if cuts.get(crop) == cut}
+        if len(rows) > len(wanted["agreed"]):
+            left["agreed on crops cut again since, left out"] = len(rows) - len(wanted["agreed"])
     groups, changes = statements(wanted, atlas)
     report = figures(changes, left)
     (OUT / "quiz-marks-report.txt").write_text(report)
