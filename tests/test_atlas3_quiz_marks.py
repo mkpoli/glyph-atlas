@@ -184,7 +184,7 @@ def test_agreed_crops_load_with_their_labels_and_leave_the_other_tables(layout, 
     agreed = tmp_path / "agreed-marks.json"
     agreed.write_text(json.dumps({"agreed": {"ex:a1": "あ", "ex:b1": "い", "ex:gone": "え"}, "flagged": {}}))
     quiz(remote, monkeypatch, "--agreed", agreed, "--send")
-    rows = lambda held: held.execute("SELECT crop, label FROM agreed ORDER BY crop").fetchall()  # noqa: E731
+    rows = lambda held: held.execute("SELECT crop, label FROM agreed ORDER BY crop").fetchall()
     assert rows(db) == sorted([(crop["ex:a1"], "あ"), (crop["ex:b1"], "い")])
     assert rows(sqlite3.connect(root / "out" / "atlas.sqlite")) == rows(db)
     assert held(db)["shapes"] == [(crop["ex:a1"], 1)]
