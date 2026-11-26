@@ -278,7 +278,8 @@ try {
   await fieldText('⿰木口a')
   await browser.waitFor(`!!document.querySelector('dialog[open] .ids-problem')`)
   assert(!await usable(), 'unreadable text can be used, saving the tree before it')
-  await fieldText('⿰木L')
+  // A lone L in an empty slot is a previewable Latin part. After a complete IDS it is an unfinished operator name.
+  await fieldText('⿰木口L')
   await browser.waitFor(`document.querySelector('dialog[open] .ids-problem')?.textContent.includes('ASCII')`)
   await fieldText('lr木')
   await browser.evaluate(`document.querySelector('dialog[open] .ids-field input').blur()`)
