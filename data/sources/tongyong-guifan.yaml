@@ -1,0 +1,17 @@
+id: tongyong-guifan
+name: 通用规范汉字表（2013）附件1 规范字与繁体字、异体字对照表
+publisher: 中华人民共和国教育部、国家语言文字工作委员会
+kind: reference-table
+url: https://www.gov.cn/zwgk/2013-08/19/content_2469793.htm
+revision: 8c0896737a618085c0d291b498a66657949ef9eb
+licence: CC0-1.0
+licence_evidence: https://github.com/mandel59/tongyongguifanhanzibiao/blob/8c0896737a618085c0d291b498a66657949ef9eb/README.md
+attribution: "国务院『通用规范汉字表』(国发〔2013〕23号), a law outside copyright (著作权法第五条); transcription: Wikisource contributors (public domain) and mandel59『tongyongguifanhanzibiao』(CC0 1.0)"
+access:
+  forms: https://raw.githubusercontent.com/mandel59/tongyongguifanhanzibiao/8c0896737a618085c0d291b498a66657949ef9eb/variants.txt
+  scan: http://www.gov.cn/gzdt/att/att/site1/20130819/tygfhzb.pdf
+format:
+  forms: "序号, 规范字, 繁体字, 异体字, 註解, tab separated; a 规范字 is its own 繁体字 where the table prints ～, and where it prints 异体字 alone"
+notes:
+  - scripts/build_tongyong_forms.py reads it into data/vocab/tongyong-guifan-forms.tsv, for the 简体字 of glyph_atlas.shape_families.
+  - The transcription was made from Wikisource's, not from the official scan. Compared here with pages 59 to 61 of the scan (nos. 1151 to 1508, 2026-11-25), it agrees row for row; it leaves out a 异体字 that Unicode unifies with its 规范字 (1360 珊).

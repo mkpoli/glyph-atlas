@@ -3,7 +3,7 @@
  * A Quick Review round, in a real browser, against a disposable dataset.
  *
  * A round carries its grapheme through a material with nothing to deal and a step back through the
- * history, and a round the service refuses says so in the reader's language, never in the service's
+ * history, a round is dealt again whatever the counts hold, and a round the service refuses says so in the reader's language, never in the service's
  * English. When the site has been deployed again since the page loaded, a refused round offers a reload
  * instead, and the reload deals the round again with its choices. The local service has no accounts, so the browser's anonymous sign-in is answered here, and
  * every round it posts is refused here: nothing is written.
@@ -27,14 +27,18 @@ const json = (requestId, status, value) => browser.send('Fetch.fulfillRequest', 
 try {
   browser = await Browser.launch({ width: 1280, height: 1000 })
   const posted = [], errors = []
-  let deployed = false
-  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/auth/sign-in/anonymous' }, { urlPattern: '*/atlas/rounds' }, { urlPattern: '*/suggestions?*' }, { urlPattern: '*/_app/version.json' }] })
+  let deployed = false, uncounted = null
+  await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/auth/sign-in/anonymous' }, { urlPattern: '*/atlas/rounds' }, { urlPattern: '*/suggestions?*' }, { urlPattern: '*/atlas?*limit=0*' }, { urlPattern: '*/_app/version.json' }] })
   browser.listeners.push(m => {
     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text)
     if (m.method !== 'Fetch.requestPaused') return
     const { requestId, request } = m.params
     if (request.url.includes('/api/auth/')) json(requestId, 200, { token: 'round-check', user: { id: 'round-check', name: 'Anonymous', isAnonymous: true } })
-    else if (request.url.includes('/_app/version.json')) {
+    else if (request.url.includes('limit=0')) {
+      // The counts are the last publication's: one that holds a grapheme under its older key holds none under this one.
+      if (!uncounted) browser.send('Fetch.continueRequest', { requestId })
+      else fetch(request.url).then(r => r.json()).then(summary => json(requestId, 200, { ...summary, categories: summary.categories.filter(c => c.grapheme !== uncounted) }))
+    } else if (request.url.includes('/_app/version.json')) {
       if (deployed) json(requestId, 200, { version: 'a-newer-deployment' })
       else browser.send('Fetch.continueRequest', { requestId })
     } else if (request.url.includes('/atlas/rounds')) { posted.push(JSON.parse(request.postData || '{}')); json(requestId, 422, { detail: 'A round names its grapheme.' }) }
@@ -60,6 +64,12 @@ try {
   await browser.evaluate(`[...document.querySelectorAll('.history-character')].find(b => b.innerText === ${JSON.stringify(first)} && !b.classList.contains('current'))?.click()`)
   await browser.waitFor(settled + ` && document.querySelector(".target-character").innerText === ${JSON.stringify(first)}`)
   console.log(`ok   a material with nothing to deal, then back to ${first} through the history`)
+  // A round the counts do not hold is dealt again in another material, and by the reload below.
+  uncounted = key
+  await material('all')
+  await browser.waitFor(settled + ' && document.querySelectorAll(".quiz-tile").length > 0')
+  assert(await target() === first, 'another material deals the round the counts do not hold')
+  console.log('ok   another material deals the same round, whatever the counts hold')
 
   await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].length > 0 && [...document.querySelectorAll(".quiz-tile img")].every(i => i.complete)', 20000)
   await click('.quiz-tile:not(.unavailable):not(.recorded) .quiz-choice')

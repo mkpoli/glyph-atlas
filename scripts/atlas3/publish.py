@@ -42,9 +42,13 @@ images to the image key map (`media_map.py`).
   moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
   dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
   needs `--approve-styles` naming that count of crops.
-- A catalogue's `record_places` (id, object, offset, size, and the place it replaces), as `record_credits.py` writes it, points each
-  named corpus glyph at its record in that pack, which is in the bucket before the publish. Only the
-  bundles and their pages' revisions change.
+- A catalogue's `record_places` (id, object, offset, size, and the place it replaces), as `record_credits.py` or
+  `pack_corpus_images.py` writes it, points each named corpus glyph at its record in that pack, which is in the
+  bucket before the publish (with an optional `media` table for newly packed images). Only the bundles, their
+  pages' revisions, and any added media shards change.
+- Every live crop published (`units`, `corpus_units`, and `record_places` whose packs sit beside the catalogue)
+  must be proxyable and serve its `image` from `/atlas/media/`, never from an external URL; when media shards are
+  checked, every referenced 64-hex `/atlas/media/` key must already be mapped or added by the catalogue's `media`.
 - A catalogue's `credits` (attribution, credit), as `credits.py` writes it, gives every published page
   and crop entry that carries the attribution the credit in its place, or none where it names no one.
   Only their bundles change, and the revisions of their pages.
@@ -82,6 +86,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import claims
 import media_map
 import votes
 from build import (
@@ -159,6 +164,88 @@ FACTS_RUN = "crop-facts/"
 # A withdrawn crop's bundle entry: retired, with no record.
 WITHDRAWN = {"withdrawn": True}
 GONE = ("retired", "withdrawn")
+
+
+MEDIA_KEY_RE = re.compile(r"^/atlas/media/([0-9a-f]{64})\.webp$")
+
+
+def hosted_media_key(url):
+    """The 64-hex media key of a hosted `/atlas/media/<key>.webp` URL, or None."""
+    if not isinstance(url, str):
+        return None
+    match = MEDIA_KEY_RE.fullmatch(url)
+    return match.group(1) if match else None
+
+
+def validate_catalogue_images(src, catalogue_dir, tables, media_placed, published_place):
+    """Refuse to publish any live crop whose image or context_image is non-proxyable, external,
+    malformed, unreadable from its pack, or missing from the image key map."""
+    bad, unmapped, missing_packs = [], [], []
+    shards = {}
+    media_dir = OUT / "media"
+    check_map = "media" in tables or (media_dir.is_dir() and any(media_dir.glob("*.json.gz")))
+
+    def mapped(key):
+        if key in media_placed:
+            return True
+        prefix = key[:3]
+        if prefix not in shards:
+            shards[prefix] = set(media_map.read_shard(prefix)["keys"])
+        return key[3:] in shards[prefix]
+
+    def check_url(cid, field, url, *, required):
+        if url is None or url == "":
+            if required:
+                bad.append(f"{cid} ({field}={url!r})")
+            return
+        key = hosted_media_key(url)
+        if key is None:
+            bad.append(f"{cid} ({field}={url!r})")
+        elif check_map and not mapped(key):
+            unmapped.append(f"{cid} ({field}={url})")
+
+    if "units" in tables:
+        for row_id, raw in src.execute("SELECT id, data FROM units WHERE origin='local' ORDER BY id"):
+            data = json.loads(raw)
+            if data.get("proxyable") is False:
+                bad.append(f"{row_id} (proxyable=false)")
+                continue
+            check_url(row_id, "image", data.get("image"), required=True)
+            check_url(row_id, "context_image", data.get("context_image"), required=False)
+
+    for table in ("corpus_units", "record_places"):
+        if table not in tables:
+            continue
+        by_pack = defaultdict(list)
+        for row_id, obj, offset, size in src.execute(f"SELECT id, object, offset, size FROM {table} ORDER BY object, offset"):
+            # An unchanged corpus_units pointer keeps its already-published record; new or moved records must be verified.
+            if table == "corpus_units" and published_place(row_id) == [obj, offset, size]:
+                continue
+            by_pack[obj].append((row_id, offset, size))
+        for obj, entries in by_pack.items():
+            pack_path = (catalogue_dir / obj) if catalogue_dir is not None else None
+            if pack_path is None or not pack_path.is_file():
+                missing_packs.append(f"{obj} (e.g. {entries[0][0]})")
+                continue
+            with pack_path.open("rb") as pack:
+                for row_id, offset, size in entries:
+                    pack.seek(offset)
+                    record = json.loads(pack.read(size))
+                    if record.get("proxyable") is False:
+                        bad.append(f"{row_id} (proxyable=false)")
+                        continue
+                    check_url(row_id, "image", record.get("image"), required=True)
+                    check_url(row_id, "context_image", record.get("context_image"), required=False)
+
+    if missing_packs:
+        sys.exit(f"{len(missing_packs)} record packs are missing beside the catalogue ({', '.join(missing_packs[:5])}); "
+                 "keep the packs beside the catalogue so crop images can be verified; nothing published")
+    if bad:
+        sys.exit(f"{len(bad)} crops have non-proxyable or unhosted images, for example {', '.join(bad[:5])}; "
+                 "pack them into /atlas/media/ first; nothing published")
+    if unmapped:
+        sys.exit(f"{len(unmapped)} crops point at /atlas/media/ keys absent from the media map, for example "
+                 f"{', '.join(unmapped[:5])}; include their media table first; nothing published")
 
 
 def image_keys(entry):
@@ -350,17 +437,21 @@ CLAIMED = ("SELECT c.crop, c.object FROM current_claims c CROSS JOIN crops k ON 
            f"AND c.status IN ({','.join(map(repr, FILING))}) AND c.cut = k.cut + (r.x IS NOT NULL)")
 
 
-def claimed_heads(atlas, recut, crops=None):
+def claimed_heads(atlas, recut, crops=None, moved=None):
     """{crop: head} of the crops a grapheme claim reads as a grapheme, of `crops` alone where named:
     the head of the family that grapheme is filed under in the local copy, else the grapheme itself.
     A crop this publish cuts again leaves its claims on the old cut, as the Worker reads them once the
-    new cut lands."""
-    heads = {}
+    new cut lands. `moved` ({character: (old head, new head)}) are heads a load moves, whether or not the
+    local copy holds them moved."""
+    heads, moved = {}, moved or {}
     named = "" if crops is None else f" AND c.crop IN ({','.join(map(str, crops)) or 'NULL'})"
     for r in query("glyph-atlas-v3", CLAIMED + named):
         if r["crop"] in recut:
             continue
         text = char_text(r["object"])
+        if text in moved:
+            heads[r["crop"]] = moved[text][1]
+            continue
         row = atlas.execute("SELECT coalesce(h.text, g.text) FROM graphemes g LEFT JOIN graphemes h ON h.id = g.head WHERE g.text = ?",
                             (text,)).fetchone()
         heads[r["crop"]] = row[0] if row else text
@@ -446,7 +537,9 @@ def snapshot(runs, keys):
             continue
         counted = sorted({(r["size"], r["graphemes"]) for r in live + held})
         crops = sorted({r[c] for r in live + held for c in ("first", "second", "third") if r[c] is not None})
-        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(f"(size={n} AND graphemes={lit(g)})" for n, g in counted))
+        # A list a size: D1 takes an expression a hundred deep at most, and a term a key is one deeper each.
+        stats = query(RUNS_DATABASE, "SELECT * FROM run_stats WHERE " + " OR ".join(
+            f"(size={size} AND graphemes IN ({','.join(lit(g) for n, g in counted if n == size)}))" for size in sorted({n for n, _ in counted}))) if counted else []
         written = query(RUNS_DATABASE, f"SELECT crop, char FROM run_written WHERE crop IN ({','.join(map(str, crops))})")
         runs.executemany("DELETE FROM runs WHERE first=? AND size=?", [(r["first"], r["size"]) for r in held])
         runs.executemany(f"INSERT INTO runs({','.join(RUN_COLS)}) VALUES({','.join('?' * len(RUN_COLS))})", [[r[c] for c in RUN_COLS] for r in live])
@@ -504,6 +597,7 @@ def reconcile(m, run):
     changed = query("glyph-atlas-v3", "SELECT crop, max(at) AS at FROM current_claims WHERE predicate = 'has_grapheme' "
                                       f"AND crop IS NOT NULL AND at > {lit(after)} GROUP BY crop")
     newest = max([since, *(r["at"] for r in changed)])
+    listed = {(r["first"], r["size"], r["crop"]) for r in logged}
     crops = sorted({r["crop"] for r in logged} | {r["crop"] for r in changed})
     read, moved = set(), 0
     for i in range(0, len(crops), 100):
@@ -523,6 +617,10 @@ def reconcile(m, run):
             if len(parts) != len(run_members):
                 continue
             fold = {c: heads.get(c) or own[c]["head"] for c in run_members if c in heads or (c in own and own[c]["head"])}
+            # A run a claim files otherwise than its crop's own family is listed, as the Worker lists one it moves, so
+            # that a claim that stops reading its crop files the run back, whoever filed it here.
+            statements += [f"INSERT OR IGNORE INTO run_moves(first,size,crop) VALUES({r['first']},{r['size']},{c});" for c in run_members
+                           if c in batch and c in heads and heads[c] != own.get(c, {}).get("head") and (r["first"], r["size"], c) not in listed]
             graphemes = "".join(fold.get(c, part) for c, part in zip(run_members, parts, strict=True))
             if graphemes != r["graphemes"]:
                 statements += move_sql(r, graphemes)
@@ -548,6 +646,52 @@ def reconcile(m, run):
     m.runs.execute("INSERT OR REPLACE INTO reconciled VALUES(0, ?)", (newest,))
     m.runs.commit()
     return moved
+
+
+# The mark of the pass that resolved every crop's claims by the box and image each rests on, once (`settle_claims`).
+SETTLED_BY_BOX = "claims settled by box"
+
+
+def published_entry(m, run, cid):
+    """A crop's bundle entry as this publish leaves it, or {}."""
+    p = m.atlas.execute("SELECT rev FROM pages WHERE id=?", (cid // PAGE,)).fetchone()
+    for folder in (run / "pages", OUT / "pages"):
+        if p and (path := folder / f"{cid // PAGE}-{p['rev']}.json.gz").exists():
+            return next((e for e in json.loads(gzip.decompress(path.read_bytes()))["crops"] if e["slot"] == cid % PAGE), {})
+    return {}
+
+
+def settle_claims(m, run):
+    """Resolve the claims on the crops this publish cut again (`claims.settle_statements`): those made on the box published
+    hold, those on a box drawn since or before wait for it. Crops no claim is on are read and left. The first publish to
+    run it resolves every crop a claim is on, once, for the slots resolved by cut alone before."""
+    path = run / "recut.json"
+    recut = {row[0]: row for row in json.loads(path.read_text())} if path.exists() else {}
+    claimed, crops = [], sorted(recut)
+    once = not m.ids.execute("SELECT 1 FROM meta WHERE key=?", (SETTLED_BY_BOX,)).fetchone()
+    if once:
+        claimed = [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IS NOT NULL")]
+        for cid in claimed:
+            if cid not in recut and (row := m.atlas.execute("SELECT cut FROM crops WHERE id=?", (cid,)).fetchone()):
+                recut[cid] = claims.shown_as(cid, row["cut"], published_entry(m, run, cid))
+        claimed = [c for c in claimed if c in recut]
+    for i in range(0, len(crops), 500):
+        claimed += [r["crop"] for r in query("glyph-atlas-v3", "SELECT DISTINCT crop FROM assertions WHERE crop IN ("
+                                             + ",".join(map(str, crops[i:i + 500])) + ")")]
+    if claimed:
+        send_claims(run, [recut[c] for c in sorted(set(claimed))])
+    if once:
+        m.ids.execute("INSERT OR REPLACE INTO meta VALUES(?, ?)", (SETTLED_BY_BOX, run.name))
+        m.ids.commit()
+
+
+def send_claims(run, shown):
+    body = "\n".join(claims.settle_statements(shown))
+    stamp = f"{run.name}.claims.{hashlib.sha256(body.encode()).hexdigest()[:12]}"
+    path = run / f"claims-{stamp.rsplit('.', 1)[1]}.sql"
+    path.write_text(body + f"\nINSERT INTO imports(stamp, at) VALUES({lit(stamp)}, unixepoch());\n")
+    if not send("glyph-atlas-v3", path, stamp):
+        sys.exit(f"{path.name} did not apply; rerun to finish {run.name}")
 
 
 def applied(database, stamp):
@@ -1214,6 +1358,10 @@ def deliver(m, run):
             if refused:
                 print(f"{len(refused)} changes kept D1's newer review instead (ids in {run.name}/refused-by-d1.json)", flush=True)
             mark(run, "read back")
+    # The claims on the crops cut again, which hold or wait by the box each rests on, now that the new cuts have landed.
+    if "claims settled" not in journal(run):
+        settle_claims(m, run)
+        mark(run, "claims settled")
     # The runs of claimed and moved crops, filed from the claims as they stand once the publish's runs
     # have landed, whatever was claimed, disputed or redrawn while it was under way.
     if "reconciled" not in journal(run):
@@ -1389,8 +1537,13 @@ def main():
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
     m.titled, m.retitle = book_titles(src, tables), args.retitle
-    if "record_places" in tables and tables - {"record_places"}:
-        sys.exit(f"a record_places catalogue holds record_places alone, not {sorted(tables - {'record_places'})}; nothing published")
+    if "record_places" in tables and tables - {"record_places", "media"}:
+        sys.exit(f"a record_places catalogue holds record_places (and media) alone, not {sorted(tables - {'record_places', 'media'})}; nothing published")
+    if "record_places" in tables:
+        unaddressed = [(i, o) for i, o in src.execute("SELECT id, object FROM record_places") if not addressed(o)]
+        if unaddressed:
+            sys.exit(f"{len(unaddressed)} record_places rows sit in numbered packs, for example "
+                     f"{unaddressed[0][0]} in {unaddressed[0][1]}; name the packs by their content first")
     if "credits" in tables and tables - {"credits"}:
         sys.exit(f"a credits catalogue holds credits alone, not {sorted(tables - {'credits'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
@@ -1443,6 +1596,10 @@ def main():
     def entry(cid):
         return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
 
+    def published_place(text_id):
+        cid = m.known(text_id)
+        return entry(cid).get("record_place") if cid is not None else None
+
     # A catalogue made from published records (relabel.py) says what it was made from. A crop reviewed or a
     # page published since, here or on the site, would be put back, so it is made again instead.
     if "based_on" in tables:
@@ -1481,6 +1638,7 @@ def main():
     if withdrawing and (len(withdrawing) < len(units) or "corpus_units" in tables or args.replacements):
         sys.exit("a withdrawal catalogue (withdraw.py) holds withdrawn units alone and is published without "
                  "--replacements; nothing published")
+    validate_catalogue_images(src, catalogue.parent if catalogue else None, tables, media, published_place)
     # A live crop with another box or image on its own page is re-cut: it keeps its id and its cut
     # moves on, so claims and reviews made on the old cut stay with it.
     recut = set()
@@ -1495,6 +1653,8 @@ def main():
     # A box a reviewer redrew on the site waits in `reviews` for its cut; a re-cut to exactly that box is the
     # reviewer's, whatever it covers (as `box_pending` says in a catalogue taken from the site).
     drawn = pending_boxes([m.known(i) for i in recut])
+    # Each crop cut again as the claims on it find it (`settle_claims`).
+    cut_again = []
 
     def redrawn(rid, data):
         box = data.get("box")
@@ -1712,6 +1872,7 @@ def main():
                                          [{"cut": old_cut, **{k: previous[k] for k in CUT_FIELDS if k in previous},
                                            **({"at": previous["cut_at"]} if previous.get("cut_at") else {})}])
             bundle["cut_at"] = cut_time
+            cut_again.append(claims.shown_as(cid, old_cut + 1, bundle))
         elif row is None and previous.get("retired"):
             given["cut"] = old_cut
         for field in ("image", "context_image"):
@@ -2228,6 +2389,8 @@ def main():
     atlas_parts = write_parts(run, "atlas", [g for g in groups if g])
     runs_parts = write_parts(run, "runs", [[s] for s in m.runs_sql]) if m.runs_sql else 0
     (run / "guarded.json").write_text(json.dumps(m.guarded))
+    if cut_again:
+        (run / "recut.json").write_text(json.dumps(cut_again))
     (run / "run-answers.json").write_text(json.dumps({"books": sorted(scope["books"]), "shards": sorted(scope["shards"]),
                                                       "texts": [[*k, v] for k, v in sorted(texts.items())]}))
     statements = sum(len(g) for g in groups)

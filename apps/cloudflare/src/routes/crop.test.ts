@@ -230,6 +230,78 @@ describe('a crop\'s record', () => {
     expect(record.honkoku_url).toBeUndefined();
   });
 
+  it('names the grapheme a corpus glyph\'s character is filed under now, whatever its record was published with', async () => {
+    const { get, ids, db } = setup();
+    const named = async () => (await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any).grapheme;
+    expect(await named()).toBe('U+7FC1');
+    // A later table files 翁 under 四, then under its own head again.
+    db.exec('UPDATE graphemes SET head=5 WHERE id=6');
+    expect(await named()).toBe('U+56DB');
+    db.exec('UPDATE graphemes SET head=6 WHERE id=6');
+    expect(await named()).toBe('U+7FC1');
+    // A glyph with no character is under the head of the grapheme its record names.
+    db.exec(`UPDATE crops SET char=NULL,cluster=NULL WHERE id=${ids.glyph}`);
+    expect(await named()).toBe('U+7FC1');
+    db.exec('UPDATE graphemes SET head=5 WHERE id=6');
+    expect(await named()).toBe('U+56DB');
+    // A collected crop's record names none, and gains none.
+    expect((await (await get(`/atlas/characters/${publicId(ids.b)}`)).json() as any).grapheme).toBeUndefined();
+  });
+
+  it('keeps the grapheme of a form no table files, under the head it is filed under now', async () => {
+    const { get, ids, db } = setup();
+    const named = async () => { const r = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any; return [r.written_character, r.grapheme]; };
+    // Decided as a description, or as a character no reference load has filed, within 翁's family: the row it takes has no head.
+    for (const form of ['⿰公羽', '𦐈']) {
+      db.exec(`UPDATE form_clusters SET form='${form}'; INSERT OR IGNORE INTO graphemes(text) VALUES('${form}');
+        UPDATE crops SET char=(SELECT id FROM graphemes WHERE text='${form}') WHERE id=${ids.glyph}`);
+      expect(await named()).toEqual([form, 'U+7FC1']);
+      db.exec('UPDATE graphemes SET head=5 WHERE id=6');
+      expect(await named()).toEqual([form, 'U+56DB']);
+      db.exec('UPDATE graphemes SET head=6 WHERE id=6');
+    }
+    // Once a load files it, it is under its own head.
+    db.exec(`UPDATE graphemes SET head=2 WHERE text='𦐈'`);
+    expect(await named()).toEqual(['𦐈', 'U+4E8C']);
+    // A reviewed glyph keeps its row's character, 一, while its form says 𦐈: the record is written 𦐈, so it is of 𦐈's
+    // grapheme, as its tile and its page say, and neither of its row's nor of the one its decision was made in.
+    db.exec(`UPDATE crops SET char=1 WHERE id=${ids.glyph}; UPDATE graphemes SET head=1 WHERE id=1`);
+    expect(await named()).toEqual(['𦐈', 'U+4E8C']);
+  });
+
+  it('is of the grapheme its label is filed under, where the label is all that names it, as its runs are', async () => {
+    const { get, ids, db, env } = setup();
+    // A glyph its source calls 备, under 留 when it was published, that no row gives a character.
+    db.exec(`INSERT INTO graphemes(id,text,head) VALUES(20,'留',20),(21,'备',20),(22,'備',22); UPDATE crops SET char=NULL,cluster=NULL WHERE id=${ids.glyph}; UPDATE graphemes SET head=20 WHERE id=6`);
+    const named = async () => { const r = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any; return [r.written_character, r.grapheme]; };
+    expect(await named()).toEqual(['翁', 'U+7559']);
+    db.exec('UPDATE graphemes SET head=22 WHERE id=6');
+    expect(await named()).toEqual(['翁', 'U+5099']);
+    // One with no written form of its own is under its label's too; its record names 翁, which heads itself.
+    db.exec('UPDATE graphemes SET head=6 WHERE id=6');
+    const { underHeads } = await import('../cropRecords');
+    const unassigned = { written_character: null, char: '备', label: '备', identity_status: 'unassigned', grapheme: 'U+7559' };
+    const of = async (record: object, char: string | null = null, head: string | null = null) => (await underHeads(env, [{ record, char, head }]))[0].grapheme;
+    expect(await of(unassigned)).toBe('U+7559');
+    db.exec('UPDATE graphemes SET head=22 WHERE id=21');
+    expect(await of(unassigned)).toBe('U+5099');
+    // A reviewed glyph whose row keeps 留, its form decided 备 when 备 was under it.
+    expect(await of({ written_character: '备', char: '备', label: '备', grapheme: 'U+7559' }, '留', '留')).toBe('U+5099');
+    // A key or a text the table lacks stays as it is named, and what names no grapheme gains none.
+    expect(await of({ written_character: '⿰未未', grapheme: 'U+9999' })).toBe('U+9999');
+    expect(await of({ written_character: '备' })).toBeUndefined();
+  });
+
+  it('claims a described form’s grapheme over the one the form is of', async () => {
+    const { get, ids, db, text } = setup();
+    db.exec(`UPDATE form_clusters SET form='⿰公羽'; INSERT INTO graphemes(text) VALUES('⿰公羽');
+      UPDATE crops SET char=(SELECT id FROM graphemes WHERE text='⿰公羽') WHERE id=${ids.glyph};
+      INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) VALUES
+        ('${text.glyph}','has_grapheme','','',${ids.glyph},0,'asserted','U+7FC1','[{"object":"U+7FC1","value":null,"confidence":null,"assertion":"g"}]','["g"]','[]','r','t')`);
+    const record = await (await get(`/atlas/characters/${publicId(ids.glyph)}`)).json() as any;
+    expect([record.grapheme, record.own_grapheme]).toEqual(['U+7FC1', 'U+7FC1']);
+  });
+
   it('always marks corpus glyphs with origin even when a pack omits it', async () => {
     const bareId = cropId(880001, 0);
     const bare = { id: 'codh:bare:0', unit_id: 'codh:bare:0', char: '翁', label: '翁', code_point: 'U+7FC1', box: { x: 1, y: 2, w: 3, h: 4 },
@@ -362,7 +434,7 @@ describe('a crop\'s line', () => {
       [1, 'ム', 'checked', null], [2, '四', 'pending', null]]);
     expect(body.items[3].revision).toBe(1);
     expect(body.items[0]).toEqual({ id: publicId(ids.a), offset: -1, label: '一', image: '/atlas/media/19968.webp', revision: 0, image_sha256: hash,
-      crop_version: `${publicId(ids.a)}@${hash}@10,10,20,30`, state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
+      crop_version: `${publicId(ids.a)}@${hash}@10,10,20,30`, box: { x: 10, y: 10, w: 20, h: 30 }, state: 'pending', issue: null, tone: '#c7b9a2', image_size: [20, 30] });
     // A neighbour's version is its own record's, a box redrawn and not yet cut included.
     for (const [item, id] of [[body.items[0], ids.a], [body.items[3], ids.d]]) expect(item.crop_version).toBe((await (await get(`/atlas/characters/${publicId(id)}`)).json() as any).crop_version);
   });

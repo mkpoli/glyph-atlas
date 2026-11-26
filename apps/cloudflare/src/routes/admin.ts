@@ -195,9 +195,31 @@ function decodeCursor(value: string): { at: number; id: number } {
 // They go newest first, so a crop two of them touched goes back step by step. One that a later
 // review by someone else has built on is left as it is and reported; `next` continues after the page.
 const REJECT_PAGE = 40;
-// Each crop a rejection puts back costs a few queries, and one request may make a thousand: a page
-// stops before the crops it has put back, and the queries of the forms put back with them, pass this many.
-const REJECT_CROPS = 250;
+// One request may make a thousand queries, each statement of a batch one: a page counts every query its rejections make,
+// and stops before a submission whose crops, at most this many queries each, beside this many of its own, would pass the budget.
+export const REJECT_QUERIES = 900, CROP_QUERIES = 12, SUBMISSION_QUERIES = 30;
+/** `env` with every query made through it counted: a statement run alone, or each of a batch. */
+export function counted(env: Env): { env: Env; queries: () => number } {
+  let n = 0;
+  const real = new WeakMap<object, D1PreparedStatement>();
+  const statement = (one: D1PreparedStatement): D1PreparedStatement => {
+    const wrapped = new Proxy(one, { get(target, key) {
+      const value = Reflect.get(target, key);
+      if (key === 'bind') return (...args: unknown[]) => statement(value.apply(target, args));
+      if (key === 'first' || key === 'all' || key === 'run' || key === 'raw') return (...args: unknown[]) => { n++; return value.apply(target, args) };
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    real.set(wrapped, one);
+    return wrapped;
+  };
+  const database = (db: D1Database): D1Database => new Proxy(db, { get(target, key) {
+    const value = Reflect.get(target, key);
+    if (key === 'prepare') return (sql: string) => statement(value.call(target, sql));
+    if (key === 'batch') return (list: D1PreparedStatement[]) => { n += list.length; return value.call(target, list.map(one => real.get(one) ?? one)) };
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  return { env: { ...env, ATLAS: database(env.ATLAS), ...(env.ATLAS_RUNS ? { ATLAS_RUNS: database(env.ATLAS_RUNS) } : {}) }, queries: () => n };
+}
 // An admin's flag request is a submission too, but no review: nothing puts a flag back, so a rejection
 // never takes one up. A reviewer's style for a crop is none either, and is changed by choosing another.
 const TARGET = `iif(json_valid(request),json_extract(request,'$.target'),NULL)`;
@@ -209,7 +231,7 @@ export const rejectNamedQuery = () => `SELECT ${SUBMISSION} FROM submissions WHE
 export const rejectReviewerQuery = () => `SELECT ${SUBMISSION} FROM submissions WHERE undone=0 AND actor IN (SELECT value FROM json_each(?1))
   AND (at,id)<(?2,?3) AND NOT coalesce(${NO_REVIEW},0) ORDER BY at DESC,id DESC LIMIT ?4`;
 
-export async function reject(env: Env, admin: string, input: Json, tools: AdminTools) {
+export async function reject(env: Env, admin: string, input: Json, tools: AdminTools, budget = REJECT_QUERIES) {
   const reason = tools.text(input.reason ?? '', 500, 'reason') ?? '';
   let rows: (Submission & { crops: number })[], reviewer: number[] | undefined;
   if (Array.isArray(input.submissions)) {
@@ -224,13 +246,14 @@ export async function reject(env: Env, admin: string, input: Json, tools: AdminT
     rows = (await env.ATLAS.prepare(rejectReviewerQuery()).bind(JSON.stringify(reviewer), before.at, before.id, REJECT_PAGE)
       .all<Submission & { crops: number }>()).results;
   }
-  let rejected = 0, spent = 0;
+  let rejected = 0;
+  const { env: counting, queries } = counted(env);
   const conflicts: string[] = [], unavailable: string[] = [], done: (Submission & { crops: number })[] = [];
   const actor = rows.length ? await actorFor(env, admin) : 0;
   for (const submission of rows) {
-    if (spent && spent + submission.crops > REJECT_CROPS) break;
-    spent += submission.crops; done.push(submission);
-    try { spent += (await revert(env, submission, actor, admin, { reason, reviewer })).queries ?? 0; rejected++ }
+    if (done.length && queries() + SUBMISSION_QUERIES + submission.crops * CROP_QUERIES > budget) break;
+    done.push(submission);
+    try { await revert(counting, submission, actor, admin, { reason, reviewer }); rejected++ }
     catch (error) {
       // A crop someone else has changed since stays as it is; a crop no longer in the collection
       // cannot be put back. Either way the rest go on.

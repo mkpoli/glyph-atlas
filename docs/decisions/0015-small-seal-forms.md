@@ -68,12 +68,16 @@ A seal character's own card opens on its own crops.
 
 ## Keys that name a member
 
-A seal character's key was a grapheme's, and is a member's. As for every member (ハ, 萅):
+A seal character's key was a grapheme's, and is a member's:
 
 - A round under a member's key (`/review/U+3D307`) deals that character's crops alone, on every page, and
-  saves no other. A round under the grapheme's key deals the seal characters with the rest; one narrowed
+  saves no other. An address or a history entry that names a member of the head's own script (ハ, 萅, or 国
+  once it is filed under 國) opens the head's round; a round already open goes on as that member's. A round under the grapheme's key deals the seal characters with the rest; one narrowed
   to a script deals the corpus glyphs of that script's members.
-- A listing under a member's key (`/?grapheme=U+3D307`) holds that character alone.
+- A listing under a seal character's key (`/?grapheme=U+3D307`) holds that character alone. Under any other
+  member's it is the grapheme's, and the address becomes the head's.
+  A listing reads the family from `graphemes`, so it is the one the load left at once; the grapheme browser and the
+  rounds' list count by the last publication's graphemes until `answers.py` runs.
 - A new `has_grapheme` or `written_for` claim, one kept on a device among them, is recorded under the head.
   A `written_for` claim is taken back by the key it was recorded under, or by a member's.
 
@@ -103,13 +107,14 @@ The figures are of the committed tables, before any other change the input holds
 rest of a stopped load is, and stops (`check_heads`) where
 
 - the head of a character that is not small seal moves (`--heads` lets it): no Han head may;
-- a run is filed under a grapheme whose head moves, in the local copy of the runs, which must be there, or
-  among the runs D1 has moved since the last publish;
 - a live `written_for` claim names such a grapheme, whose key it was recorded under. The claimant is
   asked to take it back, or the owner files the form under the head as well, which leaves the claim be.
 
 A `has_grapheme` claim is read by the head its key is filed under, so the report lists it and goes on. The
-report of run keys and claims is printed again once the rows have landed.
+runs filed under a grapheme whose head moves, in the local copy of the runs, which must be there, or among the
+runs D1 has moved since the last publish, are filed again under the new head once the rows have landed
+(`refile.py`, 2026-11-25; until then they stopped the load). The report of run keys and claims is printed
+again then.
 
 It writes nothing. In D1 it reads each `run_moves` row with the few runs its first crop starts (the local
 copy of 24 November holds no such row), and each claim that names a grapheme, through `assertion_object`,

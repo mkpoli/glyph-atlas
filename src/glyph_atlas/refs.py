@@ -62,6 +62,7 @@ VOICING_TSV = "kana-voicing.tsv"
 COMPONENT_VARIANTS_TSV = "han-component-variants.tsv"
 KANA_ORIGINS_TSV = "kana-origins.tsv"
 SUSPECT_FORMS_TSV = "suspect-forms.tsv"
+KOKATSUJI_FORMS_TSV = "kokatsuji-forms.tsv"
 WORDS_TSV = "words.tsv"
 WORD_SPELLINGS_TSV = "word-spellings.tsv"
 RUBY_SPELLINGS_TSV = "ruby-spellings.tsv"
@@ -79,6 +80,7 @@ BUILT_BY = {
     COMPONENT_VARIANTS_TSV: "scripts/build_han_component_variants.py",
     KANA_ORIGINS_TSV: "scripts/build_kana_origins.py",
     SUSPECT_FORMS_TSV: "nothing: it is kept by hand from reviewers' decisions",
+    KOKATSUJI_FORMS_TSV: "nothing: it is kept by hand from the blocks' shapes",
     WORDS_TSV: "nothing: it is kept by hand, citing a source per row",
     WORD_SPELLINGS_TSV: "nothing: it is kept by hand, citing a source per row",
     RUBY_SPELLINGS_TSV: "atlas ruby-spellings",
@@ -1396,6 +1398,16 @@ def suspect_forms() -> frozenset[tuple[str, str]]:
     the classifier took it for the reading (可 for 一, a cursive form; 千 for 干, a print look-alike).
     """
     return frozenset((row["label"], row["reads_as"]) for row in _read_tsv(SUSPECT_FORMS_TSV))
+
+
+@cache
+def kokatsuji_forms() -> dict[str, dict[str, str]]:
+    """The hentaigana of 古活字データセット blocks whose 字母 several code points share, by block ID.
+
+    From kokatsuji-forms.tsv: each row repeats the kana and the 字母 the dataset states. The ids are
+    those of the archive imported on 2026-09-11, which the published glyphs come from.
+    """
+    return {row["id"]: row for row in _read_tsv(KOKATSUJI_FORMS_TSV)}
 
 
 @cache

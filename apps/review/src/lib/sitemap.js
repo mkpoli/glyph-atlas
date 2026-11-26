@@ -11,9 +11,9 @@ const xml = body => new Response(`<?xml version="1.0" encoding="UTF-8"?>\n${body
   headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=86400' },
 })
 
-/** The sitemap files the index names: the collection's own pages, and each language's character and grapheme pages. */
+/** The sitemap files the index names: each language's collection pages, and each language's character and grapheme pages. */
 export const index = origin => xml(`<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/sitemaps/pages.xml', ...LOCALES.map(locale => `/sitemaps/characters/${locale.tag}.xml`)]
+${['pages', 'characters'].flatMap(kind => LOCALES.map(locale => `/sitemaps/${kind}/${locale.tag}.xml`))
   .map(path => `  <sitemap><loc>${escape(origin + path)}</loc></sitemap>`).join('\n')}
 </sitemapindex>`)
 

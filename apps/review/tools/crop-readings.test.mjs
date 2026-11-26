@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, opening, pressed, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, readingEntries, rubyLine, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -57,6 +57,36 @@ it('a press grows the run to a character outside it, and leaves one inside it ou
   expect(pressed({ from: 3, to: 5 }, 5, 3)).toEqual({ from: 4, to: 5 })
   expect(pressed({ from: 3, to: 5 }, 5, 5)).toEqual({ from: 3, to: 5 })
   expect(pressed({ from: 20, to: 20 }, 20, 0)).toEqual({ from: 9, to: 20 })
+})
+
+describe('the runs an inspector shows', () => {
+  const run = { run: ['諸', '器'], at: 1 }, alone = { run: ['器'], at: 0 }
+  it('are each as the page writes it, with the notes of how it is read', () => {
+    const slot = { values: [{ ...run, reading: ['しょ', 'き'] }, { ...alone, reading: ['うつわ'] }],
+      ruby: { values: [{ ...run, ruby: ['𛁈よ', 'き'] }, { ...run, ruby: ['しよ', 'き'] }] }, left: { values: [{ run: ['器', 'に'], at: 0, ruby: ['うつわ'] }] } }
+    expect(readingEntries(slot).map(entry => [entry.run.run.join(''), ...['ruby', 'left'].map(side => entry[side].map(value => value.ruby.join(''))), entry.notes.map(value => value.reading.join(''))])).toEqual([
+      ['諸器', ['𛁈よき', 'しよき'], [], ['しょき']], ['器に', [], ['うつわ'], []], ['器', [], [], ['うつわ']]])
+  })
+  it('are none for a crop with none', () => { expect([readingEntries(null), readingEntries({ values: [], ruby: null, left: null })]).toEqual([[], []]) })
+})
+
+describe('a ruby on its line', () => {
+  const value = { run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }, note = { run: ['諸', '器'], at: 1, reading: ['しょ', 'き'] }
+  const on = (text, ruby = { status: 'asserted', values: [value] }) => rubyLine({ text, reading: { status: 'asserted', values: [note], ruby } })
+  it('stands over the run the line holds, in the letters of the page', () => {
+    expect(on('緻密にして諸器に製す')).toEqual({ before: '緻密にして', value, after: 'に製す' })
+    expect(on('諸器')).toEqual({ before: '', value, after: '' })
+  })
+  it('is left off while readers disagree on it, where the line has the run twice or not at all, and for a note alone', () => {
+    expect(on('諸器に製す', { status: 'disputed', values: [value, { ...value, ruby: ['しよ', 'き'] }] })).toBeNull()
+    for (const text of ['諸器と諸器', '諸噐に製す', '諸', '', null]) expect(on(text)).toBeNull()
+    expect(on('諸器', null)).toBeNull()
+    for (const reading of [null, undefined]) expect(rubyLine({ text: '諸器', reading })).toBeNull()
+    expect(rubyLine(null)).toBeNull()
+  })
+  it('stands whether or not its reading is disputed', () => {
+    expect(rubyLine({ text: '諸器', reading: { status: 'disputed', values: [note, { ...note, reading: ['もろ', 'き'] }], ruby: { status: 'accepted', values: [value] } } })?.value).toBe(value)
+  })
 })
 
 describe('what the editor opens with', () => {

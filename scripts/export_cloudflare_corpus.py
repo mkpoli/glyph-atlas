@@ -18,7 +18,7 @@ from export_cloudflare import Packs, encoded
 from glyph_atlas import box_relabel, export_lock, ngrams, style, tone, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
-from glyph_atlas.corpus.details import DetailResolver, _iiif_region, _viewport, unit_label
+from glyph_atlas.corpus.details import DetailResolver, unit_label
 from glyph_atlas.corpus.index import (
     UNIT_CORPORA,
     _char_of_codepoint,
@@ -80,18 +80,6 @@ def held(db, skip=frozenset()):
     return {r[0] for r in db.execute("SELECT id FROM corpus_units")} | set(skip)
 
 
-def holder_context(joined, box, page):
-    """The holder's IIIF region of a unit's context window and that window, or (None, None) when the page
-    has no service, no registered size, or was registered at a scaled rendition, whose boxes are not in
-    the service's pixels; a packed crop then cuts its context from the local page."""
-    service, image = joined.get("image_service"), (page.get("image") or "").rstrip("/")
-    if not service or image not in (service, f"{service}/full/full/0/default.jpg", f"{service}/full/max/0/default.jpg"):
-        return None, None
-    window = _viewport(box, page.get("width"), page.get("height"))
-    url = _iiif_region(service, window, edge=900)
-    return (window, url) if url else (None, None)
-
-
 def attribution(joined):
     """The credit line the source asks for, from the image rights of its registry record, or None."""
     return credit_line((joined.get("image_rights") or {}).get("attribution"))
@@ -101,11 +89,6 @@ def text_attribution(joined):
     """The credit of the transcription that labels the unit, or None when it repeats the image's credit."""
     credit = credit_line(joined.get("text_attribution"))
     return None if credit == attribution(joined) else credit
-
-
-def holder_image(joined, box, enabled):
-    """The holder's own IIIF region of a unit's box when `enabled` and the page has a service."""
-    return _iiif_region(joined.get("image_service"), box, edge=480) if enabled else None
 
 
 #: Corpora the site publishes as its own crops. The Ainu records are merged into the Ainu build and
@@ -345,12 +328,12 @@ def drop_stale(db, ids) -> int:
     return db.execute("DELETE FROM corpus_units WHERE id IN (SELECT id FROM stale_units)").rowcount
 
 
-def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), holder_images=False, layout=None):
+def export(output, *, resume=False, published=None, corpora=None, skip=frozenset(), layout=None):
     """Export every unit corpus, or only those named in `corpora`, leaving out the ids in `skip`. Runs
     read the characters the published layout in `layout` holds (`record_corpus_runs`).
 
-    With `holder_images`, a unit on a page the holder serves through IIIF points at the holder's
-    region of its box, so no crop is packed for it; a pre-cut crop is packed as before.
+    Every exported glyph has its crop (and, for page-backed boxes, its context window) cut from locally
+    held images and packed under `/atlas/media/`; uncached remote images are skipped.
     """
     found = unit_corpora(corpora)
     output.mkdir(parents=True, exist_ok=resume)
@@ -416,48 +399,39 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     continue
                 box = joined.get("box")
                 page = context.page(joined.get("page_id") or "")
-                context_box, context_image = holder_context(joined, box, page)
-                image = joined["thumbnail"].get("iiif_url")
-                # What the site paints in the crop's place until it loads (`glyph_atlas.tone`), read from a
-                # crop packed here; a holder's own image is not fetched for it.
-                painted = {}
-                holder = holder_image(joined, box, holder_images)
-                if holder:
-                    image = holder
-                elif joined["thumbnail"].get("mode") != "remote_iiif":
-                    image = media.corpus_image(joined, api.crops, edge=480)
-                    if not image:
-                        counts["unavailable"] += 1
-                        continue
-                    key = image.rsplit("/", 1)[-1].removesuffix(".webp")
+                if joined["thumbnail"].get("mode") == "remote_iiif":
+                    counts["uncached"] += 1
+                    continue
+                image = media.corpus_image(joined, api.crops, edge=480)
+                if not image:
+                    counts["uncached"] += 1
+                    continue
+                key = image.rsplit("/", 1)[-1].removesuffix(".webp")
+                try:
+                    crop = media.materialize(key)
+                    packs.add(key, crop)
+                    painted = tone.crop_tone(crop)
+                except (OSError, ValueError):
+                    counts["unavailable"] += 1
+                    continue
+                # Every page-backed crop gets a locally packed context cut; a pre-cut dataset has none.
+                context_box, context_image = None, None
+                spec = json.loads((media.directory / key[:2] / (key + ".json")).read_text())
+                if spec.get("box"):
+                    path = media.roots[spec["source"]] / spec["path"]
+                    context_image = media.local(path, spec["box"], context=True)
+                    context_key = context_image.rsplit("/", 1)[-1].removesuffix(".webp")
                     try:
-                        crop = media.materialize(key)
-                        packs.add(key, crop)
-                        painted = tone.crop_tone(crop)
+                        packs.add(context_key, media.materialize(context_key))
                     except (OSError, ValueError):
                         counts["unavailable"] += 1
                         continue
-                    # A page the holder serves shows the holder's region as its context; any other
-                    # page-backed crop gets a context cut with the same coordinate transform, and a
-                    # pre-cut dataset has none.
-                    spec = json.loads((media.directory / key[:2] / (key + ".json")).read_text())
-                    if not context_image and spec.get("box"):
-                        path = media.roots[spec["source"]] / spec["path"]
-                        context_image = media.local(path, spec["box"], context=True)
-                        context_key = context_image.rsplit("/", 1)[-1].removesuffix(".webp")
-                        try:
-                            packs.add(context_key, media.materialize(context_key))
-                        except (OSError, ValueError):
-                            counts["unavailable"] += 1
-                            continue
-                        from PIL import Image
+                    from PIL import Image
 
-                        from glyph_atlas.review.atlas import crop_bounds
-                        with Image.open(path) as picture:
-                            l, t, r, b = crop_bounds(picture, spec["box"], context=True)
-                        context_box = {"x": l, "y": t, "w": r-l, "h": b-t}
-                    elif not context_image:
-                        context_box, context_image = None, None
+                    from glyph_atlas.review.atlas import crop_bounds
+                    with Image.open(path) as picture:
+                        l, t, r, b = crop_bounds(picture, spec["box"], context=True)
+                    context_box = {"x": l, "y": t, "w": r-l, "h": b-t}
                 source = {"corpus": corpus.name, **{k: joined.get(k) for k in
                     ("document_id", "page_id", "line_id", "title", "holder", "shelfmark", "image_service")},
                     "source_url": joined.get("canvas")}
@@ -523,8 +497,6 @@ if __name__ == "__main__":
     parser.add_argument("--skip", type=Path, metavar="IDS",
                         help="leave out the unit ids listed in IDS, one per line: the corpus units "
                              "the site already holds, so a publication adds units without replacing them")
-    parser.add_argument("--holder-images", action="store_true",
-                        help="point units on IIIF pages at the holder's region instead of packing a crop")
     parser.add_argument("--layout", type=Path, default=Path("work/atlas-v3/out"),
                         help="the published layout's local copies (mirror.sqlite, atlas.sqlite), whose reviewed "
                              "and form-decided characters the runs read (default: work/atlas-v3/out)")
@@ -533,4 +505,4 @@ if __name__ == "__main__":
         parser.error(f"{args.layout} holds no mirror.sqlite and atlas.sqlite; the runs need the published layout's characters")
     export(args.output, resume=args.resume, corpora=args.corpora, layout=args.layout,
            published=published_keys(args.records_only) if args.records_only else None,
-           skip=unit_ids(args.skip) if args.skip else frozenset(), holder_images=args.holder_images)
+           skip=unit_ids(args.skip) if args.skip else frozenset())

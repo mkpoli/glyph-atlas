@@ -13,6 +13,14 @@ model = "gemini-4-hydrogen"
 # Work nobody hears, at about a tenth of the price. Without this table Gemini does it.
 api_key_file = "/etc/fish-bot/deepseek-key"
 
+[compendium]
+# 珍字集覽 through its MCP endpoint. She reads it when the chat asks about it, and adds a record or a
+# sighting when someone asks her to, at most this many an hour, and this many for one person. Without a
+# token_file she writes under one anonymous name that she keeps; with one, as the account it belongs to.
+endpoint = "https://rare.glyphatlas.org/mcp"
+writes_per_hour = 10
+writes_per_person_per_hour = 4
+
 [github]
 # A fine-grained token with Issues read/write on this repository only, and Metadata read-only.
 token_file = "/etc/fish-bot/github-token"

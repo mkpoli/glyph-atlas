@@ -286,6 +286,9 @@ mautrix-discord then shows it for accounts logged in to it, as hers is. mautrix-
 passes on no typing for relayed accounts, and QQ's bot API has none for groups
 (@tencent-connect/qqbot-nodejs 1.0.6, `sendTyping`).
 
+A call is answered once its caller has been quiet for three seconds, ten at most, with typing shown
+from the start. A forwarded post or a picture sent right after the call is read in the same turn.
+
 She stays in a conversation. For four minutes after she speaks, she reads each new line in that room
 after a pause of a few seconds and decides whether it is for her: a follow-up, a correction such as
 "I mean the whole server!", or a thank-you gets an answer or an emoji without anyone naming her
@@ -369,6 +372,21 @@ answers with a brief of everything she remembers from every room she reads: what
 building, the subjects that keep coming back, decisions and recent news, in the language of the
 request.
 
+She adds to 珍字集覽 (rare.glyphatlas.org) when someone asks her to, through its MCP endpoint
+(`[compendium]`). A call gets its tools when the caller's lines, the line they answer or the six lines
+before speak of the compendium or of adding; the match is wide, since without the tools she can only ask
+to be called again. Whether an addition was asked for is hers to read from the caller's words, and the
+tools that add stay shut for a caller whose newest line says not to. She adds a record or a sighting, at
+most ten an hour and four for one person, and never the same one twice in a day. She cites the asker's message as a via, and every addition is written down in the table
+`compendium_writes`. Pictures go by public address, so a picture posted only in the chat needs a link.
+She cannot change or remove what is there. Without a token she writes under the one anonymous name the
+endpoint hands her, kept in the table `settings`.
+
+She knows Unicode from `unicode-18.0.0.json.gz`, built by `make_unicode.py` from the Unicode Character
+Database: the block, version and name of every character and the size of every block. Her instructions
+hold the basic facts, and a test compares them with the data. After a new version is published, run
+`python3 make_unicode.py <version> <release date>` and bring both up to it.
+
 She sees pictures. The log keeps the link of each image and sticker people post, and a turn sends
 the newest few among its last lines (four when called, two on a visit) to the model as the
 homeserver's thumbnails, 640 pixels wide, or 320 when a long screenshot passes 3 MB at 640.
@@ -408,10 +426,11 @@ service's group:
 scp apps/fish-bot/fish_bot.py apps/fish-bot/config.example.toml apps/fish-bot/fish-bot.service \
   root@glyphatlas-matrix:/tmp/
 scp apps/fish-bot/stickers/*.png root@glyphatlas-matrix:/opt/fish-bot/stickers/
+scp apps/fish-bot/unicode-*.json.gz root@glyphatlas-matrix:/opt/fish-bot/
 ssh root@glyphatlas-matrix 'set -e
   install -o root -g fish-bot -m 640 /tmp/fish_bot.py /opt/fish-bot/fish_bot.py
-  chown root:fish-bot /opt/fish-bot/stickers/*.png
-  chmod 640 /opt/fish-bot/stickers/*.png
+  chown root:fish-bot /opt/fish-bot/stickers/*.png /opt/fish-bot/unicode-*.json.gz
+  chmod 640 /opt/fish-bot/stickers/*.png /opt/fish-bot/unicode-*.json.gz
   install -o root -g fish-bot -m 640 /tmp/config.example.toml /etc/fish-bot/config.toml
   install -o root -g root -m 644 /tmp/fish-bot.service /etc/systemd/system/fish-bot.service
   rm /tmp/fish_bot.py /tmp/config.example.toml /tmp/fish-bot.service'
@@ -461,15 +480,19 @@ journalctl -u fish-bot -f
 ```
 
 Every model, search and fetch call is counted per day (JST) with its tokens, failures and an
-estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, with each Google Search query at
-$14 per 1,000 (the free 5,000 a month are shared with the account's other projects), logged once a
-day. `[budget] daily_usd` is what calls may cost a day on average. A day may also spend what earlier days
+estimated cost from the price tables of Gemini 4 Hydrogen (Standard) and DeepSeek Flash, logged once a
+day. Google Search queries count as free up to 3,000 a month (Google gives 5,000, shared with the
+account's other projects), then at $14 per 1,000. `[budget] daily_usd` is what calls may cost a day on average. A day may also spend what earlier days
 saved, up to one day's worth, and borrow one day's worth from the next, so a busy evening is not cut off
 and a quiet day pays for it. A call sets $0.05 aside before it is sent and is settled at its real cost
 (one that costs more may pass the limit by the difference). With nothing left no call is sent until
-midnight JST. She opens no rooms unasked while spending
-is ahead of a pace that rises through the day as people write, by the hours of the last two weeks; from 85% she reads 15 lines and one picture and leaves
-bystanders in a conversation alone; with none left she tells a room that calls her, once a day. A
+midnight JST. Her unasked visits have
+their own part of it, let out as people write through the day by the hours of the last two weeks. The last
+$0.35 is kept for people who call her: below it she makes no visits and no digest, reads 15 lines and one
+picture, and leaves bystanders in a conversation alone; with none left she tells a room that calls her, once
+a day, and keeps the call. Once there is money again, or the model answers again after a failure, she
+answers everything missed in a room in one reply, one room at a time while the chat is still; a missed
+call is kept 18 hours. A
 client without a purse sends nothing at all, and only the process systemd runs as `fish-bot.service`
 may call a model: nothing that costs money is ever tested, by anyone or any agent. The last week is
 printed by

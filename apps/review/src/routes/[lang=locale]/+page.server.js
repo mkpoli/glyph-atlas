@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit'
 import { catalogue, request, shuffleSeed } from '$lib/client.js'
-import { characterAddress } from '$lib/addresses.js'
+import { characterAddress, collectionAddress } from '$lib/addresses.js'
 import { keyText } from '$lib/codePoints.js'
 import { localize } from '$lib/i18n.svelte.js'
 import { hasCharacterPage, pointOf } from '$lib/issues.js'
@@ -36,5 +36,11 @@ export async function load({ fetch, params, url }) {
     bare ? frequent('pair', { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).then(items => items.slice(0, KEPT)).catch(() => null) : null,
     request('/atlas/groups/stats', undefined, { fetch, signal: AbortSignal.timeout(READ_TIMEOUT) }).catch(() => null),
   ])
+  // A key of a grapheme's member leads to the grapheme, which the listing names.
+  const named = grapheme && result?.head
+  if (named && named !== grapheme) {
+    const [path, query] = collectionAddress({ q, grapheme: named, work, group }).split('?')
+    redirect(307, localize(path, params.lang) + (query ? '?' + query : ''))
+  }
   return { explore: { seed, q, grapheme, work, group, collection, result, runs, groupStats } }
 }
