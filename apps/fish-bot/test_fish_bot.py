@@ -1128,6 +1128,41 @@ def test_a_held_call_is_answered_by_its_limit_and_before_another_persons(tmp_pat
     assert [turn[:2] for turn in bot.gemini.turns] == [("called", 1), ("called", 2)]
 
 
+def test_a_held_call_keeps_the_room_from_other_turns_and_goes_with_its_message(tmp_path, monkeypatch):
+    bot, matrix, _, clock = talking(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "I mean the other one", "$more", after=0.0)
+    hear(bot, clock, "大肥魚 I mean the other one", "$again", after=2.5)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    clock["now"] += fish_bot.TALK_PAUSE_LIMIT
+    bot.tick()
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "called"]
+    hear(bot, clock, "大肥魚 never mind", "$gone", after=1.0)
+    bot.redact({"type": "m.room.redaction", "redacts": "$gone"})
+    clock["now"] += fish_bot.CALL_PAUSE_LIMIT
+    bot.tick()
+    assert len(bot.gemini.turns) == 2 and bot._held == {}
+
+
+def test_a_line_after_the_call_that_says_not_to_add_shuts_the_tools(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    bot.lookup = fish_bot.Lookup(bot.gemini, None, bot.store, owner="mkpoli", compendium=object())
+    hear(bot, clock, "大肥魚 把這個字加進珍字集覽", "$call", after=1.0)
+    hear(bot, clock, "啊不要加了", "$no", after=1.0)
+    hear(bot, clock, "謝謝", "$thanks", after=fish_bot.CALL_PAUSE)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    assert bot.lookup.offer_compendium and not bot.lookup.may_write
+    bot, _, _, clock = reading_bot(tmp_path / "yes", monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    bot.lookup = fish_bot.Lookup(bot.gemini, None, bot.store, owner="mkpoli", compendium=object())
+    hear(bot, clock, "大肥魚 幫個忙", "$call", after=1.0)
+    hear(bot, clock, "把這個字加進珍字集覽", "$what", after=fish_bot.CALL_PAUSE)
+    assert bot.lookup.may_write and bot.lookup.caller == "@reader:example"
+
+
 def test_waits_for_someone_to_finish_before_following(tmp_path, monkeypatch):
     bot, _, _, clock = talking(tmp_path, monkeypatch)
     for number in range(3):

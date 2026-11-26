@@ -4407,6 +4407,9 @@ class Bot:
             redacts = content.get("redacts")
         if isinstance(redacts, str):
             self.store.delete_event(redacts)
+            for room in [room for room, held in self._held.items() if held.event.get("event_id") == redacts]:
+                del self._held[room]
+                self.matrix.typing(room, self.user_id, timeout_ms=0)
 
     def ingest(self, room_id: str, event: dict[str, Any], *, backfilled: bool) -> None:
         """Keep the readable text of one event in the room's log, with the link to its picture when
@@ -4795,7 +4798,9 @@ class Bot:
     def follow(self) -> None:
         """Look at the lines waiting in the conversations she is in."""
         now = time.monotonic()
-        for room_id in [room for room, talk in self._talks.items() if talk.event_id and talk.due <= now]:
+        # A room where a call waits is read by that call's turn.
+        for room_id in [room for room, talk in self._talks.items()
+                        if talk.event_id and talk.due <= now and room not in self._held]:
             talk = self._talks[room_id]
             event_id, sender, body = talk.event_id, talk.sender, talk.body
             talk.event_id = ""
@@ -4850,7 +4855,7 @@ class Bot:
     def visit(self) -> None:
         """Open the rooms whose time has come, and let the model decide whether to join in."""
         now = time.monotonic()
-        for room_id in [room for room, unread in self._unread.items() if unread["due"] <= now]:
+        for room_id in [room for room, unread in self._unread.items() if unread["due"] <= now and room not in self._held]:
             unread = self._unread[room_id]
             latest = unread.setdefault("latest", unread["due"] + VISIT_BURST_WAIT)
             if now - unread["last"] < VISIT_BURST and now < latest:
@@ -5249,17 +5254,23 @@ class Bot:
             self.lookup.here = room_id
             direct = task in ("called", "follow", "catchup") and trigger is not None
             if asked is None:
-                asked = [(str(row["sender"]), str(row["body"])) for row in events[max(0, (trigger or 0) - 3):]
+                asked = [(str(row["sender"]), str(row["body"])) for row in events[max(0, (trigger or 0) - 3):(trigger or 0) + 1]
                          if direct and row["sender"] == events[trigger]["sender"]]
+            # What the callers sent after the call belongs to it: it can open the compendium, and a line
+            # among it that says not to add shuts the tools, whatever they wrote next.
+            callers = {sender for sender, _ in asked}
+            after = [(str(row["sender"]), str(row["body"])) for row in events[(trigger or 0) + 1:]
+                     if direct and row["sender"] in callers]
+            withdrawn = {sender for sender, line in after if COMPENDIUM_NOT.search(line)}
             # A call opens the compendium when the callers' lines, the line they answer or the talk just
             # before speak of it or of adding. Whether an addition was asked for is hers to read from the
             # callers' words; the tools to add stay shut only for a caller whose newest line says not to.
             around = ([str(row["body"]) for row in events[max(0, (trigger or 0) - COMPENDIUM_RECENT):(trigger or 0)]]
                       + [_column(events[trigger], "reply_body")] if direct else [])
             newest = dict(asked)
-            willing = [sender for sender, line in newest.items() if not COMPENDIUM_NOT.search(line)]
-            asking = [sender for sender in willing if any(COMPENDIUM_ADD.search(line) for who, line in asked if who == sender)]
-            self.lookup.offer_compendium = direct and bool(COMPENDIUM_WORDS.search("\n".join([*(line for _, line in asked), *around])))
+            willing = [sender for sender, line in newest.items() if not COMPENDIUM_NOT.search(line) and sender not in withdrawn]
+            asking = [sender for sender in willing if any(COMPENDIUM_ADD.search(line) for who, line in [*asked, *after] if who == sender)]
+            self.lookup.offer_compendium = direct and bool(COMPENDIUM_WORDS.search("\n".join([*(line for _, line in [*asked, *after]), *around])))
             self.lookup.may_write = self.lookup.offer_compendium and bool(willing)
             self.lookup.caller = (asking[:1] or willing[-1:] or list(newest)[-1:] or [""])[0]
             self.lookup.told = False
