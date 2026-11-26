@@ -29,3 +29,8 @@ def test_a_reading_is_cut_only_where_the_table_allows_one_cut():
 def test_a_left_ruby_keeps_its_side_and_a_bracket_ruby_its_base():
     _, found = packs.line_rubies("《振り仮名：鯡漁図｜ヘロキコイキ｜ニシントリ》ヲ見ル", {}, Counter())
     assert found == [[0, 3, 0, "ヘロキコイキ"], [0, 3, 1, "ニシントリ"]]
+
+
+def test_a_line_is_read_composed_as_the_site_reads_it():
+    key, found = packs.line_rubies("か\u3099｜器（き）", KNOWN, Counter())
+    assert key == "が器" and found == [[1, 1, 0, "き"]]
