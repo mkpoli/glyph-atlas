@@ -410,7 +410,7 @@ def test_a_form_ruled_one_with_a_full_form_elsewhere_goes_there_with_what_hangs_
 def test_a_form_ruled_two_with_a_character_it_holds_leaves_it_behind():
     rows = [edge("甲", "丙", "z"), edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters")]
     found, reasons = decided(rows, forms(丙=[("甲", "甲")]), familiar="丙", hand=ruled(("丙", "丁", "two")))
-    assert "".join(sorted("甲丙")) in found.values() and not any("丁" in members for members in found.values()) and reasons["丙"] == []
+    assert "".join(sorted("甲丙")) in found.values() and not any("丁" in members for members in found.values()) and reasons.get("丙", []) == []
     # With its full form elsewhere, the ruling holds all the same.
     rows = [edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters"), edge("甲", "庚", "z")]
     found, _ = decided(rows, forms(丙=[("甲", "甲")]), familiar="丙", hand=ruled(("丙", "丁", "two")))
@@ -436,6 +436,32 @@ def test_a_form_ruled_one_with_a_full_form_elsewhere_leaves_its_other_full_form_
     for familiar in ("丙", "戊", "丙戊"):
         found, reasons = decided(rows, forms(丙=[("丁", "丁"), ("甲", "甲")]), familiar=familiar, hand=ruled(("丙", "甲", "one")))
         assert set(found.values()) == {"".join(sorted("甲丙戊"))} and reasons["丙"] == []
+
+
+def test_a_form_parted_under_its_rulings_leaves_its_family_the_head_it_had():
+    rows = [edge("甲", "丙", "z"), edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters")]
+    found, _ = decided(rows, forms(丙=[("甲", "甲")]), familiar="甲", hand=ruled(("丙", "甲", "one"), ("丙", "丁", "two")))
+    assert found == {"甲": "".join(sorted("甲丙"))}
+    found, _ = decided(rows[:2], forms(丙=[("甲", "甲"), ("丁", "丁")]), familiar="甲", hand=ruled(("丙", "甲", "one")))
+    assert found == {"甲": "".join(sorted("甲丙"))}
+
+
+def test_a_form_ruled_one_whose_join_is_refused_leaves_its_piece_the_head_it_had():
+    rows = [edge("丁", "丙", "z"), edge("丙", "戊", "z"), edge("甲", "己", "z"), edge("丙", "己", "borrowed", "wikidata")]
+    found, _ = decided(rows, forms(丙=[("丁", "丁"), ("甲", "甲")]), familiar="戊", hand=ruled(("丙", "甲", "one")))
+    assert found.get("戊") == "".join(sorted("丙戊"))
+
+
+def test_a_ruling_parts_a_character_from_a_curated_family_it_is_not_stated_in():
+    rows = [edge("丙", "丁", "z"), edge("丁", "丙", "simplified", "opencc", "STCharacters")]
+    found, _ = decided(rows, forms(丙=[("甲", "甲")]), curated={"甲": ["甲", "丙"]}, hand=ruled(("丙", "丁", "two")))
+    assert not any("丁" in members for members in found.values())
+
+
+def test_a_ruling_a_curated_family_breaks_stops_the_build():
+    rows = [edge("丁", "丙", "simplified", "opencc", "STCharacters"), edge("甲", "戊", "z")]
+    with pytest.raises(ValueError, match="rulings on pairs no rule decides"):
+        decided(rows, forms(丙=[("甲", "甲")]), curated={"丙": ["丙", "丁"]}, hand=ruled(("丙", "丁", "two")))
 
 
 def test_full_forms_the_form_alone_holds_together_are_several_characters():

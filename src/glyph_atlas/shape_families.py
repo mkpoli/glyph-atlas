@@ -756,6 +756,8 @@ def _join_standard_forms(
 
     #: What this pass has joined: no later move parts it.
     accepted: list[frozenset[str]] = []
+    #: What parted with a form ruled one with a full form, to go with it there whole.
+    carried: dict[tuple[str, frozenset[str]], set[str]] = {}
 
     def unit(char: str) -> Family:
         return group.setdefault(char, Family(char, {char}))
@@ -845,36 +847,36 @@ def _join_standard_forms(
         family = unit(form)
         ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
         one = {char for char, ruling in ruled.items() if ruling.one}
-        apart = {char for char in ruled if char not in one and char in family.members}
+        two = {char for char in ruled if char not in one and char in family.members}
         # A form ruled one character with a full form goes there with what hangs on it (`decide`), and leaves its
-        # other full forms; the rules weigh the full forms of a form with no such ruling.
+        # other full forms; the rules weigh the full forms of a form with no such ruling. Each is parted on its own.
+        other = (full - one) & family.members - two if one else set()
         here = set() if one else full & family.members
-        if one:
-            apart |= (full - one) & family.members
-        if not here | apart or {form, *here, *apart} <= family.stated:
-            return False
-        own = part_with(form, here | apart)
-        if own & family.stated and family.stated - own:
-            return False
-        if apart or here and against(form, full, further, table, own):
-            settled.update((form, char) for char in apart if char in ruled)
-            _leave(family, own, group)
-            if one:
-                # What hangs on the form alone goes with it to the character it is ruled one with.
-                unit(form).kept_head = form
-            return True
+        for targets, weighed in ((two, False), (other, False), (here, True)):
+            if not targets or {form, *targets} <= family.stated:
+                continue
+            own = part_with(form, targets)
+            if own & family.stated and family.stated - own:
+                continue
+            if not weighed or against(form, full, further, table, own):
+                if targets is two:
+                    settled.update((form, char) for char in targets)
+                _leave(family, own, group)
+                if one and not one <= own:
+                    carried[form, frozenset(one)] = own
+                return True
         return False
 
     def decide(form: str, full: set[str], further: set[str], edges: list[Edge], table: StandardForm | None) -> Decision | None:
         ruled = {char: rulings[form, char] for char in full | further if (form, char) in rulings}
         full = {char for char, ruling in ruled.items() if ruling.one} or full
         families = {id(unit(char)) for char in full}
+        # A ruling it keeps is settled; one held in its family is not.
+        settled.update((form, char) for char, ruling in ruled.items() if ruling.one or unit(char) is not unit(form))
         if families == {id(unit(form))}:
-            # Joined as it is: no later move parts it. A ruling it keeps is settled; one held in its family is not.
-            settled.update((form, char) for char, ruling in ruled.items() if ruling.one or unit(char) is not unit(form))
+            # Joined as it is: no later move parts it.
             accepted.append(frozenset({form, *full}))
             return None
-        settled.update((form, char) for char in ruled)
         edges += [Edge(row["a"], row["b"], row["relation"], row["source"], row["detail"])
                   for char in sorted(full) for row in between.get(frozenset((form, char)), ())
                   if row["b"] == form and row["relation"] in REDUCED_FORM or "joyo/variant" in row["detail"]]
@@ -940,7 +942,8 @@ def _join_standard_forms(
             found.reasons += [f"ruled two characters: {char}, {rulings[found.form, char].by} {rulings[found.form, char].date}" for char in barred]
         if found.reasons:
             refuse("a standard form: " + found.reasons[0].partition(":")[0], edge)
-        elif why := _take_in(found, group, between, headwords, familiarity, accepted):
+        elif why := _take_in(found, group, between, headwords, familiarity, accepted,
+                             unit(found.form).members <= carried.get((found.form, found.full), set())):
             found.reasons.append(why)
             refuse("a standard form: " + why, edge)
         else:
@@ -1018,16 +1021,16 @@ def _kept_apart(
 
 def _take_in(
     found: Decision, group: dict[str, Family], between: Mapping[frozenset[str], list[Mapping[str, str]]],
-    headwords: Headwords, familiarity: Mapping[str, int], accepted: Iterable[frozenset[str]] = (),
+    headwords: Headwords, familiarity: Mapping[str, int], accepted: Iterable[frozenset[str]] = (), whole: bool = False,
 ) -> str | None:
     """Join one standard form to the family of its full form, or say why what it brings along cannot. `accepted` are the
-    joins a move does not part."""
+    joins a move does not part; `whole` moves all of the form's family, which parted with it to go there."""
     form = found.form
     source = group.get(form) or Family(form, {form})
     target = group.get(min(found.full)) or Family(min(found.full), {min(found.full)})
     if source is target:
         return None
-    moved = _part_of(form, source, familiarity)
+    moved = set(source.members) if whole and not source.curated else _part_of(form, source, familiarity)
     # A member the dictionaries hold apart from the family stays behind, with what hangs on it alone.
     left = {char for char in moved - {form} if any(headwords.two(char, member) for member in target.members)}
     if left:
