@@ -1,3 +1,4 @@
+import { isSeal } from './cardTiers.js'
 import { keyText } from './codePoints.js'
 import { hasCharacterPage } from './issues.js'
 
@@ -27,6 +28,10 @@ export const graphemeAddress = (key, text, shown = {}) => hasCharacterPage(text)
 
 /** The grapheme a card's character is a form of: a card that names none is its own. */
 export const graphemeOf = card => card.grapheme ?? card
+/** The grapheme key an address leads to when it names a card's character, for a round or a listing: its
+ *  grapheme's, which a key that was a head's before a table filed it under another leads to as well. A small
+ *  seal character's is its own (docs/decisions/0015-small-seal-forms.md). */
+export const ledTo = card => isSeal(card.char) ? card.code_point : graphemeOf(card).code_point
 /** The page a card's gallery is on, as it is widened. */
 export const galleryAddress = (card, expand, shown = {}) => expand === 'grapheme' ? graphemeAddress(graphemeOf(card).code_point, graphemeOf(card).char, shown)
   : characterAddress(card.code_point, { ...shown, scope: expand === 'variants' ? 'variants' : null })

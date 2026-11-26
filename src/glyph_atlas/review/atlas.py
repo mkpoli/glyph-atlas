@@ -151,16 +151,23 @@ def grapheme_of(text: str) -> str | None:
 GRAPHEME_KEY = r"^U\+[0-9A-F]{4,6}( U\+[0-9A-F]{4,6})*$"
 
 
+def grapheme_key(value: str | None) -> str | None:
+    """A grapheme's key as a request names it, upper-cased with single spaces, or None when it names none."""
+    key = " ".join((value or "").upper().split())
+    if key and (not re.fullmatch(GRAPHEME_KEY, key)
+                or any(point > 0x10FFFF or 0xD800 <= point <= 0xDFFF for point in (int(one.removeprefix("U+"), 16) for one in key.split(" ")))):
+        raise BadRequest("Invalid grapheme.")
+    return key or None
+
+
 def grapheme_members(key: str) -> list[str]:
     """The characters a grapheme is written as, by the character table: は's family is は, ハ and its
     hentaigana. A key that names no family is its own text alone, and so is one that names a family's
     member: its round is that member's, as on the hosted site."""
-    points = key.split(" ")
-    if not re.fullmatch(GRAPHEME_KEY, key) or any(int(point.removeprefix("U+"), 16) > 0x10FFFF for point in points):
-        raise BadRequest("Invalid grapheme.")
+    key = grapheme_key(key) or ""
     info = refs.grapheme_info(key) if refs.grapheme(key) == key else None
     # The family's head first, as the character table lists its members.
-    return [member["char"] for member in info["members"]] if info else [refs.from_code_points(points)]
+    return [member["char"] for member in info["members"]] if info else [refs.from_code_points(key.split(" "))]
 
 
 def single_character(text: str) -> bool:
@@ -1030,7 +1037,10 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                       file_stamp(production_metadata.OVERRIDES))
         units, all_states, kinds, books, titles, skips, reviewed = catalogue_snapshot(generation)
         document = document or None
-        grapheme = " ".join(grapheme.upper().split()) if grapheme else None
+        grapheme = grapheme_key(grapheme)
+        # A listing under a member's key is its grapheme's, and a small seal character's is its own, as on the hosted site.
+        if grapheme and purpose != "review" and not refs.is_small_seal(refs.from_code_points(grapheme.split(" "))):
+            grapheme = refs.grapheme(grapheme) or grapheme
         # A round names its grapheme, and deals every character the character table files under it.
         members = grapheme_members(grapheme) if purpose == "review" and grapheme else None
         records = [(u, rev) for u, rev in units
@@ -1057,7 +1067,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
         counts = Counter(states[u.id] for u, _ in records)
         searched = matches(records, q) if q else records
         families = {name: grapheme_of(name) for name in categories}
-        # A member's key names that character alone, as on the hosted site.
+        # A member's key, of a round or a small seal character, names that character alone.
         alone = grapheme if grapheme and refs.grapheme(grapheme) not in (None, grapheme) else None
         selected = [(u, rev) for u, rev in searched if (character is None or shown(u) == character)
                     and (grapheme is None or (" ".join(refs.to_code_points(shown(u))) == alone if alone else families.get(shown(u)) == grapheme))
@@ -1090,7 +1100,7 @@ def router(store: Store, *, corpus_reviews=None, media=None) -> APIRouter:
                 "purpose": purpose, "production": scope, "review_epoch": store.review_epoch(),
                 "query": q or None, "matched": len(searched) if q else None,
                 **({"grapheme": {"code_point": grapheme, "char": refs.from_code_points(grapheme.split(" ")),
-                                 "members": members}} if members is not None else {}),
+                                 "members": members}} if members is not None else {"head": grapheme} if grapheme else {}),
                 "categories": [{"label": name, "grapheme": families[name], **{key: c[key] for key in
                                   ("total", "pending", "seen", "checked", "flagged", "hard", "skipped")}}
                                for name, c in sorted(categories.items(), key=lambda x: (-x[1]["total"], x[0]))],

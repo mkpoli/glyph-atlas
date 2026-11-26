@@ -105,8 +105,22 @@ export function roundGraphemes(categories) {
   return [...groups.values()].sort((a, b) => b.pending - a.pending || a.label.localeCompare(b.label))
 }
 
-/** Whether a grapheme's counts hold the round a key names: its own, or that of one of its characters alone. */
-export const dealsFor = (group, key) => group.label === key || group.members.some(m => m.label === graphemeText(key))
+/**
+ * The round to deal, `{ chosen, result }`, both null for none: the one `named`, whatever the counts (`available`) hold,
+ * since they are the last publication's and a round deals by the tables as they stand; or the `next` of the counts. One
+ * that `deal` finds no crop for gives way to the next. `left` says the round is no longer wanted.
+ */
+export async function dealtRound(available, named, next, deal, left = () => false) {
+  for (let tries = 0; tries < 8; tries++) {
+    const chosen = tries === 0 && named || next(available)
+    if (!chosen) break
+    const result = await deal(chosen)
+    if (left()) break
+    if (result.items.length) return { chosen, result }
+    available = available.filter(group => group.label !== chosen)
+  }
+  return { chosen: null, result: null }
+}
 
 /** The next grapheme to review: an unvisited full round, then an unvisited smaller one, largest first. */
 export function nextGrapheme(categories, current, history, seed) {
