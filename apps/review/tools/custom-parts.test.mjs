@@ -11,6 +11,7 @@ describe('a saved form holding a part no code point names', () => {
     expect(tokenize('⿱&X-00087;龴').map(token => [token.start, token.end])).toEqual([[0, 11], [1, 10], [10, 11]])
     expect(tokens('⿱&X-00087;龴')).toEqual(['⿱', '&X-00087;', '龴'])
     expect(parse('⿱&X-0087;龴').problem).toBe('component')
+    expect(parse('⿱&X-00087;\uFE00龴').problem).toBe('component')
   })
   it('stands as one part of a text', () => {
     expect(scriptParts('⿱&X-00087;龴令').map(part => part.text)).toEqual(['⿱&X-00087;龴', '令'])

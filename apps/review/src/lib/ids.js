@@ -107,6 +107,8 @@ export function parse(text, { open = false } = {}) {
     if (!n) {
       if (open && EMPTY_READ.has(char)) return null
       if (!isComponent(char) && !(open && isLetter(char))) throw 'component'
+      // A part no code point names takes no variation selector.
+      if (isPart(char) && isSelector(chars[at])) throw 'component'
       return isSelector(chars[at]) ? char + chars[at++] : char
     }
     return { op: char, parts: Array.from({ length: n }, read) }

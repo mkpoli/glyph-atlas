@@ -20,7 +20,7 @@ export function paintDrawing(text) {
   text = text.normalize('NFC')
   if (painted.has(text)) return Promise.resolve(painted.get(text))
   if (typeof Worker === 'undefined') return Promise.resolve(null)
-  if (!painting.has(text)) painting.set(text, composerText(text).then(sequence => composerPainter().paint(sequence), () => null).then(drawn => {
+  if (!painting.has(text)) painting.set(text, composerText(text).then(sequence => composerPainter().paint(sequence)).catch(() => null).then(drawn => {
     const url = drawn?.d ? URL.createObjectURL(new Blob([drawingSvg(drawn)], { type: 'image/svg+xml' })) : null
     painted.set(text, url)
     painting.delete(text)

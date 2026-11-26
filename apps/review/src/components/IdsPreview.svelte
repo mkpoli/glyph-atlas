@@ -9,6 +9,7 @@
   // The preview only shows: a sequence with an empty slot is never saved (`IdsComposer`).
   import { fade } from 'svelte/transition'
   import { composerDrawer } from '../lib/composer/config.js'
+  import { composerText } from '../lib/composer/parts.js'
   import { tooLarge } from 'han-compose'
   import { FACE, STROKE, badge, placeholder } from '../lib/composer/preview.js'
   import { roughLayout } from '../lib/composer/rough.js'
@@ -42,8 +43,9 @@
         shown = { key: ++shownCount, url }
         step = 'final'
       })
-      composerDrawer().draw(text, sketch => { if (live) sketched = { text, leaves: sketch } }).then(answer => {
-        if (!live || final) return
+      // A part no code point names is drawn by the name the composer knows it by (`parts.js`).
+      composerText(text).catch(() => text).then(drawable => live ? composerDrawer().draw(drawable, sketch => { if (live) sketched = { text, leaves: sketch } }) : null).then(answer => {
+        if (!answer || !live || final) return
         if (answer.status === 'composed') { shown = { key: ++shownCount, drawn: answer.drawn, text }; step = 'composed' }
         else { shown = null; step = 'failed' }
       })
