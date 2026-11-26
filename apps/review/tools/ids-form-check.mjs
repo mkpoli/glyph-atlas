@@ -540,7 +540,7 @@ try {
   await typeSequence(spellings[3])
   await becomes(spellings[3])
   await browser.evaluate('document.querySelector(".ids-use").click()')
-  await browser.waitFor('!document.querySelector(".ids-composer")')
+  await browser.waitFor('[...document.querySelectorAll(".crop-form .form-chip")].some(chip => chip.getAttribute("aria-pressed") === "true" && chip.textContent.includes("率"))')
   await browser.evaluate('document.querySelector(".save-character").click()')
   await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
   assert(claimed(id).includes(spellings[3]), 'the selector was lost in the saved claim')

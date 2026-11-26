@@ -654,7 +654,7 @@
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
   {#if rateForms.length}
     <fieldset class="ids-rate-forms">
-      <legend class="ids-title">{t('form.ids.swaps', { part: rateForms[0].host })}</legend>
+      <legend class="ids-title">{t('chips.forms')} · {rateForms[0].host}</legend>
       <div class="ids-rate-options">
         {#each rateForms as form (form.id)}
           <button type="button" class="ids-rate-option" {disabled} aria-pressed={rateToken === form.text}
