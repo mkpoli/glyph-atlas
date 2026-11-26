@@ -370,9 +370,11 @@ building, the subjects that keep coming back, decisions and recent news, in the 
 request.
 
 She adds to 珍字集覽 (rare.glyphatlas.org) when someone asks her to, through its MCP endpoint
-(`[compendium]`). A turn gets its tools only when the lines ask about it; it may read the records then,
-and when the asker's own words ask for an addition it may add a record or a sighting, at most ten an
-hour and four for one person, and never the same one twice in a day. She cites the asker's message as a via, and every addition is written down in the table
+(`[compendium]`). A call gets its tools when the caller's lines, the line they answer or the six lines
+before speak of the compendium or of adding; the match is wide, since without the tools she can only ask
+to be called again. Whether an addition was asked for is hers to read from the caller's words, and the
+tools that add stay shut for a caller whose newest line says not to. She adds a record or a sighting, at
+most ten an hour and four for one person, and never the same one twice in a day. She cites the asker's message as a via, and every addition is written down in the table
 `compendium_writes`. Pictures go by public address, so a picture posted only in the chat needs a link.
 She cannot change or remove what is there. Without a token she writes under the one anonymous name the
 endpoint hands her, kept in the table `settings`.
