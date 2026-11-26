@@ -1600,8 +1600,6 @@ def main():
         cid = m.known(text_id)
         return entry(cid).get("record_place") if cid is not None else None
 
-    validate_catalogue_images(src, catalogue.parent if catalogue else None, tables, media, published_place)
-
     # A catalogue made from published records (relabel.py) says what it was made from. A crop reviewed or a
     # page published since, here or on the site, would be put back, so it is made again instead.
     if "based_on" in tables:
@@ -1640,6 +1638,7 @@ def main():
     if withdrawing and (len(withdrawing) < len(units) or "corpus_units" in tables or args.replacements):
         sys.exit("a withdrawal catalogue (withdraw.py) holds withdrawn units alone and is published without "
                  "--replacements; nothing published")
+    validate_catalogue_images(src, catalogue.parent if catalogue else None, tables, media, published_place)
     # A live crop with another box or image on its own page is re-cut: it keeps its id and its cut
     # moves on, so claims and reviews made on the old cut stay with it.
     recut = set()
