@@ -33,15 +33,17 @@ export function beside(parts, at, neighbours) {
 /**
  * Where a crop stands on its line: the line's characters, its place among them, and under `also` the
  * line's other places of its character. A character the line has several times is the one whose neighbours
- * agree most. A crop whose line does not hold its character stands among the labels of its neighbours, or alone.
+ * agree most (`sure` says whether the place is known). A crop whose line does not hold its character (`held`) stands
+ * among the labels of its neighbours, or alone.
  */
 export function cropLine(crop, neighbours = []) {
   const parts = textParts(crop.text), chars = charsOf(crop)
   const places = parts.flatMap((part, i) => chars.some(char => same(part, char)) ? [i] : [])
   if (places.length) {
     const agreeing = places.map(place => beside(parts, place, neighbours).size)
-    const at = places[agreeing.indexOf(Math.max(...agreeing))]
-    return { parts, at, also: places.filter(place => place !== at) }
+    const most = Math.max(...agreeing), at = places[agreeing.indexOf(most)]
+    // The place is sure where the line writes the character once, or one place alone agrees most with the neighbours.
+    return { parts, at, also: places.filter(place => place !== at), held: true, sure: places.length === 1 || (most > 0 && agreeing.filter(n => n === most).length === 1) }
   }
   const line = neighbours.filter(one => one.offset === 0 || one.label).sort((a, b) => a.offset - b.offset)
   const here = line.findIndex(one => one.offset === 0), own = composed(crop.written_character ?? crop.label)
@@ -61,18 +63,81 @@ export function rubyLine(crop) {
   return { before: parts.slice(0, starts[0]).join(''), value, after: parts.slice(starts[0] + value.run.length).join('') }
 }
 
+/**
+ * The rubies a crop's transcription gives its line (`transcribed_ruby`: start and length over the line's
+ * letters and numbers, side, and the reading over the base or over each character), placed on the line's
+ * characters: `{ from, to, side, run, ruby }`. One whose base the line parts is left out.
+ */
+export function transcribedRubies(crop) {
+  const parts = textParts(crop?.text), places = parts.flatMap((part, i) => /^[\p{L}\p{N}]/u.test(part) ? [i] : [])
+  return (crop?.transcribed_ruby ?? []).flatMap(([start, length, side, reading]) => {
+    const from = places[start], to = places[start + length - 1]
+    if (from === undefined || to === undefined || to - from !== length - 1) return []
+    return [{ from, to, side: side ? 'left' : 'right', run: parts.slice(from, to + 1), ruby: [reading].flat() }]
+  })
+}
+
+/**
+ * The transcription's rubies over the crop itself, as the entries a reading has: each run with its ruby and
+ * 左訓, marked `transcribed`. None where the line writes the crop's character more than once, since nothing
+ * says which place is the crop's until its neighbours are read (`at` names the place once they are).
+ */
+export function transcribedEntries(crop, at = null) {
+  if (!crop?.transcribed_ruby?.length) return []
+  const line = cropLine(crop)
+  if (!line.held || (at === null && !line.sure)) return []
+  const place = at ?? line.at, entries = []
+  for (const ruby of transcribedRubies(crop)) {
+    if (place < ruby.from || place > ruby.to) continue
+    const value = { run: ruby.run, at: place - ruby.from, ruby: ruby.ruby }
+    let entry = entries.find(one => together(one.run, value))
+    if (!entry) entries.push(entry = { run: value, ruby: [], left: [], notes: [], transcribed: true })
+    entry[ruby.side === 'left' ? 'left' : 'ruby'].push(value)
+  }
+  return entries
+}
+
+/**
+ * A crop's line as it is shown: stretches of text, and runs under a ruby. A ruby readers claim stands first; the
+ * transcription's right rubies fill the rest of the line, the outer of two that overlap. Null for a line with none.
+ */
+export function lineRubies(crop) {
+  const parts = textParts(crop?.text), claimed = rubyLine(crop), spans = []
+  if (claimed) { const from = textParts(claimed.before).length; spans.push({ from, to: from + claimed.value.run.length - 1, value: claimed.value }) }
+  const given = transcribedRubies(crop)
+  if (given.length) {
+    const place = cropLine(crop), own = place.held && place.sure ? place.at : -1
+    for (const ruby of given) {
+      if (ruby.side !== 'right' || spans.some(span => ruby.from <= span.to && ruby.to >= span.from)) continue
+      spans.push({ from: ruby.from, to: ruby.to, value: { run: ruby.run, at: own >= ruby.from && own <= ruby.to ? own - ruby.from : -1, ruby: ruby.ruby }, transcribed: true })
+    }
+  }
+  if (!spans.length) return null
+  const line = []
+  let at = 0
+  for (const span of spans.sort((a, b) => a.from - b.from)) {
+    if (span.from > at) line.push({ text: parts.slice(at, span.from).join('') })
+    line.push({ value: span.value, transcribed: Boolean(span.transcribed) })
+    at = span.to + 1
+  }
+  if (at < parts.length) line.push({ text: parts.slice(at).join('') })
+  return line
+}
+
 const together = (a, b) => a.at === b.at && JSON.stringify(a.run) === JSON.stringify(b.run)
 /**
  * What the inspector shows of a crop's runs: each run with the rubies the page writes beside it, and the notes
  * readers make of how it is read.
  */
-export function readingEntries(slot) {
+export function readingEntries(slot, crop = null) {
   const entries = []
   for (const [field, values] of [['ruby', slot?.ruby?.values], ['left', slot?.left?.values], ['notes', slot?.values]]) for (const value of values ?? []) {
     let entry = entries.find(one => together(one.run, value))
     if (!entry) entries.push(entry = { run: value, ruby: [], left: [], notes: [] })
     entry[field].push(value)
   }
+  // What the transcription gives the crop stands until a reader says how the same run is written.
+  if (crop) entries.push(...transcribedEntries(crop).filter(given => !entries.some(one => one.ruby.length && together(one.run, given.run))))
   return entries
 }
 
@@ -89,6 +154,14 @@ export function opening(slot, user) {
   const value = reading ?? ruby ?? left ?? null, beside = one => value && one && together(value, one) ? one.ruby : []
   return { value, reading: reading?.reading ?? [], ruby: beside(ruby), left: beside(left), method: reading?.methods?.[0] ?? null }
 }
+
+/** What the editor opens with where no reader has said anything: the ruby and 左訓 the transcription gives the
+ *  crop's place on its line (`at`), over their run, or null. */
+export function openingTranscribed(crop, at = null) {
+  const [entry] = transcribedEntries(crop, at)
+  return entry ? { value: entry.run, reading: [], ruby: entry.ruby[0]?.ruby ?? [], left: entry.left[0]?.ruby ?? [], method: null } : null
+}
+
 
 /** The places a run around `at` can reach: the characters up to the punctuation either side of it. */
 export function stretch(parts, at) {

@@ -791,6 +791,8 @@
   "reading.places.all": "All books",
   "reading.places.confirm": "Read {reading}",
   "reading.places.none": "No other places",
+  "reading.transcribed": "transcription",
+  "reading.confirm": "Check",
   "reading.letters": "Letters of this kana",
   "reading.jibo": "Derived from {char}",
   "reading.needed": "Write the ruby or a reading.",

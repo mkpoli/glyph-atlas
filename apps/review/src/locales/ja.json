@@ -751,6 +751,8 @@
   "reading.places.all": "すべての本",
   "reading.places.confirm": "{reading}と読む",
   "reading.places.none": "ほかの箇所はありません",
+  "reading.transcribed": "翻刻",
+  "reading.confirm": "確かめる",
   "reading.letters": "この仮名の字体",
   "reading.jibo": "字母{char}",
   "reading.needed": "振り仮名か読みを入力してください。",

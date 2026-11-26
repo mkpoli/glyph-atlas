@@ -753,6 +753,8 @@
   "reading.places.all": "Tất cả sách",
   "reading.places.confirm": "Đọc là {reading}",
   "reading.places.none": "Không có nơi khác",
+  "reading.transcribed": "bản phiên",
+  "reading.confirm": "Kiểm tra",
   "reading.letters": "Các dạng của chữ này",
   "reading.jibo": "Chữ gốc {char}",
   "reading.needed": "Hãy ghi chữ ghi cách đọc hoặc cách đọc.",
