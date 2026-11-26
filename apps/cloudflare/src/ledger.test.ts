@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { checkClaims, PREDICATES, RESOLVER, resolveWriteQuery, type Member } from './ledger'
+import { checkClaims, type CropNow, PREDICATES, RESOLVER, resolveWriteQuery, restsOn, type Member } from './ledger'
 
 const fail = (status: number, message: string): never => { throw new Error(`${status} ${message}`) }
 const member = (fields: Partial<Member>): Member => ({ object: null, value: null, confidence: null, confidence_scheme: null, ...fields })
@@ -44,9 +44,21 @@ test('an attestation names a word or a gloss, how the sense is known, and how su
   expect(refused([member({ value: { gloss: 'herring ' }, confidence: 1, confidence_scheme: 'form' })], 'gloss')).toContain('is not a value')
 })
 
-test('the resolver names its version and compares crop evidence by crop and cut', () => {
+test('the resolver names its version and reads crop evidence on the crop as it stands', () => {
   expect(resolveWriteQuery()).toContain(`'${RESOLVER}' AS resolver`)
-  expect(resolveWriteQuery()).toContain('e.cut IS NOT (SELECT c.cut+EXISTS(SELECT 1 FROM reviews rv WHERE rv.crop=c.id AND rv.x IS NOT NULL)')
+  expect(resolveWriteQuery()).toContain('AND NOT EXISTS (SELECT 1 FROM (SELECT c.cut,c.kind,rv.crop AS waits,n.pixels,')
   expect(resolveWriteQuery()).not.toContain('crop_now')
   expect(resolveWriteQuery()).not.toMatch(/^\s*--/m)
+})
+
+test('a claim rests on the image and the box its evidence names', () => {
+  const crop = (fields: Partial<CropNow> = {}): CropNow => ({ id: 1, cut: 1, kind: 0, text: 'ex:1', version: 'c1@px@0,0,9,9',
+    published: { cut: 1, pixels: ['@px', '@webp'], box: '@0,0,9,9' }, ...fields })
+  const waiting = crop({ cut: 2, version: 'c1@px@1,0,9,9' })
+  for (const [held, at, cut, version] of [
+    [true, crop(), 1, 'ex:1@px@0,0,9,9'], [true, crop(), 0, 'ex:1@px@0,0,9,9'], [true, crop(), 1, 'ex:1@webp@0,0,9,9'],
+    [false, crop(), 1, 'ex:1@other@0,0,9,9'], [true, crop({ published: { cut: 1, pixels: null, box: null }, version: null }), 1, 'ex:1@other@0,0,9,9'], [false, crop(), 1, 'c1@px@1,0,9,9'], [false, crop(), 1, null],
+    [true, waiting, 2, 'c1@px@1,0,9,9'], [false, waiting, 2, 'c1@px@2,0,9,9'], [false, waiting, 1, 'c1@px@0,0,9,9'], [false, waiting, 2, 'c1@other@1,0,9,9'], [true, { ...waiting, kind: 1 }, 2, 'c1@other@1,0,9,9'],
+    [true, crop({ kind: 1 }), 1, 'c1@older@5,5,5,5'], [false, crop({ kind: 1 }), 0, 'c1@older@0,0,9,9'],
+  ] as const) expect([at.cut, cut, version, restsOn(at, cut, version)]).toEqual([at.cut, cut, version, held])
 })

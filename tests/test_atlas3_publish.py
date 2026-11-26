@@ -642,6 +642,211 @@ def test_a_re_cut_to_a_redrawn_box_leaves_it_pending_no_longer(layout, monkeypat
         assert boxes == {a2: [None] * 4, a1: [3, 3, 5, 5]}
 
 
+class Drawn:
+    """ex:a2 on the site: drawn, claimed on, and cut again by a publication from a page image."""
+
+    def __init__(self, layout, monkeypatch, tmp_path):
+        self.root, self.publish, remote = layout
+        self.monkeypatch, self.path, self.remote = monkeypatch, tmp_path / "c.sqlite", remote
+        self.site, self.crop = remote.dbs["glyph-atlas-v3"], ids(self.root)["ex:a2"]
+        # As the Worker resolves a slot after a write, from the crop as its page record shows it.
+        self.record = {"box": {"x": 0, "y": 20, "w": 10, "h": 10}, "image_sha256": "px1"}
+
+    def claims(self):
+        return importlib.import_module("claims")
+
+    def resolve(self):
+        cut = self.site.execute("SELECT cut FROM crops WHERE id=?", (self.crop,)).fetchone()[0]
+        self.site.executescript("\n".join(self.claims().settle_statements([self.claims().shown_as(self.crop, cut, self.record)])))
+
+    def draw(self, box):
+        self.site.execute("INSERT OR REPLACE INTO reviews(crop, gen, at, char, state, x, y, w, h) SELECT id, 0, 0, char, 1, ?, ?, ?, ? FROM crops WHERE id=?",
+                          (*(box or [None] * 4), self.crop))
+        self.resolve()
+
+    def claim(self, by, box, value, pixels="px1"):
+        effective = self.site.execute(f"SELECT {self.claims().effective_cut(self.crop)}").fetchone()[0]
+        self.site.execute("INSERT INTO assertions(id,subject,crop,cut,predicate,scope,slot,object,tier,asserted_by,asserted_at) "
+                          "VALUES(?,'ex:a2',?,?,'has_grapheme','','',?,'observed',?,'2026-01-01T00:00:00.000Z')", (by, self.crop, effective, value, by))
+        self.site.execute("INSERT INTO assertion_evidence(assertion,kind,ref,crop,cut) VALUES(?,'crop',?,?,?)",
+                          (by, f"x@{pixels}@{','.join(map(str, box))}", self.crop, effective))
+        self.resolve()
+
+    def publish_box(self, box, pixels="px1"):
+        self.record = {"box": dict(zip("xywh", box, strict=True)), "image_sha256": pixels}
+        *rest, data = unit("ex:a2", "hl:p1", self.record["box"], "い", state="checked", revision=3)
+        self.path.unlink(missing_ok=True)
+        run(self.publish, self.monkeypatch, catalogue(self.path, [(*rest, json.dumps({**json.loads(data), "image_sha256": pixels}))]))
+
+    def held(self):
+        """The slot as the site's readers find it: by the crop's effective cut."""
+        self.site.row_factory = None
+        return self.site.execute("SELECT status, object, supporting FROM current_claims c WHERE c.crop=? AND c.predicate='has_grapheme' AND c.cut="
+                                 + self.claims().effective_cut("c.crop"), (self.crop,)).fetchall()
+
+
+@pytest.fixture
+def drawn(layout, monkeypatch, tmp_path):
+    return Drawn(layout, monkeypatch, tmp_path)
+
+
+B, C, D = [2, 22, 12, 9], [3, 23, 12, 9], [4, 24, 12, 9]
+
+
+def test_a_claim_made_on_a_drawn_box_while_it_is_published_holds_on_it(drawn):
+    drawn.draw(B)
+    upload, claimed = drawn.remote.upload, []
+    drawn.monkeypatch.setattr(drawn.publish, "upload", lambda files, *rest: (
+        claimed or claimed.append(drawn.claim("r1", B, "U+4E00")), upload(files, *rest)))
+    drawn.publish_box(B)
+    assert claimed and drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+
+
+def test_a_claim_on_a_drawn_box_holds_through_the_publication_of_the_boxes_drawn_before_it(drawn):
+    """B is exported, and C drawn over it; C is exported, and D drawn over that and claimed."""
+    drawn.draw(C)
+    drawn.publish_box(B)
+    drawn.draw(D)
+    drawn.claim("r1", D, "U+4E00")
+    drawn.publish_box(C)
+    assert drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+    drawn.publish_box(D)
+    assert drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+    assert drawn.site.execute("SELECT x FROM reviews WHERE crop=?", (drawn.crop,)).fetchone() == (None,)
+
+
+def test_a_claim_on_another_box_is_not_read_on_the_one_published_and_comes_back_with_its_own(drawn):
+    drawn.claim("r0", [0, 20, 10, 10], "U+4E00")
+    drawn.draw(B)
+    drawn.claim("r1", B, "U+4E8C")
+    drawn.draw(C)
+    assert drawn.held() == []
+    drawn.claim("r2", C, "U+4E09")
+    assert drawn.held() == [("asserted", "U+4E09", '["r2"]')]
+    # D, which nobody claimed on, is published: C waits still, and undone leaves D with no claim.
+    drawn.publish_box(D)
+    assert drawn.held() == [("asserted", "U+4E09", '["r2"]')]
+    drawn.draw(None)
+    assert drawn.held() == []
+    for box, held in ((B, [("asserted", "U+4E8C", '["r1"]')]), ([0, 20, 10, 10], [("asserted", "U+4E00", '["r0"]')]), (D, [])):
+        drawn.draw(box)
+        assert drawn.held() == held, box
+    drawn.draw(B)
+    drawn.publish_box(B)
+    assert drawn.held() == [("asserted", "U+4E8C", '["r1"]')]
+
+
+def test_a_claim_on_a_box_drawn_back_to_the_one_published_holds_before_and_after(drawn):
+    drawn.claim("r0", [0, 20, 10, 10], "U+4E00")
+    drawn.draw(B)
+    drawn.draw([0, 20, 10, 10])
+    drawn.claim("r1", [0, 20, 10, 10], "U+4E00")
+    assert drawn.held() == [("asserted", "U+4E00", '["r0","r1"]')]
+    # The same box again is no new cut, so the drawing waits still.
+    drawn.publish_box([0, 20, 10, 10])
+    assert drawn.held() == [("asserted", "U+4E00", '["r0","r1"]')]
+    drawn.draw(None)
+    assert drawn.held() == [("asserted", "U+4E00", '["r0","r1"]')]
+
+
+def test_a_claim_on_a_drawn_box_of_a_page_image_since_replaced_holds_no_longer(drawn):
+    drawn.publish_box(B)
+    drawn.draw(C)
+    drawn.claim("r1", C, "U+4E00")
+    drawn.publish_box(B, "px2")
+    assert drawn.site.execute("SELECT cut FROM crops WHERE id=?", (drawn.crop,)).fetchone() == (2,)
+    assert drawn.held() == []
+    drawn.draw(None)
+    assert drawn.held() == []
+    drawn.draw(C)
+    assert drawn.held() == []
+
+
+def test_a_claim_on_a_drawn_box_does_not_hold_on_that_box_published_from_another_page_image(drawn):
+    drawn.publish_box(B)
+    drawn.draw(C)
+    drawn.claim("r1", C, "U+4E00")
+    drawn.publish_box(C, "px2")
+    assert drawn.held() == []
+    drawn.publish_box(C, "px1")
+    assert drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+
+
+def test_runs_a_publication_filed_by_a_claim_are_filed_back_when_it_stops_whoever_fails_to(drawn):
+    """The claim on C is revived by the publication of B, whose reconcile files the run; C is drawn over, and the Worker's filing fails."""
+    root, site, runs = drawn.root, drawn.site, drawn.remote.dbs["glyph-atlas-v3-runs"]
+    a1 = ids(root)["ex:a1"]
+    filed = lambda: runs.execute("SELECT graphemes FROM runs").fetchall()
+    drawn.draw(C)
+    drawn.claim("r1", C, "U+4E00")
+    drawn.publish_box(B)
+    assert filed() == [("あ一",)] and runs.execute("SELECT first, size, crop FROM run_moves").fetchall() == [(a1, 2, drawn.crop)]
+    drawn.draw(D)
+    site.commit()
+    assert drawn.held() == [] and filed() == [("あ一",)]
+    drawn.path.unlink()
+    run(drawn.publish, drawn.monkeypatch, catalogue(drawn.path, [unit("ex:a4", "hl:p1", {"x": 0, "y": 60, "w": 10, "h": 10}, "お")]))
+    assert filed() == [("あい",)] and runs.execute("SELECT count(*) FROM run_moves").fetchone() == (0,)
+
+
+def test_the_claims_of_crops_are_found_by_their_index(drawn):
+    _, write, _ = drawn.claims().settle_statements([drawn.claims().shown_as(drawn.crop, 0, drawn.record)])
+    plan = [row[3] for row in drawn.site.execute("EXPLAIN QUERY PLAN " + write)]
+    assert not [step for step in plan if re.match(r"SCAN (a|x|e|c|rv)\b", step)]
+    assert any("assertion_crop" in step for step in plan)
+
+
+def test_the_claims_of_the_crops_cut_again_alone_are_resolved_and_their_grapheme_claims_filed(drawn):
+    """A publication that revives a grapheme claim dates it, so that `reconcile` files its crop's runs."""
+    drawn.draw(C)
+    drawn.claim("r1", C, "U+4E00")
+    drawn.site.execute("UPDATE current_claims SET at='2026-01-01T00:00:00.000Z'")
+    drawn.site.commit()
+    drawn.publish_box(B)
+    at, = drawn.site.execute("SELECT at FROM current_claims WHERE crop=?", (drawn.crop,)).fetchone()
+    assert at > "2026-01-01T00:00:00.000Z"
+    run, = (drawn.root / "out" / "publish").iterdir()
+    assert [path.name.startswith("claims-") for path in run.glob("claims-*.sql")] == [True]
+    assert "claims settled" in drawn.publish.journal(run)
+
+
+def test_the_first_publish_resolves_every_claimed_crop_by_its_box_once(drawn):
+    """A slot resolved by cut alone before: a claim on a drawing the published box replaced, shown on it."""
+    drawn.publish_box(D)
+    # A copy kept from before the pass.
+    with sqlite3.connect(drawn.root / "out" / "mirror.sqlite") as mirror:
+        mirror.execute("DELETE FROM meta WHERE key=?", (drawn.publish.SETTLED_BY_BOX,))
+    drawn.claim("r1", B, "U+4E00")
+    drawn.site.execute("INSERT INTO current_claims(subject,predicate,scope,slot,crop,cut,status,object,members,supporting,claims,resolver,at) "
+                       "VALUES('ex:a2','has_grapheme','','',?,1,'asserted','U+4E00','[]','[\"r1\"]','[]','ledger-r1','t')", (drawn.crop,))
+    drawn.site.commit()
+    assert drawn.held() == [("asserted", "U+4E00", '["r1"]')]
+    other = drawn.root / "other.sqlite"
+    run(drawn.publish, drawn.monkeypatch, catalogue(other, [unit("ex:a4", "hl:p1", {"x": 0, "y": 60, "w": 10, "h": 10}, "お")]))
+    assert drawn.held() == []
+    first = sorted(path.name for path in (drawn.root / "out" / "publish").glob("*/claims-*.sql"))
+    assert len(first) == 1
+    other.unlink()
+    run(drawn.publish, drawn.monkeypatch, catalogue(other, [unit("ex:a5", "hl:p1", {"x": 0, "y": 80, "w": 10, "h": 10}, "か")]))
+    assert sorted(path.name for path in (drawn.root / "out" / "publish").glob("*/claims-*.sql")) == first
+
+
+def test_a_statement_writes_each_parameter_once_whatever_the_values_hold(drawn):
+    assert drawn.claims().statement("SELECT ?1, ?2", '["1?2x"]', "[]") == "SELECT '[\"1?2x\"]', '[]';"
+
+
+def test_a_crop_is_shown_in_every_encoding_of_its_cut_and_by_whole_numbers(drawn):
+    record = {"image_sha256": "q", "encodings": [{"pixels": "p"}], "box": {"x": 5.0, "y": 0, "w": 10, "h": 10}}
+    assert drawn.claims().shown_as(1, 2, record) == [1, 2, ["@q", "@p"], "@5,0,10,10"]
+    assert drawn.claims().shown_as(1, 2, {**record, "box": {"x": 5.5, "y": 0, "w": 10, "h": 10}})[3] is None
+
+
+def test_a_crop_cut_again_with_no_claim_sends_nothing_for_claims(drawn):
+    drawn.publish_box(B)
+    run, = (drawn.root / "out" / "publish").iterdir()
+    assert not list(run.glob("claims-*.sql")) and "claims settled" in drawn.publish.journal(run)
+
+
 def test_a_re_cut_over_a_neighbour_stands_only_as_a_reviewer_drew_it(layout, monkeypatch, tmp_path):
     root, publish, remote = layout
     a2 = ids(root)["ex:a2"]
