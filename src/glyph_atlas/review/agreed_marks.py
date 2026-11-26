@@ -10,9 +10,9 @@ A crop is `agreed` when its streak is full and all `K` carry its label. A crop w
 one other label of its 字種 is `flagged` with that label. Any other crop is left to a reviewer.
 
 `run` writes `<similar>/agreed-marks.json`: `agreed`, the pending collected crops that pass, each
-with the label it was judged under, and `flagged`, each with its label and the form its neighbours
-carry. It also tests the form rule on the crops reviewers judged, each under the label the index was
-built with (`measured`).
+with the label and the cut it was judged under, and `flagged`, each with its label and the form its
+neighbours carry. Only a crop still on its first cut is marked: the index holds that image. It also
+tests the form rule on the crops reviewers gave a verdict on (`verdicts`, `measured`).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .neighbour_agreement import PAGE_BITS, streaks
+from .neighbour_agreement import CHARACTER_ISSUE, MATCH, PAGE_BITS, WRONG, streaks
 from .neighbour_agreement import K as STREAK
 
 METHOD = "agreed-marks-v1"
@@ -34,7 +34,7 @@ FILE = "agreed-marks.json"
 K = 10
 #: Two crops at least this similar are one image filed twice, and neither judges the other.
 TWIN = 0.999
-COLLECTED, PENDING, CONFIRMED, CORRECTED = 0, 0, 1, 3
+COLLECTED, PENDING = 0, 0
 
 
 def forms(labels: Sequence[str | None], families: Sequence[str | None], books: Sequence[int | None],
@@ -91,40 +91,62 @@ def numbers(ids: Sequence[str], mirror: Path, chunk: int = 900) -> list[int | No
     return [known.get(identity) for identity in ids]
 
 
-def facts(crops: Sequence[int | None], atlas: Path, chunk: int = 900) -> dict[int, tuple[str, str, int, int, int]]:
-    """Each crop's label, 字種 head, book, kind and state by row, from the local copy of the site's database."""
+def facts(crops: Sequence[int | None], atlas: Path, chunk: int = 900) -> dict[int, tuple[str, str, int, int, int, int]]:
+    """Each crop's label, 字種 head, book, kind, state and cut by row, from the local copy of the site's
+    database. The texts are the database's own: a compatibility ideograph stays apart from its
+    unified character, as the site files them apart."""
     row = {number: n for n, number in enumerate(crops) if number is not None}
     held, found = sorted(row), {}
     with sqlite3.connect(f"file:{atlas}?mode=ro", uri=True) as db:
         for start in range(0, len(held), chunk):
             part = held[start:start + chunk]
-            for crop, text, head, book, kind, state in db.execute(
-                    f"""SELECT c.id, g.text, coalesce(h.text, g.text), c.book, c.kind, c.state FROM crops c
+            for crop, text, head, book, kind, state, cut in db.execute(
+                    f"""SELECT c.id, g.text, coalesce(h.text, g.text), c.book, c.kind, c.state, c.cut FROM crops c
                         JOIN graphemes g ON g.id = c.char LEFT JOIN graphemes h ON h.id = g.head
                         WHERE c.id IN ({','.join('?' * len(part))})""", part):
-                found[row[crop]] = (unicodedata.normalize("NFC", text), unicodedata.normalize("NFC", head), book, kind, state)
+                found[row[crop]] = (text, head, book, kind, state, cut)
     return found
 
 
-def measure(was: Sequence[str | None], known: dict[int, tuple[str, str, int, int, int]], labels, families, books,
+def verdicts(crops: Sequence[int | None], atlas: Path) -> dict[int, tuple[str, str]]:
+    """Each collected crop's last verdict by row: `kept` with the character a reviewer confirmed, or
+    `changed` with the character a wrong-character report named. A crop only shown in a round has none."""
+    row = {number: n for n, number in enumerate(crops) if number is not None}
+    found: dict[int, tuple[str, str]] = {}
+    with sqlite3.connect(f"file:{atlas}?mode=ro", uri=True) as db:
+        for crop, kind, issue, text in db.execute("""SELECT e.crop, e.kind, e.issue, g.text FROM events e
+                JOIN crops c ON c.id = e.crop AND c.kind = ? LEFT JOIN graphemes g ON g.id = e.label
+                WHERE e.kind IN (?, ?) ORDER BY e.at, e.id""", (COLLECTED, MATCH, WRONG)):
+            n = row.get(crop)
+            if n is None:
+                continue
+            found.pop(n, None)
+            if text and (kind == MATCH or issue == CHARACTER_ISSUE):
+                found[n] = ("kept" if kind == MATCH else "changed", text)
+    return found
+
+
+def measure(was: Sequence[str | None], judged: dict[int, tuple[str, str]], labels, families, books,
             vectors: np.ndarray, *, k: int = K) -> dict:
-    """The rule on the collected crops reviewers confirmed or corrected, each judged under the label the
-    index was built with: `kept` where the reviewer left that label, `form` where the crop is now
-    filed under another label of the 字種. `named` counts flags that name the reviewer's label."""
-    judged = {n: was[n] for n, (_, _, _, kind, state) in known.items()
-              if kind == COLLECTED and state in (CONFIRMED, CORRECTED) and was[n]}
-    found = forms(labels, families, books, vectors, k=k, rows=sorted(judged), asked=judged)
+    """The form rule on the crops reviewers gave a verdict on. `kept`: a confirmed crop, judged under the
+    character confirmed. `form`: a crop a reviewer filed under another character of the 字種 than the
+    index was built with (`was`), judged under that earlier label; `named` counts the flags that name
+    the reviewer's character. A crop filed under another 字種 is the streak's business and is left out."""
+    heads = {label: head for label, head in zip(labels, families, strict=True) if label}
+    asked, truth = {}, {}
+    for n, (kind, text) in judged.items():
+        old = was[n]
+        if kind == "kept":
+            asked[n] = text
+        elif old and unicodedata.normalize("NFC", text) != old and old in heads and heads[old] == heads.get(text):
+            asked[n], truth[n] = old, text
+    found = forms(labels, families, books, vectors, k=k, rows=sorted(asked), asked=asked)
     result = {kind: Counter() for kind in ("kept", "form")}
-    heads = {label: head for label, head, *_ in known.values()}
-    for n, old in judged.items():
-        label, head = known[n][0], known[n][1]
-        if old != label and heads.get(old) != head:
-            continue  # filed under another 字種 now: the streak's business
-        kind = "kept" if old == label else "form"
+    for n in asked:
+        kind = "form" if n in truth else "kept"
         same, other = found[n]
-        verdict = "agreed" if same == k else "flagged" if other else "left"
-        result[kind][verdict] += 1
-        result[kind]["named"] += int(other == label and kind == "form")
+        result[kind]["agreed" if same == k else "flagged" if other else "left"] += 1
+        result[kind]["named"] += int(kind == "form" and other == truth[n])
     return {kind: dict(tally) for kind, tally in result.items()}
 
 
@@ -134,23 +156,24 @@ def run(similar: Path, *, mirror: Path, atlas: Path, k: int = K, streak: int = S
 
     table = pq.read_table(similar / "units.parquet", columns=["id", "label"]).to_pydict()
     ids = table["id"]
-    was = [unicodedata.normalize("NFC", label) if label else None for label in table["label"]]
+    was = [unicodedata.normalize("NFC", label) if label else None for label in table["label"]]  # as the index holds them
     crops = numbers(ids, mirror)
     known = facts(crops, atlas)
     labels = [known[n][0] if n in known else None for n in range(len(ids))]
     families = [known[n][1] if n in known else None for n in range(len(ids))]
     books = [known[n][2] if n in known else None for n in range(len(ids))]
     vectors = np.load(similar / "vectors.npy", mmap_mode="r")
-    pending = [n for n, (_, _, _, kind, state) in known.items() if kind == COLLECTED and state == PENDING]
+    # A crop cut again since its first publication is no longer the image the index holds.
+    pending = [n for n, (_, _, _, kind, state, cut) in known.items() if kind == COLLECTED and state == PENDING and cut == 0]
     found = forms(labels, families, books, vectors, k=k, rows=pending)
     pages = [number >> PAGE_BITS if number is not None else None for number in crops]
     full = {n for n, count in zip(pending, streaks(labels, pages, vectors, k=streak, rows=pending)[0].tolist(), strict=True)
             if count >= streak}
-    agreed = {ids[n]: labels[n] for n in pending if n in full and found[n][0] == k}
+    agreed = {ids[n]: {"label": labels[n], "cut": known[n][5]} for n in pending if n in full and found[n][0] == k}
     flagged = {ids[n]: {"label": labels[n], "form": found[n][1]} for n in pending if found[n][1]}
     result = {"method": METHOD, "k": k, "streak": streak,
               "counts": {"pending": len(pending), "full_streak": len(full),
                          "agreed": len(agreed), "flagged": len(flagged)},
-              "measured": measure(was, known, labels, families, books, vectors, k=k)}
+              "measured": measure(was, verdicts(crops, atlas), labels, families, books, vectors, k=k)}
     (similar / FILE).write_text(json.dumps({**result, "agreed": agreed, "flagged": flagged}, ensure_ascii=False) + "\n")
     return result

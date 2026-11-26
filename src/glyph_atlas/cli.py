@@ -757,7 +757,7 @@ def review_neighbour_agreement(
 
 @review_app.command("agreed-marks")
 def review_agreed_marks(
-    similar: Annotated[Path, typer.Option(help="similar-crop index revision holding `agreement.parquet`")] = Path("work/similar/current"),
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
     mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
     atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for each crop's label, 字種, book and state")] = Path("work/atlas-v3/out/atlas.sqlite"),
     k: Annotated[int, typer.Option(help="nearest crops of the 字種 a written form is judged by")] = 10,

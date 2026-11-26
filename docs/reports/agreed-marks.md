@@ -22,22 +22,26 @@ crops.
 | flagged with another form | 1,813 |
 
 14,870 of the agreed crops are kana. The commonest flags: 𛂂 filed where the neighbours carry な
-(206), の → 𛂜 (175), リ → り (165), ヘ → へ (135), し → 𛁅 (55), 時 → 时 (30).
+(206), の → 𛂜 (175), リ → り (165), ヘ → へ (135), し → 𛁅 (55), を → 𛄚 (41), 事 → U+F0000 (39),
+た → 𛁠 (38), ト → と (36).
+
+Only crops still on their first cut are marked: the index holds that image.
 
 ## The form bar against the reviews
 
-Collected crops a reviewer confirmed or corrected, each judged under the label the index was built
-with, against today's labels of the other books.
+Collected crops whose last verdict is a confirmation or a wrong-character report naming a character
+(`events`; a crop only shown in a round has no verdict). A confirmed crop is judged under the
+character confirmed; a crop a reviewer filed under another character of its 字種 is judged under the
+label the index was built with. Neighbours carry today's labels of the other books.
 
 | reviewer | crops | agreed | left to a reviewer | flagged |
 | --- | ---: | ---: | ---: | ---: |
-| kept the label | 4,368 | 4,143 | 219 | 6 |
-| filed another form of the 字種 | 62 | 21 | 32 | 9, each naming the reviewer's form |
+| confirmed the character | 371 | 312 | 58 | 1 |
+| named another form of the 字種 | 39 | 9 | 24 | 6, each naming the reviewer's form |
 
-The form bar passes a third of the crops whose form a reviewer changed. They are forms few crops
-carry as a label, so the neighbours in other books are filed under the usual one too: 両 for 兩 (6),
-な for 𛂂 (5), に for 𛂌 (3), and one each of 売/賣, 也/𬻿, は/𛂣, は/𛂞, ネ/𛄧, 衡/𢖍, 撃/擊. Among
-the reviewed crops that pass, 21 of 4,164 (0.5%) carry the wrong form.
+The form bar passes 9 of the 39 crops whose form a reviewer changed, all kana filed under the plain
+letter where the page has a hentaigana few crops carry as a label: な for 𛂂 (5), and one each of
+に/𛂌, は/𛂣, は/𛂞, ネ/𛄧. Among the reviewed crops that pass, 9 of 321 (2.8%) carry the wrong form.
 
 Reviewed crops are no sample of the collection, and this table tests the form bar alone, without
 the streak. An agreed mark says a machine found no reason to ask; it is no review.

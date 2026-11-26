@@ -2,7 +2,7 @@ import sqlite3
 
 import numpy as np
 
-from glyph_atlas.review.agreed_marks import facts, forms, measure, numbers
+from glyph_atlas.review.agreed_marks import facts, forms, measure, numbers, verdicts
 
 
 def _unit(*rows):
@@ -48,12 +48,14 @@ def test_a_row_is_judged_under_the_label_asked():
     assert forms(labels, FAMILY, [1, 2, 3, 4, 5, 6, 7], VECTORS, k=2, rows=[0])[0] == (0, "な")
 
 
-def _atlas(path, crops):
+def _atlas(path, crops, events=()):
     db = sqlite3.connect(path)
     db.executescript("""CREATE TABLE graphemes(id INTEGER PRIMARY KEY, text TEXT, head INTEGER);
-        CREATE TABLE crops(id INTEGER PRIMARY KEY, char INTEGER, book INTEGER, kind INTEGER, state INTEGER);
-        INSERT INTO graphemes VALUES (1, 'な', NULL), (2, '𛂂', 1), (3, 'に', NULL);""")
-    db.executemany("INSERT INTO crops VALUES (?, ?, ?, ?, ?)", crops)
+        CREATE TABLE crops(id INTEGER PRIMARY KEY, char INTEGER, book INTEGER, kind INTEGER, state INTEGER, cut INTEGER);
+        CREATE TABLE events(id INTEGER PRIMARY KEY, crop INTEGER, at INTEGER, kind INTEGER, issue INTEGER, label INTEGER);
+        INSERT INTO graphemes VALUES (1, 'な', NULL), (2, '𛂂', 1), (3, 'に', NULL), (4, '\uFA38', 5), (5, '器', NULL);""")
+    db.executemany("INSERT INTO crops VALUES (?, ?, ?, ?, ?, ?)", crops)
+    db.executemany("INSERT INTO events(crop, at, kind, issue, label) VALUES (?, ?, ?, ?, ?)", events)
     db.commit()
     db.close()
 
@@ -64,15 +66,26 @@ def test_facts_and_numbers_read_only_the_crops_of_the_index(tmp_path):
     mirror.executemany("INSERT INTO ids VALUES (?, ?)", [("a", 10), ("b", 11), ("z", 99)])
     mirror.commit()
     assert numbers(["a", "missing", "b"], tmp_path / "mirror.sqlite", chunk=1) == [10, None, 11]
-    _atlas(tmp_path / "atlas.sqlite", [(10, 2, 5, 0, 0), (11, 3, 6, 0, 1), (99, 1, 7, 1, 0)])
-    assert facts([10, None, 11], tmp_path / "atlas.sqlite", chunk=1) == {0: ("𛂂", "な", 5, 0, 0), 2: ("に", "に", 6, 0, 1)}
+    _atlas(tmp_path / "atlas.sqlite", [(10, 2, 5, 0, 0, 0), (11, 4, 6, 0, 1, 2), (99, 1, 7, 1, 0, 0)])
+    # A compatibility ideograph keeps its own text, apart from the unified character it folds to.
+    assert facts([10, None, 11], tmp_path / "atlas.sqlite", chunk=1) == {
+        0: ("𛂂", "な", 5, 0, 0, 0), 2: ("\uFA38", "器", 6, 0, 1, 2)}
 
 
-def test_measure_judges_reviewed_crops_under_the_label_of_the_index():
-    # Row 0 was な and a reviewer filed it 𛂂; row 4 was 𛂂 and stays. Row 3 went to another 字種.
+def test_a_verdict_is_a_confirmation_or_a_named_character_and_never_a_crop_only_shown(tmp_path):
+    crops = [(n, 1, 1, 0, 3, 0) for n in (10, 11, 12, 13)] + [(14, 1, 1, 1, 0, 0)]
+    events = [(10, 1, 0, None, 1), (11, 1, 0, None, 1), (11, 2, 1, 0, 2),  # confirmed; confirmed, then named 𛂂
+              (12, 1, 3, None, None),                                    # only shown
+              (13, 1, 1, 2, None), (14, 1, 0, None, 1)]                  # a bad cut; a corpus glyph
+    _atlas(tmp_path / "atlas.sqlite", crops, events)
+    assert verdicts([10, 11, 12, 13, 14], tmp_path / "atlas.sqlite") == {0: ("kept", "な"), 1: ("changed", "𛂂")}
+
+
+def test_measure_judges_a_changed_crop_under_the_label_of_the_index():
+    # Row 0 was な and a reviewer named 𛂂; row 4 is confirmed 𛂂; row 3 was な and was named に, another 字種.
     labels = ["𛂂", "な", "な", "に", "𛂂", "𛂂", "𛂂"]
     families = ["な", "な", "な", "に", "な", "な", "な"]
-    known = {n: (labels[n], families[n], n + 1, 0, 3 if n in (0, 3) else 1 if n == 4 else 0) for n in range(7)}
     was = ["な", "な", "な", "な", "𛂂", "𛂂", "𛂂"]
-    result = measure(was, known, labels, families, [n + 1 for n in range(7)], VECTORS, k=2)
+    judged = {0: ("changed", "𛂂"), 3: ("changed", "に"), 4: ("kept", "𛂂")}
+    result = measure(was, judged, labels, families, [n + 1 for n in range(7)], VECTORS, k=2)
     assert result == {"kept": {"agreed": 1, "named": 0}, "form": {"agreed": 1, "named": 0}}
