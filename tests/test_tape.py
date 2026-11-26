@@ -148,3 +148,26 @@ def test_a_part_of_a_headword_is_dropped_and_not_cut_off_from_it():
     part = (90.0, 0, Box(x=150, y=190, w=90, h=90))
     other = (400.0, 1, Box(x=150, y=190, w=90, h=90))
     assert tape.apart([whole, part, other], np.zeros((600, 400), bool), page) == [whole, other]
+
+
+def test_a_crop_is_unrivalled_when_its_label_leads_the_page():
+    slots = [Slot("甲", 2, 1), Slot(None, 4, -1), Slot("乙", 2, 2), Slot("丙", 2, 3), Slot("甲", 2, 4)]
+    column = np.array([[0.58], [np.nan], [0.40], [0.45], [0.58]])
+    assert tape.unrivalled(slots, column, 0, 0, 0.1, 4) is True
+    # A neighbour's label within the lead rivals it.
+    column[2, 0] = 0.52
+    assert not tape.unrivalled(slots, column, 0, 0, 0.1, 4)
+
+
+def test_a_far_headword_likelier_than_the_label_rivals_it():
+    slots = [Slot(c, 2, n) for n, c in enumerate("甲乙丙丁戊己", 1)]
+    column = np.array([[0.58], [0.40], [0.40], [0.40], [0.40], [0.61]])
+    assert not tape.unrivalled(slots, column, 0, 0, 0.1, 2)
+    column[5, 0] = 0.55
+    assert tape.unrivalled(slots, column, 0, 0, 0.1, 2)
+
+
+def test_a_crop_with_no_drawn_rival_is_not_unrivalled():
+    slots = [Slot("甲", 2, 1), Slot("乙", 2, 2)]
+    assert not tape.unrivalled(slots, np.array([[0.6], [np.nan]]), 0, 0, 0.1, 4)
+    assert not tape.unrivalled(slots, np.array([[np.nan], [0.3]]), 0, 0, 0.1, 4)
