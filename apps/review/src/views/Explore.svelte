@@ -119,7 +119,7 @@
   // different services page them — and they are merged for display only.
   let picked = $state(opened?.picked ?? null), expand = $state(opened?.expand ?? 'none'), local = $state(opened?.local ?? []), corpus = $state(opened?.corpus ?? [])
   let visual = $state(opened?.visual ?? ''), analysis = $state(opened?.analysis ?? null), familyTotal = $state(opened?.familyTotal ?? null), unassignedCount = $state(opened?.unassignedCount ?? null)
-  let corpusTotal = $state(opened?.corpusTotal ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
+  let corpusTotal = $state(opened?.corpusTotal ?? 0), pickId = 0, readingPick = 0, corpusFault = $state(opened?.corpusFault ?? null)
   // Where each list's next page starts: the cursor its last page named, or null at its end.
   let localAfter = $state(opened?.localAfter ?? null), corpusAfter = $state(opened?.corpusAfter ?? null)
   // Whether the collection's list has answered a page since it was last cleared.
@@ -148,13 +148,14 @@
    * grapheme's with what it is narrowed to, or the collection with its search and filters. The view changes what it
    * shows in place and rewrites the address to match, so typing never leaves the page.
    */
+  const shownAddress = () => picked?.code_point
+    ? galleryAddress(picked, expand, { visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
+    // Text still being chosen from the candidate list is not a search yet.
+    : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })
   function showInAddress() {
     // While a crop is open the address is the crop's; the list's own entry keeps the list's.
     if (!addressed || page.state.inspect) return
-    const [path, search = ''] = (picked?.code_point
-      ? galleryAddress(picked, expand, { visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
-      // Text still being chosen from the candidate list is not a search yet.
-      : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })).split('?')
+    const [path, search = ''] = shownAddress().split('?')
     const target = localize(path) + (search && '?' + search)
     // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
     if (location.pathname + location.search !== target) replaceState(target, page.state)
@@ -838,8 +839,9 @@
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
   // `of` is whether it is chosen as a character or as a grapheme, or says so for the card; `scope` is a
-  // character address's. A grapheme is shown by its head's card, whichever member names it.
-  async function pick(item, of = 'character', scope = null) {
+  // character address's, and `years` the range an address narrows it to. A grapheme is shown by its head's
+  // card, whichever member names it.
+  async function pick(item, of = 'character', scope = null, years = '') {
     let expansionWillLoad = false
     // Any choice but one of the run's tabs leaves the run.
     if (!splitting) split = null
@@ -847,10 +849,10 @@
     choosing = false
     clearTimeout(searchTimer)
     requestId += 1; booksRead += 1
-    const current = ++pickId
+    const current = readingPick = ++pickId
     picked = null
     // A year range is the last character's; another may have nothing in it.
-    yearRange = ''
+    yearRange = years
     // A chip passes a code point and a candidate row passes itself; whichever it is, the card is
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
@@ -869,8 +871,10 @@
         analysis = card.visual_analysis ?? null
       } catch { if (!closed && current === pickId) picked = { ...bare, ...item } }
     }
-    if (!closed && current === pickId) { if (!picked) picked = { ...bare, ...item }; if (!expansionWillLoad) load() }
+    if (!closed && current === pickId) { readingPick = 0; if (!picked) picked = { ...bare, ...item }; if (!expansionWillLoad) load() }
   }
+  // Whether a choice waits for its card: nothing is picked yet, and no search is on show.
+  const picking = () => readingPick !== 0 && readingPick === pickId
   function fitsGallery(row) {
     if (!picked) return true
     if (!matchesVisualGroup(row, visual)) return false
@@ -1347,18 +1351,25 @@
   onDestroy(() => { sheetJob?.abort(); clearTimeout(sheetFault) })
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
-   * address bar keeps what the view had moved on to. The view follows the address bar.
+   * address bar keeps what the view had moved on to; a link to the address the page was first loaded at
+   * keeps that page, and with it this view. The view follows the address bar.
    */
   function followAddress() {
     const { path } = delocalize(location.pathname)
-    const named = galleryPage(path), scope = new URLSearchParams(location.search).get('scope')
-    if (named && named.codePoint !== picked?.code_point) pick({ code_point: named.codePoint }, named.of, scope)
-    // Back or Forward between a grapheme, its head and the head's variants: the widening the address names.
-    else if (named && expandFor(named.of, scope) !== expand) expand = expandFor(named.of, scope)
-    else if (path === '/') {
-      const wanted = new URLSearchParams(location.search)
+    if (path + location.search === shownAddress() && !picking()) return
+    const named = galleryPage(path), wanted = new URLSearchParams(location.search)
+    const asked = name => wanted.get(name) ?? '', scope = wanted.get('scope')
+    if (named) {
+      const widened = expandFor(named.of, scope), narrowed = style !== asked('style') || dateOrder !== asked('order') || yearRange !== asked('years') || visual !== asked('visual')
+      style = asked('style'); dateOrder = asked('order')
+      if (named.codePoint !== picked?.code_point) return pick({ code_point: named.codePoint }, named.of, scope, asked('years'))
+      yearRange = asked('years')
+      // A grapheme, its head and the head's variants are one character widened; the widening reads the gallery.
+      if (widened !== expand) expand = widened
+      else if (narrowed) { visual = asked('visual'); load() }
+    } else if (path === '/') {
       const q = wanted.get('q') ?? '', g = wanted.get('grapheme') ?? '', w = wanted.get('work') ?? '', group = wanted.get('group') ?? 'all'
-      if (!picked && q === query.trim() && g === grapheme && w === work && group === filter) return
+      if (!picking() && !picked && q === query.trim() && g === grapheme && w === work && group === filter) return
       clearTimeout(searchTimer); pickId += 1; choosing = false
       visual = ''; analysis = null; familyTotal = null; unassignedCount = null
       picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusAfter = null; localAfter = null; localAnswered = false
@@ -1380,7 +1391,7 @@
     charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
   beforeNavigate(navigation => {
     if (!addressed) return
-    const state = display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
+    const state = picking() ? null : display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
     keepView([current, navigation.type === 'popstate' ? null : entry()], state)
   })
   function restore(back) {
@@ -1403,13 +1414,15 @@
   if (back?.partial) seed = back.seed
   else if (restored) restore(restored)
   // Back or Forward between two entries of the same page keeps this view, so it takes the one kept for
-  // the entry it lands on, and its scroll position, itself.
+  // the entry it lands on, and its scroll position, itself. A link keeps it where the page was first loaded
+  // at the address it names, whatever the view has shown since.
   let arrived = false
   afterNavigate(navigation => {
     if (!arrived) { arrived = true; return }
     current = entry()
-    const view = navigation.type === 'popstate' && addressed ? keptView() : null
-    if (!view || view.partial || view.showWithheld !== showWithheld) return
+    if (!addressed) return
+    const view = navigation.type === 'popstate' ? keptView() : null
+    if (!view || view.partial || view.showWithheld !== showWithheld) { followAddress(); return }
     // Reads the view had on their way answer for what it showed before.
     requestId += 1; pickId += 1; runsRequest += 1; catalogueRequest?.abort()
     clearTimeout(searchTimer); choosing = false
