@@ -50,7 +50,7 @@
 
 <style>
   .quiz-focus{display:grid;grid-template-columns:minmax(240px,1fr) minmax(320px,1.15fr);gap:20px 32px;max-width:920px;margin:0 auto;padding:8px 0 28px;align-items:start}
-  .focus-head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}
+  .focus-head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;width:100%;min-width:0;gap:12px}
   .focus-progress{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
   .focus-images,.focus-figure{width:100%;min-width:0}
   .focus-image-meta{display:flex;justify-content:space-between;gap:12px;padding-top:8px}
@@ -58,17 +58,17 @@
   .focus-body{width:100%;min-width:0}
   .focus-body :global(.issue-card){min-height:102px;padding:14px;gap:5px}
   .focus-body :global(.issue-card.chosen){padding:13px}
-  .focus-nav{grid-column:1/-1;display:flex;align-items:center;gap:10px;width:100%;margin-top:4px}
-  .focus-step{font-size:16px;padding:10px 16px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer}
+  .focus-nav{grid-column:1/-1;display:flex;align-items:center;gap:10px;width:100%;min-width:0;margin-top:4px}
+  .focus-step{flex-shrink:0;font-size:16px;padding:10px 16px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer}
   .focus-step:disabled{opacity:.4;cursor:default}
-  .focus-strip{display:flex;gap:8px;overflow-x:auto;padding:3px;flex:1;justify-content:center}
-  .focus-thumb{padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;line-height:0}
+  .focus-strip{display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;padding:3px;flex:1;min-width:0;justify-content:safe center}
+  .focus-thumb{flex-shrink:0;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;line-height:0}
   .focus-thumb.skipped{border-style:dashed;background:var(--surface-skipped)}
   .focus-thumb.skipped :global(.crop-paint){opacity:.45}
   .focus-thumb.current{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
   .focus-thumb :global(.crop-paint){width:44px;height:44px}
   @media(max-width:760px){
-    .quiz-focus{grid-template-columns:1fr;gap:16px;padding-bottom:24px}
+    .quiz-focus{grid-template-columns:minmax(0,1fr);gap:16px;padding-bottom:24px}
     .focus-body :global(.issue-card){min-height:92px}
     .focus-strip{justify-content:flex-start}
   }

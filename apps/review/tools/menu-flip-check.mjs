@@ -43,7 +43,7 @@ const geometryOf = selector => `(() => {
   const form = root.querySelector('.find')
   const list = root.querySelector('.candidate-list')
   const f = form.getBoundingClientRect(), l = list.getBoundingClientRect()
-  return { form: { top: f.top, bottom: f.bottom }, list: { top: l.top, bottom: l.bottom, height: l.height }, viewport: innerHeight }
+  return { form: { top: f.top, bottom: f.bottom }, list: { top: l.top, bottom: l.bottom, left: l.left, right: l.right, height: l.height }, viewport: innerHeight, width: innerWidth, scrollWidth: document.documentElement.scrollWidth }
 })()`
 
 try {
@@ -82,6 +82,12 @@ try {
   const phone = await browser.evaluate(geometryOf('.bulk-bar .character-search'))
   assert(phone.list.bottom <= phone.form.top + 1, `the phone's list opens below its box: ${JSON.stringify(phone)}`)
   assert(phone.list.top >= -1, `the phone's list starts above the window: ${JSON.stringify(phone)}`)
+  assert(phone.list.right <= 390 + 1 && phone.scrollWidth <= 390, `the phone's list widens the page: ${JSON.stringify(phone)}`)
+
+  await browser.setViewport(320, 844)
+  await Bun.sleep(250)
+  const narrow = await browser.evaluate(geometryOf('.bulk-bar .character-search'))
+  assert(narrow.list.right <= 320 + 1, `the 320px list runs past the viewport: ${JSON.stringify(narrow)}`)
 
   await browser.setViewport(1280, 460)
   await Bun.sleep(250)

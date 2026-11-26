@@ -92,7 +92,7 @@
   .bulk-assign{display:flex;align-items:center;gap:8px;flex:1 1 300px;min-width:0}
   .bulk-assign :global(.character-search){flex:1;min-width:0}
   .bulk-assign button{white-space:nowrap}
-  .bulk-tools{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .bulk-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:auto}
   .bulk-leave{padding:8px 12px}
   .bulk-style{display:flex;align-items:center;gap:12px;flex-basis:100%;min-width:0}
   .bulk-style-label{flex:none;font-size:12px;color:var(--muted)}
