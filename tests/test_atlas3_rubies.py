@@ -34,3 +34,14 @@ def test_a_left_ruby_keeps_its_side_and_a_bracket_ruby_its_base():
 def test_a_line_is_read_composed_as_the_site_reads_it():
     key, found = packs.line_rubies("か\u3099｜器（き）", KNOWN, Counter())
     assert key == "が器" and found == [[1, 1, 0, "き"]]
+
+
+def test_a_pack_being_replaced_is_out_of_the_manifest_until_the_run_ends():
+    before = {"a/0.json.gz": "old", "a/1.json.gz": "same", "b/0.json.gz": "gone"}
+    after = {"a/0.json.gz": "new", "a/1.json.gz": "same", "c/0.json.gz": "made"}
+    changed, gone, interim = packs.plan(before, after)
+    assert changed == ["a/0.json.gz", "c/0.json.gz"] and gone == ["b/0.json.gz"]
+    assert interim == {"a/1.json.gz": "same", "b/0.json.gz": "gone"}
+    # A stopped run leaves the interim manifest; going back to the old bytes still uploads the pack.
+    assert packs.plan(interim, before)[0] == ["a/0.json.gz"]
+    assert packs.plan(after, after) == ([], [], after)
