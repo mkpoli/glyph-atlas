@@ -85,6 +85,17 @@ The catalogue is what `export_cloudflare.py` and `export_cloudflare_corpus.py` a
   writes a catalogue of them from their published records, under the new character and one revision on, with
   the runs holding them. Nothing is cut or uploaded but the page bundles. The relabel is recorded in the crops'
   store as well.
+- Corpus glyphs whose published records still point at external `http(s)://` image or `context_image` URLs
+  can be repacked into `/atlas/media/` in place with `pack_corpus_images.py <folder> --books <prefix> --list`
+  / `--packs <dir>`. It verifies cached page dimensions against each corpus's `pages*.parquet`, renders crops
+  in a temporary directory under `<folder>/.render`, writes content-addressed image and record packs under
+  `<folder>/packs/`, and produces a `records.sqlite` holding both `media` and `record_places`, which
+  `publish.py` uploads atomically (media shards before page bundles), preserving crop ids, reviews and
+  `source_revision`. Any uncached or dimension-mismatched crops are recorded in `<folder>/uncached.json`.
+- `publish.py` refuses any live crop (`units`, new or moved `corpus_units`, and `record_places`) that is
+  `proxyable: false`, uses a malformed or external `image` or `context_image` outside
+  `/atlas/media/<64-hex>.webp`, lacks its record pack beside the catalogue, or references a media key absent
+  from the image key map when `media` shards are checked.
 - A retired crop's entry names its replacement in `replaced_by`, as an integer crop id: the first text
   id on its `unit_redirects` chain that is a live crop after the publish, past retired crops and text
   ids with no crop, so a reader reaches a live crop in one step. A chain that loops, or ends with no

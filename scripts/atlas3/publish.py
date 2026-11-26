@@ -42,9 +42,13 @@ images to the image key map (`media_map.py`).
   moves their tally cells; in D1 only while the crop's revision is unchanged. No bundle changes. The
   dry run counts the crop rows, index entries and tally cells it writes (`styles.json`), and the send
   needs `--approve-styles` naming that count of crops.
-- A catalogue's `record_places` (id, object, offset, size, and the place it replaces), as `record_credits.py` writes it, points each
-  named corpus glyph at its record in that pack, which is in the bucket before the publish. Only the
-  bundles and their pages' revisions change.
+- A catalogue's `record_places` (id, object, offset, size, and the place it replaces), as `record_credits.py` or
+  `pack_corpus_images.py` writes it, points each named corpus glyph at its record in that pack, which is in the
+  bucket before the publish (with an optional `media` table for newly packed images). Only the bundles, their
+  pages' revisions, and any added media shards change.
+- Every live crop published (`units`, `corpus_units`, and `record_places` whose packs sit beside the catalogue)
+  must be proxyable and serve its `image` from `/atlas/media/`, never from an external URL; when media shards are
+  checked, every referenced 64-hex `/atlas/media/` key must already be mapped or added by the catalogue's `media`.
 - A catalogue's `credits` (attribution, credit), as `credits.py` writes it, gives every published page
   and crop entry that carries the attribution the credit in its place, or none where it names no one.
   Only their bundles change, and the revisions of their pages.
@@ -160,6 +164,88 @@ FACTS_RUN = "crop-facts/"
 # A withdrawn crop's bundle entry: retired, with no record.
 WITHDRAWN = {"withdrawn": True}
 GONE = ("retired", "withdrawn")
+
+
+MEDIA_KEY_RE = re.compile(r"^/atlas/media/([0-9a-f]{64})\.webp$")
+
+
+def hosted_media_key(url):
+    """The 64-hex media key of a hosted `/atlas/media/<key>.webp` URL, or None."""
+    if not isinstance(url, str):
+        return None
+    match = MEDIA_KEY_RE.fullmatch(url)
+    return match.group(1) if match else None
+
+
+def validate_catalogue_images(src, catalogue_dir, tables, media_placed, published_place):
+    """Refuse to publish any live crop whose image or context_image is non-proxyable, external,
+    malformed, unreadable from its pack, or missing from the image key map."""
+    bad, unmapped, missing_packs = [], [], []
+    shards = {}
+    media_dir = OUT / "media"
+    check_map = "media" in tables or (media_dir.is_dir() and any(media_dir.glob("*.json.gz")))
+
+    def mapped(key):
+        if key in media_placed:
+            return True
+        prefix = key[:3]
+        if prefix not in shards:
+            shards[prefix] = set(media_map.read_shard(prefix)["keys"])
+        return key[3:] in shards[prefix]
+
+    def check_url(cid, field, url, *, required):
+        if url is None or url == "":
+            if required:
+                bad.append(f"{cid} ({field}={url!r})")
+            return
+        key = hosted_media_key(url)
+        if key is None:
+            bad.append(f"{cid} ({field}={url!r})")
+        elif check_map and not mapped(key):
+            unmapped.append(f"{cid} ({field}={url})")
+
+    if "units" in tables:
+        for row_id, raw in src.execute("SELECT id, data FROM units WHERE origin='local' ORDER BY id"):
+            data = json.loads(raw)
+            if data.get("proxyable") is False:
+                bad.append(f"{row_id} (proxyable=false)")
+                continue
+            check_url(row_id, "image", data.get("image"), required=True)
+            check_url(row_id, "context_image", data.get("context_image"), required=False)
+
+    for table in ("corpus_units", "record_places"):
+        if table not in tables:
+            continue
+        by_pack = defaultdict(list)
+        for row_id, obj, offset, size in src.execute(f"SELECT id, object, offset, size FROM {table} ORDER BY object, offset"):
+            # An unchanged corpus_units pointer keeps its already-published record; new or moved records must be verified.
+            if table == "corpus_units" and published_place(row_id) == [obj, offset, size]:
+                continue
+            by_pack[obj].append((row_id, offset, size))
+        for obj, entries in by_pack.items():
+            pack_path = (catalogue_dir / obj) if catalogue_dir is not None else None
+            if pack_path is None or not pack_path.is_file():
+                missing_packs.append(f"{obj} (e.g. {entries[0][0]})")
+                continue
+            with pack_path.open("rb") as pack:
+                for row_id, offset, size in entries:
+                    pack.seek(offset)
+                    record = json.loads(pack.read(size))
+                    if record.get("proxyable") is False:
+                        bad.append(f"{row_id} (proxyable=false)")
+                        continue
+                    check_url(row_id, "image", record.get("image"), required=True)
+                    check_url(row_id, "context_image", record.get("context_image"), required=False)
+
+    if missing_packs:
+        sys.exit(f"{len(missing_packs)} record packs are missing beside the catalogue ({', '.join(missing_packs[:5])}); "
+                 "keep the packs beside the catalogue so crop images can be verified; nothing published")
+    if bad:
+        sys.exit(f"{len(bad)} crops have non-proxyable or unhosted images, for example {', '.join(bad[:5])}; "
+                 "pack them into /atlas/media/ first; nothing published")
+    if unmapped:
+        sys.exit(f"{len(unmapped)} crops point at /atlas/media/ keys absent from the media map, for example "
+                 f"{', '.join(unmapped[:5])}; include their media table first; nothing published")
 
 
 def image_keys(entry):
@@ -1451,8 +1537,13 @@ def main():
     if "book_styles" in tables and tables - {"book_styles"}:
         sys.exit(f"a book_styles catalogue holds book_styles alone, not {sorted(tables - {'book_styles'})}; nothing published")
     m.titled, m.retitle = book_titles(src, tables), args.retitle
-    if "record_places" in tables and tables - {"record_places"}:
-        sys.exit(f"a record_places catalogue holds record_places alone, not {sorted(tables - {'record_places'})}; nothing published")
+    if "record_places" in tables and tables - {"record_places", "media"}:
+        sys.exit(f"a record_places catalogue holds record_places (and media) alone, not {sorted(tables - {'record_places', 'media'})}; nothing published")
+    if "record_places" in tables:
+        unaddressed = [(i, o) for i, o in src.execute("SELECT id, object FROM record_places") if not addressed(o)]
+        if unaddressed:
+            sys.exit(f"{len(unaddressed)} record_places rows sit in numbered packs, for example "
+                     f"{unaddressed[0][0]} in {unaddressed[0][1]}; name the packs by their content first")
     if "credits" in tables and tables - {"credits"}:
         sys.exit(f"a credits catalogue holds credits alone, not {sorted(tables - {'credits'})}; nothing published")
     # Witness years: the catalogue's own dating rows, else the dating already published (dates reach
@@ -1504,6 +1595,12 @@ def main():
 
     def entry(cid):
         return bundle_of(cid // PAGE)["by_slot"].get(cid % PAGE, {})
+
+    def published_place(text_id):
+        cid = m.known(text_id)
+        return entry(cid).get("record_place") if cid is not None else None
+
+    validate_catalogue_images(src, catalogue.parent if catalogue else None, tables, media, published_place)
 
     # A catalogue made from published records (relabel.py) says what it was made from. A crop reviewed or a
     # page published since, here or on the site, would be put back, so it is made again instead.
