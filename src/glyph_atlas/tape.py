@@ -330,10 +330,10 @@ def unrivalled(slots: Sequence[Slot], alike: np.ndarray, n: int, j: int, lead: f
     A crop paired one place off, or with a character the page's neighbours could also be, has a rival close to its
     own label. Headwords written with the same character are not rivals, and neither is a slot with no drawing."""
     own, char = alike[n, j], slots[n].char
-    heads = [k for k, slot in enumerate(slots) if slot.entry > 0 and slot.char]
-    if not np.isfinite(own) or n not in heads:
+    heads = [k for k, slot in enumerate(slots) if slot.entry > 0]  # a headword the table leaves blank is printed too
+    if not char or not np.isfinite(own) or n not in heads:
         return False
     place = heads.index(n)
-    rivals = [(abs(p - place), alike[k, j]) for p, k in enumerate(heads) if slots[k].char != char and np.isfinite(alike[k, j])]
+    rivals = [(abs(p - place), alike[k, j]) for p, k in enumerate(heads) if slots[k].char and slots[k].char != char and np.isfinite(alike[k, j])]
     close = [value for distance, value in rivals if distance <= near]
     return bool(close) and all(value <= own for _, value in rivals) and bool(own - max(close) > lead)

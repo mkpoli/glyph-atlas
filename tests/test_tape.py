@@ -171,3 +171,9 @@ def test_a_crop_with_no_drawn_rival_is_not_unrivalled():
     slots = [Slot("甲", 2, 1), Slot("乙", 2, 2)]
     assert not tape.unrivalled(slots, np.array([[0.6], [np.nan]]), 0, 0, 0.1, 4)
     assert not tape.unrivalled(slots, np.array([[np.nan], [0.3]]), 0, 0, 0.1, 4)
+
+
+def test_a_blank_headword_keeps_its_place_in_the_distance():
+    slots = [Slot("甲", 2, 1), Slot(None, 2, 2), Slot("乙", 2, 3), Slot("丙", 2, 4), Slot("丁", 2, 5), Slot("戊", 2, 6)]
+    column = np.array([[0.60], [np.nan], [0.30], [0.30], [0.30], [0.55]])
+    assert tape.unrivalled(slots, column, 0, 0, 0.1, 4)
