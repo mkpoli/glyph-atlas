@@ -12,6 +12,7 @@
   import CropReview from '../components/CropReview.svelte'
   import CropForm from '../components/CropForm.svelte'
   import { markForms, unmarkForms } from '../lib/cropForms.js'
+  import { styleCrops, styleOf, unstyleCrops } from '../lib/cropStyle.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
   import FormBar from '../components/FormBar.svelte'
@@ -398,6 +399,29 @@
    */
   // A marking and its undo hold the round as a save does: nothing moves to another round meanwhile.
   let formError = $state(''), formDone = $state(null)
+  // The style chosen in the selection bar: given with the next form, or alone.
+  let formStyle = $state(null)
+  /** Give `chosen` the style, after what the same press gave them (`done`); the crops keep their place in the round
+   *  and take the revision the style left. Crops just corrected are styled as they stand. */
+  async function styleChosen(chosen, style, done = null) {
+    if (!style || !chosen.length) return
+    let styled = [], refused = [], kept = []
+    saving = true
+    try { ({ styled, refused, kept } = await styleCrops(chosen, style)) }
+    catch (e) { styled = e.styled ?? []; refused = e.refused ?? []; kept = e.kept ?? []; formError = e.status === 429 ? t('bulk.tooMany') : e.message }
+    finally { saving = false }
+    if (refused.length && !formError) formError = t('bulk.refused', { count: refused.length })
+    if (kept.length && !formError) formError = t('client.pausedKept')
+    const now = Object.fromEntries(styled.map(({ after }) => [after.id, styleOf(after)]))
+    items = items.map(i => now[i.id] ? { ...i, ...now[i.id] } : i)
+    if (styled.length) formDone = done ? { ...done, styled, style } : { kind: 'style', styled, style, count: styled.length }
+  }
+  /** The style chosen in the bar, given to the selection alone. */
+  function styleSelection() {
+    if (saving || loading || step !== 'select') return
+    formError = ''
+    return styleChosen(markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id)), formStyle)
+  }
   const CORRECTION_BATCH = 144
   async function assignForm(form, chosen, claims = {}, relabel = false) {
     if (!chosen.length) return
@@ -480,16 +504,36 @@
    *  crop first. */
   async function markSelection(form) {
     if (saving || loading || step !== 'select') return
-    const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id))
-    if (members.includes(form)) return assignForm(form, chosen)
+    const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id)), style = formStyle
+    if (members.includes(form)) await assignForm(form, chosen)
     // A character found by search is what the crops are written as, as in the collection view's bar.
-    if (!isDescription(form)) return assignForm(form, chosen, {}, true)
-    const failure = await markClaimed(form, chosen)
-    if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
+    else if (!isDescription(form)) await assignForm(form, chosen, {}, true)
+    else {
+      const failure = await markClaimed(form, chosen)
+      if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
+    }
+    // The style goes to the crops the form was given, as they now stand.
+    const marked = chosen.filter(i => markedAs[i.id] === form).map(i => ({ ...i, revision: null }))
+    if (style && !formError) await styleChosen(marked, style, formDone)
   }
   async function undoForm() {
-    const done = formDone
+    let done = formDone
     if (!done || saving) return
+    // The style given last goes first, each crop back to its own style or the one it inherits.
+    if (done.styled?.length) {
+      saving = true; formError = ''
+      let back, failed = null
+      try { back = await unstyleCrops(done.styled) }
+      catch (e) { back = { styled: e.styled ?? [], refused: e.refused ?? [], kept: e.kept ?? [] }; failed = e }
+      finally { saving = false }
+      // The crops taken back keep the revision it left them at, so the round's answers for them are taken.
+      const now = Object.fromEntries(back.styled.map(({ after }) => [after.id, styleOf(after)]))
+      items = items.map(i => now[i.id] ? { ...i, ...now[i.id] } : i)
+      const left = done.styled.filter(({ after }) => !now[after.id])
+      if (left.length) { formDone = { ...done, styled: left }; formError = failed ? failed.message : back.kept.length ? t('client.pausedKept') : t('bulk.refused', { count: left.length }); return }
+      if (done.kind === 'style') { formDone = null; return }
+      done = formDone = { ...done, styled: [] }
+    }
     saving = true; formError = ''
     const left = [...done.batches], claims = { ...done.claims }
     const gone = batch => left.splice(left.indexOf(batch), 1)
@@ -1100,7 +1144,7 @@
     <QuizFocus items={queue} {skipped} index={focusIndex} label={t('quiz.focus.chooseProblem')} disabled={saving} onback={back} onjump={jump} onprev={() => move(-1)} onnext={() => move(1)}>
       <!-- One panel per crop, so a search begun for one crop never shows in the next one's. -->
       {#snippet formBar()}<CropForm crop={current} others onchoose={markCurrent} disabled={saving || loading} />
-        {#if formDone}<p class="mark-done" role="status">{t('bulk.done', { count: formDone.count, char: formDone.char })}<button class="quiet-link" disabled={saving} onclick={undoForm}>{t('bulk.undo')}</button></p>{/if}{#if formError}<p class="mark-done mark-error" role="alert">{formError}</p>{/if}{/snippet}
+        {#if formDone}<p class="mark-done" role="status">{formDone.kind === 'style' ? t('bulk.styled', { count: formDone.count, style: t(`style.kind.${formDone.style}`) }) : t('bulk.done', { count: formDone.count, char: formDone.char })}<button class="quiet-link" disabled={saving} onclick={undoForm}>{t('bulk.undo')}</button></p>{/if}{#if formError}<p class="mark-done mark-error" role="alert">{formError}</p>{/if}{/snippet}
       {#key current.id}<CropReview forms={formBar} issues={currentIssues} onissue={assignCurrent} disabled={saving}
         onskip={() => skip([current.id])} skipped={!!skipped[current.id]}
         targetId={current.id} bind:element={suggestionsElement} result={suggestions[current.id]} loading={!suggestions[current.id]} contextResult={contextSuggestions[current.id] ?? null} contextLoading={!contextSuggestions[current.id]} label={current.label} value={choices[current.id]?.character || choices[current.id]?.correction} noneSelected={choices[current.id]?.noneSelected ?? false} onchoose={(value, none) => chooseSuggestion(current.id, value, none)} />{/key}
@@ -1110,8 +1154,8 @@
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
-  {:else}<div class="quiz-actionbar">{#if step === 'select' && (markable.length || formDone || formError)}<FormBar count={markable.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone}
-    onassign={markSelection} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
+  {:else}<div class="quiz-actionbar">{#if step === 'select' && (markable.length || formDone || formError)}<FormBar count={markable.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone} bind:style={formStyle}
+    onassign={markSelection} onstyle={styleSelection} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (offersSuggestions(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
     {#if exhausted || !openSelection.length}<button class="primary next-round" disabled={loading || saving || (!canNext && !recordable)} onclick={pass}>{t('quiz.nextCharacterLabel')} <span>→</span></button>

@@ -36,6 +36,7 @@
   import { paint } from '../lib/collageImage.js'
   import { holderName, licenceName } from '../lib/licence.js'
   import { markForms, unmarkForms } from '../lib/cropForms.js'
+  import { styleCrops, styleOf, unstyleCrops } from '../lib/cropStyle.js'
   import { isDescription } from '../lib/ids.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../lib/selection.js'
@@ -963,7 +964,7 @@
   // click, a tap or Space toggles a tile, Shift takes the range from the last one in display order, the
   // arrow keys move between tiles, and Esc leaves the mode.
   const reviewer = $derived(Boolean(session.state.user && !session.state.user.anonymous))
-  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
+  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkStyle = $state(null), bulkBusy = $state(false), bulkError = $state('')
   // The last batch save, with its undo, and the crops it could not save, by reason.
   let bulkDone = $state(null), bulkReport = $state([])
   // A character's page offers the forms its card lists as the character to give a selection.
@@ -1115,10 +1116,40 @@
     }))
     patch(change, current)
   }
+  // A tile as the gallery shows it now, or null where it no longer belongs there.
+  const shownAs = next => (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
+  /**
+   * Give `crops` the style chosen in the bar, after the character or form the same Apply gave them (`done`, then
+   * held with the style for Undo). A crop just corrected is named with no revision and styled as it stands.
+   */
+  async function styleBulk(crops, style, done = null) {
+    if (!style || !crops.length) return
+    let styled = [], refused = [], kept = []
+    bulkBusy = true
+    try { ({ styled, refused, kept } = await styleCrops(crops, style)) }
+    catch (e) { styled = e.styled ?? []; refused = e.refused ?? []; kept = e.kept ?? []; bulkError = failure(e) }
+    finally { bulkBusy = false }
+    if (refused.length && !bulkError) bulkError = t('bulk.refused', { count: refused.length })
+    if (kept.length && !bulkError) bulkError = t('client.pausedKept')
+    if (styled.length) {
+      restyle(styled)
+      bulkDone = done ? { ...done, styled, style } : { kind: 'style', styled, style, count: styled.length }
+    } else if (done) bulkDone = done
+    const handled = new Set([...styled.map(({ after }) => after.id), ...kept.map(crop => crop.id), ...refused.map(entry => entry.id)])
+    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    if (refused.length) await refresh(refused.map(entry => entry.id))
+  }
+  /** Tiles take the style a save gave their crops, over what they show now (a character corrected in the same
+   *  Apply included). */
+  function restyle(styled) {
+    const now = Object.fromEntries(styled.map(({ after }) => [after.id, { ...tileById(after.id) ?? after, ...styleOf(after) }]))
+    patch(Object.fromEntries(Object.entries(now).map(([id, next]) => [id, shownAs(next)])), now)
+  }
   async function applyBulk() {
-    const target = bulkTarget
-    if (!target || bulkBusy) return
-    if (isDescription(target)) return describeBulk(target)
+    const target = bulkTarget, style = bulkStyle
+    if ((!target && !style) || bulkBusy) return
+    if (!target) { bulkError = ''; bulkReport = []; return styleBulk(display.filter(item => selected.has(item.id) && selectable(item)), style) }
+    if (isDescription(target)) return describeBulk(target, style)
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     // A tile a person already checked as the character has nothing to change; every other one is sent,
     // and one already written as the character is confirmed.
@@ -1156,9 +1187,12 @@
       runsChanged()
       readGroupStats()
     }
+    // The style goes to the crops corrected and to those that were already the character.
+    const styling = chosen.filter(item => item.id in before || !crops.includes(item)).map(item => item.id in before ? { ...item, revision: null } : item)
     // What was saved, kept or refused leaves the selection; what a later batch never reached stays selected.
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
     if (refused.length) await refresh(refused)
+    if (style && !bulkError) await styleBulk(styling, style, bulkDone)
   }
   /** What a batch save that stopped says: the site's own reasons for a rate limit or a crop that changed. */
   const failure = e => e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
@@ -1213,11 +1247,12 @@
     selected = new Set([...selected].filter(id => !handled.has(id) && !gone(id))); anchor = null
     const stale = outcome.report.filter(entry => entry.reason !== 'flagged').map(entry => entry.id)
     if (stale.length) await refresh(stale)
+    if (bulkStyle && outcome.saved.size && !bulkError) await styleBulk(Object.values(now), bulkStyle, bulkDone)
   }
   // A form written as an ideographic description sequence is a claim on each selected crop and no review,
   // as it is on one crop: the tiles keep their character and take the form.
   const withForms = marked => Object.fromEntries(marked.flatMap(({ crop }) => { const tile = display.find(item => item.id === crop.id); return tile ? [[crop.id, { ...tile, form: crop.form }]] : [] }))
-  async function describeBulk(target) {
+  async function describeBulk(target, style = null) {
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     let marked = [], kept = []
     bulkBusy = true; bulkError = ''; bulkReport = []
@@ -1231,6 +1266,7 @@
     }
     const handled = new Set([...marked, ...kept.map(crop => ({ crop }))].map(({ crop }) => crop.id))
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    if (style && !bulkError) await styleBulk(marked.map(({ crop }) => crop), style, bulkDone)
   }
   async function undoDescribed(done) {
     let marked = []
@@ -1243,8 +1279,21 @@
     bulkDone = left.length ? { ...done, described: left, count: left.length } : null
   }
   async function undoBulk() {
-    const done = bulkDone
+    let done = bulkDone
     if (!done || bulkBusy) return
+    // The style given last goes first, each crop back to its own style or the one it inherits.
+    if (done.styled?.length) {
+      bulkBusy = true; bulkError = ''
+      let back, failed = null
+      try { back = await unstyleCrops(done.styled) }
+      catch (e) { back = { styled: e.styled ?? [], refused: e.refused ?? [], kept: e.kept ?? [] }; failed = e }
+      finally { bulkBusy = false }
+      if (back.styled.length) restyle(back.styled)
+      const left = done.styled.filter(({ after }) => !back.styled.some(each => each.after.id === after.id))
+      if (left.length) { bulkDone = { ...done, styled: left }; bulkError = failed ? failure(failed) : back.kept.length ? t('client.pausedKept') : t('bulk.refused', { count: left.length }); return }
+      if (done.kind === 'style') { bulkDone = null; return }
+      done = bulkDone = { ...done, styled: [] }
+    }
     if (done.kind === 'form') return undoDescribed(done)
     bulkBusy = true; bulkError = ''
     try {
@@ -1596,7 +1645,7 @@
     {:else}{#each sections as section (section.key)}{#if section.heading}{@render sectionHeading(section)}{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
   </div>
   {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: galleryName(subject ?? picked) })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
-  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
+  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} bind:style={bulkStyle} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>

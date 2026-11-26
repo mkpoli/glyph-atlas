@@ -10,16 +10,21 @@
   import ScriptText from './ScriptText.svelte'
   import Glyph from './Glyph.svelte'
   import FormText from './FormText.svelte'
+  import StyleOptions from './StyleOptions.svelte'
+  import { CROP_STYLES } from '../lib/cropStyle.js'
   import { isDescription } from '../lib/ids.js'
   import { reportByReason } from '../lib/corrections.js'
   import { t } from '../lib/i18n.svelte.js'
-  let { selecting = false, count = 0, runs = 0, choices = [], target = $bindable(''), busy = false, error = '', done = null, report = [],
+  let { selecting = false, count = 0, runs = 0, choices = [], target = $bindable(''), style = $bindable(null), busy = false, error = '', done = null, report = [],
     onconfirm, onapply, onselectall, onclear, onleave, onundo, onopen, ondismiss } = $props()
   let query = $state('')
   const groups = $derived(reportByReason(report))
   const entries = $derived(new Map(report.map(entry => [entry.id, entry])))
   // Outside the unified ideographs' main block a form may be missing from the reader's fonts or look
   // like another, so its chip names its code point too.
+  // What Apply gives the selection: the character or form chosen, the style chosen, or both.
+  const applyLabel = $derived(target && style ? t('bulk.applyBoth', { char: target, style: t(`style.kind.${style}`) })
+    : target ? t('bulk.apply', { char: target }) : style ? t('bulk.applyStyle', { style: t(`style.kind.${style}`) }) : t('bulk.chooseFirst'))
   const outside = char => { const p = char.codePointAt(0); return p > 0x3000 && !(p >= 0x4e00 && p <= 0x9fff) && !(p >= 0x3040 && p <= 0x30ff) }
 </script>
 
@@ -31,7 +36,7 @@
       <div class="bulk-assign">
         <CharacterSearch compact bind:value={query} label={t('bulk.character.label')} placeholder={t('bulk.character.placeholder')}
           onselect={item => { target = item.char; query = item.char }} />
-        <button disabled={!count || !target || busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onclick={onapply}>{target ? t('bulk.apply', { char: target }) : t('bulk.chooseFirst')}</button>
+        <button disabled={!count || (!target && !style) || busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onclick={onapply}>{applyLabel}</button>
       </div>
       <IdsPick char={target} disabled={busy || runs > 0} title={runs ? t('bulk.apply.runs') : undefined} onuse={sequence => { target = sequence; query = sequence }} />
       <span class="bulk-tools">
@@ -49,12 +54,16 @@
         {/each}
       </div>
     {/if}
+    <div class="bulk-style" role="group" aria-label={t('style.label')}>
+      <span class="bulk-style-label" aria-hidden="true">{t('style.label')}</span>
+      <StyleOptions styles={CROP_STYLES} pressed={style} disabled={busy || runs > 0} onpress={value => style = style === value ? null : value} />
+    </div>
   {/if}
   {#if done || groups.length}
     <div class="bulk-row bulk-result">
       {#if done}
-        <span class="bulk-done" role="status">{done.kind === 'confirm' ? t('bulk.confirmed', { count: done.count })
-          : t('bulk.done', { count: done.count, char: done.char })}{#if done.kept}{' · '}{t('bulk.kept', { count: done.kept })}{/if}</span>
+        <span class="bulk-done" role="status">{#if done.kind !== 'style'}{done.kind === 'confirm' ? t('bulk.confirmed', { count: done.count })
+          : t('bulk.done', { count: done.count, char: done.char })}{#if done.kept}{' · '}{t('bulk.kept', { count: done.kept })}{/if}{/if}{#if done.styled?.length}{done.kind !== 'style' ? ' · ' : ''}{t('bulk.styled', { count: done.styled.length, style: t(`style.kind.${done.style}`) })}{/if}</span>
         <button disabled={busy} onclick={onundo}>{t('bulk.undo')}</button>
       {/if}
       {#if !selecting}<button class="quiet" onclick={ondismiss} aria-label={t('bulk.dismiss')}>×</button>{/if}
@@ -85,6 +94,8 @@
   .bulk-assign button{white-space:nowrap}
   .bulk-tools{display:flex;align-items:center;gap:6px;margin-left:auto}
   .bulk-leave{padding:8px 12px}
+  .bulk-style{display:flex;align-items:center;gap:12px;flex-basis:100%;min-width:0}
+  .bulk-style-label{flex:none;font-size:12px;color:var(--muted)}
   .bulk-choices{display:flex;flex-wrap:wrap;gap:6px}
   .bulk-choice{min-width:38px;min-height:38px;padding:3px 8px;font-size:20px;line-height:1.2;justify-content:center;gap:4px;border-radius:6px}
   .choice-code{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
