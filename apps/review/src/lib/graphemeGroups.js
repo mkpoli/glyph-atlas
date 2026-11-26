@@ -71,8 +71,11 @@ export function cropTotals(rows) {
     sums.set(key, (sums.get(key) ?? 0) + n); under.set(label, sums)
     if (!keys.has(label) || more(sums, key, keys.get(label))) keys.set(label, key)
   }
-  return { forms, groups, keys, shapes }
+  return { forms, groups, keys, shapes, under }
 }
+/** The grapheme a form's tile counts it under: the one its crop names, or, where the counts file none of the form there,
+ *  the one they do. Counts are the last publication's, and a crop names its grapheme as the tables stand. */
+export const countedUnder = ({ keys, under }, label, named) => under.get(label)?.has(named) ? named : keys.get(label) ?? named
 
 /** The grapheme a corpus row is filed under, as the catalogue files a label. */
 const rowGrapheme = row => row.grapheme?.code_point ?? row.grapheme ?? codesOf(row.label ?? '')

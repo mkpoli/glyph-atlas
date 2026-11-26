@@ -6,6 +6,7 @@ import { bundle, publicId, pageOf, slotOf, type Entry } from './atlas3';
 import { readRecords, recordKey } from './records';
 import { formed, type UnitForm } from './forms';
 import { categoryOf, isGugyeol, isSeal } from './category';
+import { graphemeKey, keyText } from './ledger';
 import { drawnForm } from './representation';
 
 type Json = Record<string, any>;
@@ -116,6 +117,27 @@ export function writtenRecord(record: Json, written: string, head: string | null
     grapheme: codePoints(head ?? written), visual_group: null, category: categoryOf(written) };
 }
 
+// Texts of `graphemes` with the head each is filed under, null for one no table files yet.
+export const filedQuery = () => `SELECT g.text,h.text AS head FROM graphemes g LEFT JOIN graphemes h ON h.id=g.head WHERE g.text IN (SELECT value FROM json_each(?))`;
+/** Records that name a grapheme, each under the head it is filed under now: a record keeps the one its publication, or a
+ *  forms decision, gave it, and a later table may file it elsewhere. A record is under the head of what it is written
+ *  with, a glyph with no character under its label's, as its runs are filed. One written with its row's character has
+ *  that head there (`head`); for the others the texts are looked up, one read for all. A form no table files (a
+ *  description, a character named since the last reference load) is of the grapheme the record names, under its head. */
+export async function underHeads(env: Env, found: { record: Json; char: string | null; head: string | null }[]): Promise<Json[]> {
+  type Found = typeof found[number];
+  const names = ({ record }: Found) => graphemeKey(record.grapheme);
+  const written = ({ record }: Found): string | null => record.written_character ?? record.char ?? record.label ?? null;
+  const own = (f: Found) => f.head !== null && f.char !== null && written(f) === f.char;
+  const asked = [...new Set(found.filter(f => names(f) && !own(f)).flatMap(f => [written(f), keyText(f.record.grapheme)]).filter(text => text))];
+  const heads = new Map(asked.length ? (await env.ATLAS.prepare(filedQuery()).bind(JSON.stringify(asked)).all<{ text: string; head: string | null }>()).results.map(r => [r.text, r.head]) : []);
+  return found.map(f => {
+    if (!names(f)) return f.record;
+    const head = own(f) ? f.head : heads.get(written(f) ?? '') ?? heads.get(keyText(f.record.grapheme));
+    return head ? { ...f.record, grapheme: codePoints(head) } : f.record;
+  });
+}
+
 /** The record of a crop from its row and the published fields (`base`: the bundle entry, or the corpus
  *  glyph's published record). `source_id` is the id the crop had before the cutover, which listings carry
  *  too (`cropItems`), so an address written with it (a citation's version token) is still read. */
@@ -156,7 +178,9 @@ export async function foundCrop(env: Env, id: number): Promise<FoundCrop | null>
     const pointer = { object: entry.record_place[0], offset: entry.record_place[1], size: entry.record_place[2] };
     base = (await readRecords(env, [pointer])).get(recordKey(pointer));
   }
-  return base ? { row, entry, base, record: cropRecord(row, base, entry.id) } : null;
+  if (!base) return null;
+  const record = cropRecord(row, base, entry.id);
+  return { row, entry, base, record: row.written && row.char ? record : (await underHeads(env, [{ record, char: row.char, head: row.head }]))[0] };
 }
 
 /** A crop's current evidence version as its record shows it, with its effective cut (`effectiveCut`), its kind and the source id its
