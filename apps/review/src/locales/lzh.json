@@ -1359,5 +1359,10 @@
   "form.ids.menu.split": "分作",
   "form.ids.menu.swap": "改作",
   "form.ids.menu.copy": "錄",
-  "form.ids.problem.draft": "欄內所書未成記述。請先補全或清之。"
+  "form.ids.problem.draft": "欄內所書未成記述。請先補全或清之。",
+  "form.ids.variants.label": "{part}之字形",
+  "form.ids.grass.head": "艸頭",
+  "form.ids.grass.connected": "連書",
+  "form.ids.grass.split": "分書",
+  "form.ids.grass.inward": "豎畫在內"
 }

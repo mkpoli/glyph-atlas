@@ -1367,5 +1367,10 @@
   "form.ids.menu.split": "拆分為",
   "form.ids.menu.swap": "改為",
   "form.ids.menu.copy": "複製",
-  "form.ids.problem.draft": "輸入框中的文字還不是描述序列。請先補全或清除。"
+  "form.ids.problem.draft": "輸入框中的文字還不是描述序列。請先補全或清除。",
+  "form.ids.variants.label": "{part}的字形",
+  "form.ids.grass.head": "草字頭",
+  "form.ids.grass.connected": "連寫",
+  "form.ids.grass.split": "分寫",
+  "form.ids.grass.inward": "豎畫在內"
 }

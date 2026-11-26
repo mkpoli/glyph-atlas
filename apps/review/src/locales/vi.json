@@ -1350,5 +1350,10 @@
   "form.ids.menu.split": "Tách thành",
   "form.ids.menu.swap": "Đổi thành",
   "form.ids.menu.copy": "Sao chép",
-  "form.ids.problem.draft": "Ô nhập chưa phải dãy ghi chữ. Hãy viết xong hoặc xóa trước."
+  "form.ids.problem.draft": "Ô nhập chưa phải dãy ghi chữ. Hãy viết xong hoặc xóa trước.",
+  "form.ids.variants.label": "Tự dạng của {part}",
+  "form.ids.grass.head": "Bộ 艹",
+  "form.ids.grass.connected": "Nét liền",
+  "form.ids.grass.split": "Nét tách",
+  "form.ids.grass.inward": "Nét bên trong"
 }

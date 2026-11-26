@@ -1409,5 +1409,10 @@
   "form.ids.menu.split": "Split with",
   "form.ids.menu.swap": "Change to",
   "form.ids.menu.copy": "Copy",
-  "form.ids.problem.draft": "The field holds text that is not a description yet. Finish it or clear it first."
+  "form.ids.problem.draft": "The field holds text that is not a description yet. Finish it or clear it first.",
+  "form.ids.variants.label": "Forms of {part}",
+  "form.ids.grass.head": "Grass radical",
+  "form.ids.grass.connected": "Connected",
+  "form.ids.grass.split": "Split",
+  "form.ids.grass.inward": "Inward uprights"
 }

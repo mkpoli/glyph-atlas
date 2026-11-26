@@ -1357,5 +1357,10 @@
   "form.ids.menu.split": "分かつ",
   "form.ids.menu.swap": "改む",
   "form.ids.menu.copy": "寫す",
-  "form.ids.problem.draft": "入力欄の文字は未だ記述を成さず。先づ整ふるか消すべし。"
+  "form.ids.problem.draft": "入力欄の文字は未だ記述を成さず。先づ整ふるか消すべし。",
+  "form.ids.variants.label": "{part}の字形",
+  "form.ids.grass.head": "艸冠",
+  "form.ids.grass.connected": "連書",
+  "form.ids.grass.split": "分書",
+  "form.ids.grass.inward": "豎畫內向き"
 }

@@ -1364,5 +1364,10 @@
   "form.ids.menu.split": "分ける",
   "form.ids.menu.swap": "変える",
   "form.ids.menu.copy": "コピー",
-  "form.ids.problem.draft": "入力欄の文字はまだ記述になっていません。先に整えるか、消してください。"
+  "form.ids.problem.draft": "入力欄の文字はまだ記述になっていません。先に整えるか、消してください。",
+  "form.ids.variants.label": "{part}の字形",
+  "form.ids.grass.head": "くさかんむり",
+  "form.ids.grass.connected": "つなげる",
+  "form.ids.grass.split": "分ける",
+  "form.ids.grass.inward": "縦画が内側"
 }
