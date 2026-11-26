@@ -522,6 +522,19 @@ def test_what_heads_a_family_takes_it_along_and_the_head_is_one_of_the_two():
     assert found == {"黄": "".join(sorted("黄黃𨝴𡕛"))}
 
 
+def test_two_headwords_with_no_reading_in_common_do_not_join_on_a_variant_row():
+    rows = [edge("螮", "蚳", "variant", "cjkvi-variants", "螮→蚳 hydzd/variant")]
+    assert decided(rows, {})[0] == {"螮": "蚳螮"} or decided(rows, {})[0] == {"蚳": "蚳螮"}
+    apart = [(book, f"{book}{n}", char, reading) for book in ("shuowen", "guangyun") for n, (char, reading) in enumerate((("螮", "a"), ("蚳", "b")))]
+    assert decided(rows, {}, words=headwords(*apart))[0] == {}
+    # One dictionary is not enough, nor are two readings of which they share one.
+    assert decided(rows, {}, words=headwords(*apart[:2]))[0] != {}
+    assert decided(rows, {}, words=headwords(*apart, ("guangyun", "guangyun9", "螮", "b")))[0] != {}
+    # A ruling that the two are one joins them, whichever it names first.
+    for pair in ("螮蚳", "蚳螮"):
+        assert decided(rows, {}, words=headwords(*apart), hand=ruled((*pair, "one")))[0] != {}
+
+
 # --- the tables as they are ---------------------------------------------------------------------------
 
 
@@ -621,6 +634,37 @@ def test_one_rule_for_loans_and_non_cognates():
 
 def test_a_form_leaves_what_it_was_filed_under():
     assert not same("备", "留") and not same("壳", "賣") and not same("橱", "厨")
+
+
+def test_headwords_apart_in_both_dictionaries_do_not_meet_in_a_third_character():
+    """忦 and 𢗊 are each a variant of 恝 alone, which neither dictionary holds."""
+    rows = [edge("忦", "恝", "variant", "cjkvi-variants", "忦→恝 hydzd/variant"), edge("恝", "𢗊", "variant", "cjkvi-variants", "恝→𢗊 hydzd/variant")]
+    assert frozenset("忦恝𢗊") in {frozenset(members) for members in decided(rows, {})[0].values()}
+    found = decided(rows, {}, words=headwords(*apart_in_both("忦", "𢗊")))[0]
+    assert [set(members) & set("忦𢗊") for members in found.values()] in ([{"忦"}], [{"𢗊"}])
+    # Nor does a character of one group with one of the other, whatever readings the rest of them share.
+    rows = [edge("忦", "恝", "z"), edge("𢗊", "挈", "z"), edge("忦", "𢗊", "variant", "cjkvi-variants", "忦→𢗊 hydzd/variant")]
+    words = [*apart_in_both("忦", "𢗊"), ("guangyun", "5", "恝", "x"), ("guangyun", "6", "挈", "x"), ("shuowen", "5", "恝", "x"), ("shuowen", "6", "挈", "x")]
+    assert not any({"忦", "𢗊"} <= set(members) for members in decided(rows, {}, words=headwords(*words))[0].values())
+
+
+def test_a_form_of_an_entry_is_compared_whichever_of_the_two_it_is():
+    """A 重文 is read as its entry, as the group that joins and as the one joined."""
+    made = [{"dictionary": "shuowen", "entry": "1", "char": "甲", "role": "head", "reading": "a"}, {"dictionary": "shuowen", "entry": "1", "char": "蚳", "role": "form", "reading": "a"},
+            {"dictionary": "shuowen", "entry": "2", "char": "螮", "role": "head", "reading": "b"}, {"dictionary": "guangyun", "entry": "1", "char": "蚳", "role": "head", "reading": "a"},
+            {"dictionary": "guangyun", "entry": "2", "char": "螮", "role": "head", "reading": "b"}]
+    for pair in ("螮蚳", "蚳螮"):
+        rows = [edge(*pair, "variant", "cjkvi-variants", f"{pair[0]}→{pair[1]} hydzd/variant")]
+        assert decided(rows, {}, words=Headwords(made))[0] == {}
+        # With more hanging on the one or the other, so that either is the leaf.
+        for more in pair:
+            found = decided([*rows, edge(more, "乙", "variant", "wikidata")], {}, words=Headwords(made))[0]
+            assert not any({"螮", "蚳"} <= set(members) for members in found.values())
+
+
+def test_headwords_apart_in_both_dictionaries_are_split():
+    assert same("䗖", "螮") and not same("螮", "蚳") and not same("忦", "𢗊")
+    assert [pair for pair in ["㜘姐", "沝水", "琀含", "淺灒", "懁悁", "㗊雷", "頣頤"] if same(*pair)] == []
 
 
 def test_a_form_joined_by_the_table_is_cited_to_it():

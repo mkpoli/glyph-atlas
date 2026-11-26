@@ -1012,7 +1012,7 @@ U+35C6	㗆	CJK UNIFIED IDEOGRAPH-35C6		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+35C7	㗇	CJK UNIFIED IDEOGRAPH-35C7		han	Lo	3.0	CJK Unified Ideographs Extension A			U+35C7	
 U+35C8	㗈	CJK UNIFIED IDEOGRAPH-35C8		han	Lo	3.0	CJK Unified Ideographs Extension A			U+66FC	
 U+35C9	㗉	CJK UNIFIED IDEOGRAPH-35C9		han	Lo	3.0	CJK Unified Ideographs Extension A			U+35C9	
-U+35CA	㗊	CJK UNIFIED IDEOGRAPH-35CA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+96F7	
+U+35CA	㗊	CJK UNIFIED IDEOGRAPH-35CA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+35CA	
 U+35CB	㗋	CJK UNIFIED IDEOGRAPH-35CB		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5589	
 U+35CC	㗌	CJK UNIFIED IDEOGRAPH-35CC		han	Lo	3.0	CJK Unified Ideographs Extension A			U+35CC	
 U+35CD	㗍	CJK UNIFIED IDEOGRAPH-35CD		han	Lo	3.0	CJK Unified Ideographs Extension A			U+35CD	
@@ -1264,11 +1264,11 @@ U+36C2	㛂	CJK UNIFIED IDEOGRAPH-36C2		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+36C3	㛃	CJK UNIFIED IDEOGRAPH-36C3		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C3	
 U+36C4	㛄	CJK UNIFIED IDEOGRAPH-36C4		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C4	
 U+36C5	㛅	CJK UNIFIED IDEOGRAPH-36C5		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C5	
-U+36C6	㛆	CJK UNIFIED IDEOGRAPH-36C6		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5AA3	
+U+36C6	㛆	CJK UNIFIED IDEOGRAPH-36C6		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C6	
 U+36C7	㛇	CJK UNIFIED IDEOGRAPH-36C7		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C7	
 U+36C8	㛈	CJK UNIFIED IDEOGRAPH-36C8		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C8	
 U+36C9	㛉	CJK UNIFIED IDEOGRAPH-36C9		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C9	
-U+36CA	㛊	CJK UNIFIED IDEOGRAPH-36CA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5AA3	
+U+36CA	㛊	CJK UNIFIED IDEOGRAPH-36CA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36C6	
 U+36CB	㛋	CJK UNIFIED IDEOGRAPH-36CB		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36CB	
 U+36CC	㛌	CJK UNIFIED IDEOGRAPH-36CC		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36CC	
 U+36CD	㛍	CJK UNIFIED IDEOGRAPH-36CD		han	Lo	3.0	CJK Unified Ideographs Extension A			U+36CD	
@@ -1346,7 +1346,7 @@ U+3714	㜔	CJK UNIFIED IDEOGRAPH-3714		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+3715	㜕	CJK UNIFIED IDEOGRAPH-3715		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3715	
 U+3716	㜖	CJK UNIFIED IDEOGRAPH-3716		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3716	
 U+3717	㜗	CJK UNIFIED IDEOGRAPH-3717		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3717	
-U+3718	㜘	CJK UNIFIED IDEOGRAPH-3718		han	Lo	3.0	CJK Unified Ideographs Extension A			U+59D0	
+U+3718	㜘	CJK UNIFIED IDEOGRAPH-3718		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3718	
 U+3719	㜙	CJK UNIFIED IDEOGRAPH-3719		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3719	
 U+371A	㜚	CJK UNIFIED IDEOGRAPH-371A		han	Lo	3.0	CJK Unified Ideographs Extension A			U+371A	
 U+371B	㜛	CJK UNIFIED IDEOGRAPH-371B		han	Lo	3.0	CJK Unified Ideographs Extension A			U+371B	
@@ -1682,7 +1682,7 @@ U+3864	㡤	CJK UNIFIED IDEOGRAPH-3864		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+3865	㡥	CJK UNIFIED IDEOGRAPH-3865		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3865	
 U+3866	㡦	CJK UNIFIED IDEOGRAPH-3866		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3866	
 U+3867	㡧	CJK UNIFIED IDEOGRAPH-3867		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5E40	
-U+3868	㡨	CJK UNIFIED IDEOGRAPH-3868		han	Lo	3.0	CJK Unified Ideographs Extension A			U+6515	
+U+3868	㡨	CJK UNIFIED IDEOGRAPH-3868		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3868	
 U+3869	㡩	CJK UNIFIED IDEOGRAPH-3869		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5E1F	
 U+386A	㡪	CJK UNIFIED IDEOGRAPH-386A		han	Lo	3.0	CJK Unified Ideographs Extension A			U+386A	
 U+386B	㡫	CJK UNIFIED IDEOGRAPH-386B		han	Lo	3.0	CJK Unified Ideographs Extension A			U+386B	
@@ -2106,7 +2106,7 @@ U+3A0C	㨌	CJK UNIFIED IDEOGRAPH-3A0C		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+3A0D	㨍	CJK UNIFIED IDEOGRAPH-3A0D		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A0D	
 U+3A0E	㨎	CJK UNIFIED IDEOGRAPH-3A0E		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A0E	
 U+3A0F	㨏	CJK UNIFIED IDEOGRAPH-3A0F		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A0F	
-U+3A10	㨐	CJK UNIFIED IDEOGRAPH-3A10		han	Lo	3.0	CJK Unified Ideographs Extension A			U+62CA	
+U+3A10	㨐	CJK UNIFIED IDEOGRAPH-3A10		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A10	
 U+3A11	㨑	CJK UNIFIED IDEOGRAPH-3A11		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A11	
 U+3A12	㨒	CJK UNIFIED IDEOGRAPH-3A12		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A12	
 U+3A13	㨓	CJK UNIFIED IDEOGRAPH-3A13		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3A13	
@@ -2297,7 +2297,7 @@ U+3ACB	㫋	CJK UNIFIED IDEOGRAPH-3ACB		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+3ACC	㫌	CJK UNIFIED IDEOGRAPH-3ACC		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3ACC	
 U+3ACD	㫍	CJK UNIFIED IDEOGRAPH-3ACD		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3ACD	
 U+3ACE	㫎	CJK UNIFIED IDEOGRAPH-3ACE		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3ACE	
-U+3ACF	㫏	CJK UNIFIED IDEOGRAPH-3ACF		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3ACD	
+U+3ACF	㫏	CJK UNIFIED IDEOGRAPH-3ACF		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3ACF	
 U+3AD0	㫐	CJK UNIFIED IDEOGRAPH-3AD0		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3AD0	
 U+3AD1	㫑	CJK UNIFIED IDEOGRAPH-3AD1		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3AD1	
 U+3AD2	㫒	CJK UNIFIED IDEOGRAPH-3AD2		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3AD2	
@@ -3260,7 +3260,7 @@ U+3E8E	㺎	CJK UNIFIED IDEOGRAPH-3E8E		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+3E8F	㺏	CJK UNIFIED IDEOGRAPH-3E8F		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5A41	
 U+3E90	㺐	CJK UNIFIED IDEOGRAPH-3E90		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3E90	
 U+3E91	㺑	CJK UNIFIED IDEOGRAPH-3E91		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3E91	
-U+3E92	㺒	CJK UNIFIED IDEOGRAPH-3E92		han	Lo	3.0	CJK Unified Ideographs Extension A			U+72E1	
+U+3E92	㺒	CJK UNIFIED IDEOGRAPH-3E92		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3E92	
 U+3E93	㺓	CJK UNIFIED IDEOGRAPH-3E93		han	Lo	3.0	CJK Unified Ideographs Extension A			U+8DE1	
 U+3E94	㺔	CJK UNIFIED IDEOGRAPH-3E94		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3E94	
 U+3E95	㺕	CJK UNIFIED IDEOGRAPH-3E95		han	Lo	3.0	CJK Unified Ideographs Extension A			U+3E95	
@@ -3661,7 +3661,7 @@ U+401F	䀟	CJK UNIFIED IDEOGRAPH-401F		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+4020	䀠	CJK UNIFIED IDEOGRAPH-4020		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4020	
 U+4021	䀡	CJK UNIFIED IDEOGRAPH-4021		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4021	
 U+4022	䀢	CJK UNIFIED IDEOGRAPH-4022		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4022	
-U+4023	䀣	CJK UNIFIED IDEOGRAPH-4023		han	Lo	3.0	CJK Unified Ideographs Extension A			U+401B	
+U+4023	䀣	CJK UNIFIED IDEOGRAPH-4023		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4023	
 U+4024	䀤	CJK UNIFIED IDEOGRAPH-4024		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4024	
 U+4025	䀥	CJK UNIFIED IDEOGRAPH-4025		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4025	
 U+4026	䀦	CJK UNIFIED IDEOGRAPH-4026		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4026	
@@ -3710,7 +3710,7 @@ U+4050	䁐	CJK UNIFIED IDEOGRAPH-4050		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+4051	䁑	CJK UNIFIED IDEOGRAPH-4051		han	Lo	3.0	CJK Unified Ideographs Extension A			U+773B	
 U+4052	䁒	CJK UNIFIED IDEOGRAPH-4052		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4052	
 U+4053	䁓	CJK UNIFIED IDEOGRAPH-4053		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4053	
-U+4054	䁔	CJK UNIFIED IDEOGRAPH-4054		han	Lo	3.0	CJK Unified Ideographs Extension A			U+7745	
+U+4054	䁔	CJK UNIFIED IDEOGRAPH-4054		han	Lo	3.0	CJK Unified Ideographs Extension A			U+777B	
 U+4055	䁕	CJK UNIFIED IDEOGRAPH-4055		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4055	
 U+4056	䁖	CJK UNIFIED IDEOGRAPH-4056		han	Lo	3.0	CJK Unified Ideographs Extension A			U+779C	
 U+4057	䁗	CJK UNIFIED IDEOGRAPH-4057		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4057	
@@ -3831,7 +3831,7 @@ U+40C9	䃉	CJK UNIFIED IDEOGRAPH-40C9		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+40CA	䃊	CJK UNIFIED IDEOGRAPH-40CA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+40CA	
 U+40CB	䃋	CJK UNIFIED IDEOGRAPH-40CB		han	Lo	3.0	CJK Unified Ideographs Extension A			U+40CB	
 U+40CC	䃌	CJK UNIFIED IDEOGRAPH-40CC		han	Lo	3.0	CJK Unified Ideographs Extension A			U+40CC	
-U+40CD	䃍	CJK UNIFIED IDEOGRAPH-40CD		han	Lo	3.0	CJK Unified Ideographs Extension A			U+589C	
+U+40CD	䃍	CJK UNIFIED IDEOGRAPH-40CD		han	Lo	3.0	CJK Unified Ideographs Extension A			U+40CD	
 U+40CE	䃎	CJK UNIFIED IDEOGRAPH-40CE		han	Lo	3.0	CJK Unified Ideographs Extension A			U+781F	
 U+40CF	䃏	CJK UNIFIED IDEOGRAPH-40CF		han	Lo	3.0	CJK Unified Ideographs Extension A			U+40CF	
 U+40D0	䃐	CJK UNIFIED IDEOGRAPH-40D0		han	Lo	3.0	CJK Unified Ideographs Extension A			U+5817	
@@ -4272,7 +4272,7 @@ U+4282	䊂	CJK UNIFIED IDEOGRAPH-4282		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+4283	䊃	CJK UNIFIED IDEOGRAPH-4283		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4283	
 U+4284	䊄	CJK UNIFIED IDEOGRAPH-4284		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4284	
 U+4285	䊅	CJK UNIFIED IDEOGRAPH-4285		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4285	
-U+4286	䊆	CJK UNIFIED IDEOGRAPH-4286		han	Lo	3.0	CJK Unified Ideographs Extension A			U+7CD7	
+U+4286	䊆	CJK UNIFIED IDEOGRAPH-4286		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4286	
 U+4287	䊇	CJK UNIFIED IDEOGRAPH-4287		han	Lo	3.0	CJK Unified Ideographs Extension A			U+9914	
 U+4288	䊈	CJK UNIFIED IDEOGRAPH-4288		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4288	
 U+4289	䊉	CJK UNIFIED IDEOGRAPH-4289		han	Lo	3.0	CJK Unified Ideographs Extension A			U+7CC2	
@@ -4338,7 +4338,7 @@ U+42C4	䋄	CJK UNIFIED IDEOGRAPH-42C4		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+42C5	䋅	CJK UNIFIED IDEOGRAPH-42C5		han	Lo	3.0	CJK Unified Ideographs Extension A			U+42C5	
 U+42C6	䋆	CJK UNIFIED IDEOGRAPH-42C6		han	Lo	3.0	CJK Unified Ideographs Extension A			U+42C6	
 U+42C7	䋇	CJK UNIFIED IDEOGRAPH-42C7		han	Lo	3.0	CJK Unified Ideographs Extension A			U+7E79	
-U+42C8	䋈	CJK UNIFIED IDEOGRAPH-42C8		han	Lo	3.0	CJK Unified Ideographs Extension A			U+8339	
+U+42C8	䋈	CJK UNIFIED IDEOGRAPH-42C8		han	Lo	3.0	CJK Unified Ideographs Extension A			U+42C8	
 U+42C9	䋉	CJK UNIFIED IDEOGRAPH-42C9		han	Lo	3.0	CJK Unified Ideographs Extension A			U+42BD	
 U+42CA	䋊	CJK UNIFIED IDEOGRAPH-42CA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+42CA	
 U+42CB	䋋	CJK UNIFIED IDEOGRAPH-42CB		han	Lo	3.0	CJK Unified Ideographs Extension A			U+42CB	
@@ -4954,7 +4954,7 @@ U+452C	䔬	CJK UNIFIED IDEOGRAPH-452C		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+452D	䔭	CJK UNIFIED IDEOGRAPH-452D		han	Lo	3.0	CJK Unified Ideographs Extension A			U+452D	
 U+452E	䔮	CJK UNIFIED IDEOGRAPH-452E		han	Lo	3.0	CJK Unified Ideographs Extension A			U+452E	
 U+452F	䔯	CJK UNIFIED IDEOGRAPH-452F		han	Lo	3.0	CJK Unified Ideographs Extension A			U+452F	
-U+4530	䔰	CJK UNIFIED IDEOGRAPH-4530		han	Lo	3.0	CJK Unified Ideographs Extension A			U+844D	
+U+4530	䔰	CJK UNIFIED IDEOGRAPH-4530		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4530	
 U+4531	䔱	CJK UNIFIED IDEOGRAPH-4531		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4531	
 U+4532	䔲	CJK UNIFIED IDEOGRAPH-4532		han	Lo	3.0	CJK Unified Ideographs Extension A			U+6A59	
 U+4533	䔳	CJK UNIFIED IDEOGRAPH-4533		han	Lo	3.0	CJK Unified Ideographs Extension A			U+4533	
@@ -5120,7 +5120,7 @@ U+45D2	䗒	CJK UNIFIED IDEOGRAPH-45D2		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+45D3	䗓	CJK UNIFIED IDEOGRAPH-45D3		han	Lo	3.0	CJK Unified Ideographs Extension A			U+45D3	
 U+45D4	䗔	CJK UNIFIED IDEOGRAPH-45D4		han	Lo	3.0	CJK Unified Ideographs Extension A			U+45D4	
 U+45D5	䗕	CJK UNIFIED IDEOGRAPH-45D5		han	Lo	3.0	CJK Unified Ideographs Extension A			U+873F	
-U+45D6	䗖	CJK UNIFIED IDEOGRAPH-45D6		han	Lo	3.0	CJK Unified Ideographs Extension A			U+86B3	
+U+45D6	䗖	CJK UNIFIED IDEOGRAPH-45D6		han	Lo	3.0	CJK Unified Ideographs Extension A			U+87AE	
 U+45D7	䗗	CJK UNIFIED IDEOGRAPH-45D7		han	Lo	3.0	CJK Unified Ideographs Extension A			U+8688	
 U+45D8	䗘	CJK UNIFIED IDEOGRAPH-45D8		han	Lo	3.0	CJK Unified Ideographs Extension A			U+45D8	
 U+45D9	䗙	CJK UNIFIED IDEOGRAPH-45D9		han	Lo	3.0	CJK Unified Ideographs Extension A			U+45D9	
@@ -5894,7 +5894,7 @@ U+48D8	䣘	CJK UNIFIED IDEOGRAPH-48D8		han	Lo	3.0	CJK Unified Ideographs Extensi
 U+48D9	䣙	CJK UNIFIED IDEOGRAPH-48D9		han	Lo	3.0	CJK Unified Ideographs Extension A			U+48D9	
 U+48DA	䣚	CJK UNIFIED IDEOGRAPH-48DA		han	Lo	3.0	CJK Unified Ideographs Extension A			U+48DA	
 U+48DB	䣛	CJK UNIFIED IDEOGRAPH-48DB		han	Lo	3.0	CJK Unified Ideographs Extension A			U+48DB	
-U+48DC	䣜	CJK UNIFIED IDEOGRAPH-48DC		han	Lo	3.0	CJK Unified Ideographs Extension A			U+9147	
+U+48DC	䣜	CJK UNIFIED IDEOGRAPH-48DC		han	Lo	3.0	CJK Unified Ideographs Extension A			U+48DC	
 U+48DD	䣝	CJK UNIFIED IDEOGRAPH-48DD		han	Lo	3.0	CJK Unified Ideographs Extension A			U+48DD	
 U+48DE	䣞	CJK UNIFIED IDEOGRAPH-48DE		han	Lo	3.0	CJK Unified Ideographs Extension A			U+9102	
 U+48DF	䣟	CJK UNIFIED IDEOGRAPH-48DF		han	Lo	3.0	CJK Unified Ideographs Extension A			U+48DF	
@@ -7770,7 +7770,7 @@ U+506C	偬	CJK UNIFIED IDEOGRAPH-506C		han	Lo	1.1	CJK Unified Ideographs			U+506
 U+506D	偭	CJK UNIFIED IDEOGRAPH-506D		han	Lo	1.1	CJK Unified Ideographs			U+506D	
 U+506E	偮	CJK UNIFIED IDEOGRAPH-506E		han	Lo	1.1	CJK Unified Ideographs			U+506E	
 U+506F	偯	CJK UNIFIED IDEOGRAPH-506F		han	Lo	1.1	CJK Unified Ideographs			U+506F	
-U+5070	偰	CJK UNIFIED IDEOGRAPH-5070		han	Lo	1.1	CJK Unified Ideographs			U+5951	
+U+5070	偰	CJK UNIFIED IDEOGRAPH-5070		han	Lo	1.1	CJK Unified Ideographs			U+5070	
 U+5071	偱	CJK UNIFIED IDEOGRAPH-5071		han	Lo	1.1	CJK Unified Ideographs			U+5071	
 U+5072	偲	CJK UNIFIED IDEOGRAPH-5072		han	Lo	1.1	CJK Unified Ideographs			U+5072	
 U+5073	偳	CJK UNIFIED IDEOGRAPH-5073		han	Lo	1.1	CJK Unified Ideographs			U+5073	
@@ -8856,7 +8856,7 @@ U+54AA	咪	CJK UNIFIED IDEOGRAPH-54AA		han	Lo	1.1	CJK Unified Ideographs			U+54A
 U+54AB	咫	CJK UNIFIED IDEOGRAPH-54AB		han	Lo	1.1	CJK Unified Ideographs			U+54AB	
 U+54AC	咬	CJK UNIFIED IDEOGRAPH-54AC		han	Lo	1.1	CJK Unified Ideographs			U+54AC	
 U+54AD	咭	CJK UNIFIED IDEOGRAPH-54AD		han	Lo	1.1	CJK Unified Ideographs			U+54AD	
-U+54AE	咮	CJK UNIFIED IDEOGRAPH-54AE		han	Lo	1.1	CJK Unified Ideographs			U+5599	
+U+54AE	咮	CJK UNIFIED IDEOGRAPH-54AE		han	Lo	1.1	CJK Unified Ideographs			U+54AE	
 U+54AF	咯	CJK UNIFIED IDEOGRAPH-54AF		han	Lo	1.1	CJK Unified Ideographs			U+54AF	
 U+54B0	咰	CJK UNIFIED IDEOGRAPH-54B0		han	Lo	1.1	CJK Unified Ideographs			U+54B0	
 U+54B1	咱	CJK UNIFIED IDEOGRAPH-54B1		han	Lo	1.1	CJK Unified Ideographs			U+54B1	
@@ -9027,7 +9027,7 @@ U+5555	啕	CJK UNIFIED IDEOGRAPH-5555		han	Lo	1.1	CJK Unified Ideographs			U+555
 U+5556	啖	CJK UNIFIED IDEOGRAPH-5556		han	Lo	1.1	CJK Unified Ideographs			U+5556	
 U+5557	啗	CJK UNIFIED IDEOGRAPH-5557		han	Lo	1.1	CJK Unified Ideographs			U+5557	
 U+5558	啘	CJK UNIFIED IDEOGRAPH-5558		han	Lo	1.1	CJK Unified Ideographs			U+5558	
-U+5559	啙	CJK UNIFIED IDEOGRAPH-5559		han	Lo	1.1	CJK Unified Ideographs			U+75B5	
+U+5559	啙	CJK UNIFIED IDEOGRAPH-5559		han	Lo	1.1	CJK Unified Ideographs			U+5559	
 U+555A	啚	CJK UNIFIED IDEOGRAPH-555A		han	Lo	1.1	CJK Unified Ideographs			U+555A	
 U+555B	啛	CJK UNIFIED IDEOGRAPH-555B		han	Lo	1.1	CJK Unified Ideographs			U+5550	
 U+555C	啜	CJK UNIFIED IDEOGRAPH-555C		han	Lo	1.1	CJK Unified Ideographs			U+555C	
@@ -9268,7 +9268,7 @@ U+5646	噆	CJK UNIFIED IDEOGRAPH-5646		han	Lo	1.1	CJK Unified Ideographs			U+564
 U+5647	噇	CJK UNIFIED IDEOGRAPH-5647		han	Lo	1.1	CJK Unified Ideographs			U+5647	
 U+5648	噈	CJK UNIFIED IDEOGRAPH-5648		han	Lo	1.1	CJK Unified Ideographs			U+5648	
 U+5649	噉	CJK UNIFIED IDEOGRAPH-5649		han	Lo	1.1	CJK Unified Ideographs			U+5649	
-U+564A	噊	CJK UNIFIED IDEOGRAPH-564A		han	Lo	1.1	CJK Unified Ideographs			U+8B4E	
+U+564A	噊	CJK UNIFIED IDEOGRAPH-564A		han	Lo	1.1	CJK Unified Ideographs			U+564A	
 U+564B	噋	CJK UNIFIED IDEOGRAPH-564B		han	Lo	1.1	CJK Unified Ideographs			U+564B	
 U+564C	噌	CJK UNIFIED IDEOGRAPH-564C		han	Lo	1.1	CJK Unified Ideographs			U+564C	
 U+564D	噍	CJK UNIFIED IDEOGRAPH-564D		han	Lo	1.1	CJK Unified Ideographs			U+564D	
@@ -9746,7 +9746,7 @@ U+5824	堤	CJK UNIFIED IDEOGRAPH-5824		han	Lo	1.1	CJK Unified Ideographs			U+582
 U+5825	堥	CJK UNIFIED IDEOGRAPH-5825		han	Lo	1.1	CJK Unified Ideographs			U+5825	
 U+5826	堦	CJK UNIFIED IDEOGRAPH-5826		han	Lo	1.1	CJK Unified Ideographs			U+968E	
 U+5827	堧	CJK UNIFIED IDEOGRAPH-5827		han	Lo	1.1	CJK Unified Ideographs			U+5827	
-U+5828	堨	CJK UNIFIED IDEOGRAPH-5828		han	Lo	1.1	CJK Unified Ideographs			U+58D2	
+U+5828	堨	CJK UNIFIED IDEOGRAPH-5828		han	Lo	1.1	CJK Unified Ideographs			U+5828	
 U+5829	堩	CJK UNIFIED IDEOGRAPH-5829		han	Lo	1.1	CJK Unified Ideographs			U+5829	
 U+582A	堪	CJK UNIFIED IDEOGRAPH-582A		han	Lo	1.1	CJK Unified Ideographs			U+582A	
 U+582B	堫	CJK UNIFIED IDEOGRAPH-582B		han	Lo	1.1	CJK Unified Ideographs			U+582B	
@@ -10175,7 +10175,7 @@ U+59D1	姑	CJK UNIFIED IDEOGRAPH-59D1		han	Lo	1.1	CJK Unified Ideographs			U+59D
 U+59D2	姒	CJK UNIFIED IDEOGRAPH-59D2		han	Lo	1.1	CJK Unified Ideographs			U+59D2	
 U+59D3	姓	CJK UNIFIED IDEOGRAPH-59D3		han	Lo	1.1	CJK Unified Ideographs			U+59D3	
 U+59D4	委	CJK UNIFIED IDEOGRAPH-59D4		han	Lo	1.1	CJK Unified Ideographs			U+59D4	
-U+59D5	姕	CJK UNIFIED IDEOGRAPH-59D5		han	Lo	1.1	CJK Unified Ideographs			U+59FF	
+U+59D5	姕	CJK UNIFIED IDEOGRAPH-59D5		han	Lo	1.1	CJK Unified Ideographs			U+59D5	
 U+59D6	姖	CJK UNIFIED IDEOGRAPH-59D6		han	Lo	1.1	CJK Unified Ideographs			U+59D6	
 U+59D7	姗	CJK UNIFIED IDEOGRAPH-59D7		han	Lo	1.1	CJK Unified Ideographs			U+59CD	
 U+59D8	姘	CJK UNIFIED IDEOGRAPH-59D8		han	Lo	1.1	CJK Unified Ideographs			U+5B2A	
@@ -10184,7 +10184,7 @@ U+59DA	姚	CJK UNIFIED IDEOGRAPH-59DA		han	Lo	1.1	CJK Unified Ideographs			U+59D
 U+59DB	姛	CJK UNIFIED IDEOGRAPH-59DB		han	Lo	1.1	CJK Unified Ideographs			U+59DB	
 U+59DC	姜	CJK UNIFIED IDEOGRAPH-59DC		han	Lo	1.1	CJK Unified Ideographs			U+59DC	
 U+59DD	姝	CJK UNIFIED IDEOGRAPH-59DD		han	Lo	1.1	CJK Unified Ideographs			U+59DD	
-U+59DE	姞	CJK UNIFIED IDEOGRAPH-59DE		han	Lo	1.1	CJK Unified Ideographs			U+5409	
+U+59DE	姞	CJK UNIFIED IDEOGRAPH-59DE		han	Lo	1.1	CJK Unified Ideographs			U+59DE	
 U+59DF	姟	CJK UNIFIED IDEOGRAPH-59DF		han	Lo	1.1	CJK Unified Ideographs			U+59DF	
 U+59E0	姠	CJK UNIFIED IDEOGRAPH-59E0		han	Lo	1.1	CJK Unified Ideographs			U+59E0	
 U+59E1	姡	CJK UNIFIED IDEOGRAPH-59E1		han	Lo	1.1	CJK Unified Ideographs			U+59E1	
@@ -12203,7 +12203,7 @@ U+61BD	憽	CJK UNIFIED IDEOGRAPH-61BD		han	Lo	1.1	CJK Unified Ideographs			U+61B
 U+61BE	憾	CJK UNIFIED IDEOGRAPH-61BE		han	Lo	1.1	CJK Unified Ideographs			U+61BE	
 U+61BF	憿	CJK UNIFIED IDEOGRAPH-61BF		han	Lo	1.1	CJK Unified Ideographs			U+61BF	
 U+61C0	懀	CJK UNIFIED IDEOGRAPH-61C0		han	Lo	1.1	CJK Unified Ideographs			U+61C0	
-U+61C1	懁	CJK UNIFIED IDEOGRAPH-61C1		han	Lo	1.1	CJK Unified Ideographs			U+6081	
+U+61C1	懁	CJK UNIFIED IDEOGRAPH-61C1		han	Lo	1.1	CJK Unified Ideographs			U+61C1	
 U+61C2	懂	CJK UNIFIED IDEOGRAPH-61C2		han	Lo	1.1	CJK Unified Ideographs			U+61C2	
 U+61C3	懃	CJK UNIFIED IDEOGRAPH-61C3		han	Lo	1.1	CJK Unified Ideographs			U+61C3	
 U+61C4	懄	CJK UNIFIED IDEOGRAPH-61C4		han	Lo	1.1	CJK Unified Ideographs			U+61C4	
@@ -12537,7 +12537,7 @@ U+630B	挋	CJK UNIFIED IDEOGRAPH-630B		han	Lo	1.1	CJK Unified Ideographs			U+630
 U+630C	挌	CJK UNIFIED IDEOGRAPH-630C		han	Lo	1.1	CJK Unified Ideographs			U+630C	
 U+630D	挍	CJK UNIFIED IDEOGRAPH-630D		han	Lo	1.1	CJK Unified Ideographs			U+630D	
 U+630E	挎	CJK UNIFIED IDEOGRAPH-630E		han	Lo	1.1	CJK Unified Ideographs			U+630E	
-U+630F	挏	CJK UNIFIED IDEOGRAPH-630F		han	Lo	1.1	CJK Unified Ideographs			U+606B	
+U+630F	挏	CJK UNIFIED IDEOGRAPH-630F		han	Lo	1.1	CJK Unified Ideographs			U+630F	
 U+6310	挐	CJK UNIFIED IDEOGRAPH-6310		han	Lo	1.1	CJK Unified Ideographs			U+6310	
 U+6311	挑	CJK UNIFIED IDEOGRAPH-6311		han	Lo	1.1	CJK Unified Ideographs			U+6311	
 U+6312	挒	CJK UNIFIED IDEOGRAPH-6312		han	Lo	1.1	CJK Unified Ideographs			U+6312	
@@ -14612,7 +14612,7 @@ U+6B26	欦	CJK UNIFIED IDEOGRAPH-6B26		han	Lo	1.1	CJK Unified Ideographs			U+6B2
 U+6B27	欧	CJK UNIFIED IDEOGRAPH-6B27		han	Lo	1.1	CJK Unified Ideographs			U+6B27	
 U+6B28	欨	CJK UNIFIED IDEOGRAPH-6B28		han	Lo	1.1	CJK Unified Ideographs			U+5474	
 U+6B29	欩	CJK UNIFIED IDEOGRAPH-6B29		han	Lo	1.1	CJK Unified Ideographs			U+6B29	
-U+6B2A	欪	CJK UNIFIED IDEOGRAPH-6B2A		han	Lo	1.1	CJK Unified Ideographs			U+54A5	
+U+6B2A	欪	CJK UNIFIED IDEOGRAPH-6B2A		han	Lo	1.1	CJK Unified Ideographs			U+6B2A	
 U+6B2B	欫	CJK UNIFIED IDEOGRAPH-6B2B		han	Lo	1.1	CJK Unified Ideographs			U+6B2B	
 U+6B2C	欬	CJK UNIFIED IDEOGRAPH-6B2C		han	Lo	1.1	CJK Unified Ideographs			U+6B2C	
 U+6B2D	欭	CJK UNIFIED IDEOGRAPH-6B2D		han	Lo	1.1	CJK Unified Ideographs			U+6B2D	
@@ -14983,7 +14983,7 @@ U+6C99	沙	CJK UNIFIED IDEOGRAPH-6C99		han	Lo	1.1	CJK Unified Ideographs			U+6C9
 U+6C9A	沚	CJK UNIFIED IDEOGRAPH-6C9A		han	Lo	1.1	CJK Unified Ideographs			U+6C9A	
 U+6C9B	沛	CJK UNIFIED IDEOGRAPH-6C9B		han	Lo	1.1	CJK Unified Ideographs			U+6C9B	
 U+6C9C	沜	CJK UNIFIED IDEOGRAPH-6C9C		han	Lo	1.1	CJK Unified Ideographs			U+6CEE	
-U+6C9D	沝	CJK UNIFIED IDEOGRAPH-6C9D		han	Lo	1.1	CJK Unified Ideographs			U+6C34	
+U+6C9D	沝	CJK UNIFIED IDEOGRAPH-6C9D		han	Lo	1.1	CJK Unified Ideographs			U+6C9D	
 U+6C9E	沞	CJK UNIFIED IDEOGRAPH-6C9E		han	Lo	1.1	CJK Unified Ideographs			U+6C9E	
 U+6C9F	沟	CJK UNIFIED IDEOGRAPH-6C9F		han	Lo	1.1	CJK Unified Ideographs			U+6E9D	
 U+6CA0	沠	CJK UNIFIED IDEOGRAPH-6CA0		han	Lo	1.1	CJK Unified Ideographs			U+6CA0	
@@ -15619,7 +15619,7 @@ U+6F15	漕	CJK UNIFIED IDEOGRAPH-6F15		han	Lo	1.1	CJK Unified Ideographs			U+6F1
 U+6F16	漖	CJK UNIFIED IDEOGRAPH-6F16		han	Lo	1.1	CJK Unified Ideographs			U+6F16	
 U+6F17	漗	CJK UNIFIED IDEOGRAPH-6F17		han	Lo	1.1	CJK Unified Ideographs			U+6F17	
 U+6F18	漘	CJK UNIFIED IDEOGRAPH-6F18		han	Lo	1.1	CJK Unified Ideographs			U+6F18	
-U+6F19	漙	CJK UNIFIED IDEOGRAPH-6F19		han	Lo	1.1	CJK Unified Ideographs			U+6E4D	
+U+6F19	漙	CJK UNIFIED IDEOGRAPH-6F19		han	Lo	1.1	CJK Unified Ideographs			U+6F19	
 U+6F1A	漚	CJK UNIFIED IDEOGRAPH-6F1A		han	Lo	1.1	CJK Unified Ideographs			U+6F1A	
 U+6F1B	漛	CJK UNIFIED IDEOGRAPH-6F1B		han	Lo	1.1	CJK Unified Ideographs			U+6F1B	
 U+6F1C	漜	CJK UNIFIED IDEOGRAPH-6F1C		han	Lo	1.1	CJK Unified Ideographs			U+6F1C	
@@ -15687,12 +15687,12 @@ U+6F59	潙	CJK UNIFIED IDEOGRAPH-6F59		han	Lo	1.1	CJK Unified Ideographs			U+6E8
 U+6F5A	潚	CJK UNIFIED IDEOGRAPH-6F5A		han	Lo	1.1	CJK Unified Ideographs			U+6F5A	
 U+6F5B	潛	CJK UNIFIED IDEOGRAPH-6F5B		han	Lo	1.1	CJK Unified Ideographs			U+6F5C	
 U+6F5C	潜	CJK UNIFIED IDEOGRAPH-6F5C		han	Lo	1.1	CJK Unified Ideographs			U+6F5C	
-U+6F5D	潝	CJK UNIFIED IDEOGRAPH-6F5D		han	Lo	1.1	CJK Unified Ideographs			U+6D65	
+U+6F5D	潝	CJK UNIFIED IDEOGRAPH-6F5D		han	Lo	1.1	CJK Unified Ideographs			U+6F5D	
 U+6F5E	潞	CJK UNIFIED IDEOGRAPH-6F5E		han	Lo	1.1	CJK Unified Ideographs			U+6F5E	
 U+6F5F	潟	CJK UNIFIED IDEOGRAPH-6F5F		han	Lo	1.1	CJK Unified Ideographs			U+6F5F	
 U+6F60	潠	CJK UNIFIED IDEOGRAPH-6F60		han	Lo	1.1	CJK Unified Ideographs			U+6F60	
 U+6F61	潡	CJK UNIFIED IDEOGRAPH-6F61		han	Lo	1.1	CJK Unified Ideographs			U+6F61	
-U+6F62	潢	CJK UNIFIED IDEOGRAPH-6F62		han	Lo	1.1	CJK Unified Ideographs			U+6D38	
+U+6F62	潢	CJK UNIFIED IDEOGRAPH-6F62		han	Lo	1.1	CJK Unified Ideographs			U+6F62	
 U+6F63	潣	CJK UNIFIED IDEOGRAPH-6F63		han	Lo	1.1	CJK Unified Ideographs			U+6F63	
 U+6F64	潤	CJK UNIFIED IDEOGRAPH-6F64		han	Lo	1.1	CJK Unified Ideographs			U+6F64	
 U+6F65	潥	CJK UNIFIED IDEOGRAPH-6F65		han	Lo	1.1	CJK Unified Ideographs			U+6F65	
@@ -15847,7 +15847,7 @@ U+6FF9	濹	CJK UNIFIED IDEOGRAPH-6FF9		han	Lo	1.1	CJK Unified Ideographs			U+6FF
 U+6FFA	濺	CJK UNIFIED IDEOGRAPH-6FFA		han	Lo	1.1	CJK Unified Ideographs			U+6FFA	
 U+6FFB	濻	CJK UNIFIED IDEOGRAPH-6FFB		han	Lo	1.1	CJK Unified Ideographs			U+6FFB	
 U+6FFC	濼	CJK UNIFIED IDEOGRAPH-6FFC		han	Lo	1.1	CJK Unified Ideographs			U+6FFC	U+20619
-U+6FFD	濽	CJK UNIFIED IDEOGRAPH-6FFD		han	Lo	1.1	CJK Unified Ideographs			U+6D45	
+U+6FFD	濽	CJK UNIFIED IDEOGRAPH-6FFD		han	Lo	1.1	CJK Unified Ideographs			U+7052	
 U+6FFE	濾	CJK UNIFIED IDEOGRAPH-6FFE		han	Lo	1.1	CJK Unified Ideographs			U+6FFE	
 U+6FFF	濿	CJK UNIFIED IDEOGRAPH-6FFF		han	Lo	1.1	CJK Unified Ideographs			U+7805	
 U+7000	瀀	CJK UNIFIED IDEOGRAPH-7000		han	Lo	1.1	CJK Unified Ideographs			U+512A	
@@ -15932,7 +15932,7 @@ U+704E	灎	CJK UNIFIED IDEOGRAPH-704E		han	Lo	1.1	CJK Unified Ideographs			U+706
 U+704F	灏	CJK UNIFIED IDEOGRAPH-704F		han	Lo	1.1	CJK Unified Ideographs			U+705D	
 U+7050	灐	CJK UNIFIED IDEOGRAPH-7050		han	Lo	1.1	CJK Unified Ideographs			U+7050	
 U+7051	灑	CJK UNIFIED IDEOGRAPH-7051		han	Lo	1.1	CJK Unified Ideographs			U+7051	
-U+7052	灒	CJK UNIFIED IDEOGRAPH-7052		han	Lo	1.1	CJK Unified Ideographs			U+6D45	
+U+7052	灒	CJK UNIFIED IDEOGRAPH-7052		han	Lo	1.1	CJK Unified Ideographs			U+7052	
 U+7053	灓	CJK UNIFIED IDEOGRAPH-7053		han	Lo	1.1	CJK Unified Ideographs			U+7053	
 U+7054	灔	CJK UNIFIED IDEOGRAPH-7054		han	Lo	1.1	CJK Unified Ideographs			U+7069	
 U+7055	灕	CJK UNIFIED IDEOGRAPH-7055		han	Lo	1.1	CJK Unified Ideographs			U+7055	
@@ -16118,7 +16118,7 @@ U+7108	焈	CJK UNIFIED IDEOGRAPH-7108		han	Lo	1.1	CJK Unified Ideographs			U+715
 U+7109	焉	CJK UNIFIED IDEOGRAPH-7109		han	Lo	1.1	CJK Unified Ideographs			U+7109	
 U+710A	焊	CJK UNIFIED IDEOGRAPH-710A		han	Lo	1.1	CJK Unified Ideographs			U+710A	
 U+710B	焋	CJK UNIFIED IDEOGRAPH-710B		han	Lo	1.1	CJK Unified Ideographs			U+710B	
-U+710C	焌	CJK UNIFIED IDEOGRAPH-710C		han	Lo	1.1	CJK Unified Ideographs			U+711E	
+U+710C	焌	CJK UNIFIED IDEOGRAPH-710C		han	Lo	1.1	CJK Unified Ideographs			U+710C	
 U+710D	焍	CJK UNIFIED IDEOGRAPH-710D		han	Lo	1.1	CJK Unified Ideographs			U+710D	
 U+710E	焎	CJK UNIFIED IDEOGRAPH-710E		han	Lo	1.1	CJK Unified Ideographs			U+710E	
 U+710F	焏	CJK UNIFIED IDEOGRAPH-710F		han	Lo	1.1	CJK Unified Ideographs			U+710F	
@@ -16305,7 +16305,7 @@ U+71C3	燃	CJK UNIFIED IDEOGRAPH-71C3		han	Lo	1.1	CJK Unified Ideographs			U+71C
 U+71C4	燄	CJK UNIFIED IDEOGRAPH-71C4		han	Lo	1.1	CJK Unified Ideographs			U+71C4	
 U+71C5	燅	CJK UNIFIED IDEOGRAPH-71C5		han	Lo	1.1	CJK Unified Ideographs			U+71C5	
 U+71C6	燆	CJK UNIFIED IDEOGRAPH-71C6		han	Lo	1.1	CJK Unified Ideographs			U+71C6	
-U+71C7	燇	CJK UNIFIED IDEOGRAPH-71C7		han	Lo	1.1	CJK Unified Ideographs			U+711E	
+U+71C7	燇	CJK UNIFIED IDEOGRAPH-71C7		han	Lo	1.1	CJK Unified Ideographs			U+710C	
 U+71C8	燈	CJK UNIFIED IDEOGRAPH-71C8		han	Lo	1.1	CJK Unified Ideographs			U+706F	
 U+71C9	燉	CJK UNIFIED IDEOGRAPH-71C9		han	Lo	1.1	CJK Unified Ideographs			U+71C9	
 U+71CA	燊	CJK UNIFIED IDEOGRAPH-71CA		han	Lo	1.1	CJK Unified Ideographs			U+71CA	
@@ -16874,7 +16874,7 @@ U+73FC	珼	CJK UNIFIED IDEOGRAPH-73FC		han	Lo	1.1	CJK Unified Ideographs			U+73F
 U+73FD	珽	CJK UNIFIED IDEOGRAPH-73FD		han	Lo	1.1	CJK Unified Ideographs			U+73F5	
 U+73FE	現	CJK UNIFIED IDEOGRAPH-73FE		han	Lo	1.1	CJK Unified Ideographs			U+73FE	
 U+73FF	珿	CJK UNIFIED IDEOGRAPH-73FF		han	Lo	1.1	CJK Unified Ideographs			U+73FF	
-U+7400	琀	CJK UNIFIED IDEOGRAPH-7400		han	Lo	1.1	CJK Unified Ideographs			U+542B	
+U+7400	琀	CJK UNIFIED IDEOGRAPH-7400		han	Lo	1.1	CJK Unified Ideographs			U+7400	
 U+7401	琁	CJK UNIFIED IDEOGRAPH-7401		han	Lo	1.1	CJK Unified Ideographs			U+7401	
 U+7402	琂	CJK UNIFIED IDEOGRAPH-7402		han	Lo	1.1	CJK Unified Ideographs			U+7402	
 U+7403	球	CJK UNIFIED IDEOGRAPH-7403		han	Lo	1.1	CJK Unified Ideographs			U+7403	
@@ -17729,7 +17729,7 @@ U+7753	睓	CJK UNIFIED IDEOGRAPH-7753		han	Lo	1.1	CJK Unified Ideographs			U+775
 U+7754	睔	CJK UNIFIED IDEOGRAPH-7754		han	Lo	1.1	CJK Unified Ideographs			U+7754	
 U+7755	睕	CJK UNIFIED IDEOGRAPH-7755		han	Lo	1.1	CJK Unified Ideographs			U+7755	
 U+7756	睖	CJK UNIFIED IDEOGRAPH-7756		han	Lo	1.1	CJK Unified Ideographs			U+7756	
-U+7757	睗	CJK UNIFIED IDEOGRAPH-7757		han	Lo	1.1	CJK Unified Ideographs			U+8CDC	
+U+7757	睗	CJK UNIFIED IDEOGRAPH-7757		han	Lo	1.1	CJK Unified Ideographs			U+7757	
 U+7758	睘	CJK UNIFIED IDEOGRAPH-7758		han	Lo	1.1	CJK Unified Ideographs			U+7758	
 U+7759	睙	CJK UNIFIED IDEOGRAPH-7759		han	Lo	1.1	CJK Unified Ideographs			U+7759	
 U+775A	睚	CJK UNIFIED IDEOGRAPH-775A		han	Lo	1.1	CJK Unified Ideographs			U+775A	
@@ -17765,7 +17765,7 @@ U+7777	睷	CJK UNIFIED IDEOGRAPH-7777		han	Lo	1.1	CJK Unified Ideographs			U+777
 U+7778	睸	CJK UNIFIED IDEOGRAPH-7778		han	Lo	1.1	CJK Unified Ideographs			U+7778	
 U+7779	睹	CJK UNIFIED IDEOGRAPH-7779		han	Lo	1.1	CJK Unified Ideographs			U+7779	
 U+777A	睺	CJK UNIFIED IDEOGRAPH-777A		han	Lo	1.1	CJK Unified Ideographs			U+777A	
-U+777B	睻	CJK UNIFIED IDEOGRAPH-777B		han	Lo	1.1	CJK Unified Ideographs			U+7745	
+U+777B	睻	CJK UNIFIED IDEOGRAPH-777B		han	Lo	1.1	CJK Unified Ideographs			U+777B	
 U+777C	睼	CJK UNIFIED IDEOGRAPH-777C		han	Lo	1.1	CJK Unified Ideographs			U+777C	
 U+777D	睽	CJK UNIFIED IDEOGRAPH-777D		han	Lo	1.1	CJK Unified Ideographs			U+777D	
 U+777E	睾	CJK UNIFIED IDEOGRAPH-777E		han	Lo	1.1	CJK Unified Ideographs			U+777E	
@@ -18799,7 +18799,7 @@ U+7B81	箁	CJK UNIFIED IDEOGRAPH-7B81		han	Lo	1.1	CJK Unified Ideographs			U+7B8
 U+7B82	箂	CJK UNIFIED IDEOGRAPH-7B82		han	Lo	1.1	CJK Unified Ideographs			U+7B82	
 U+7B83	箃	CJK UNIFIED IDEOGRAPH-7B83		han	Lo	1.1	CJK Unified Ideographs			U+7B83	
 U+7B84	箄	CJK UNIFIED IDEOGRAPH-7B84		han	Lo	1.1	CJK Unified Ideographs			U+7B84	
-U+7B85	箅	CJK UNIFIED IDEOGRAPH-7B85		han	Lo	1.1	CJK Unified Ideographs			U+7B84	
+U+7B85	箅	CJK UNIFIED IDEOGRAPH-7B85		han	Lo	1.1	CJK Unified Ideographs			U+7B85	
 U+7B86	箆	CJK UNIFIED IDEOGRAPH-7B86		han	Lo	1.1	CJK Unified Ideographs			U+7B86	
 U+7B87	箇	CJK UNIFIED IDEOGRAPH-7B87		han	Lo	1.1	CJK Unified Ideographs			U+7B87	
 U+7B88	箈	CJK UNIFIED IDEOGRAPH-7B88		han	Lo	1.1	CJK Unified Ideographs			U+7B88	
@@ -19025,7 +19025,7 @@ U+7C63	籣	CJK UNIFIED IDEOGRAPH-7C63		han	Lo	1.1	CJK Unified Ideographs			U+7C6
 U+7C64	籤	CJK UNIFIED IDEOGRAPH-7C64		han	Lo	1.1	CJK Unified Ideographs			U+7C64	
 U+7C65	籥	CJK UNIFIED IDEOGRAPH-7C65		han	Lo	1.1	CJK Unified Ideographs			U+7C65	
 U+7C66	籦	CJK UNIFIED IDEOGRAPH-7C66		han	Lo	1.1	CJK Unified Ideographs			U+7C66	
-U+7C67	籧	CJK UNIFIED IDEOGRAPH-7C67		han	Lo	1.1	CJK Unified Ideographs			U+7B65	
+U+7C67	籧	CJK UNIFIED IDEOGRAPH-7C67		han	Lo	1.1	CJK Unified Ideographs			U+7C67	
 U+7C68	籨	CJK UNIFIED IDEOGRAPH-7C68		han	Lo	1.1	CJK Unified Ideographs			U+5969	
 U+7C69	籩	CJK UNIFIED IDEOGRAPH-7C69		han	Lo	1.1	CJK Unified Ideographs			U+7C69	
 U+7C6A	籪	CJK UNIFIED IDEOGRAPH-7C6A		han	Lo	1.1	CJK Unified Ideographs			U+7C6A	
@@ -19165,7 +19165,7 @@ U+7CEF	糯	CJK UNIFIED IDEOGRAPH-7CEF		han	Lo	1.1	CJK Unified Ideographs			U+7CE
 U+7CF0	糰	CJK UNIFIED IDEOGRAPH-7CF0		han	Lo	1.1	CJK Unified Ideographs			U+7CF0	
 U+7CF1	糱	CJK UNIFIED IDEOGRAPH-7CF1		han	Lo	1.1	CJK Unified Ideographs			U+7CF1	
 U+7CF2	糲	CJK UNIFIED IDEOGRAPH-7CF2		han	Lo	1.1	CJK Unified Ideographs			U+7CF2	
-U+7CF3	糳	CJK UNIFIED IDEOGRAPH-7CF3		han	Lo	1.1	CJK Unified Ideographs			U+6BC7	
+U+7CF3	糳	CJK UNIFIED IDEOGRAPH-7CF3		han	Lo	1.1	CJK Unified Ideographs			U+7CF3	
 U+7CF4	糴	CJK UNIFIED IDEOGRAPH-7CF4		han	Lo	1.1	CJK Unified Ideographs			U+7CF4	
 U+7CF5	糵	CJK UNIFIED IDEOGRAPH-7CF5		han	Lo	1.1	CJK Unified Ideographs			U+7CF1	
 U+7CF6	糶	CJK UNIFIED IDEOGRAPH-7CF6		han	Lo	1.1	CJK Unified Ideographs			U+7CF6	
@@ -19300,7 +19300,7 @@ U+7D76	絶	CJK UNIFIED IDEOGRAPH-7D76		han	Lo	1.1	CJK Unified Ideographs			U+7D7
 U+7D77	絷	CJK UNIFIED IDEOGRAPH-7D77		han	Lo	1.1	CJK Unified Ideographs			U+7E36	
 U+7D78	絸	CJK UNIFIED IDEOGRAPH-7D78		han	Lo	1.1	CJK Unified Ideographs			U+7E6D	
 U+7D79	絹	CJK UNIFIED IDEOGRAPH-7D79		han	Lo	1.1	CJK Unified Ideographs			U+7D79	
-U+7D7A	絺	CJK UNIFIED IDEOGRAPH-7D7A		han	Lo	1.1	CJK Unified Ideographs			U+9EF9	
+U+7D7A	絺	CJK UNIFIED IDEOGRAPH-7D7A		han	Lo	1.1	CJK Unified Ideographs			U+7D7A	
 U+7D7B	絻	CJK UNIFIED IDEOGRAPH-7D7B		han	Lo	1.1	CJK Unified Ideographs			U+7D7B	
 U+7D7C	絼	CJK UNIFIED IDEOGRAPH-7D7C		han	Lo	1.1	CJK Unified Ideographs			U+7D7C	
 U+7D7D	絽	CJK UNIFIED IDEOGRAPH-7D7D		han	Lo	1.1	CJK Unified Ideographs			U+7D7D	
@@ -20398,7 +20398,7 @@ U+81C0	臀	CJK UNIFIED IDEOGRAPH-81C0		han	Lo	1.1	CJK Unified Ideographs			U+81C
 U+81C1	臁	CJK UNIFIED IDEOGRAPH-81C1		han	Lo	1.1	CJK Unified Ideographs			U+81C1	
 U+81C2	臂	CJK UNIFIED IDEOGRAPH-81C2		han	Lo	1.1	CJK Unified Ideographs			U+81C2	
 U+81C3	臃	CJK UNIFIED IDEOGRAPH-81C3		han	Lo	1.1	CJK Unified Ideographs			U+7670	
-U+81C4	臄	CJK UNIFIED IDEOGRAPH-81C4		han	Lo	1.1	CJK Unified Ideographs			U+8152	
+U+81C4	臄	CJK UNIFIED IDEOGRAPH-81C4		han	Lo	1.1	CJK Unified Ideographs			U+81C4	
 U+81C5	臅	CJK UNIFIED IDEOGRAPH-81C5		han	Lo	1.1	CJK Unified Ideographs			U+81C5	
 U+81C6	臆	CJK UNIFIED IDEOGRAPH-81C6		han	Lo	1.1	CJK Unified Ideographs			U+81C6	
 U+81C7	臇	CJK UNIFIED IDEOGRAPH-81C7		han	Lo	1.1	CJK Unified Ideographs			U+81C7	
@@ -20582,7 +20582,7 @@ U+8278	艸	CJK UNIFIED IDEOGRAPH-8278		han	Lo	1.1	CJK Unified Ideographs			U+827
 U+8279	艹	CJK UNIFIED IDEOGRAPH-8279		han	Lo	1.1	CJK Unified Ideographs			U+8279	U+5344 U+535D
 U+827A	艺	CJK UNIFIED IDEOGRAPH-827A		han	Lo	1.1	CJK Unified Ideographs			U+82B8	
 U+827B	艻	CJK UNIFIED IDEOGRAPH-827B		han	Lo	1.1	CJK Unified Ideographs			U+827B	
-U+827C	艼	CJK UNIFIED IDEOGRAPH-827C		han	Lo	1.1	CJK Unified Ideographs			U+914A	
+U+827C	艼	CJK UNIFIED IDEOGRAPH-827C		han	Lo	1.1	CJK Unified Ideographs			U+827C	
 U+827D	艽	CJK UNIFIED IDEOGRAPH-827D		han	Lo	1.1	CJK Unified Ideographs			U+827D	
 U+827E	艾	CJK UNIFIED IDEOGRAPH-827E		han	Lo	1.1	CJK Unified Ideographs			U+827E	
 U+827F	艿	CJK UNIFIED IDEOGRAPH-827F		han	Lo	1.1	CJK Unified Ideographs			U+827F	
@@ -20792,7 +20792,7 @@ U+834A	荊	CJK UNIFIED IDEOGRAPH-834A		han	Lo	1.1	CJK Unified Ideographs			U+834
 U+834B	荋	CJK UNIFIED IDEOGRAPH-834B		han	Lo	1.1	CJK Unified Ideographs			U+834B	
 U+834C	荌	CJK UNIFIED IDEOGRAPH-834C		han	Lo	1.1	CJK Unified Ideographs			U+834C	
 U+834D	荍	CJK UNIFIED IDEOGRAPH-834D		han	Lo	1.1	CJK Unified Ideographs			U+834D	
-U+834E	荎	CJK UNIFIED IDEOGRAPH-834E		han	Lo	1.1	CJK Unified Ideographs			U+82AA	
+U+834E	荎	CJK UNIFIED IDEOGRAPH-834E		han	Lo	1.1	CJK Unified Ideographs			U+834E	
 U+834F	荏	CJK UNIFIED IDEOGRAPH-834F		han	Lo	1.1	CJK Unified Ideographs			U+834F	
 U+8350	荐	CJK UNIFIED IDEOGRAPH-8350		han	Lo	1.1	CJK Unified Ideographs			U+8350	
 U+8351	荑	CJK UNIFIED IDEOGRAPH-8351		han	Lo	1.1	CJK Unified Ideographs			U+8351	
@@ -20860,7 +20860,7 @@ U+838E	莎	CJK UNIFIED IDEOGRAPH-838E		han	Lo	1.1	CJK Unified Ideographs			U+838
 U+838F	莏	CJK UNIFIED IDEOGRAPH-838F		han	Lo	1.1	CJK Unified Ideographs			U+838F	
 U+8390	莐	CJK UNIFIED IDEOGRAPH-8390		han	Lo	1.1	CJK Unified Ideographs			U+8390	
 U+8391	莑	CJK UNIFIED IDEOGRAPH-8391		han	Lo	1.1	CJK Unified Ideographs			U+8391	
-U+8392	莒	CJK UNIFIED IDEOGRAPH-8392		han	Lo	1.1	CJK Unified Ideographs			U+68A0	
+U+8392	莒	CJK UNIFIED IDEOGRAPH-8392		han	Lo	1.1	CJK Unified Ideographs			U+8392	
 U+8393	莓	CJK UNIFIED IDEOGRAPH-8393		han	Lo	1.1	CJK Unified Ideographs			U+82FA	
 U+8394	莔	CJK UNIFIED IDEOGRAPH-8394		han	Lo	1.1	CJK Unified Ideographs			U+8394	
 U+8395	莕	CJK UNIFIED IDEOGRAPH-8395		han	Lo	1.1	CJK Unified Ideographs			U+8395	
@@ -20871,7 +20871,7 @@ U+8399	莙	CJK UNIFIED IDEOGRAPH-8399		han	Lo	1.1	CJK Unified Ideographs			U+839
 U+839A	莚	CJK UNIFIED IDEOGRAPH-839A		han	Lo	1.1	CJK Unified Ideographs			U+839A	
 U+839B	莛	CJK UNIFIED IDEOGRAPH-839B		han	Lo	1.1	CJK Unified Ideographs			U+839B	
 U+839C	莜	CJK UNIFIED IDEOGRAPH-839C		han	Lo	1.1	CJK Unified Ideographs			U+839C	
-U+839D	莝	CJK UNIFIED IDEOGRAPH-839D		han	Lo	1.1	CJK Unified Ideographs			U+6467	
+U+839D	莝	CJK UNIFIED IDEOGRAPH-839D		han	Lo	1.1	CJK Unified Ideographs			U+839D	
 U+839E	莞	CJK UNIFIED IDEOGRAPH-839E		han	Lo	1.1	CJK Unified Ideographs			U+839E	
 U+839F	莟	CJK UNIFIED IDEOGRAPH-839F		han	Lo	1.1	CJK Unified Ideographs			U+839F	
 U+83A0	莠	CJK UNIFIED IDEOGRAPH-83A0		han	Lo	1.1	CJK Unified Ideographs			U+83A0	
@@ -20922,7 +20922,7 @@ U+83CC	菌	CJK UNIFIED IDEOGRAPH-83CC		han	Lo	1.1	CJK Unified Ideographs			U+83C
 U+83CD	菍	CJK UNIFIED IDEOGRAPH-83CD		han	Lo	1.1	CJK Unified Ideographs			U+83CD	
 U+83CE	菎	CJK UNIFIED IDEOGRAPH-83CE		han	Lo	1.1	CJK Unified Ideographs			U+83CE	
 U+83CF	菏	CJK UNIFIED IDEOGRAPH-83CF		han	Lo	1.1	CJK Unified Ideographs			U+83CF	
-U+83D0	菐	CJK UNIFIED IDEOGRAPH-83D0		han	Lo	1.1	CJK Unified Ideographs			U+696D	
+U+83D0	菐	CJK UNIFIED IDEOGRAPH-83D0		han	Lo	1.1	CJK Unified Ideographs			U+83D0	
 U+83D1	菑	CJK UNIFIED IDEOGRAPH-83D1		han	Lo	1.1	CJK Unified Ideographs			U+83D1	
 U+83D2	菒	CJK UNIFIED IDEOGRAPH-83D2		han	Lo	1.1	CJK Unified Ideographs			U+83D2	
 U+83D3	菓	CJK UNIFIED IDEOGRAPH-83D3		han	Lo	1.1	CJK Unified Ideographs			U+83D3	
@@ -20957,7 +20957,7 @@ U+83EF	華	CJK UNIFIED IDEOGRAPH-83EF		han	Lo	1.1	CJK Unified Ideographs			U+83E
 U+83F0	菰	CJK UNIFIED IDEOGRAPH-83F0		han	Lo	1.1	CJK Unified Ideographs			U+83F0	
 U+83F1	菱	CJK UNIFIED IDEOGRAPH-83F1		han	Lo	1.1	CJK Unified Ideographs			U+83F1	
 U+83F2	菲	CJK UNIFIED IDEOGRAPH-83F2		han	Lo	1.1	CJK Unified Ideographs			U+83F2	
-U+83F3	菳	CJK UNIFIED IDEOGRAPH-83F3		han	Lo	1.1	CJK Unified Ideographs			U+82A9	
+U+83F3	菳	CJK UNIFIED IDEOGRAPH-83F3		han	Lo	1.1	CJK Unified Ideographs			U+83F3	
 U+83F4	菴	CJK UNIFIED IDEOGRAPH-83F4		han	Lo	1.1	CJK Unified Ideographs			U+83F4	
 U+83F5	菵	CJK UNIFIED IDEOGRAPH-83F5		han	Lo	1.1	CJK Unified Ideographs			U+83F5	
 U+83F6	菶	CJK UNIFIED IDEOGRAPH-83F6		han	Lo	1.1	CJK Unified Ideographs			U+83F6	
@@ -21912,7 +21912,7 @@ U+87AA	螪	CJK UNIFIED IDEOGRAPH-87AA		han	Lo	1.1	CJK Unified Ideographs			U+87A
 U+87AB	螫	CJK UNIFIED IDEOGRAPH-87AB		han	Lo	1.1	CJK Unified Ideographs			U+87AB	
 U+87AC	螬	CJK UNIFIED IDEOGRAPH-87AC		han	Lo	1.1	CJK Unified Ideographs			U+87AC	
 U+87AD	螭	CJK UNIFIED IDEOGRAPH-87AD		han	Lo	1.1	CJK Unified Ideographs			U+87AD	
-U+87AE	螮	CJK UNIFIED IDEOGRAPH-87AE		han	Lo	1.1	CJK Unified Ideographs			U+86B3	
+U+87AE	螮	CJK UNIFIED IDEOGRAPH-87AE		han	Lo	1.1	CJK Unified Ideographs			U+87AE	
 U+87AF	螯	CJK UNIFIED IDEOGRAPH-87AF		han	Lo	1.1	CJK Unified Ideographs			U+87AF	
 U+87B0	螰	CJK UNIFIED IDEOGRAPH-87B0		han	Lo	1.1	CJK Unified Ideographs			U+87B0	
 U+87B1	螱	CJK UNIFIED IDEOGRAPH-87B1		han	Lo	1.1	CJK Unified Ideographs			U+87B1	
@@ -24390,7 +24390,7 @@ U+9158	酘	CJK UNIFIED IDEOGRAPH-9158		han	Lo	1.1	CJK Unified Ideographs			U+915
 U+9159	酙	CJK UNIFIED IDEOGRAPH-9159		han	Lo	1.1	CJK Unified Ideographs			U+659F	
 U+915A	酚	CJK UNIFIED IDEOGRAPH-915A		han	Lo	1.1	CJK Unified Ideographs			U+915A	
 U+915B	酛	CJK UNIFIED IDEOGRAPH-915B		han	Lo	1.1	CJK Unified Ideographs			U+915B	
-U+915C	酜	CJK UNIFIED IDEOGRAPH-915C		han	Lo	1.1	CJK Unified Ideographs			U+812F	
+U+915C	酜	CJK UNIFIED IDEOGRAPH-915C		han	Lo	1.1	CJK Unified Ideographs			U+917A	
 U+915D	酝	CJK UNIFIED IDEOGRAPH-915D		han	Lo	1.1	CJK Unified Ideographs			U+919E	
 U+915E	酞	CJK UNIFIED IDEOGRAPH-915E		han	Lo	1.1	CJK Unified Ideographs			U+915E	
 U+915F	酟	CJK UNIFIED IDEOGRAPH-915F		han	Lo	1.1	CJK Unified Ideographs			U+6CBE	
@@ -24420,7 +24420,7 @@ U+9176	酶	CJK UNIFIED IDEOGRAPH-9176		han	Lo	1.1	CJK Unified Ideographs			U+917
 U+9177	酷	CJK UNIFIED IDEOGRAPH-9177		han	Lo	1.1	CJK Unified Ideographs			U+9177	
 U+9178	酸	CJK UNIFIED IDEOGRAPH-9178		han	Lo	1.1	CJK Unified Ideographs			U+9178	
 U+9179	酹	CJK UNIFIED IDEOGRAPH-9179		han	Lo	1.1	CJK Unified Ideographs			U+9179	
-U+917A	酺	CJK UNIFIED IDEOGRAPH-917A		han	Lo	1.1	CJK Unified Ideographs			U+812F	
+U+917A	酺	CJK UNIFIED IDEOGRAPH-917A		han	Lo	1.1	CJK Unified Ideographs			U+917A	
 U+917B	酻	CJK UNIFIED IDEOGRAPH-917B		han	Lo	1.1	CJK Unified Ideographs			U+917B	
 U+917C	酼	CJK UNIFIED IDEOGRAPH-917C		han	Lo	1.1	CJK Unified Ideographs			U+91A2	
 U+917D	酽	CJK UNIFIED IDEOGRAPH-917D		han	Lo	1.1	CJK Unified Ideographs			U+91C5	
@@ -26125,7 +26125,7 @@ U+981F	頟	CJK UNIFIED IDEOGRAPH-981F		han	Lo	1.1	CJK Unified Ideographs			U+984
 U+9820	頠	CJK UNIFIED IDEOGRAPH-9820		han	Lo	1.1	CJK Unified Ideographs			U+9820	
 U+9821	頡	CJK UNIFIED IDEOGRAPH-9821		han	Lo	1.1	CJK Unified Ideographs			U+9821	
 U+9822	頢	CJK UNIFIED IDEOGRAPH-9822		han	Lo	1.1	CJK Unified Ideographs			U+9822	
-U+9823	頣	CJK UNIFIED IDEOGRAPH-9823		han	Lo	1.1	CJK Unified Ideographs			U+9824	
+U+9823	頣	CJK UNIFIED IDEOGRAPH-9823		han	Lo	1.1	CJK Unified Ideographs			U+9823	
 U+9824	頤	CJK UNIFIED IDEOGRAPH-9824		han	Lo	1.1	CJK Unified Ideographs			U+9824	
 U+9825	頥	CJK UNIFIED IDEOGRAPH-9825		han	Lo	1.1	CJK Unified Ideographs			U+9824	
 U+9826	頦	CJK UNIFIED IDEOGRAPH-9826		han	Lo	1.1	CJK Unified Ideographs			U+9826	
@@ -27754,7 +27754,7 @@ U+9E7C	鹼	CJK UNIFIED IDEOGRAPH-9E7C		han	Lo	1.1	CJK Unified Ideographs			U+9E7
 U+9E7D	鹽	CJK UNIFIED IDEOGRAPH-9E7D		han	Lo	1.1	CJK Unified Ideographs			U+5869	
 U+9E7E	鹾	CJK UNIFIED IDEOGRAPH-9E7E		han	Lo	1.1	CJK Unified Ideographs			U+9E7A	
 U+9E7F	鹿	CJK UNIFIED IDEOGRAPH-9E7F		han	Lo	1.1	CJK Unified Ideographs			U+9E7F	
-U+9E80	麀	CJK UNIFIED IDEOGRAPH-9E80		han	Lo	1.1	CJK Unified Ideographs			U+725D	
+U+9E80	麀	CJK UNIFIED IDEOGRAPH-9E80		han	Lo	1.1	CJK Unified Ideographs			U+9E80	
 U+9E81	麁	CJK UNIFIED IDEOGRAPH-9E81		han	Lo	1.1	CJK Unified Ideographs			U+9E81	
 U+9E82	麂	CJK UNIFIED IDEOGRAPH-9E82		han	Lo	1.1	CJK Unified Ideographs			U+9E82	
 U+9E83	麃	CJK UNIFIED IDEOGRAPH-9E83		han	Lo	1.1	CJK Unified Ideographs			U+9E83	
@@ -27948,7 +27948,7 @@ U+9F3E	鼾	CJK UNIFIED IDEOGRAPH-9F3E		han	Lo	1.1	CJK Unified Ideographs			U+9F3
 U+9F3F	鼿	CJK UNIFIED IDEOGRAPH-9F3F		han	Lo	1.1	CJK Unified Ideographs			U+9F3F	
 U+9F40	齀	CJK UNIFIED IDEOGRAPH-9F40		han	Lo	1.1	CJK Unified Ideographs			U+9F40	
 U+9F41	齁	CJK UNIFIED IDEOGRAPH-9F41		han	Lo	1.1	CJK Unified Ideographs			U+9F41	
-U+9F42	齂	CJK UNIFIED IDEOGRAPH-9F42		han	Lo	1.1	CJK Unified Ideographs			U+550F	
+U+9F42	齂	CJK UNIFIED IDEOGRAPH-9F42		han	Lo	1.1	CJK Unified Ideographs			U+9F42	
 U+9F43	齃	CJK UNIFIED IDEOGRAPH-9F43		han	Lo	1.1	CJK Unified Ideographs			U+9F43	
 U+9F44	齄	CJK UNIFIED IDEOGRAPH-9F44		han	Lo	1.1	CJK Unified Ideographs			U+9F44	
 U+9F45	齅	CJK UNIFIED IDEOGRAPH-9F45		han	Lo	1.1	CJK Unified Ideographs			U+55C5	
@@ -49536,7 +49536,7 @@ U+20AAA	𠪪	CJK UNIFIED IDEOGRAPH-20AAA		han	Lo	3.1	CJK Unified Ideographs Exte
 U+20AAB	𠪫	CJK UNIFIED IDEOGRAPH-20AAB		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7782	
 U+20AAC	𠪬	CJK UNIFIED IDEOGRAPH-20AAC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20A94	
 U+20AAD	𠪭	CJK UNIFIED IDEOGRAPH-20AAD		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5ED2	
-U+20AAE	𠪮	CJK UNIFIED IDEOGRAPH-20AAE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5EE6	
+U+20AAE	𠪮	CJK UNIFIED IDEOGRAPH-20AAE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20AAE	
 U+20AAF	𠪯	CJK UNIFIED IDEOGRAPH-20AAF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20AAF	
 U+20AB0	𠪰	CJK UNIFIED IDEOGRAPH-20AB0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20AB0	
 U+20AB1	𠪱	CJK UNIFIED IDEOGRAPH-20AB1		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20AB1	
@@ -50216,7 +50216,7 @@ U+20D52	𠵒	CJK UNIFIED IDEOGRAPH-20D52		han	Lo	3.1	CJK Unified Ideographs Exte
 U+20D53	𠵓	CJK UNIFIED IDEOGRAPH-20D53		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7384	
 U+20D54	𠵔	CJK UNIFIED IDEOGRAPH-20D54		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20D54	
 U+20D55	𠵕	CJK UNIFIED IDEOGRAPH-20D55		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20D55	
-U+20D56	𠵖	CJK UNIFIED IDEOGRAPH-20D56		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6D45	
+U+20D56	𠵖	CJK UNIFIED IDEOGRAPH-20D56		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7052	
 U+20D57	𠵗	CJK UNIFIED IDEOGRAPH-20D57		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20D57	
 U+20D58	𠵘	CJK UNIFIED IDEOGRAPH-20D58		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20D58	
 U+20D59	𠵙	CJK UNIFIED IDEOGRAPH-20D59		han	Lo	3.1	CJK Unified Ideographs Extension B			U+20D59	
@@ -52731,7 +52731,7 @@ U+21725	𡜥	CJK UNIFIED IDEOGRAPH-21725		han	Lo	3.1	CJK Unified Ideographs Exte
 U+21726	𡜦	CJK UNIFIED IDEOGRAPH-21726		han	Lo	3.1	CJK Unified Ideographs Extension B			U+21726	
 U+21727	𡜧	CJK UNIFIED IDEOGRAPH-21727		han	Lo	3.1	CJK Unified Ideographs Extension B			U+21727	
 U+21728	𡜨	CJK UNIFIED IDEOGRAPH-21728		han	Lo	3.1	CJK Unified Ideographs Extension B			U+21728	
-U+21729	𡜩	CJK UNIFIED IDEOGRAPH-21729		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5409	
+U+21729	𡜩	CJK UNIFIED IDEOGRAPH-21729		han	Lo	3.1	CJK Unified Ideographs Extension B			U+59DE	
 U+2172A	𡜪	CJK UNIFIED IDEOGRAPH-2172A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2172A	
 U+2172B	𡜫	CJK UNIFIED IDEOGRAPH-2172B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2172B	
 U+2172C	𡜬	CJK UNIFIED IDEOGRAPH-2172C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2172C	
@@ -52930,7 +52930,7 @@ U+217EC	𡟬	CJK UNIFIED IDEOGRAPH-217EC		han	Lo	3.1	CJK Unified Ideographs Exte
 U+217ED	𡟭	CJK UNIFIED IDEOGRAPH-217ED		han	Lo	3.1	CJK Unified Ideographs Extension B			U+217ED	
 U+217EE	𡟮	CJK UNIFIED IDEOGRAPH-217EE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5A90	
 U+217EF	𡟯	CJK UNIFIED IDEOGRAPH-217EF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+217EF	
-U+217F0	𡟰	CJK UNIFIED IDEOGRAPH-217F0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5A49	
+U+217F0	𡟰	CJK UNIFIED IDEOGRAPH-217F0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+217F0	
 U+217F1	𡟱	CJK UNIFIED IDEOGRAPH-217F1		han	Lo	3.1	CJK Unified Ideographs Extension B			U+59F0	
 U+217F2	𡟲	CJK UNIFIED IDEOGRAPH-217F2		han	Lo	3.1	CJK Unified Ideographs Extension B			U+598E	
 U+217F3	𡟳	CJK UNIFIED IDEOGRAPH-217F3		han	Lo	3.1	CJK Unified Ideographs Extension B			U+217F3	
@@ -56476,7 +56476,7 @@ U+225C6	𢗆	CJK UNIFIED IDEOGRAPH-225C6		han	Lo	3.1	CJK Unified Ideographs Exte
 U+225C7	𢗇	CJK UNIFIED IDEOGRAPH-225C7		han	Lo	3.1	CJK Unified Ideographs Extension B			U+38FF	
 U+225C8	𢗈	CJK UNIFIED IDEOGRAPH-225C8		han	Lo	3.1	CJK Unified Ideographs Extension B			U+225C8	
 U+225C9	𢗉	CJK UNIFIED IDEOGRAPH-225C9		han	Lo	3.1	CJK Unified Ideographs Extension B			U+225C9	
-U+225CA	𢗊	CJK UNIFIED IDEOGRAPH-225CA		han	Lo	3.1	CJK Unified Ideographs Extension B			U+605D	
+U+225CA	𢗊	CJK UNIFIED IDEOGRAPH-225CA		han	Lo	3.1	CJK Unified Ideographs Extension B			U+225CA	
 U+225CB	𢗋	CJK UNIFIED IDEOGRAPH-225CB		han	Lo	3.1	CJK Unified Ideographs Extension B			U+618C	
 U+225CC	𢗌	CJK UNIFIED IDEOGRAPH-225CC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6015	
 U+225CD	𢗍	CJK UNIFIED IDEOGRAPH-225CD		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5FD7	
@@ -61515,7 +61515,7 @@ U+23975	𣥵	CJK UNIFIED IDEOGRAPH-23975		han	Lo	3.1	CJK Unified Ideographs Exte
 U+23976	𣥶	CJK UNIFIED IDEOGRAPH-23976		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6B69	
 U+23977	𣥷	CJK UNIFIED IDEOGRAPH-23977		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23977	
 U+23978	𣥸	CJK UNIFIED IDEOGRAPH-23978		han	Lo	3.1	CJK Unified Ideographs Extension B			U+777F	
-U+23979	𣥹	CJK UNIFIED IDEOGRAPH-23979		han	Lo	3.1	CJK Unified Ideographs Extension B			U+8E27	
+U+23979	𣥹	CJK UNIFIED IDEOGRAPH-23979		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23979	
 U+2397A	𣥺	CJK UNIFIED IDEOGRAPH-2397A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2397A	
 U+2397B	𣥻	CJK UNIFIED IDEOGRAPH-2397B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2397B	
 U+2397C	𣥼	CJK UNIFIED IDEOGRAPH-2397C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2397C	
@@ -62581,7 +62581,7 @@ U+23D9F	𣶟	CJK UNIFIED IDEOGRAPH-23D9F		han	Lo	3.1	CJK Unified Ideographs Exte
 U+23DA0	𣶠	CJK UNIFIED IDEOGRAPH-23DA0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23DA0	
 U+23DA1	𣶡	CJK UNIFIED IDEOGRAPH-23DA1		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23DA1	
 U+23DA2	𣶢	CJK UNIFIED IDEOGRAPH-23DA2		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6EC2	
-U+23DA3	𣶣	CJK UNIFIED IDEOGRAPH-23DA3		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6E4D	
+U+23DA3	𣶣	CJK UNIFIED IDEOGRAPH-23DA3		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6F19	
 U+23DA4	𣶤	CJK UNIFIED IDEOGRAPH-23DA4		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23DA4	
 U+23DA5	𣶥	CJK UNIFIED IDEOGRAPH-23DA5		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6E71	
 U+23DA6	𣶦	CJK UNIFIED IDEOGRAPH-23DA6		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6CB0	
@@ -62670,7 +62670,7 @@ U+23DF8	𣷸	CJK UNIFIED IDEOGRAPH-23DF8		han	Lo	3.1	CJK Unified Ideographs Exte
 U+23DF9	𣷹	CJK UNIFIED IDEOGRAPH-23DF9		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6DFB	
 U+23DFA	𣷺	CJK UNIFIED IDEOGRAPH-23DFA		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23DFA	
 U+23DFB	𣷻	CJK UNIFIED IDEOGRAPH-23DFB		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6D39	
-U+23DFC	𣷼	CJK UNIFIED IDEOGRAPH-23DFC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6E4D	
+U+23DFC	𣷼	CJK UNIFIED IDEOGRAPH-23DFC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6F19	
 U+23DFD	𣷽	CJK UNIFIED IDEOGRAPH-23DFD		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6D78	
 U+23DFE	𣷾	CJK UNIFIED IDEOGRAPH-23DFE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23DFE	
 U+23DFF	𣷿	CJK UNIFIED IDEOGRAPH-23DFF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+23DFF	
@@ -63361,7 +63361,7 @@ U+240AB	𤂫	CJK UNIFIED IDEOGRAPH-240AB		han	Lo	3.1	CJK Unified Ideographs Exte
 U+240AC	𤂬	CJK UNIFIED IDEOGRAPH-240AC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240AC	
 U+240AD	𤂭	CJK UNIFIED IDEOGRAPH-240AD		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240AD	
 U+240AE	𤂮	CJK UNIFIED IDEOGRAPH-240AE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240AE	
-U+240AF	𤂯	CJK UNIFIED IDEOGRAPH-240AF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6D45	
+U+240AF	𤂯	CJK UNIFIED IDEOGRAPH-240AF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7052	
 U+240B0	𤂰	CJK UNIFIED IDEOGRAPH-240B0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2407C	
 U+240B1	𤂱	CJK UNIFIED IDEOGRAPH-240B1		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240B1	
 U+240B2	𤂲	CJK UNIFIED IDEOGRAPH-240B2		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240B2	
@@ -63423,7 +63423,7 @@ U+240E9	𤃩	CJK UNIFIED IDEOGRAPH-240E9		han	Lo	3.1	CJK Unified Ideographs Exte
 U+240EA	𤃪	CJK UNIFIED IDEOGRAPH-240EA		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240B4	
 U+240EB	𤃫	CJK UNIFIED IDEOGRAPH-240EB		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240EB	
 U+240EC	𤃬	CJK UNIFIED IDEOGRAPH-240EC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240EC	
-U+240ED	𤃭	CJK UNIFIED IDEOGRAPH-240ED		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6F50	
+U+240ED	𤃭	CJK UNIFIED IDEOGRAPH-240ED		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240ED	
 U+240EE	𤃮	CJK UNIFIED IDEOGRAPH-240EE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2408A	
 U+240EF	𤃯	CJK UNIFIED IDEOGRAPH-240EF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6DB8	
 U+240F0	𤃰	CJK UNIFIED IDEOGRAPH-240F0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6E44	
@@ -63483,7 +63483,7 @@ U+24125	𤄥	CJK UNIFIED IDEOGRAPH-24125		han	Lo	3.1	CJK Unified Ideographs Exte
 U+24126	𤄦	CJK UNIFIED IDEOGRAPH-24126		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6FFE	
 U+24127	𤄧	CJK UNIFIED IDEOGRAPH-24127		han	Lo	3.1	CJK Unified Ideographs Extension B			U+24127	
 U+24128	𤄨	CJK UNIFIED IDEOGRAPH-24128		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7031	
-U+24129	𤄩	CJK UNIFIED IDEOGRAPH-24129		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6F50	
+U+24129	𤄩	CJK UNIFIED IDEOGRAPH-24129		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240ED	
 U+2412A	𤄪	CJK UNIFIED IDEOGRAPH-2412A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7035	
 U+2412B	𤄫	CJK UNIFIED IDEOGRAPH-2412B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+240C3	
 U+2412C	𤄬	CJK UNIFIED IDEOGRAPH-2412C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9E02	
@@ -65256,7 +65256,7 @@ U+24812	𤠒	CJK UNIFIED IDEOGRAPH-24812		han	Lo	3.1	CJK Unified Ideographs Exte
 U+24813	𤠓	CJK UNIFIED IDEOGRAPH-24813		han	Lo	3.1	CJK Unified Ideographs Extension B			U+24813	
 U+24814	𤠔	CJK UNIFIED IDEOGRAPH-24814		han	Lo	3.1	CJK Unified Ideographs Extension B			U+733F	U+2AEC5
 U+24815	𤠕	CJK UNIFIED IDEOGRAPH-24815		han	Lo	3.1	CJK Unified Ideographs Extension B			U+755C	
-U+24816	𤠖	CJK UNIFIED IDEOGRAPH-24816		han	Lo	3.1	CJK Unified Ideographs Extension B			U+72E1	
+U+24816	𤠖	CJK UNIFIED IDEOGRAPH-24816		han	Lo	3.1	CJK Unified Ideographs Extension B			U+3E92	
 U+24817	𤠗	CJK UNIFIED IDEOGRAPH-24817		han	Lo	3.1	CJK Unified Ideographs Extension B			U+718A	
 U+24818	𤠘	CJK UNIFIED IDEOGRAPH-24818		han	Lo	3.1	CJK Unified Ideographs Extension B			U+24818	
 U+24819	𤠙	CJK UNIFIED IDEOGRAPH-24819		han	Lo	3.1	CJK Unified Ideographs Extension B			U+24819	
@@ -67800,7 +67800,7 @@ U+25202	𥈂	CJK UNIFIED IDEOGRAPH-25202		han	Lo	3.1	CJK Unified Ideographs Exte
 U+25203	𥈃	CJK UNIFIED IDEOGRAPH-25203		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25203	
 U+25204	𥈄	CJK UNIFIED IDEOGRAPH-25204		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25204	
 U+25205	𥈅	CJK UNIFIED IDEOGRAPH-25205		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9766	
-U+25206	𥈆	CJK UNIFIED IDEOGRAPH-25206		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7780	
+U+25206	𥈆	CJK UNIFIED IDEOGRAPH-25206		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25206	
 U+25207	𥈇	CJK UNIFIED IDEOGRAPH-25207		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25207	
 U+25208	𥈈	CJK UNIFIED IDEOGRAPH-25208		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7717	
 U+25209	𥈉	CJK UNIFIED IDEOGRAPH-25209		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25209	
@@ -67854,7 +67854,7 @@ U+25238	𥈸	CJK UNIFIED IDEOGRAPH-25238		han	Lo	3.1	CJK Unified Ideographs Exte
 U+25239	𥈹	CJK UNIFIED IDEOGRAPH-25239		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25239	
 U+2523A	𥈺	CJK UNIFIED IDEOGRAPH-2523A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2523A	
 U+2523B	𥈻	CJK UNIFIED IDEOGRAPH-2523B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2523B	
-U+2523C	𥈼	CJK UNIFIED IDEOGRAPH-2523C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7705	
+U+2523C	𥈼	CJK UNIFIED IDEOGRAPH-2523C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2523C	
 U+2523D	𥈽	CJK UNIFIED IDEOGRAPH-2523D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2523D	
 U+2523E	𥈾	CJK UNIFIED IDEOGRAPH-2523E		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25134	
 U+2523F	𥈿	CJK UNIFIED IDEOGRAPH-2523F		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2523F	
@@ -69478,7 +69478,7 @@ U+25890	𥢐	CJK UNIFIED IDEOGRAPH-25890		han	Lo	3.1	CJK Unified Ideographs Exte
 U+25891	𥢑	CJK UNIFIED IDEOGRAPH-25891		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25891	
 U+25892	𥢒	CJK UNIFIED IDEOGRAPH-25892		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25892	
 U+25893	𥢓	CJK UNIFIED IDEOGRAPH-25893		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6388	
-U+25894	𥢔	CJK UNIFIED IDEOGRAPH-25894		han	Lo	3.1	CJK Unified Ideographs Extension B			U+8E14	
+U+25894	𥢔	CJK UNIFIED IDEOGRAPH-25894		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25894	
 U+25895	𥢕	CJK UNIFIED IDEOGRAPH-25895		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25895	
 U+25896	𥢖	CJK UNIFIED IDEOGRAPH-25896		han	Lo	3.1	CJK Unified Ideographs Extension B			U+7A2E	
 U+25897	𥢗	CJK UNIFIED IDEOGRAPH-25897		han	Lo	3.1	CJK Unified Ideographs Extension B			U+79A7	
@@ -73430,7 +73430,7 @@ U+26800	𦠀	CJK UNIFIED IDEOGRAPH-26800		han	Lo	3.1	CJK Unified Ideographs Exte
 U+26801	𦠁	CJK UNIFIED IDEOGRAPH-26801		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26801	
 U+26802	𦠂	CJK UNIFIED IDEOGRAPH-26802		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26802	
 U+26803	𦠃	CJK UNIFIED IDEOGRAPH-26803		han	Lo	3.1	CJK Unified Ideographs Extension B			U+81CD	
-U+26804	𦠄	CJK UNIFIED IDEOGRAPH-26804		han	Lo	3.1	CJK Unified Ideographs Extension B			U+808C	
+U+26804	𦠄	CJK UNIFIED IDEOGRAPH-26804		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26804	
 U+26805	𦠅	CJK UNIFIED IDEOGRAPH-26805		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26805	U+2339F
 U+26806	𦠆	CJK UNIFIED IDEOGRAPH-26806		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26806	
 U+26807	𦠇	CJK UNIFIED IDEOGRAPH-26807		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26807	
@@ -73567,7 +73567,7 @@ U+26889	𦢉	CJK UNIFIED IDEOGRAPH-26889		han	Lo	3.1	CJK Unified Ideographs Exte
 U+2688A	𦢊	CJK UNIFIED IDEOGRAPH-2688A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2688A	
 U+2688B	𦢋	CJK UNIFIED IDEOGRAPH-2688B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2688B	
 U+2688C	𦢌	CJK UNIFIED IDEOGRAPH-2688C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+6BB0	
-U+2688D	𦢍	CJK UNIFIED IDEOGRAPH-2688D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+808C	
+U+2688D	𦢍	CJK UNIFIED IDEOGRAPH-2688D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26804	
 U+2688E	𦢎	CJK UNIFIED IDEOGRAPH-2688E		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2688E	
 U+2688F	𦢏	CJK UNIFIED IDEOGRAPH-2688F		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2688F	
 U+26890	𦢐	CJK UNIFIED IDEOGRAPH-26890		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26890	
@@ -74668,7 +74668,7 @@ U+26CD6	𦳖	CJK UNIFIED IDEOGRAPH-26CD6		han	Lo	3.1	CJK Unified Ideographs Exte
 U+26CD7	𦳗	CJK UNIFIED IDEOGRAPH-26CD7		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26CD7	
 U+26CD8	𦳘	CJK UNIFIED IDEOGRAPH-26CD8		han	Lo	3.1	CJK Unified Ideographs Extension B			U+82F4	
 U+26CD9	𦳙	CJK UNIFIED IDEOGRAPH-26CD9		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26CD9	
-U+26CDA	𦳚	CJK UNIFIED IDEOGRAPH-26CDA		han	Lo	3.1	CJK Unified Ideographs Extension B			U+82AA	
+U+26CDA	𦳚	CJK UNIFIED IDEOGRAPH-26CDA		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26CDA	
 U+26CDB	𦳛	CJK UNIFIED IDEOGRAPH-26CDB		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26CDB	
 U+26CDC	𦳜	CJK UNIFIED IDEOGRAPH-26CDC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+82E0	
 U+26CDD	𦳝	CJK UNIFIED IDEOGRAPH-26CDD		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26CDD	
@@ -75103,7 +75103,7 @@ U+26E89	𦺉	CJK UNIFIED IDEOGRAPH-26E89		han	Lo	3.1	CJK Unified Ideographs Exte
 U+26E8A	𦺊	CJK UNIFIED IDEOGRAPH-26E8A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+839E	
 U+26E8B	𦺋	CJK UNIFIED IDEOGRAPH-26E8B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+4545	
 U+26E8C	𦺌	CJK UNIFIED IDEOGRAPH-26E8C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26E8C	
-U+26E8D	𦺍	CJK UNIFIED IDEOGRAPH-26E8D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+8465	
+U+26E8D	𦺍	CJK UNIFIED IDEOGRAPH-26E8D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26E8D	
 U+26E8E	𦺎	CJK UNIFIED IDEOGRAPH-26E8E		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26E8E	
 U+26E8F	𦺏	CJK UNIFIED IDEOGRAPH-26E8F		han	Lo	3.1	CJK Unified Ideographs Extension B			U+832D	
 U+26E90	𦺐	CJK UNIFIED IDEOGRAPH-26E90		han	Lo	3.1	CJK Unified Ideographs Extension B			U+26E90	
@@ -76077,7 +76077,7 @@ U+27257	𧉗	CJK UNIFIED IDEOGRAPH-27257		han	Lo	3.1	CJK Unified Ideographs Exte
 U+27258	𧉘	CJK UNIFIED IDEOGRAPH-27258		han	Lo	3.1	CJK Unified Ideographs Extension B			U+27240	
 U+27259	𧉙	CJK UNIFIED IDEOGRAPH-27259		han	Lo	3.1	CJK Unified Ideographs Extension B			U+27259	
 U+2725A	𧉚	CJK UNIFIED IDEOGRAPH-2725A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2725A	
-U+2725B	𧉛	CJK UNIFIED IDEOGRAPH-2725B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+86B3	
+U+2725B	𧉛	CJK UNIFIED IDEOGRAPH-2725B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+87AE	
 U+2725C	𧉜	CJK UNIFIED IDEOGRAPH-2725C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+8694	
 U+2725D	𧉝	CJK UNIFIED IDEOGRAPH-2725D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2725D	
 U+2725E	𧉞	CJK UNIFIED IDEOGRAPH-2725E		han	Lo	3.1	CJK Unified Ideographs Extension B			U+45FF	
@@ -84135,7 +84135,7 @@ U+291D1	𩇑	CJK UNIFIED IDEOGRAPH-291D1		han	Lo	3.1	CJK Unified Ideographs Exte
 U+291D2	𩇒	CJK UNIFIED IDEOGRAPH-291D2		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9707	
 U+291D3	𩇓	CJK UNIFIED IDEOGRAPH-291D3		han	Lo	3.1	CJK Unified Ideographs Extension B			U+96F7	
 U+291D4	𩇔	CJK UNIFIED IDEOGRAPH-291D4		han	Lo	3.1	CJK Unified Ideographs Extension B			U+291D4	
-U+291D5	𩇕	CJK UNIFIED IDEOGRAPH-291D5		han	Lo	3.1	CJK Unified Ideographs Extension B			U+975A	
+U+291D5	𩇕	CJK UNIFIED IDEOGRAPH-291D5		han	Lo	3.1	CJK Unified Ideographs Extension B			U+291D5	
 U+291D6	𩇖	CJK UNIFIED IDEOGRAPH-291D6		han	Lo	3.1	CJK Unified Ideographs Extension B			U+291D6	
 U+291D7	𩇗	CJK UNIFIED IDEOGRAPH-291D7		han	Lo	3.1	CJK Unified Ideographs Extension B			U+5929	
 U+291D8	𩇘	CJK UNIFIED IDEOGRAPH-291D8		han	Lo	3.1	CJK Unified Ideographs Extension B			U+291D8	
@@ -88429,7 +88429,7 @@ U+2A297	𪊗	CJK UNIFIED IDEOGRAPH-2A297		han	Lo	3.1	CJK Unified Ideographs Exte
 U+2A298	𪊘	CJK UNIFIED IDEOGRAPH-2A298		han	Lo	3.1	CJK Unified Ideographs Extension B			U+8868	
 U+2A299	𪊙	CJK UNIFIED IDEOGRAPH-2A299		han	Lo	3.1	CJK Unified Ideographs Extension B			U+25014	
 U+2A29A	𪊚	CJK UNIFIED IDEOGRAPH-2A29A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A29A	
-U+2A29B	𪊛	CJK UNIFIED IDEOGRAPH-2A29B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+725D	
+U+2A29B	𪊛	CJK UNIFIED IDEOGRAPH-2A29B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9E80	
 U+2A29C	𪊜	CJK UNIFIED IDEOGRAPH-2A29C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A29C	
 U+2A29D	𪊝	CJK UNIFIED IDEOGRAPH-2A29D		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A29D	
 U+2A29E	𪊞	CJK UNIFIED IDEOGRAPH-2A29E		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A29E	
@@ -88480,7 +88480,7 @@ U+2A2CA	𪋊	CJK UNIFIED IDEOGRAPH-2A2CA		han	Lo	3.1	CJK Unified Ideographs Exte
 U+2A2CB	𪋋	CJK UNIFIED IDEOGRAPH-2A2CB		han	Lo	3.1	CJK Unified Ideographs Extension B			U+74F6	
 U+2A2CC	𪋌	CJK UNIFIED IDEOGRAPH-2A2CC		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A2CC	
 U+2A2CD	𪋍	CJK UNIFIED IDEOGRAPH-2A2CD		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A2CD	
-U+2A2CE	𪋎	CJK UNIFIED IDEOGRAPH-2A2CE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+725D	
+U+2A2CE	𪋎	CJK UNIFIED IDEOGRAPH-2A2CE		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9E80	
 U+2A2CF	𪋏	CJK UNIFIED IDEOGRAPH-2A2CF		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A2CF	
 U+2A2D0	𪋐	CJK UNIFIED IDEOGRAPH-2A2D0		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A2D0	
 U+2A2D1	𪋑	CJK UNIFIED IDEOGRAPH-2A2D1		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A2CF	
@@ -88875,7 +88875,7 @@ U+2A455	𪑕	CJK UNIFIED IDEOGRAPH-2A455		han	Lo	3.1	CJK Unified Ideographs Exte
 U+2A456	𪑖	CJK UNIFIED IDEOGRAPH-2A456		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A456	
 U+2A457	𪑗	CJK UNIFIED IDEOGRAPH-2A457		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A457	
 U+2A458	𪑘	CJK UNIFIED IDEOGRAPH-2A458		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A458	
-U+2A459	𪑙	CJK UNIFIED IDEOGRAPH-2A459		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9ED4	
+U+2A459	𪑙	CJK UNIFIED IDEOGRAPH-2A459		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A459	
 U+2A45A	𪑚	CJK UNIFIED IDEOGRAPH-2A45A		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A45A	
 U+2A45B	𪑛	CJK UNIFIED IDEOGRAPH-2A45B		han	Lo	3.1	CJK Unified Ideographs Extension B			U+9EF4	
 U+2A45C	𪑜	CJK UNIFIED IDEOGRAPH-2A45C		han	Lo	3.1	CJK Unified Ideographs Extension B			U+2A45C	
@@ -91311,7 +91311,7 @@ U+2ADF9	𪷹	CJK UNIFIED IDEOGRAPH-2ADF9		han	Lo	5.2	CJK Unified Ideographs Exte
 U+2ADFA	𪷺	CJK UNIFIED IDEOGRAPH-2ADFA		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2ADFA	
 U+2ADFB	𪷻	CJK UNIFIED IDEOGRAPH-2ADFB		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2ADFB	
 U+2ADFC	𪷼	CJK UNIFIED IDEOGRAPH-2ADFC		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2ADFC	
-U+2ADFD	𪷽	CJK UNIFIED IDEOGRAPH-2ADFD		han	Lo	5.2	CJK Unified Ideographs Extension C			U+6D45	
+U+2ADFD	𪷽	CJK UNIFIED IDEOGRAPH-2ADFD		han	Lo	5.2	CJK Unified Ideographs Extension C			U+7052	
 U+2ADFE	𪷾	CJK UNIFIED IDEOGRAPH-2ADFE		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2ADFE	
 U+2ADFF	𪷿	CJK UNIFIED IDEOGRAPH-2ADFF		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2ADFF	
 U+2AE00	𪸀	CJK UNIFIED IDEOGRAPH-2AE00		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2AE00	
@@ -91338,7 +91338,7 @@ U+2AE14	𪸔	CJK UNIFIED IDEOGRAPH-2AE14		han	Lo	5.2	CJK Unified Ideographs Exte
 U+2AE15	𪸕	CJK UNIFIED IDEOGRAPH-2AE15		han	Lo	5.2	CJK Unified Ideographs Extension C			U+7182	
 U+2AE16	𪸖	CJK UNIFIED IDEOGRAPH-2AE16		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2AE16	
 U+2AE17	𪸗	CJK UNIFIED IDEOGRAPH-2AE17		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2AE17	
-U+2AE18	𪸘	CJK UNIFIED IDEOGRAPH-2AE18		han	Lo	5.2	CJK Unified Ideographs Extension C			U+711E	
+U+2AE18	𪸘	CJK UNIFIED IDEOGRAPH-2AE18		han	Lo	5.2	CJK Unified Ideographs Extension C			U+710C	
 U+2AE19	𪸙	CJK UNIFIED IDEOGRAPH-2AE19		han	Lo	5.2	CJK Unified Ideographs Extension C			U+3DAC	
 U+2AE1A	𪸚	CJK UNIFIED IDEOGRAPH-2AE1A		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2AE1A	
 U+2AE1B	𪸛	CJK UNIFIED IDEOGRAPH-2AE1B		han	Lo	5.2	CJK Unified Ideographs Extension C			U+2AE1B	
@@ -92122,7 +92122,7 @@ U+2B124	𫄤	CJK UNIFIED IDEOGRAPH-2B124		han	Lo	5.2	CJK Unified Ideographs Exte
 U+2B125	𫄥	CJK UNIFIED IDEOGRAPH-2B125		han	Lo	5.2	CJK Unified Ideographs Extension C			U+7E9A	
 U+2B126	𫄦	CJK UNIFIED IDEOGRAPH-2B126		han	Lo	5.2	CJK Unified Ideographs Extension C			U+26016	
 U+2B127	𫄧	CJK UNIFIED IDEOGRAPH-2B127		han	Lo	5.2	CJK Unified Ideographs Extension C			U+7D96	
-U+2B128	𫄨	CJK UNIFIED IDEOGRAPH-2B128		han	Lo	5.2	CJK Unified Ideographs Extension C			U+9EF9	
+U+2B128	𫄨	CJK UNIFIED IDEOGRAPH-2B128		han	Lo	5.2	CJK Unified Ideographs Extension C			U+7D7A	
 U+2B129	𫄩	CJK UNIFIED IDEOGRAPH-2B129		han	Lo	5.2	CJK Unified Ideographs Extension C			U+42E6	
 U+2B12A	𫄪	CJK UNIFIED IDEOGRAPH-2B12A		han	Lo	5.2	CJK Unified Ideographs Extension C			U+26147	
 U+2B12B	𫄫	CJK UNIFIED IDEOGRAPH-2B12B		han	Lo	5.2	CJK Unified Ideographs Extension C			U+7D9F	
@@ -96393,7 +96393,7 @@ U+2C1D4	𬇔	CJK UNIFIED IDEOGRAPH-2C1D4		han	Lo	8.0	CJK Unified Ideographs Exte
 U+2C1D5	𬇕	CJK UNIFIED IDEOGRAPH-2C1D5		han	Lo	8.0	CJK Unified Ideographs Extension E			U+6FAB	
 U+2C1D6	𬇖	CJK UNIFIED IDEOGRAPH-2C1D6		han	Lo	8.0	CJK Unified Ideographs Extension E			U+2C1D6	
 U+2C1D7	𬇗	CJK UNIFIED IDEOGRAPH-2C1D7		han	Lo	8.0	CJK Unified Ideographs Extension E			U+6CD3	
-U+2C1D8	𬇘	CJK UNIFIED IDEOGRAPH-2C1D8		han	Lo	8.0	CJK Unified Ideographs Extension E			U+6E4D	
+U+2C1D8	𬇘	CJK UNIFIED IDEOGRAPH-2C1D8		han	Lo	8.0	CJK Unified Ideographs Extension E			U+6F19	
 U+2C1D9	𬇙	CJK UNIFIED IDEOGRAPH-2C1D9		han	Lo	8.0	CJK Unified Ideographs Extension E			U+6D7F	
 U+2C1DA	𬇚	CJK UNIFIED IDEOGRAPH-2C1DA		han	Lo	8.0	CJK Unified Ideographs Extension E			U+2C1DA	
 U+2C1DB	𬇛	CJK UNIFIED IDEOGRAPH-2C1DB		han	Lo	8.0	CJK Unified Ideographs Extension E			U+6D39	
@@ -102495,7 +102495,7 @@ U+2D9AC	𭦬	CJK UNIFIED IDEOGRAPH-2D9AC		han	Lo	10.0	CJK Unified Ideographs Ext
 U+2D9AD	𭦭	CJK UNIFIED IDEOGRAPH-2D9AD		han	Lo	10.0	CJK Unified Ideographs Extension F			U+2D9AD	
 U+2D9AE	𭦮	CJK UNIFIED IDEOGRAPH-2D9AE		han	Lo	10.0	CJK Unified Ideographs Extension F			U+2D9AE	
 U+2D9AF	𭦯	CJK UNIFIED IDEOGRAPH-2D9AF		han	Lo	10.0	CJK Unified Ideographs Extension F			U+8D8A	
-U+2D9B0	𭦰	CJK UNIFIED IDEOGRAPH-2D9B0		han	Lo	10.0	CJK Unified Ideographs Extension F			U+812F	
+U+2D9B0	𭦰	CJK UNIFIED IDEOGRAPH-2D9B0		han	Lo	10.0	CJK Unified Ideographs Extension F			U+917A	
 U+2D9B1	𭦱	CJK UNIFIED IDEOGRAPH-2D9B1		han	Lo	10.0	CJK Unified Ideographs Extension F			U+2D9B1	
 U+2D9B2	𭦲	CJK UNIFIED IDEOGRAPH-2D9B2		han	Lo	10.0	CJK Unified Ideographs Extension F			U+558F	
 U+2D9B3	𭦳	CJK UNIFIED IDEOGRAPH-2D9B3		han	Lo	10.0	CJK Unified Ideographs Extension F			U+2D9B3	
@@ -105069,7 +105069,7 @@ U+2E3BA	𮎺	CJK UNIFIED IDEOGRAPH-2E3BA		han	Lo	10.0	CJK Unified Ideographs Ext
 U+2E3BB	𮎻	CJK UNIFIED IDEOGRAPH-2E3BB		han	Lo	10.0	CJK Unified Ideographs Extension F			U+8352	
 U+2E3BC	𮎼	CJK UNIFIED IDEOGRAPH-2E3BC		han	Lo	10.0	CJK Unified Ideographs Extension F			U+831D	
 U+2E3BD	𮎽	CJK UNIFIED IDEOGRAPH-2E3BD		han	Lo	10.0	CJK Unified Ideographs Extension F			U+831D	
-U+2E3BE	𮎾	CJK UNIFIED IDEOGRAPH-2E3BE		han	Lo	10.0	CJK Unified Ideographs Extension F			U+696D	
+U+2E3BE	𮎾	CJK UNIFIED IDEOGRAPH-2E3BE		han	Lo	10.0	CJK Unified Ideographs Extension F			U+83D0	
 U+2E3BF	𮎿	CJK UNIFIED IDEOGRAPH-2E3BF		han	Lo	10.0	CJK Unified Ideographs Extension F			U+7BCB	
 U+2E3C0	𮏀	CJK UNIFIED IDEOGRAPH-2E3C0		han	Lo	10.0	CJK Unified Ideographs Extension F			U+2E3C0	
 U+2E3C1	𮏁	CJK UNIFIED IDEOGRAPH-2E3C1		han	Lo	10.0	CJK Unified Ideographs Extension F			U+8FB2	
@@ -105093,7 +105093,7 @@ U+2E3D2	𮏒	CJK UNIFIED IDEOGRAPH-2E3D2		han	Lo	10.0	CJK Unified Ideographs Ext
 U+2E3D3	𮏓	CJK UNIFIED IDEOGRAPH-2E3D3		han	Lo	10.0	CJK Unified Ideographs Extension F			U+44CA	
 U+2E3D4	𮏔	CJK UNIFIED IDEOGRAPH-2E3D4		han	Lo	10.0	CJK Unified Ideographs Extension F			U+8558	
 U+2E3D5	𮏕	CJK UNIFIED IDEOGRAPH-2E3D5		han	Lo	10.0	CJK Unified Ideographs Extension F			U+2E3D5	
-U+2E3D6	𮏖	CJK UNIFIED IDEOGRAPH-2E3D6		han	Lo	10.0	CJK Unified Ideographs Extension F			U+696D	
+U+2E3D6	𮏖	CJK UNIFIED IDEOGRAPH-2E3D6		han	Lo	10.0	CJK Unified Ideographs Extension F			U+83D0	
 U+2E3D7	𮏗	CJK UNIFIED IDEOGRAPH-2E3D7		han	Lo	10.0	CJK Unified Ideographs Extension F			U+5C4E	
 U+2E3D8	𮏘	CJK UNIFIED IDEOGRAPH-2E3D8		han	Lo	10.0	CJK Unified Ideographs Extension F			U+6894	
 U+2E3D9	𮏙	CJK UNIFIED IDEOGRAPH-2E3D9		han	Lo	10.0	CJK Unified Ideographs Extension F			U+839B	
@@ -111036,7 +111036,7 @@ U+30A9C	𰪜	CJK UNIFIED IDEOGRAPH-30A9C		han	Lo	13.0	CJK Unified Ideographs Ext
 U+30A9D	𰪝	CJK UNIFIED IDEOGRAPH-30A9D		han	Lo	13.0	CJK Unified Ideographs Extension G			U+30A9D	
 U+30A9E	𰪞	CJK UNIFIED IDEOGRAPH-30A9E		han	Lo	13.0	CJK Unified Ideographs Extension G			U+8B28	
 U+30A9F	𰪟	CJK UNIFIED IDEOGRAPH-30A9F		han	Lo	13.0	CJK Unified Ideographs Extension G			U+30A9F	
-U+30AA0	𰪠	CJK UNIFIED IDEOGRAPH-30AA0		han	Lo	13.0	CJK Unified Ideographs Extension G			U+68A0	
+U+30AA0	𰪠	CJK UNIFIED IDEOGRAPH-30AA0		han	Lo	13.0	CJK Unified Ideographs Extension G			U+8392	
 U+30AA1	𰪡	CJK UNIFIED IDEOGRAPH-30AA1		han	Lo	13.0	CJK Unified Ideographs Extension G			U+62BD	
 U+30AA2	𰪢	CJK UNIFIED IDEOGRAPH-30AA2		han	Lo	13.0	CJK Unified Ideographs Extension G			U+30AA2	
 U+30AA3	𰪣	CJK UNIFIED IDEOGRAPH-30AA3		han	Lo	13.0	CJK Unified Ideographs Extension G			U+7C6F	
@@ -117696,7 +117696,7 @@ U+3D0F5	𽃵	SMALL SEAL CHARACTER-3D0F5		seal	Lo	18.0	Seal			U+7395
 U+3D0F6	𽃶	SMALL SEAL CHARACTER-3D0F6		seal	Lo	18.0	Seal			U+73CA	
 U+3D0F7	𽃷	SMALL SEAL CHARACTER-3D0F7		seal	Lo	18.0	Seal			U+745A	
 U+3D0F8	𽃸	SMALL SEAL CHARACTER-3D0F8		seal	Lo	18.0	Seal			U+7409	
-U+3D0F9	𽃹	SMALL SEAL CHARACTER-3D0F9		seal	Lo	18.0	Seal			U+542B	
+U+3D0F9	𽃹	SMALL SEAL CHARACTER-3D0F9		seal	Lo	18.0	Seal			U+7400	
 U+3D0FA	𽃺	SMALL SEAL CHARACTER-3D0FA		seal	Lo	18.0	Seal			U+24A8E	
 U+3D0FB	𽃻	SMALL SEAL CHARACTER-3D0FB		seal	Lo	18.0	Seal			U+7497	
 U+3D0FC	𽃼	SMALL SEAL CHARACTER-3D0FC		seal	Lo	18.0	Seal			U+970A	
@@ -117778,7 +117778,7 @@ U+3D147	𽅇	SMALL SEAL CHARACTER-3D147		seal	Lo	18.0	Seal			U+82B9
 U+3D148	𽅈	SMALL SEAL CHARACTER-3D148		seal	Lo	18.0	Seal			U+4586	
 U+3D149	𽅉	SMALL SEAL CHARACTER-3D149		seal	Lo	18.0	Seal			U+83A7	
 U+3D14A	𽅊	SMALL SEAL CHARACTER-3D14A		seal	Lo	18.0	Seal			U+828B	
-U+3D14B	𽅋	SMALL SEAL CHARACTER-3D14B		seal	Lo	18.0	Seal			U+68A0	
+U+3D14B	𽅋	SMALL SEAL CHARACTER-3D14B		seal	Lo	18.0	Seal			U+8392	
 U+3D14C	𽅌	SMALL SEAL CHARACTER-3D14C		seal	Lo	18.0	Seal			U+8627	
 U+3D14D	𽅍	SMALL SEAL CHARACTER-3D14D		seal	Lo	18.0	Seal			U+83CA	
 U+3D14E	𽅎	SMALL SEAL CHARACTER-3D14E		seal	Lo	18.0	Seal			U+8477	
@@ -117882,7 +117882,7 @@ U+3D1AF	𽆯	SMALL SEAL CHARACTER-3D1AF		seal	Lo	18.0	Seal			U+8567
 U+3D1B0	𽆰	SMALL SEAL CHARACTER-3D1B0		seal	Lo	18.0	Seal			U+82D3	
 U+3D1B1	𽆱	SMALL SEAL CHARACTER-3D1B1		seal	Lo	18.0	Seal			U+25F47	
 U+3D1B2	𽆲	SMALL SEAL CHARACTER-3D1B2		seal	Lo	18.0	Seal			U+85D1	
-U+3D1B3	𽆳	SMALL SEAL CHARACTER-3D1B3		seal	Lo	18.0	Seal			U+844D	
+U+3D1B3	𽆳	SMALL SEAL CHARACTER-3D1B3		seal	Lo	18.0	Seal			U+4530	
 U+3D1B4	𽆴	SMALL SEAL CHARACTER-3D1B4		seal	Lo	18.0	Seal			U+844D	
 U+3D1B5	𽆵	SMALL SEAL CHARACTER-3D1B5		seal	Lo	18.0	Seal			U+84DA	
 U+3D1B6	𽆶	SMALL SEAL CHARACTER-3D1B6		seal	Lo	18.0	Seal			U+82D6	
@@ -117925,7 +117925,7 @@ U+3D1DA	𽇚	SMALL SEAL CHARACTER-3D1DA		seal	Lo	18.0	Seal			U+8290
 U+3D1DB	𽇛	SMALL SEAL CHARACTER-3D1DB		seal	Lo	18.0	Seal			U+8290	
 U+3D1DC	𽇜	SMALL SEAL CHARACTER-3D1DC		seal	Lo	18.0	Seal			U+859F	
 U+3D1DD	𽇝	SMALL SEAL CHARACTER-3D1DD		seal	Lo	18.0	Seal			U+861E	
-U+3D1DE	𽇞	SMALL SEAL CHARACTER-3D1DE		seal	Lo	18.0	Seal			U+82A9	
+U+3D1DE	𽇞	SMALL SEAL CHARACTER-3D1DE		seal	Lo	18.0	Seal			U+83F3	
 U+3D1DF	𽇟	SMALL SEAL CHARACTER-3D1DF		seal	Lo	18.0	Seal			U+82A9	
 U+3D1E0	𽇠	SMALL SEAL CHARACTER-3D1E0		seal	Lo	18.0	Seal			U+85E8	
 U+3D1E1	𽇡	SMALL SEAL CHARACTER-3D1E1		seal	Lo	18.0	Seal			U+27137	
@@ -117980,7 +117980,7 @@ U+3D211	𽈑	SMALL SEAL CHARACTER-3D211		seal	Lo	18.0	Seal			U+8394
 U+3D212	𽈒	SMALL SEAL CHARACTER-3D212		seal	Lo	18.0	Seal			U+26E07	
 U+3D213	𽈓	SMALL SEAL CHARACTER-3D213		seal	Lo	18.0	Seal			U+84C2	
 U+3D214	𽈔	SMALL SEAL CHARACTER-3D214		seal	Lo	18.0	Seal			U+8309	
-U+3D215	𽈕	SMALL SEAL CHARACTER-3D215		seal	Lo	18.0	Seal			U+82AA	
+U+3D215	𽈕	SMALL SEAL CHARACTER-3D215		seal	Lo	18.0	Seal			U+834E	
 U+3D216	𽈖	SMALL SEAL CHARACTER-3D216		seal	Lo	18.0	Seal			U+85F8	
 U+3D217	𽈗	SMALL SEAL CHARACTER-3D217		seal	Lo	18.0	Seal			U+845B	
 U+3D218	𽈘	SMALL SEAL CHARACTER-3D218		seal	Lo	18.0	Seal			U+8513	
@@ -117994,7 +117994,7 @@ U+3D21F	𽈟	SMALL SEAL CHARACTER-3D21F		seal	Lo	18.0	Seal			U+82AB
 U+3D220	𽈠	SMALL SEAL CHARACTER-3D220		seal	Lo	18.0	Seal			U+8626	
 U+3D221	𽈡	SMALL SEAL CHARACTER-3D221		seal	Lo	18.0	Seal			U+7A0A	
 U+3D222	𽈢	SMALL SEAL CHARACTER-3D222		seal	Lo	18.0	Seal			U+82F5	
-U+3D223	𽈣	SMALL SEAL CHARACTER-3D223		seal	Lo	18.0	Seal			U+914A	
+U+3D223	𽈣	SMALL SEAL CHARACTER-3D223		seal	Lo	18.0	Seal			U+827C	
 U+3D224	𽈤	SMALL SEAL CHARACTER-3D224		seal	Lo	18.0	Seal			U+8523	
 U+3D225	𽈥	SMALL SEAL CHARACTER-3D225		seal	Lo	18.0	Seal			U+82FD	
 U+3D226	𽈦	SMALL SEAL CHARACTER-3D226		seal	Lo	18.0	Seal			U+26C40	
@@ -118138,7 +118138,7 @@ U+3D2AF	𽊯	SMALL SEAL CHARACTER-3D2AF		seal	Lo	18.0	Seal			U+21DDA
 U+3D2B0	𽊰	SMALL SEAL CHARACTER-3D2B0		seal	Lo	18.0	Seal			U+453F	
 U+3D2B1	𽊱	SMALL SEAL CHARACTER-3D2B1		seal	Lo	18.0	Seal			U+26C1E	
 U+3D2B2	𽊲	SMALL SEAL CHARACTER-3D2B2		seal	Lo	18.0	Seal			U+8406	
-U+3D2B3	𽊳	SMALL SEAL CHARACTER-3D2B3		seal	Lo	18.0	Seal			U+82AA	
+U+3D2B3	𽊳	SMALL SEAL CHARACTER-3D2B3		seal	Lo	18.0	Seal			U+26CDA	
 U+3D2B4	𽊴	SMALL SEAL CHARACTER-3D2B4		seal	Lo	18.0	Seal			U+82F4	
 U+3D2B5	𽊵	SMALL SEAL CHARACTER-3D2B5		seal	Lo	18.0	Seal			U+9E81	
 U+3D2B6	𽊶	SMALL SEAL CHARACTER-3D2B6		seal	Lo	18.0	Seal			U+8562	
@@ -118150,7 +118150,7 @@ U+3D2BB	𽊻	SMALL SEAL CHARACTER-3D2BB		seal	Lo	18.0	Seal			U+82BB
 U+3D2BC	𽊼	SMALL SEAL CHARACTER-3D2BC		seal	Lo	18.0	Seal			U+832D	
 U+3D2BD	𽊽	SMALL SEAL CHARACTER-3D2BD		seal	Lo	18.0	Seal			U+8379	
 U+3D2BE	𽊾	SMALL SEAL CHARACTER-3D2BE		seal	Lo	18.0	Seal			U+8339	
-U+3D2BF	𽊿	SMALL SEAL CHARACTER-3D2BF		seal	Lo	18.0	Seal			U+6467	
+U+3D2BF	𽊿	SMALL SEAL CHARACTER-3D2BF		seal	Lo	18.0	Seal			U+839D	
 U+3D2C0	𽋀	SMALL SEAL CHARACTER-3D2C0		seal	Lo	18.0	Seal			U+840E	
 U+3D2C1	𽋁	SMALL SEAL CHARACTER-3D2C1		seal	Lo	18.0	Seal			U+26D6A	
 U+3D2C2	𽋂	SMALL SEAL CHARACTER-3D2C2		seal	Lo	18.0	Seal			U+7B41	
@@ -118474,7 +118474,7 @@ U+3D3FF	𽏿	SMALL SEAL CHARACTER-3D3FF		seal	Lo	18.0	Seal			U+5476
 U+3D400	𽐀	SMALL SEAL CHARACTER-3D400		seal	Lo	18.0	Seal			U+20B9F	
 U+3D401	𽐁	SMALL SEAL CHARACTER-3D401		seal	Lo	18.0	Seal			U+5674	
 U+3D402	𽐂	SMALL SEAL CHARACTER-3D402		seal	Lo	18.0	Seal			U+5412	
-U+3D403	𽐃	SMALL SEAL CHARACTER-3D403		seal	Lo	18.0	Seal			U+8B4E	
+U+3D403	𽐃	SMALL SEAL CHARACTER-3D403		seal	Lo	18.0	Seal			U+564A	
 U+3D404	𽐄	SMALL SEAL CHARACTER-3D404		seal	Lo	18.0	Seal			U+5550	
 U+3D405	𽐅	SMALL SEAL CHARACTER-3D405		seal	Lo	18.0	Seal			U+5507	
 U+3D406	𽐆	SMALL SEAL CHARACTER-3D406		seal	Lo	18.0	Seal			U+5401	
@@ -118523,7 +118523,7 @@ U+3D430	𽐰	SMALL SEAL CHARACTER-3D430		seal	Lo	18.0	Seal			U+5588
 U+3D431	𽐱	SMALL SEAL CHARACTER-3D431		seal	Lo	18.0	Seal			U+54EE	
 U+3D432	𽐲	SMALL SEAL CHARACTER-3D432		seal	Lo	18.0	Seal			U+5594	
 U+3D433	𽐳	SMALL SEAL CHARACTER-3D433		seal	Lo	18.0	Seal			U+545D	
-U+3D434	𽐴	SMALL SEAL CHARACTER-3D434		seal	Lo	18.0	Seal			U+5599	
+U+3D434	𽐴	SMALL SEAL CHARACTER-3D434		seal	Lo	18.0	Seal			U+54AE	
 U+3D435	𽐵	SMALL SEAL CHARACTER-3D435		seal	Lo	18.0	Seal			U+56B6	
 U+3D436	𽐶	SMALL SEAL CHARACTER-3D436		seal	Lo	18.0	Seal			U+5544	
 U+3D437	𽐷	SMALL SEAL CHARACTER-3D437		seal	Lo	18.0	Seal			U+552C	
@@ -118649,7 +118649,7 @@ U+3D4AE	𽒮	SMALL SEAL CHARACTER-3D4AE		seal	Lo	18.0	Seal			U+6B6D
 U+3D4AF	𽒯	SMALL SEAL CHARACTER-3D4AF		seal	Lo	18.0	Seal			U+6B6B	
 U+3D4B0	𽒰	SMALL SEAL CHARACTER-3D4B0		seal	Lo	18.0	Seal			U+524D	
 U+3D4B1	𽒱	SMALL SEAL CHARACTER-3D4B1		seal	Lo	18.0	Seal			U+6B74	
-U+3D4B2	𽒲	SMALL SEAL CHARACTER-3D4B2		seal	Lo	18.0	Seal			U+8E27	
+U+3D4B2	𽒲	SMALL SEAL CHARACTER-3D4B2		seal	Lo	18.0	Seal			U+23979	
 U+3D4B3	𽒳	SMALL SEAL CHARACTER-3D4B3		seal	Lo	18.0	Seal			U+239A2	
 U+3D4B4	𽒴	SMALL SEAL CHARACTER-3D4B4		seal	Lo	18.0	Seal			U+5E30	
 U+3D4B5	𽒵	SMALL SEAL CHARACTER-3D4B5		seal	Lo	18.0	Seal			U+5E30	
@@ -118664,7 +118664,7 @@ U+3D4BD	𽒽	SMALL SEAL CHARACTER-3D4BD		seal	Lo	18.0	Seal			U+7679
 U+3D4BE	𽒾	SMALL SEAL CHARACTER-3D4BE		seal	Lo	18.0	Seal			U+6B69	
 U+3D4BF	𽒿	SMALL SEAL CHARACTER-3D4BF		seal	Lo	18.0	Seal			U+6B73	
 U+3D4C0	𽓀	SMALL SEAL CHARACTER-3D4C0		seal	Lo	18.0	Seal			U+6B64	
-U+3D4C1	𽓁	SMALL SEAL CHARACTER-3D4C1		seal	Lo	18.0	Seal			U+75B5	
+U+3D4C1	𽓁	SMALL SEAL CHARACTER-3D4C1		seal	Lo	18.0	Seal			U+5559	
 U+3D4C2	𽓂	SMALL SEAL CHARACTER-3D4C2		seal	Lo	18.0	Seal			U+3B70	
 U+3D4C3	𽓃	SMALL SEAL CHARACTER-3D4C3		seal	Lo	18.0	Seal			U+4E9B	
 U+3D4C4	𽓄	SMALL SEAL CHARACTER-3D4C4		seal	Lo	18.0	Seal			U+6B63	
@@ -119071,7 +119071,7 @@ U+3D654	𽙔	SMALL SEAL CHARACTER-3D654		seal	Lo	18.0	Seal			U+7B27
 U+3D655	𽙕	SMALL SEAL CHARACTER-3D655		seal	Lo	18.0	Seal			U+55E3	
 U+3D656	𽙖	SMALL SEAL CHARACTER-3D656		seal	Lo	18.0	Seal			U+55E3	
 U+3D657	𽙗	SMALL SEAL CHARACTER-3D657		seal	Lo	18.0	Seal			U+6241	
-U+3D658	𽙘	SMALL SEAL CHARACTER-3D658		seal	Lo	18.0	Seal			U+96F7	
+U+3D658	𽙘	SMALL SEAL CHARACTER-3D658		seal	Lo	18.0	Seal			U+35CA	
 U+3D659	𽙙	SMALL SEAL CHARACTER-3D659		seal	Lo	18.0	Seal			U+569A	
 U+3D65A	𽙚	SMALL SEAL CHARACTER-3D65A		seal	Lo	18.0	Seal			U+569A	
 U+3D65B	𽙛	SMALL SEAL CHARACTER-3D65B		seal	Lo	18.0	Seal			U+56C2	
@@ -119088,7 +119088,7 @@ U+3D665	𽙥	SMALL SEAL CHARACTER-3D665		seal	Lo	18.0	Seal			U+22189
 U+3D666	𽙦	SMALL SEAL CHARACTER-3D666		seal	Lo	18.0	Seal			U+5C70	
 U+3D667	𽙧	SMALL SEAL CHARACTER-3D667		seal	Lo	18.0	Seal			U+27BAB	
 U+3D668	𽙨	SMALL SEAL CHARACTER-3D668		seal	Lo	18.0	Seal			U+20D37	
-U+3D669	𽙩	SMALL SEAL CHARACTER-3D669		seal	Lo	18.0	Seal			U+8152	
+U+3D669	𽙩	SMALL SEAL CHARACTER-3D669		seal	Lo	18.0	Seal			U+81C4	
 U+3D66A	𽙪	SMALL SEAL CHARACTER-3D66A		seal	Lo	18.0	Seal			U+3401	
 U+3D66B	𽙫	SMALL SEAL CHARACTER-3D66B		seal	Lo	18.0	Seal			U+3401	
 U+3D66C	𽙬	SMALL SEAL CHARACTER-3D66C		seal	Lo	18.0	Seal			U+53EA	
@@ -119434,7 +119434,7 @@ U+3D7BF	𽞿	SMALL SEAL CHARACTER-3D7BF		seal	Lo	18.0	Seal			U+696D
 U+3D7C0	𽟀	SMALL SEAL CHARACTER-3D7C0		seal	Lo	18.0	Seal			U+53E2	
 U+3D7C1	𽟁	SMALL SEAL CHARACTER-3D7C1		seal	Lo	18.0	Seal			U+5BFE	
 U+3D7C2	𽟂	SMALL SEAL CHARACTER-3D7C2		seal	Lo	18.0	Seal			U+5BFE	
-U+3D7C3	𽟃	SMALL SEAL CHARACTER-3D7C3		seal	Lo	18.0	Seal			U+696D	
+U+3D7C3	𽟃	SMALL SEAL CHARACTER-3D7C3		seal	Lo	18.0	Seal			U+83D0	
 U+3D7C4	𽟄	SMALL SEAL CHARACTER-3D7C4		seal	Lo	18.0	Seal			U+50D5	
 U+3D7C5	𽟅	SMALL SEAL CHARACTER-3D7C5		seal	Lo	18.0	Seal			U+50D5	
 U+3D7C6	𽟆	SMALL SEAL CHARACTER-3D7C6		seal	Lo	18.0	Seal			U+2052F	
@@ -119893,7 +119893,7 @@ U+3D98A	𽦊	SMALL SEAL CHARACTER-3D98A		seal	Lo	18.0	Seal			U+251D6
 U+3D98B	𽦋	SMALL SEAL CHARACTER-3D98B		seal	Lo	18.0	Seal			U+4042	
 U+3D98C	𽦌	SMALL SEAL CHARACTER-3D98C		seal	Lo	18.0	Seal			U+7745	
 U+3D98D	𽦍	SMALL SEAL CHARACTER-3D98D		seal	Lo	18.0	Seal			U+7746	
-U+3D98E	𽦎	SMALL SEAL CHARACTER-3D98E		seal	Lo	18.0	Seal			U+7745	
+U+3D98E	𽦎	SMALL SEAL CHARACTER-3D98E		seal	Lo	18.0	Seal			U+777B	
 U+3D98F	𽦏	SMALL SEAL CHARACTER-3D98F		seal	Lo	18.0	Seal			U+779E	
 U+3D990	𽦐	SMALL SEAL CHARACTER-3D990		seal	Lo	18.0	Seal			U+7774	
 U+3D991	𽦑	SMALL SEAL CHARACTER-3D991		seal	Lo	18.0	Seal			U+77D5	
@@ -119909,14 +119909,14 @@ U+3D99A	𽦚	SMALL SEAL CHARACTER-3D99A		seal	Lo	18.0	Seal			U+770A
 U+3D99B	𽦛	SMALL SEAL CHARACTER-3D99B		seal	Lo	18.0	Seal			U+77D8	
 U+3D99C	𽦜	SMALL SEAL CHARACTER-3D99C		seal	Lo	18.0	Seal			U+7752	
 U+3D99D	𽦝	SMALL SEAL CHARACTER-3D99D		seal	Lo	18.0	Seal			U+772E	
-U+3D99E	𽦞	SMALL SEAL CHARACTER-3D99E		seal	Lo	18.0	Seal			U+401B	
+U+3D99E	𽦞	SMALL SEAL CHARACTER-3D99E		seal	Lo	18.0	Seal			U+4023	
 U+3D99F	𽦟	SMALL SEAL CHARACTER-3D99F		seal	Lo	18.0	Seal			U+77B4	
 U+3D9A0	𽦠	SMALL SEAL CHARACTER-3D9A0		seal	Lo	18.0	Seal			U+4018	
 U+3D9A1	𽦡	SMALL SEAL CHARACTER-3D9A1		seal	Lo	18.0	Seal			U+4018	
 U+3D9A2	𽦢	SMALL SEAL CHARACTER-3D9A2		seal	Lo	18.0	Seal			U+774C	
 U+3D9A3	𽦣	SMALL SEAL CHARACTER-3D9A3		seal	Lo	18.0	Seal			U+7702	
 U+3D9A4	𽦤	SMALL SEAL CHARACTER-3D9A4		seal	Lo	18.0	Seal			U+7768	
-U+3D9A5	𽦥	SMALL SEAL CHARACTER-3D9A5		seal	Lo	18.0	Seal			U+7780	
+U+3D9A5	𽦥	SMALL SEAL CHARACTER-3D9A5		seal	Lo	18.0	Seal			U+25206	
 U+3D9A6	𽦦	SMALL SEAL CHARACTER-3D9A6		seal	Lo	18.0	Seal			U+7713	
 U+3D9A7	𽦧	SMALL SEAL CHARACTER-3D9A7		seal	Lo	18.0	Seal			U+7708	
 U+3D9A8	𽦨	SMALL SEAL CHARACTER-3D9A8		seal	Lo	18.0	Seal			U+22328	
@@ -119932,7 +119932,7 @@ U+3D9B1	𽦱	SMALL SEAL CHARACTER-3D9B1		seal	Lo	18.0	Seal			U+7779
 U+3D9B2	𽦲	SMALL SEAL CHARACTER-3D9B2		seal	Lo	18.0	Seal			U+7714	
 U+3D9B3	𽦳	SMALL SEAL CHARACTER-3D9B3		seal	Lo	18.0	Seal			U+777D	
 U+3D9B4	𽦴	SMALL SEAL CHARACTER-3D9B4		seal	Lo	18.0	Seal			U+771C	
-U+3D9B5	𽦵	SMALL SEAL CHARACTER-3D9B5		seal	Lo	18.0	Seal			U+7705	
+U+3D9B5	𽦵	SMALL SEAL CHARACTER-3D9B5		seal	Lo	18.0	Seal			U+2523C	
 U+3D9B6	𽦶	SMALL SEAL CHARACTER-3D9B6		seal	Lo	18.0	Seal			U+76FC	
 U+3D9B7	𽦷	SMALL SEAL CHARACTER-3D9B7		seal	Lo	18.0	Seal			U+773D	
 U+3D9B8	𽦸	SMALL SEAL CHARACTER-3D9B8		seal	Lo	18.0	Seal			U+25249	
@@ -119957,7 +119957,7 @@ U+3D9CA	𽧊	SMALL SEAL CHARACTER-3D9CA		seal	Lo	18.0	Seal			U+76F8
 U+3D9CB	𽧋	SMALL SEAL CHARACTER-3D9CB		seal	Lo	18.0	Seal			U+778B	
 U+3D9CC	𽧌	SMALL SEAL CHARACTER-3D9CC		seal	Lo	18.0	Seal			U+2515C	
 U+3D9CD	𽧍	SMALL SEAL CHARACTER-3D9CD		seal	Lo	18.0	Seal			U+7797	
-U+3D9CE	𽧎	SMALL SEAL CHARACTER-3D9CE		seal	Lo	18.0	Seal			U+8CDC	
+U+3D9CE	𽧎	SMALL SEAL CHARACTER-3D9CE		seal	Lo	18.0	Seal			U+7757	
 U+3D9CF	𽧏	SMALL SEAL CHARACTER-3D9CF		seal	Lo	18.0	Seal			U+774A	
 U+3D9D0	𽧐	SMALL SEAL CHARACTER-3D9D0		seal	Lo	18.0	Seal			U+25134	
 U+3D9D1	𽧑	SMALL SEAL CHARACTER-3D9D1		seal	Lo	18.0	Seal			U+777C	
@@ -120035,7 +120035,7 @@ U+3DA18	𽨘	SMALL SEAL CHARACTER-3DA18		seal	Lo	18.0	Seal			U+9F3B
 U+3DA19	𽨙	SMALL SEAL CHARACTER-3DA19		seal	Lo	18.0	Seal			U+55C5	
 U+3DA1A	𽨚	SMALL SEAL CHARACTER-3DA1A		seal	Lo	18.0	Seal			U+9F3E	
 U+3DA1B	𽨛	SMALL SEAL CHARACTER-3DA1B		seal	Lo	18.0	Seal			U+9F3D	
-U+3DA1C	𽨜	SMALL SEAL CHARACTER-3DA1C		seal	Lo	18.0	Seal			U+550F	
+U+3DA1C	𽨜	SMALL SEAL CHARACTER-3DA1C		seal	Lo	18.0	Seal			U+9F42	
 U+3DA1D	𽨝	SMALL SEAL CHARACTER-3DA1D		seal	Lo	18.0	Seal			U+7695	
 U+3DA1E	𽨞	SMALL SEAL CHARACTER-3DA1E		seal	Lo	18.0	Seal			U+596D	
 U+3DA1F	𽨟	SMALL SEAL CHARACTER-3DA1F		seal	Lo	18.0	Seal			U+596D	
@@ -120471,7 +120471,7 @@ U+3DBCC	𽯌	SMALL SEAL CHARACTER-3DBCC		seal	Lo	18.0	Seal			U+808C
 U+3DBCD	𽯍	SMALL SEAL CHARACTER-3DBCD		seal	Lo	18.0	Seal			U+81DA	
 U+3DBCE	𽯎	SMALL SEAL CHARACTER-3DBCE		seal	Lo	18.0	Seal			U+819A	
 U+3DBCF	𽯏	SMALL SEAL CHARACTER-3DBCF		seal	Lo	18.0	Seal			U+80AB	
-U+3DBD0	𽯐	SMALL SEAL CHARACTER-3DBD0		seal	Lo	18.0	Seal			U+808C	
+U+3DBD0	𽯐	SMALL SEAL CHARACTER-3DBD0		seal	Lo	18.0	Seal			U+26804	
 U+3DBD1	𽯑	SMALL SEAL CHARACTER-3DBD1		seal	Lo	18.0	Seal			U+8123	
 U+3DBD2	𽯒	SMALL SEAL CHARACTER-3DBD2		seal	Lo	18.0	Seal			U+4AC3	
 U+3DBD3	𽯓	SMALL SEAL CHARACTER-3DBD3		seal	Lo	18.0	Seal			U+8130	
@@ -120827,13 +120827,13 @@ U+3DD30	𽴰	SMALL SEAL CHARACTER-3DD30		seal	Lo	18.0	Seal			U+25D39
 U+3DD31	𽴱	SMALL SEAL CHARACTER-3DD31		seal	Lo	18.0	Seal			U+7B2B	
 U+3DD32	𽴲	SMALL SEAL CHARACTER-3DD32		seal	Lo	18.0	Seal			U+7B75	
 U+3DD33	𽴳	SMALL SEAL CHARACTER-3DD33		seal	Lo	18.0	Seal			U+7C1F	
-U+3DD34	𽴴	SMALL SEAL CHARACTER-3DD34		seal	Lo	18.0	Seal			U+7B65	
+U+3DD34	𽴴	SMALL SEAL CHARACTER-3DD34		seal	Lo	18.0	Seal			U+7C67	
 U+3DD35	𽴵	SMALL SEAL CHARACTER-3DD35		seal	Lo	18.0	Seal			U+7BE8	
 U+3DD36	𽴶	SMALL SEAL CHARACTER-3DD36		seal	Lo	18.0	Seal			U+7BE9	
 U+3DD37	𽴷	SMALL SEAL CHARACTER-3DD37		seal	Lo	18.0	Seal			U+7C53	
 U+3DD38	𽴸	SMALL SEAL CHARACTER-3DD38		seal	Lo	18.0	Seal			U+425B	
 U+3DD39	𽴹	SMALL SEAL CHARACTER-3DD39		seal	Lo	18.0	Seal			U+7C54	
-U+3DD3A	𽴺	SMALL SEAL CHARACTER-3DD3A		seal	Lo	18.0	Seal			U+7B84	
+U+3DD3A	𽴺	SMALL SEAL CHARACTER-3DD3A		seal	Lo	18.0	Seal			U+7B85	
 U+3DD3B	𽴻	SMALL SEAL CHARACTER-3DD3B		seal	Lo	18.0	Seal			U+25CD3	
 U+3DD3C	𽴼	SMALL SEAL CHARACTER-3DD3C		seal	Lo	18.0	Seal			U+4230	
 U+3DD3D	𽴽	SMALL SEAL CHARACTER-3DD3D		seal	Lo	18.0	Seal			U+7B65	
@@ -121983,7 +121983,7 @@ U+3E1B4	𾆴	SMALL SEAL CHARACTER-3E1B4		seal	Lo	18.0	Seal			U+2574C
 U+3E1B5	𾆵	SMALL SEAL CHARACTER-3E1B5		seal	Lo	18.0	Seal			U+4169	
 U+3E1B6	𾆶	SMALL SEAL CHARACTER-3E1B6		seal	Lo	18.0	Seal			U+4153	
 U+3E1B7	𾆷	SMALL SEAL CHARACTER-3E1B7		seal	Lo	18.0	Seal			U+7A3D	
-U+3E1B8	𾆸	SMALL SEAL CHARACTER-3E1B8		seal	Lo	18.0	Seal			U+8E14	
+U+3E1B8	𾆸	SMALL SEAL CHARACTER-3E1B8		seal	Lo	18.0	Seal			U+25894	
 U+3E1B9	𾆹	SMALL SEAL CHARACTER-3E1B9		seal	Lo	18.0	Seal			U+25891	
 U+3E1BA	𾆺	SMALL SEAL CHARACTER-3E1BA		seal	Lo	18.0	Seal			U+5DE3	
 U+3E1BB	𾆻	SMALL SEAL CHARACTER-3E1BB		seal	Lo	18.0	Seal			U+8CB6	
@@ -122226,7 +122226,7 @@ U+3E2A7	𾊧	SMALL SEAL CHARACTER-3E2A7		seal	Lo	18.0	Seal			U+912E
 U+3E2A8	𾊨	SMALL SEAL CHARACTER-3E2A8		seal	Lo	18.0	Seal			U+911E	
 U+3E2A9	𾊩	SMALL SEAL CHARACTER-3E2A9		seal	Lo	18.0	Seal			U+28676	
 U+3E2AA	𾊪	SMALL SEAL CHARACTER-3E2AA		seal	Lo	18.0	Seal			U+90B4	
-U+3E2AB	𾊫	SMALL SEAL CHARACTER-3E2AB		seal	Lo	18.0	Seal			U+9147	
+U+3E2AB	𾊫	SMALL SEAL CHARACTER-3E2AB		seal	Lo	18.0	Seal			U+48DC	
 U+3E2AC	𾊬	SMALL SEAL CHARACTER-3E2AC		seal	Lo	18.0	Seal			U+28679	
 U+3E2AD	𾊭	SMALL SEAL CHARACTER-3E2AD		seal	Lo	18.0	Seal			U+48BB	
 U+3E2AE	𾊮	SMALL SEAL CHARACTER-3E2AE		seal	Lo	18.0	Seal			U+9141	
@@ -122412,7 +122412,7 @@ U+3E361	𾍡	SMALL SEAL CHARACTER-3E361		seal	Lo	18.0	Seal			U+65DD
 U+3E362	𾍢	SMALL SEAL CHARACTER-3E362		seal	Lo	18.0	Seal			U+65C3	
 U+3E363	𾍣	SMALL SEAL CHARACTER-3E363		seal	Lo	18.0	Seal			U+65C3	
 U+3E364	𾍤	SMALL SEAL CHARACTER-3E364		seal	Lo	18.0	Seal			U+3ACD	
-U+3E365	𾍥	SMALL SEAL CHARACTER-3E365		seal	Lo	18.0	Seal			U+3ACD	
+U+3E365	𾍥	SMALL SEAL CHARACTER-3E365		seal	Lo	18.0	Seal			U+3ACF	
 U+3E366	𾍦	SMALL SEAL CHARACTER-3E366		seal	Lo	18.0	Seal			U+65BD	
 U+3E367	𾍧	SMALL SEAL CHARACTER-3E367		seal	Lo	18.0	Seal			U+65D6	
 U+3E368	𾍨	SMALL SEAL CHARACTER-3E368		seal	Lo	18.0	Seal			U+2312A	
@@ -122668,7 +122668,7 @@ U+3E461	𾑡	SMALL SEAL CHARACTER-3E461		seal	Lo	18.0	Seal			U+7CDF
 U+3E462	𾑢	SMALL SEAL CHARACTER-3E462		seal	Lo	18.0	Seal			U+7CDF	
 U+3E463	𾑣	SMALL SEAL CHARACTER-3E463		seal	Lo	18.0	Seal			U+7CD2	
 U+3E464	𾑤	SMALL SEAL CHARACTER-3E464		seal	Lo	18.0	Seal			U+7CD7	
-U+3E465	𾑥	SMALL SEAL CHARACTER-3E465		seal	Lo	18.0	Seal			U+7CD7	
+U+3E465	𾑥	SMALL SEAL CHARACTER-3E465		seal	Lo	18.0	Seal			U+4286	
 U+3E466	𾑦	SMALL SEAL CHARACTER-3E466		seal	Lo	18.0	Seal			U+7CC8	
 U+3E467	𾑧	SMALL SEAL CHARACTER-3E467		seal	Lo	18.0	Seal			U+7CE7	
 U+3E468	𾑨	SMALL SEAL CHARACTER-3E468		seal	Lo	18.0	Seal			U+7C88	
@@ -122692,7 +122692,7 @@ U+3E479	𾑹	SMALL SEAL CHARACTER-3E479		seal	Lo	18.0	Seal			U+7C79
 U+3E47A	𾑺	SMALL SEAL CHARACTER-3E47A		seal	Lo	18.0	Seal			U+7CC9	
 U+3E47B	𾑻	SMALL SEAL CHARACTER-3E47B		seal	Lo	18.0	Seal			U+7CD6	
 U+3E47C	𾑼	SMALL SEAL CHARACTER-3E47C		seal	Lo	18.0	Seal			U+6BC7	
-U+3E47D	𾑽	SMALL SEAL CHARACTER-3E47D		seal	Lo	18.0	Seal			U+6BC7	
+U+3E47D	𾑽	SMALL SEAL CHARACTER-3E47D		seal	Lo	18.0	Seal			U+7CF3	
 U+3E47E	𾑾	SMALL SEAL CHARACTER-3E47E		seal	Lo	18.0	Seal			U+81FC	
 U+3E47F	𾑿	SMALL SEAL CHARACTER-3E47F		seal	Lo	18.0	Seal			U+8202	
 U+3E480	𾒀	SMALL SEAL CHARACTER-3E480		seal	Lo	18.0	Seal			U+2696D	
@@ -123126,7 +123126,7 @@ U+3E62B	𾘫	SMALL SEAL CHARACTER-3E62B		seal	Lo	18.0	Seal			U+5E56
 U+3E62C	𾘬	SMALL SEAL CHARACTER-3E62C		seal	Lo	18.0	Seal			U+383E	
 U+3E62D	𾘭	SMALL SEAL CHARACTER-3E62D		seal	Lo	18.0	Seal			U+5E61	
 U+3E62E	𾘮	SMALL SEAL CHARACTER-3E62E		seal	Lo	18.0	Seal			U+220F4	
-U+3E62F	𾘯	SMALL SEAL CHARACTER-3E62F		seal	Lo	18.0	Seal			U+6515	
+U+3E62F	𾘯	SMALL SEAL CHARACTER-3E62F		seal	Lo	18.0	Seal			U+3868	
 U+3E630	𾘰	SMALL SEAL CHARACTER-3E630		seal	Lo	18.0	Seal			U+5E5D	
 U+3E631	𾘱	SMALL SEAL CHARACTER-3E631		seal	Lo	18.0	Seal			U+22110	
 U+3E632	𾘲	SMALL SEAL CHARACTER-3E632		seal	Lo	18.0	Seal			U+5E6D	
@@ -123213,7 +123213,7 @@ U+3E682	𾚂	SMALL SEAL CHARACTER-3E682		seal	Lo	18.0	Seal			U+4F2F
 U+3E683	𾚃	SMALL SEAL CHARACTER-3E683		seal	Lo	18.0	Seal			U+4EF2	
 U+3E684	𾚄	SMALL SEAL CHARACTER-3E684		seal	Lo	18.0	Seal			U+4F0A	
 U+3E685	𾚅	SMALL SEAL CHARACTER-3E685		seal	Lo	18.0	Seal			U+4F0A	
-U+3E686	𾚆	SMALL SEAL CHARACTER-3E686		seal	Lo	18.0	Seal			U+5951	
+U+3E686	𾚆	SMALL SEAL CHARACTER-3E686		seal	Lo	18.0	Seal			U+5070	
 U+3E687	𾚇	SMALL SEAL CHARACTER-3E687		seal	Lo	18.0	Seal			U+5029	
 U+3E688	𾚈	SMALL SEAL CHARACTER-3E688		seal	Lo	18.0	Seal			U+59A4	
 U+3E689	𾚉	SMALL SEAL CHARACTER-3E689		seal	Lo	18.0	Seal			U+4F00	
@@ -123883,7 +123883,7 @@ U+3E920	𾤠	SMALL SEAL CHARACTER-3E920		seal	Lo	18.0	Seal			U+23916
 U+3E921	𾤡	SMALL SEAL CHARACTER-3E921		seal	Lo	18.0	Seal			U+6B59	
 U+3E922	𾤢	SMALL SEAL CHARACTER-3E922		seal	Lo	18.0	Seal			U+3C36	
 U+3E923	𾤣	SMALL SEAL CHARACTER-3E923		seal	Lo	18.0	Seal			U+2389C	
-U+3E924	𾤤	SMALL SEAL CHARACTER-3E924		seal	Lo	18.0	Seal			U+54A5	
+U+3E924	𾤤	SMALL SEAL CHARACTER-3E924		seal	Lo	18.0	Seal			U+6B2A	
 U+3E925	𾤥	SMALL SEAL CHARACTER-3E925		seal	Lo	18.0	Seal			U+6B25	
 U+3E926	𾤦	SMALL SEAL CHARACTER-3E926		seal	Lo	18.0	Seal			U+6B21	
 U+3E927	𾤧	SMALL SEAL CHARACTER-3E927		seal	Lo	18.0	Seal			U+6B21	
@@ -123977,7 +123977,7 @@ U+3E97E	𾥾	SMALL SEAL CHARACTER-3E97E		seal	Lo	18.0	Seal			U+9849
 U+3E97F	𾥿	SMALL SEAL CHARACTER-3E97F		seal	Lo	18.0	Seal			U+9813	
 U+3E980	𾦀	SMALL SEAL CHARACTER-3E980		seal	Lo	18.0	Seal			U+982B	
 U+3E981	𾦁	SMALL SEAL CHARACTER-3E981		seal	Lo	18.0	Seal			U+4FDB	
-U+3E982	𾦂	SMALL SEAL CHARACTER-3E982		seal	Lo	18.0	Seal			U+9824	
+U+3E982	𾦂	SMALL SEAL CHARACTER-3E982		seal	Lo	18.0	Seal			U+9823	
 U+3E983	𾦃	SMALL SEAL CHARACTER-3E983		seal	Lo	18.0	Seal			U+2954A	
 U+3E984	𾦄	SMALL SEAL CHARACTER-3E984		seal	Lo	18.0	Seal			U+9821	
 U+3E985	𾦅	SMALL SEAL CHARACTER-3E985		seal	Lo	18.0	Seal			U+4ABC	
@@ -124039,7 +124039,7 @@ U+3E9BC	𾦼	SMALL SEAL CHARACTER-3E9BC		seal	Lo	18.0	Seal			U+9B12
 U+3E9BD	𾦽	SMALL SEAL CHARACTER-3E9BD		seal	Lo	18.0	Seal			U+4FEE	
 U+3E9BE	𾦾	SMALL SEAL CHARACTER-3E9BE		seal	Lo	18.0	Seal			U+5F70	
 U+3E9BF	𾦿	SMALL SEAL CHARACTER-3E9BF		seal	Lo	18.0	Seal			U+5F6B	
-U+3E9C0	𾧀	SMALL SEAL CHARACTER-3E9C0		seal	Lo	18.0	Seal			U+975A	
+U+3E9C0	𾧀	SMALL SEAL CHARACTER-3E9C0		seal	Lo	18.0	Seal			U+291D5	
 U+3E9C1	𾧁	SMALL SEAL CHARACTER-3E9C1		seal	Lo	18.0	Seal			U+38CE	
 U+3E9C2	𾧂	SMALL SEAL CHARACTER-3E9C2		seal	Lo	18.0	Seal			U+5F31	
 U+3E9C3	𾧃	SMALL SEAL CHARACTER-3E9C3		seal	Lo	18.0	Seal			U+5F69	
@@ -124359,7 +124359,7 @@ U+3EAFC	𾫼	SMALL SEAL CHARACTER-3EAFC		seal	Lo	18.0	Seal			U+20A32
 U+3EAFD	𾫽	SMALL SEAL CHARACTER-3EAFD		seal	Lo	18.0	Seal			U+20A58	
 U+3EAFE	𾫾	SMALL SEAL CHARACTER-3EAFE		seal	Lo	18.0	Seal			U+4EC4	
 U+3EAFF	𾫿	SMALL SEAL CHARACTER-3EAFF		seal	Lo	18.0	Seal			U+4EC4	
-U+3EB00	𾬀	SMALL SEAL CHARACTER-3EB00		seal	Lo	18.0	Seal			U+5EE6	
+U+3EB00	𾬀	SMALL SEAL CHARACTER-3EB00		seal	Lo	18.0	Seal			U+20AAE	
 U+3EB01	𾬁	SMALL SEAL CHARACTER-3EB01		seal	Lo	18.0	Seal			U+539E	
 U+3EB02	𾬂	SMALL SEAL CHARACTER-3EB02		seal	Lo	18.0	Seal			U+53AD	
 U+3EB03	𾬃	SMALL SEAL CHARACTER-3EB03		seal	Lo	18.0	Seal			U+5383	
@@ -124385,7 +124385,7 @@ U+3EB16	𾬖	SMALL SEAL CHARACTER-3EB16		seal	Lo	18.0	Seal			U+792B
 U+3EB17	𾬗	SMALL SEAL CHARACTER-3EB17		seal	Lo	18.0	Seal			U+40AC	
 U+3EB18	𾬘	SMALL SEAL CHARACTER-3EB18		seal	Lo	18.0	Seal			U+78E7	
 U+3EB19	𾬙	SMALL SEAL CHARACTER-3EB19		seal	Lo	18.0	Seal			U+7891	
-U+3EB1A	𾬚	SMALL SEAL CHARACTER-3EB1A		seal	Lo	18.0	Seal			U+589C	
+U+3EB1A	𾬚	SMALL SEAL CHARACTER-3EB1A		seal	Lo	18.0	Seal			U+40CD	
 U+3EB1B	𾬛	SMALL SEAL CHARACTER-3EB1B		seal	Lo	18.0	Seal			U+78D2	
 U+3EB1C	𾬜	SMALL SEAL CHARACTER-3EB1C		seal	Lo	18.0	Seal			U+40B9	
 U+3EB1D	𾬝	SMALL SEAL CHARACTER-3EB1D		seal	Lo	18.0	Seal			U+785E	
@@ -124693,8 +124693,8 @@ U+3EC4A	𾱊	SMALL SEAL CHARACTER-3EC4A		seal	Lo	18.0	Seal			U+9E97
 U+3EC4B	𾱋	SMALL SEAL CHARACTER-3EC4B		seal	Lo	18.0	Seal			U+9E97	
 U+3EC4C	𾱌	SMALL SEAL CHARACTER-3EC4C		seal	Lo	18.0	Seal			U+9E97	
 U+3EC4D	𾱍	SMALL SEAL CHARACTER-3EC4D		seal	Lo	18.0	Seal			U+9E97	
-U+3EC4E	𾱎	SMALL SEAL CHARACTER-3EC4E		seal	Lo	18.0	Seal			U+725D	
-U+3EC4F	𾱏	SMALL SEAL CHARACTER-3EC4F		seal	Lo	18.0	Seal			U+725D	
+U+3EC4E	𾱎	SMALL SEAL CHARACTER-3EC4E		seal	Lo	18.0	Seal			U+9E80	
+U+3EC4F	𾱏	SMALL SEAL CHARACTER-3EC4F		seal	Lo	18.0	Seal			U+9E80	
 U+3EC50	𾱐	SMALL SEAL CHARACTER-3EC50		seal	Lo	18.0	Seal			U+9E81	
 U+3EC51	𾱑	SMALL SEAL CHARACTER-3EC51		seal	Lo	18.0	Seal			U+5875	
 U+3EC52	𾱒	SMALL SEAL CHARACTER-3EC52		seal	Lo	18.0	Seal			U+21518	
@@ -124733,7 +124733,7 @@ U+3EC72	𾱲	SMALL SEAL CHARACTER-3EC72		seal	Lo	18.0	Seal			U+3E8C
 U+3EC73	𾱳	SMALL SEAL CHARACTER-3EC73		seal	Lo	18.0	Seal			U+3E96	
 U+3EC74	𾱴	SMALL SEAL CHARACTER-3EC74		seal	Lo	18.0	Seal			U+7325	
 U+3EC75	𾱵	SMALL SEAL CHARACTER-3EC75		seal	Lo	18.0	Seal			U+737F	
-U+3EC76	𾱶	SMALL SEAL CHARACTER-3EC76		seal	Lo	18.0	Seal			U+72E1	
+U+3EC76	𾱶	SMALL SEAL CHARACTER-3EC76		seal	Lo	18.0	Seal			U+3E92	
 U+3EC77	𾱷	SMALL SEAL CHARACTER-3EC77		seal	Lo	18.0	Seal			U+3E91	
 U+3EC78	𾱸	SMALL SEAL CHARACTER-3EC78		seal	Lo	18.0	Seal			U+5968	
 U+3EC79	𾱹	SMALL SEAL CHARACTER-3EC79		seal	Lo	18.0	Seal			U+3E7D	
@@ -124840,7 +124840,7 @@ U+3ECDD	𾳝	SMALL SEAL CHARACTER-3ECDD		seal	Lo	18.0	Seal			U+709F
 U+3ECDE	𾳞	SMALL SEAL CHARACTER-3ECDE		seal	Lo	18.0	Seal			U+24226	
 U+3ECDF	𾳟	SMALL SEAL CHARACTER-3ECDF		seal	Lo	18.0	Seal			U+71EC	
 U+3ECE0	𾳠	SMALL SEAL CHARACTER-3ECE0		seal	Lo	18.0	Seal			U+71F9	
-U+3ECE1	𾳡	SMALL SEAL CHARACTER-3ECE1		seal	Lo	18.0	Seal			U+711E	
+U+3ECE1	𾳡	SMALL SEAL CHARACTER-3ECE1		seal	Lo	18.0	Seal			U+710C	
 U+3ECE2	𾳢	SMALL SEAL CHARACTER-3ECE2		seal	Lo	18.0	Seal			U+71CE	
 U+3ECE3	𾳣	SMALL SEAL CHARACTER-3ECE3		seal	Lo	18.0	Seal			U+7136	
 U+3ECE4	𾳤	SMALL SEAL CHARACTER-3ECE4		seal	Lo	18.0	Seal			U+457C	
@@ -124997,7 +124997,7 @@ U+3ED7A	𾵺	SMALL SEAL CHARACTER-3ED7A		seal	Lo	18.0	Seal			U+9EDD
 U+3ED7B	𾵻	SMALL SEAL CHARACTER-3ED7B		seal	Lo	18.0	Seal			U+9ED7	
 U+3ED7C	𾵼	SMALL SEAL CHARACTER-3ED7C		seal	Lo	18.0	Seal			U+70B9	
 U+3ED7D	𾵽	SMALL SEAL CHARACTER-3ED7D		seal	Lo	18.0	Seal			U+9EDA	
-U+3ED7E	𾵾	SMALL SEAL CHARACTER-3ED7E		seal	Lo	18.0	Seal			U+9ED4	
+U+3ED7E	𾵾	SMALL SEAL CHARACTER-3ED7E		seal	Lo	18.0	Seal			U+2A459	
 U+3ED7F	𾵿	SMALL SEAL CHARACTER-3ED7F		seal	Lo	18.0	Seal			U+9EE6	
 U+3ED80	𾶀	SMALL SEAL CHARACTER-3ED80		seal	Lo	18.0	Seal			U+4D75	
 U+3ED81	𾶁	SMALL SEAL CHARACTER-3ED81		seal	Lo	18.0	Seal			U+4D64	
@@ -125288,7 +125288,7 @@ U+3EE9D	𾺝	SMALL SEAL CHARACTER-3EE9D		seal	Lo	18.0	Seal			U+2263C
 U+3EE9E	𾺞	SMALL SEAL CHARACTER-3EE9E		seal	Lo	18.0	Seal			U+3902	
 U+3EE9F	𾺟	SMALL SEAL CHARACTER-3EE9F		seal	Lo	18.0	Seal			U+399A	
 U+3EEA0	𾺠	SMALL SEAL CHARACTER-3EEA0		seal	Lo	18.0	Seal			U+395B	
-U+3EEA1	𾺡	SMALL SEAL CHARACTER-3EEA1		seal	Lo	18.0	Seal			U+6081	
+U+3EEA1	𾺡	SMALL SEAL CHARACTER-3EEA1		seal	Lo	18.0	Seal			U+61C1	
 U+3EEA2	𾺢	SMALL SEAL CHARACTER-3EEA2		seal	Lo	18.0	Seal			U+60BB	
 U+3EEA3	𾺣	SMALL SEAL CHARACTER-3EEA3		seal	Lo	18.0	Seal			U+22670	
 U+3EEA4	𾺤	SMALL SEAL CHARACTER-3EEA4		seal	Lo	18.0	Seal			U+6153	
@@ -125322,7 +125322,7 @@ U+3EEBF	𾺿	SMALL SEAL CHARACTER-3EEBF		seal	Lo	18.0	Seal			U+60F0
 U+3EEC0	𾻀	SMALL SEAL CHARACTER-3EEC0		seal	Lo	18.0	Seal			U+5AA0	
 U+3EEC1	𾻁	SMALL SEAL CHARACTER-3EEC1		seal	Lo	18.0	Seal			U+616B	
 U+3EEC2	𾻂	SMALL SEAL CHARACTER-3EEC2		seal	Lo	18.0	Seal			U+602B	
-U+3EEC3	𾻃	SMALL SEAL CHARACTER-3EEC3		seal	Lo	18.0	Seal			U+605D	
+U+3EEC3	𾻃	SMALL SEAL CHARACTER-3EEC3		seal	Lo	18.0	Seal			U+225CA	
 U+3EEC4	𾻄	SMALL SEAL CHARACTER-3EEC4		seal	Lo	18.0	Seal			U+5FFD	
 U+3EEC5	𾻅	SMALL SEAL CHARACTER-3EEC5		seal	Lo	18.0	Seal			U+5FD8	
 U+3EEC6	𾻆	SMALL SEAL CHARACTER-3EEC6		seal	Lo	18.0	Seal			U+6172	
@@ -125672,7 +125672,7 @@ U+3F01D	𿀝	SMALL SEAL CHARACTER-3F01D		seal	Lo	18.0	Seal			U+6C86
 U+3F01E	𿀞	SMALL SEAL CHARACTER-3F01E		seal	Lo	18.0	Seal			U+6CEC	
 U+3F01F	𿀟	SMALL SEAL CHARACTER-3F01F		seal	Lo	18.0	Seal			U+6FDE	
 U+3F020	𿀠	SMALL SEAL CHARACTER-3F020		seal	Lo	18.0	Seal			U+7042	
-U+3F021	𿀡	SMALL SEAL CHARACTER-3F021		seal	Lo	18.0	Seal			U+6D65	
+U+3F021	𿀡	SMALL SEAL CHARACTER-3F021		seal	Lo	18.0	Seal			U+6F5D	
 U+3F022	𿀢	SMALL SEAL CHARACTER-3F022		seal	Lo	18.0	Seal			U+6ED5	
 U+3F023	𿀣	SMALL SEAL CHARACTER-3F023		seal	Lo	18.0	Seal			U+6F4F	
 U+3F024	𿀤	SMALL SEAL CHARACTER-3F024		seal	Lo	18.0	Seal			U+6D38	
@@ -125764,7 +125764,7 @@ U+3F079	𿁹	SMALL SEAL CHARACTER-3F079		seal	Lo	18.0	Seal			U+6FD8
 U+3F07A	𿁺	SMALL SEAL CHARACTER-3F07A		seal	Lo	18.0	Seal			U+6ECE	
 U+3F07B	𿁻	SMALL SEAL CHARACTER-3F07B		seal	Lo	18.0	Seal			U+7AAA	
 U+3F07C	𿁼	SMALL SEAL CHARACTER-3F07C		seal	Lo	18.0	Seal			U+6F25	
-U+3F07D	𿁽	SMALL SEAL CHARACTER-3F07D		seal	Lo	18.0	Seal			U+6D38	
+U+3F07D	𿁽	SMALL SEAL CHARACTER-3F07D		seal	Lo	18.0	Seal			U+6F62	
 U+3F07E	𿁾	SMALL SEAL CHARACTER-3F07E		seal	Lo	18.0	Seal			U+6CBC	
 U+3F07F	𿁿	SMALL SEAL CHARACTER-3F07F		seal	Lo	18.0	Seal			U+6C60	
 U+3F080	𿂀	SMALL SEAL CHARACTER-3F080		seal	Lo	18.0	Seal			U+6E56	
@@ -125907,8 +125907,8 @@ U+3F108	𿄈	SMALL SEAL CHARACTER-3F108		seal	Lo	18.0	Seal			U+6DE4
 U+3F109	𿄉	SMALL SEAL CHARACTER-3F109		seal	Lo	18.0	Seal			U+6ED3	
 U+3F10A	𿄊	SMALL SEAL CHARACTER-3F10A		seal	Lo	18.0	Seal			U+6DF0	
 U+3F10B	𿄋	SMALL SEAL CHARACTER-3F10B		seal	Lo	18.0	Seal			U+7039	
-U+3F10C	𿄌	SMALL SEAL CHARACTER-3F10C		seal	Lo	18.0	Seal			U+6F50	
-U+3F10D	𿄍	SMALL SEAL CHARACTER-3F10D		seal	Lo	18.0	Seal			U+6F50	
+U+3F10C	𿄌	SMALL SEAL CHARACTER-3F10C		seal	Lo	18.0	Seal			U+240ED	
+U+3F10D	𿄍	SMALL SEAL CHARACTER-3F10D		seal	Lo	18.0	Seal			U+240ED	
 U+3F10E	𿄎	SMALL SEAL CHARACTER-3F10E		seal	Lo	18.0	Seal			U+6F00	
 U+3F10F	𿄏	SMALL SEAL CHARACTER-3F10F		seal	Lo	18.0	Seal			U+6E51	
 U+3F110	𿄐	SMALL SEAL CHARACTER-3F110		seal	Lo	18.0	Seal			U+6E4E	
@@ -125958,7 +125958,7 @@ U+3F13B	𿄻	SMALL SEAL CHARACTER-3F13B		seal	Lo	18.0	Seal			U+67D3
 U+3F13C	𿄼	SMALL SEAL CHARACTER-3F13C		seal	Lo	18.0	Seal			U+6CF0	
 U+3F13D	𿄽	SMALL SEAL CHARACTER-3F13D		seal	Lo	18.0	Seal			U+5933	
 U+3F13E	𿄾	SMALL SEAL CHARACTER-3F13E		seal	Lo	18.0	Seal			U+3D84	
-U+3F13F	𿄿	SMALL SEAL CHARACTER-3F13F		seal	Lo	18.0	Seal			U+6D45	
+U+3F13F	𿄿	SMALL SEAL CHARACTER-3F13F		seal	Lo	18.0	Seal			U+7052	
 U+3F140	𿅀	SMALL SEAL CHARACTER-3F140		seal	Lo	18.0	Seal			U+3D5E	
 U+3F141	𿅁	SMALL SEAL CHARACTER-3F141		seal	Lo	18.0	Seal			U+6E69	
 U+3F142	𿅂	SMALL SEAL CHARACTER-3F142		seal	Lo	18.0	Seal			U+6D1F	
@@ -125979,7 +125979,7 @@ U+3F150	𿅐	SMALL SEAL CHARACTER-3F150		seal	Lo	18.0	Seal			U+840D
 U+3F151	𿅑	SMALL SEAL CHARACTER-3F151		seal	Lo	18.0	Seal			U+6FCA	
 U+3F152	𿅒	SMALL SEAL CHARACTER-3F152		seal	Lo	18.0	Seal			U+6C69	
 U+3F153	𿅓	SMALL SEAL CHARACTER-3F153		seal	Lo	18.0	Seal			U+703C	
-U+3F154	𿅔	SMALL SEAL CHARACTER-3F154		seal	Lo	18.0	Seal			U+6E4D	
+U+3F154	𿅔	SMALL SEAL CHARACTER-3F154		seal	Lo	18.0	Seal			U+6F19	
 U+3F155	𿅕	SMALL SEAL CHARACTER-3F155		seal	Lo	18.0	Seal			U+6C4D	
 U+3F156	𿅖	SMALL SEAL CHARACTER-3F156		seal	Lo	18.0	Seal			U+6CEF	
 U+3F157	𿅗	SMALL SEAL CHARACTER-3F157		seal	Lo	18.0	Seal			U+7023	
@@ -126001,7 +126001,7 @@ U+3F166	𿅦	SMALL SEAL CHARACTER-3F166		seal	Lo	18.0	Seal			U+6D79
 U+3F167	𿅧	SMALL SEAL CHARACTER-3F167		seal	Lo	18.0	Seal			U+6E98	
 U+3F168	𿅨	SMALL SEAL CHARACTER-3F168		seal	Lo	18.0	Seal			U+6F60	
 U+3F169	𿅩	SMALL SEAL CHARACTER-3F169		seal	Lo	18.0	Seal			U+6DAF	
-U+3F16A	𿅪	SMALL SEAL CHARACTER-3F16A		seal	Lo	18.0	Seal			U+6C34	
+U+3F16A	𿅪	SMALL SEAL CHARACTER-3F16A		seal	Lo	18.0	Seal			U+6C9D	
 U+3F16B	𿅫	SMALL SEAL CHARACTER-3F16B		seal	Lo	18.0	Seal			U+6D41	
 U+3F16C	𿅬	SMALL SEAL CHARACTER-3F16C		seal	Lo	18.0	Seal			U+6D41	
 U+3F16D	𿅭	SMALL SEAL CHARACTER-3F16D		seal	Lo	18.0	Seal			U+6E09	
@@ -126522,7 +126522,7 @@ U+3F36F	𿍯	SMALL SEAL CHARACTER-3F36F		seal	Lo	18.0	Seal			U+3A37
 U+3F370	𿍰	SMALL SEAL CHARACTER-3F370		seal	Lo	18.0	Seal			U+6529	
 U+3F371	𿍱	SMALL SEAL CHARACTER-3F371		seal	Lo	18.0	Seal			U+63A5	
 U+3F372	𿍲	SMALL SEAL CHARACTER-3F372		seal	Lo	18.0	Seal			U+39CA	
-U+3F373	𿍳	SMALL SEAL CHARACTER-3F373		seal	Lo	18.0	Seal			U+606B	
+U+3F373	𿍳	SMALL SEAL CHARACTER-3F373		seal	Lo	18.0	Seal			U+630F	
 U+3F374	𿍴	SMALL SEAL CHARACTER-3F374		seal	Lo	18.0	Seal			U+62DB	
 U+3F375	𿍵	SMALL SEAL CHARACTER-3F375		seal	Lo	18.0	Seal			U+64AB	
 U+3F376	𿍶	SMALL SEAL CHARACTER-3F376		seal	Lo	18.0	Seal			U+2845F	
@@ -126673,7 +126673,7 @@ U+3F406	𿐆	SMALL SEAL CHARACTER-3F406		seal	Lo	18.0	Seal			U+625A
 U+3F407	𿐇	SMALL SEAL CHARACTER-3F407		seal	Lo	18.0	Seal			U+62B6	
 U+3F408	𿐈	SMALL SEAL CHARACTER-3F408		seal	Lo	18.0	Seal			U+627A	
 U+3F409	𿐉	SMALL SEAL CHARACTER-3F409		seal	Lo	18.0	Seal			U+62B0	
-U+3F40A	𿐊	SMALL SEAL CHARACTER-3F40A		seal	Lo	18.0	Seal			U+62CA	
+U+3F40A	𿐊	SMALL SEAL CHARACTER-3F40A		seal	Lo	18.0	Seal			U+3A10	
 U+3F40B	𿐋	SMALL SEAL CHARACTER-3F40B		seal	Lo	18.0	Seal			U+636D	
 U+3F40C	𿐌	SMALL SEAL CHARACTER-3F40C		seal	Lo	18.0	Seal			U+6376	
 U+3F40D	𿐍	SMALL SEAL CHARACTER-3F40D		seal	Lo	18.0	Seal			U+6509	
@@ -126733,7 +126733,7 @@ U+3F442	𿑂	SMALL SEAL CHARACTER-3F442		seal	Lo	18.0	Seal			U+5973
 U+3F443	𿑃	SMALL SEAL CHARACTER-3F443		seal	Lo	18.0	Seal			U+59D3	
 U+3F444	𿑄	SMALL SEAL CHARACTER-3F444		seal	Lo	18.0	Seal			U+59DC	
 U+3F445	𿑅	SMALL SEAL CHARACTER-3F445		seal	Lo	18.0	Seal			U+59EC	
-U+3F446	𿑆	SMALL SEAL CHARACTER-3F446		seal	Lo	18.0	Seal			U+5409	
+U+3F446	𿑆	SMALL SEAL CHARACTER-3F446		seal	Lo	18.0	Seal			U+59DE	
 U+3F447	𿑇	SMALL SEAL CHARACTER-3F447		seal	Lo	18.0	Seal			U+5B34	
 U+3F448	𿑈	SMALL SEAL CHARACTER-3F448		seal	Lo	18.0	Seal			U+59DA	
 U+3F449	𿑉	SMALL SEAL CHARACTER-3F449		seal	Lo	18.0	Seal			U+5AAF	
@@ -126869,7 +126869,7 @@ U+3F4CA	𿓊	SMALL SEAL CHARACTER-3F4CA		seal	Lo	18.0	Seal			U+5A85
 U+3F4CB	𿓋	SMALL SEAL CHARACTER-3F4CB		seal	Lo	18.0	Seal			U+5A13	
 U+3F4CC	𿓌	SMALL SEAL CHARACTER-3F4CC		seal	Lo	18.0	Seal			U+5AE1	
 U+3F4CD	𿓍	SMALL SEAL CHARACTER-3F4CD		seal	Lo	18.0	Seal			U+5B4E	
-U+3F4CE	𿓎	SMALL SEAL CHARACTER-3F4CE		seal	Lo	18.0	Seal			U+5A49	
+U+3F4CE	𿓎	SMALL SEAL CHARACTER-3F4CE		seal	Lo	18.0	Seal			U+217F0	
 U+3F4CF	𿓏	SMALL SEAL CHARACTER-3F4CF		seal	Lo	18.0	Seal			U+5A95	
 U+3F4D0	𿓐	SMALL SEAL CHARACTER-3F4D0		seal	Lo	18.0	Seal			U+5AA3	
 U+3F4D1	𿓑	SMALL SEAL CHARACTER-3F4D1		seal	Lo	18.0	Seal			U+5AE5	
@@ -126889,7 +126889,7 @@ U+3F4DE	𿓞	SMALL SEAL CHARACTER-3F4DE		seal	Lo	18.0	Seal			U+5A11
 U+3F4DF	𿓟	SMALL SEAL CHARACTER-3F4DF		seal	Lo	18.0	Seal			U+4F91	
 U+3F4E0	𿓠	SMALL SEAL CHARACTER-3F4E0		seal	Lo	18.0	Seal			U+4F91	
 U+3F4E1	𿓡	SMALL SEAL CHARACTER-3F4E1		seal	Lo	18.0	Seal			U+59F0	
-U+3F4E2	𿓢	SMALL SEAL CHARACTER-3F4E2		seal	Lo	18.0	Seal			U+59FF	
+U+3F4E2	𿓢	SMALL SEAL CHARACTER-3F4E2		seal	Lo	18.0	Seal			U+59D5	
 U+3F4E3	𿓣	SMALL SEAL CHARACTER-3F4E3		seal	Lo	18.0	Seal			U+5993	
 U+3F4E4	𿓤	SMALL SEAL CHARACTER-3F4E4		seal	Lo	18.0	Seal			U+5B30	
 U+3F4E5	𿓥	SMALL SEAL CHARACTER-3F4E5		seal	Lo	18.0	Seal			U+216DD	
@@ -126914,13 +126914,13 @@ U+3F4F7	𿓷	SMALL SEAL CHARACTER-3F4F7		seal	Lo	18.0	Seal			U+5AC8
 U+3F4F8	𿓸	SMALL SEAL CHARACTER-3F4F8		seal	Lo	18.0	Seal			U+5AEA	
 U+3F4F9	𿓹	SMALL SEAL CHARACTER-3F4F9		seal	Lo	18.0	Seal			U+5A5F	
 U+3F4FA	𿓺	SMALL SEAL CHARACTER-3F4FA		seal	Lo	18.0	Seal			U+59FF	
-U+3F4FB	𿓻	SMALL SEAL CHARACTER-3F4FB		seal	Lo	18.0	Seal			U+59D0	
+U+3F4FB	𿓻	SMALL SEAL CHARACTER-3F4FB		seal	Lo	18.0	Seal			U+3718	
 U+3F4FC	𿓼	SMALL SEAL CHARACTER-3F4FC		seal	Lo	18.0	Seal			U+59A8	
 U+3F4FD	𿓽	SMALL SEAL CHARACTER-3F4FD		seal	Lo	18.0	Seal			U+5984	
 U+3F4FE	𿓾	SMALL SEAL CHARACTER-3F4FE		seal	Lo	18.0	Seal			U+5078	
 U+3F4FF	𿓿	SMALL SEAL CHARACTER-3F4FF		seal	Lo	18.0	Seal			U+21702	
 U+3F500	𿔀	SMALL SEAL CHARACTER-3F500		seal	Lo	18.0	Seal			U+5A0B	
-U+3F501	𿔁	SMALL SEAL CHARACTER-3F501		seal	Lo	18.0	Seal			U+5AA3	
+U+3F501	𿔁	SMALL SEAL CHARACTER-3F501		seal	Lo	18.0	Seal			U+36C6	
 U+3F502	𿔂	SMALL SEAL CHARACTER-3F502		seal	Lo	18.0	Seal			U+59AF	
 U+3F503	𿔃	SMALL SEAL CHARACTER-3F503		seal	Lo	18.0	Seal			U+5ACC	
 U+3F504	𿔄	SMALL SEAL CHARACTER-3F504		seal	Lo	18.0	Seal			U+7701	
@@ -127431,7 +127431,7 @@ U+3F6FC	𿛼	SMALL SEAL CHARACTER-3F6FC		seal	Lo	18.0	Seal			U+7E8A
 U+3F6FD	𿛽	SMALL SEAL CHARACTER-3F6FD		seal	Lo	18.0	Seal			U+7D56	
 U+3F6FE	𿛾	SMALL SEAL CHARACTER-3F6FE		seal	Lo	18.0	Seal			U+7D19	
 U+3F6FF	𿛿	SMALL SEAL CHARACTER-3F6FF		seal	Lo	18.0	Seal			U+42E8	
-U+3F700	𿜀	SMALL SEAL CHARACTER-3F700		seal	Lo	18.0	Seal			U+8339	
+U+3F700	𿜀	SMALL SEAL CHARACTER-3F700		seal	Lo	18.0	Seal			U+42C8	
 U+3F701	𿜁	SMALL SEAL CHARACTER-3F701		seal	Lo	18.0	Seal			U+7E6B	
 U+3F702	𿜂	SMALL SEAL CHARACTER-3F702		seal	Lo	18.0	Seal			U+260C7	
 U+3F703	𿜃	SMALL SEAL CHARACTER-3F703		seal	Lo	18.0	Seal			U+7DDD	
@@ -127440,7 +127440,7 @@ U+3F705	𿜅	SMALL SEAL CHARACTER-3F705		seal	Lo	18.0	Seal			U+7E3E
 U+3F706	𿜆	SMALL SEAL CHARACTER-3F706		seal	Lo	18.0	Seal			U+7E91	
 U+3F707	𿜇	SMALL SEAL CHARACTER-3F707		seal	Lo	18.0	Seal			U+7D28	
 U+3F708	𿜈	SMALL SEAL CHARACTER-3F708		seal	Lo	18.0	Seal			U+26111	
-U+3F709	𿜉	SMALL SEAL CHARACTER-3F709		seal	Lo	18.0	Seal			U+9EF9	
+U+3F709	𿜉	SMALL SEAL CHARACTER-3F709		seal	Lo	18.0	Seal			U+7D7A	
 U+3F70A	𿜊	SMALL SEAL CHARACTER-3F70A		seal	Lo	18.0	Seal			U+7D8C	
 U+3F70B	𿜋	SMALL SEAL CHARACTER-3F70B		seal	Lo	18.0	Seal			U+7D8C	
 U+3F70C	𿜌	SMALL SEAL CHARACTER-3F70C		seal	Lo	18.0	Seal			U+7E10	
@@ -127660,7 +127660,7 @@ U+3F7E1	𿟡	SMALL SEAL CHARACTER-3F7E1		seal	Lo	18.0	Seal			U+95A9
 U+3F7E2	𿟢	SMALL SEAL CHARACTER-3F7E2		seal	Lo	18.0	Seal			U+8679	
 U+3F7E3	𿟣	SMALL SEAL CHARACTER-3F7E3		seal	Lo	18.0	Seal			U+8679	
 U+3F7E4	𿟤	SMALL SEAL CHARACTER-3F7E4		seal	Lo	18.0	Seal			U+8679	
-U+3F7E5	𿟥	SMALL SEAL CHARACTER-3F7E5		seal	Lo	18.0	Seal			U+86B3	
+U+3F7E5	𿟥	SMALL SEAL CHARACTER-3F7E5		seal	Lo	18.0	Seal			U+87AE	
 U+3F7E6	𿟦	SMALL SEAL CHARACTER-3F7E6		seal	Lo	18.0	Seal			U+8740	
 U+3F7E7	𿟧	SMALL SEAL CHARACTER-3F7E7		seal	Lo	18.0	Seal			U+8825	
 U+3F7E8	𿟨	SMALL SEAL CHARACTER-3F7E8		seal	Lo	18.0	Seal			U+8711	
@@ -127813,7 +127813,7 @@ U+3F87A	𿡺	SMALL SEAL CHARACTER-3F87A		seal	Lo	18.0	Seal			U+5835
 U+3F87B	𿡻	SMALL SEAL CHARACTER-3F87B		seal	Lo	18.0	Seal			U+5835	
 U+3F87C	𿡼	SMALL SEAL CHARACTER-3F87C		seal	Lo	18.0	Seal			U+58C1	
 U+3F87D	𿡽	SMALL SEAL CHARACTER-3F87D		seal	Lo	18.0	Seal			U+3669	
-U+3F87E	𿡾	SMALL SEAL CHARACTER-3F87E		seal	Lo	18.0	Seal			U+58D2	
+U+3F87E	𿡾	SMALL SEAL CHARACTER-3F87E		seal	Lo	18.0	Seal			U+5828	
 U+3F87F	𿡿	SMALL SEAL CHARACTER-3F87F		seal	Lo	18.0	Seal			U+57D2	
 U+3F880	𿢀	SMALL SEAL CHARACTER-3F880		seal	Lo	18.0	Seal			U+582A	
 U+3F881	𿢁	SMALL SEAL CHARACTER-3F881		seal	Lo	18.0	Seal			U+5800	
@@ -128732,7 +128732,7 @@ U+3FC11	𿰑	SMALL SEAL CHARACTER-3FC11		seal	Lo	18.0	Seal			U+9156
 U+3FC12	𿰒	SMALL SEAL CHARACTER-3FC12		seal	Lo	18.0	Seal			U+91A7	
 U+3FC13	𿰓	SMALL SEAL CHARACTER-3FC13		seal	Lo	18.0	Seal			U+91B5	
 U+3FC14	𿰔	SMALL SEAL CHARACTER-3FC14		seal	Lo	18.0	Seal			U+91B5	
-U+3FC15	𿰕	SMALL SEAL CHARACTER-3FC15		seal	Lo	18.0	Seal			U+812F	
+U+3FC15	𿰕	SMALL SEAL CHARACTER-3FC15		seal	Lo	18.0	Seal			U+917A	
 U+3FC16	𿰖	SMALL SEAL CHARACTER-3FC16		seal	Lo	18.0	Seal			U+9185	
 U+3FC17	𿰗	SMALL SEAL CHARACTER-3FC17		seal	Lo	18.0	Seal			U+9154	
 U+3FC18	𿰘	SMALL SEAL CHARACTER-3FC18		seal	Lo	18.0	Seal			U+91BA	

@@ -62,7 +62,13 @@ group to the one family it is tied to when
    Chinese standards keep their pairs as two, so a GB 2312 or CNS pair joins only as one character
    encoded twice (`z`, compatibility). 躰 and 體, 邉 and 邊 join on the 戸籍統一文字; 咲 and 笑, 果
    and 菓, 辟 and 避 stay apart, as do 余 and 馀;
-7. two curated families are never joined, nor brought together through a family both join.
+7. two curated families are never joined, nor brought together through a family both join;
+8. both dictionaries of the third pass, the 說文解字 and the 廣韻, read both groups and neither gives them a
+   reading in common, nor do they hold so a character of each, of what the two have taken in so far
+   (`Headwords.two_groups`; the 說文解字 reads a 重文 as its entry). One 異体字 table's row is not enough for two
+   such characters: 螮 (rainbow, 都計切) and 蚳 (ant eggs, 直尼切) stay apart, though 漢語大字典 lists 蚳 under 螮,
+   and 忦 and 𢗊 never meet in 恝, which neither dictionary holds and each is a variant of. A ruling of
+   `data/vocab/grapheme-rulings.tsv` that the pair is `one` joins them all the same.
 
 A third pass (`_join_standard_forms`) takes in the form a national standard prescribes for one character:
 a 简体字 of the 通用规范汉字表 (2013) and a 新字体 of the 常用漢字表 (2010). The second pass counts every
@@ -313,6 +319,13 @@ class Headwords:
         shared = self.compared({a}, {b})
         return len(shared) == 2 and not any(shared.values()) and not self.one_entry({a}, {b})
 
+    def two_groups(self, chars: Iterable[str], others: Iterable[str]) -> bool:
+        """Whether two groups, or a character of each, are two (`two`)."""
+        chars, others = list(chars), list(others)
+        shared = self.compared(chars, others)
+        return (len(shared) == 2 and not any(shared.values()) and not self.one_entry(chars, others)
+                or any(self.two(a, b) for a in chars for b in others))
+
     def entries_apart(self, chars: Iterable[str], others: Iterable[str]) -> bool:
         """Whether the 說文解字 heads an entry with a character of each, and another entry with one of the other. A form it
         gives under an entry heads none."""
@@ -537,9 +550,10 @@ def families(
         for char in keep.members:
             group[char] = keep
     headwords = headwords or Headwords()
-    reduced_forms, unlike, standalone, stated = _join_yixiezi(
-        variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse)
     settled: set[tuple[str, str]] = set()
+    reduced_forms, unlike, standalone, stated = _join_yixiezi(
+        variants, ideographs, {"jis": jis0208, "gb": gb2312 or set(), "cns": cns1 or set()}, group, refuse, headwords,
+        rulings or {}, settled)
     if standard is not None:
         found = _join_standard_forms(variants, ideographs, group, refuse, standard, headwords, standalone, familiarity or {}, rulings or {}, settled)
         if decisions is not None:
@@ -578,11 +592,17 @@ def _stated_by(standard: str, edge: Edge) -> bool:
 
 def _join_yixiezi(
     variants: list[Mapping[str, str]], ideographs: set[str], standards: Mapping[str, set[str]],
-    group: dict[str, Family], refuse,
+    group: dict[str, Family], refuse, headwords: Headwords, rulings: Mapping[tuple[str, str], Ruling], settled: set[tuple[str, str]],
 ) -> tuple[dict[str, list[Edge]], dict[str, set[str]], set[str], dict[str, list[Edge]]]:
     """The 異寫字 pass (see the module docstring): join each group tied to one family only. Answers with what the
     recording of writers reads: each reduced form's statements, the look-alikes, the forms that also write
     themselves, and each character's statements of the whole of another."""
+
+    def ruled_one(edges: list[Edge]) -> bool:
+        pairs = {pair for edge in edges for pair in ((edge.a, edge.b), (edge.b, edge.a)) if pair in rulings and rulings[pair].one}
+        settled.update(pairs)
+        return bool(pairs)
+
     standalone = {row["b"] for row in variants if row["relation"] == "simplified" and row["source"] == "opencc"
                   and STANDALONE in row["detail"].split(" | ")}
     units: dict[str, Family] = {}
@@ -664,6 +684,10 @@ def _join_yixiezi(
             continue
         if gone.curated and keep.curated:
             refuse("two curated families, through the family", edges[0])
+            continue
+        # Every pair the join makes, of what either has taken in so far too: 忦 and 𢗊 are each a variant of 恝.
+        if headwords.two_groups(gone.members, keep.members) and not ruled_one(edges):
+            refuse("two headwords of both dictionaries with no reading in common", edges[0])
             continue
         # The pairs this join makes; its edges speak only for the leaf and its target as they were.
         if any(not (x in leaf and y in target)
