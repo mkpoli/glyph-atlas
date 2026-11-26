@@ -1,8 +1,10 @@
-"""Write Quick review's computed marks into glyph-atlas-v3: the classifier's suspects (`suspects`) and
-the shape order (`shapes`), each crop named by its integer id (`migrations-atlas/0003_history.sql`).
+"""Write Quick review's computed marks into glyph-atlas-v3: the classifier's suspects (`suspects`),
+the shape order (`shapes`) and the agreed crops (`agreed`), each crop named by its integer id
+(`migrations-atlas/0003_history.sql`, `0022_agreed.sql`).
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/quiz_marks.py \\
-        [--suspects hosted.json corpus.json ...] [--shapes <dataset>/quiz-shapes.json] [--send]
+        [--suspects hosted.json corpus.json ...] [--shapes <dataset>/quiz-shapes.json]
+        [--agreed <similar>/agreed-marks.json] [--send]
 
 - `--suspects`: marks files in precedence order, from `atlas review catalogue-suspects` over the
   catalogues the site serves, `atlas review corpus-suspects` for the corpus glyphs, or `atlas review
@@ -10,6 +12,7 @@ the shape order (`shapes`), each crop named by its integer id (`migrations-atlas
   answer, marked or not: a file lists what it scored in `scored_ids`, else only its marks count as
   scored. So the hosted catalogue's marks go first and the corpus glyphs' last.
 - `--shapes`: the `quiz-shapes.json` of the dataset the published catalogue was exported from.
+- `--agreed`: the `agreed-marks.json` of `atlas review agreed-marks`; its `agreed` crops are loaded.
 
 Each table given is replaced whole; a table not given is left as it is. Every text id resolves through
 out/mirror.sqlite, which is only read; a mark on a crop the mirror lacks is left out with a count.
@@ -38,7 +41,8 @@ from publish import applied, lit, query
 
 # Each table this writes, its columns and key.
 TABLES = {"suspects": (("crop", "p", "reads_as", "label", "box"), ("crop",)),
-          "shapes": (("crop", "shape_order"), ("crop",))}
+          "shapes": (("crop", "shape_order"), ("crop",)),
+          "agreed": (("crop", "label"), ("crop",))}
 RUNS = OUT / "quiz-marks"
 
 
@@ -74,6 +78,15 @@ def shapes(path):
         if not isinstance(order, int) or isinstance(order, bool) or order < 0:
             sys.exit(f"{path}: {identity}: shape order must be a non-negative integer")
     return {identity: (order,) for identity, order in orders.items()}
+
+
+def agreed(path):
+    """Each agreed text id's label from an agreed-marks.json."""
+    marks = json.loads(Path(path).read_text())["agreed"]
+    for identity, label in marks.items():
+        if not isinstance(label, str) or not label:
+            sys.exit(f"{path}: {identity}: an agreed crop names the label it was judged under")
+    return {identity: (label,) for identity, label in marks.items()}
 
 
 def by_crop(marks, ids, table, left):
@@ -151,10 +164,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--suspects", type=Path, nargs="+", help="quiz-suspects.json files, in precedence order")
     parser.add_argument("--shapes", type=Path, help="the published dataset's quiz-shapes.json")
+    parser.add_argument("--agreed", type=Path, help="agreed-marks.json of `atlas review agreed-marks`")
     parser.add_argument("--send", action="store_true", help="load the parts into glyph-atlas-v3")
     args = parser.parse_args()
-    if not args.suspects and not args.shapes:
-        parser.error("name --suspects, --shapes or both")
+    if not args.suspects and not args.shapes and not args.agreed:
+        parser.error("name --suspects, --shapes or --agreed")
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -174,6 +188,10 @@ def main():
         wanted["suspects"] = by_crop(suspects(args.suspects), ids, "suspects", left)
     if args.shapes:
         wanted["shapes"] = by_crop(shapes(args.shapes), ids, "shapes", left)
+    if args.agreed:
+        if not has(atlas, "agreed"):
+            sys.exit("the local copy has no agreed table; apply migrations-atlas/0022_agreed.sql to it and to glyph-atlas-v3 first")
+        wanted["agreed"] = by_crop(agreed(args.agreed), ids, "agreed", left)
     groups, changes = statements(wanted, atlas)
     report = figures(changes, left)
     (OUT / "quiz-marks-report.txt").write_text(report)

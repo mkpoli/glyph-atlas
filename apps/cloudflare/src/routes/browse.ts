@@ -349,16 +349,21 @@ async function glyphsOf(env: Env, f: Filter, [collected, corpus]: [number, numbe
 // else one per script category. `priorities` narrows a range with no character to one priority, which
 // the crops' row then gives.
 export type Range = { from: string; values: (number | string)[] };
-/** Which of its characters' crops a round's range holds: those marked suspect under their character's text, or the rest. */
-export type Doubt = { marked: boolean; texts: ReadonlyMap<number, string> };
+/** Which of its characters' crops a round's range holds, by the marks they carry under their character's
+ *  text: those marked suspect or the rest (`marked`), those marked agreed or the rest (`agreed`); `null`
+ *  leaves a mark unasked. */
+export type Doubt = { marked: boolean | null; agreed: boolean | null; texts: ReadonlyMap<number, string> };
+const markSql = (table: string, held: boolean | null) => held === null ? ''
+  : ` AND ${held ? '' : 'NOT '}EXISTS (SELECT 1 FROM ${table} s WHERE s.crop=crops.id AND s.label=?)`;
 export function ranges(f: Filter, kind: 0 | 1, categories: number[], priorities: number[], tier = false, glyphs = false, doubt: Doubt | null = null): Range[] {
   if (f.chars !== null) {
     const rest = conditions(f, { chars: true });
     // Browsing a book by character deals its corpus glyphs of that character after its collected crops.
     return [...f.chars].sort((a, b) => a - b).flatMap(char => (glyphs ? [0, 1] : [kind]).flatMap(k => priorities.map(priority => ({
       from: `crops INDEXED BY crop_deal WHERE char=? AND kind=? AND kind<2 AND priority=?${rest.sql}${doubt
-        ? ` AND ${doubt.marked ? '' : 'NOT '}EXISTS (SELECT 1 FROM suspects s WHERE s.crop=crops.id AND s.label=?)` : ''}`,
-      values: [char, k, priority, ...rest.values, ...(doubt ? [doubt.texts.get(char) ?? ''] : [])] }))));
+        ? markSql('suspects', doubt.marked) + markSql('agreed', doubt.agreed) : ''}`,
+      values: [char, k, priority, ...rest.values,
+        ...(doubt ? [doubt.marked, doubt.agreed].filter(held => held !== null).map(() => doubt.texts.get(char) ?? '') : [])] }))));
   }
   const only = tier ? { sql: ' AND priority=?', values: priorities } : { sql: '', values: [] };
   if (f.book !== null) {
@@ -656,6 +661,9 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
     // glyphs, each crop once. Four seeds in five deal the collected crops by priority, each priority in
     // turn from the seed's point, and a grapheme's pending crops the classifier doubts before the rest of
     // either list; the fifth deals them all together. `suspects=only` deals the doubted alone, uncounted.
+    // On every seed a grapheme's collected crops marked agreed (`agreed`: their nearest crops carry
+    // their character and their form) come after its other crops and its corpus glyphs, a doubted one
+    // among them with the doubted.
     const only = scoped && doubting;
     const head = review && wantsRows && !only ? (await othersSkips(env, reviewer, version))
       .filter(row => !exclude.has(row.id) && (row.kind === 0 ? matches(filter, row) : corpus && matches(corpusFilter, row)))
@@ -667,17 +675,21 @@ export async function catalogue(env: Env, ctx: ExecutionContext, url: URL, revie
       && matches(filter, { ...row, state: row.state, quiz: row.quiz })).length;
     for (const id of [...away, ...claimed.map(row => row.id)]) exclude.add(id);
     const tiered = review && seed % 5 !== 0;
-    const texts = scoped && wantedState === 0 && (tiered || only) ? new Map(members!.ids.map((id, i) => [id, members!.texts[i]])) : null;
-    const doubted = texts && { marked: true, texts }, trusted = texts && { marked: false, texts };
+    const texts = scoped && wantedState === 0 ? new Map(members!.ids.map((id, i) => [id, members!.texts[i]])) : null;
+    const split = texts && (tiered || only) ? texts : null;
+    const doubted = split && { marked: true, agreed: null, texts: split }, trusted = split && { marked: false, agreed: null, texts: split };
+    // The collected crops not doubted, in two parts: those not agreed, and those agreed.
+    const open = texts && { marked: split ? false : null, agreed: false, texts }, settled = texts && { marked: split ? false : null, agreed: true, texts };
     // A book's corpus glyphs are browsed with its collected crops, where the publication counts it any.
     const inBook = !review && book !== null ? (await bookCounts(env)).books.get(book) ?? null : null;
     const bookGlyphs = inBook !== null && inBook[1] > 0;
     const marked = doubted ? [{ list: ranges(filter, 0, categoryCodes, priorities, false, false, doubted) }] : [];
     const markedCorpus = doubted && corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities, false, false, doubted) }] : [];
     stages = only ? [...marked, ...markedCorpus] : [{ ids: head.map(row => row.id) }, ...marked,
-      ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true, false, trusted) }))
-        : [{ list: ranges(filter, 0, categoryCodes, priorities, false, bookGlyphs) }]),
+      ...(tiered ? priorities.map(p => ({ list: ranges(filter, 0, categoryCodes, [p], true, false, open) }))
+        : [{ list: ranges(filter, 0, categoryCodes, priorities, false, bookGlyphs, open) }]),
       ...markedCorpus, ...(corpus ? [{ list: ranges(corpusFilter, 1, categoryCodes, priorities, false, false, trusted) }] : []),
+      ...(settled ? [{ list: ranges(filter, 0, categoryCodes, priorities, false, false, settled) }] : []),
       // Last, so a claim saved between two pages leaves every earlier stage where its cursor names it.
       ...(claimed.length ? [{ ids: claimed.map(row => row.id) }] : [])];
     const skippedOrHead = (kind: number, f: Filter) => own.filter(row => row.kind === kind && matches(f, row)).length + head.filter(row => row.kind === kind).length;

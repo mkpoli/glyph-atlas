@@ -174,3 +174,25 @@ def test_a_history_load_after_quiz_marks_leaves_them(layout, monkeypatch, tmp_pa
     assert held(remote.dbs["glyph-atlas-v3"]) == after == {"suspects": [(crop["ex:b1"], 0.2, None, "う", None)],
                                                           "shapes": [(crop["ex:b1"], 0)]}
     assert held(sqlite3.connect(root / "out" / "atlas.sqlite")) == after
+
+
+def test_agreed_crops_load_with_their_labels_and_leave_the_other_tables(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, _publish, remote = layout
+    crop = ids(root)
+    db = remote.dbs["glyph-atlas-v3"]
+    quiz(remote, monkeypatch, "--shapes", orders(tmp_path / "s.json", {"ex:a1": 1}), "--send")
+    agreed = tmp_path / "agreed-marks.json"
+    agreed.write_text(json.dumps({"agreed": {"ex:a1": "あ", "ex:b1": "い", "ex:gone": "え"}, "flagged": {}}))
+    quiz(remote, monkeypatch, "--agreed", agreed, "--send")
+    rows = lambda held: held.execute("SELECT crop, label FROM agreed ORDER BY crop").fetchall()  # noqa: E731
+    assert rows(db) == sorted([(crop["ex:a1"], "あ"), (crop["ex:b1"], "い")])
+    assert rows(sqlite3.connect(root / "out" / "atlas.sqlite")) == rows(db)
+    assert held(db)["shapes"] == [(crop["ex:a1"], 1)]
+    assert "1 agreed on crops the mirror lacks, left out" in (root / "out" / "quiz-marks-report.txt").read_text()
+    # A later file replaces the table whole.
+    agreed.write_text(json.dumps({"agreed": {"ex:b1": "い"}}))
+    quiz(remote, monkeypatch, "--agreed", agreed, "--send")
+    assert rows(db) == [(crop["ex:b1"], "い")]
+    agreed.write_text(json.dumps({"agreed": {"ex:b1": ""}}))
+    with pytest.raises(SystemExit, match="names the label"):
+        quiz(remote, monkeypatch, "--agreed", agreed)
