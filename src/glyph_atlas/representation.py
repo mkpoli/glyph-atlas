@@ -45,7 +45,11 @@ MJ_TSV = Path(__file__).resolve().parents[2] / "data" / "vocab" / "mj-kanji.tsv"
 
 SCHEMES = ("unicode", "ivs", "ids", "mj", "glyphwiki", "pua")
 #: The longest value, in code points: a description nested several levels deep stays well inside it.
+#: A part no code point names counts as one.
 LONGEST = 64
+#: The longest text a request may name a form with: every component a part's identifier, nine code
+#: points each.
+TEXT_LONGEST = 10 * LONGEST
 
 #: Code points a description may name as a component. Planes 2 and 3 hold ideographs only.
 COMPONENTS = (
@@ -104,6 +108,8 @@ def _described(value: str, at: int = 0) -> int:
     if (part := PART.match(value, at)) is not None:
         if custom_parts.identifier(part.group()) != part.group()[1:-1]:
             raise ValueError(f"{part.group()} is no part in use.")
+        if part.end() < len(value) and _selector(value[part.end()]):
+            raise ValueError("A part no code point names takes no variation selector.")
         return part.end()
     if not arity:
         if not _component(value[at]):

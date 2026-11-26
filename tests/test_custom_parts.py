@@ -85,3 +85,10 @@ def test_the_table_matches_its_build(tmp_path, monkeypatch):
     data = build.fetched()
     assert (ROOT / "data" / "vocab" / "custom-parts.tsv").read_text(encoding="utf-8") == build.table(data)
     assert (ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts").read_text(encoding="utf-8") == build.module(data)
+
+
+def test_the_structure_layer_reads_a_part_as_one_component():
+    from glyph_atlas import han_component_variants, structures
+
+    assert han_component_variants.parse("⿱&X-00087;龴") == ("⿱", ("&X-00087;", "龴"))
+    assert structures.for_ids("⿱&X-00087;龴").label == "⿱&X-00087;龴"

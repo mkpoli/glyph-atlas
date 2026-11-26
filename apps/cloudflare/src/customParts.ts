@@ -3,7 +3,7 @@
 // each written with the identifier ids-input gives the shape (`&X-00087;`), and a form holding one in
 // its one spelling.
 import { CUSTOM_PARTS, CUSTOM_PART_DRAWN, CUSTOM_PART_FOLDS, CUSTOM_PART_NAMES, CUSTOM_PART_RETIRED, CUSTOM_PART_SPELLING } from './customPartsData';
-import { arity, units } from './idsOperators';
+import { arity } from './idsOperators';
 
 const IN_USE = new Set(CUSTOM_PARTS);
 /** One part no code point names, in ids-input's grammar (src/core/custom.js): a number of up to four
@@ -35,7 +35,7 @@ export const spelt = (text: string) => folded(text.replace(CUSTOM_PART, name => 
 /** `text` with every part of it that draws one named part written as that part; the whole text is never
  *  replaced, and a text that is no one description is left as it is. */
 function folded(text: string): string {
-  const parts = units(text);
+  const parts = text.match(/&X-[0-9]{5};|[\s\S][\uFE00-\uFE0F\u{E0100}-\u{E01EF}]?/gu) ?? [];
   let at = 0;
   const read = (top: boolean): string | null => {
     const unit = parts[at++];

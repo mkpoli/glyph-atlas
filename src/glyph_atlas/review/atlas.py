@@ -30,6 +30,7 @@ from .. import style as style_module
 from ..clusters import is_one_character
 from ..context import CONTEXT_REACH, reach
 from ..production import production_info
+from ..representation import TEXT_LONGEST
 from ..schema import Box, ReviewState, Script, Unit
 from . import ledger, quiz_shapes, quiz_suspects, status
 from .request_cache import file_stamp, memoize
@@ -701,7 +702,7 @@ class FormEdit(BaseModel):
     id: UUID
     client_id: str = Field(min_length=1, max_length=128)
     crop_version: str = Field(min_length=1, max_length=1024)
-    form: str | None = Field(default=None, max_length=256)
+    form: str | None = Field(default=None, max_length=TEXT_LONGEST)
 
 
 class CropStructureEdit(BaseModel):

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { categoryOf } from './category'
-import { anchoredForm, compatibility, drawnForm, drawnFormsOf, formProblem, standsFor, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
+import { FORM_TEXT_LONGEST, anchoredForm, compatibility, drawnForm, drawnFormsOf, formProblem, standsFor, isSequence, representationId, structureKey, typed, written, type Representation } from './representation'
 
 test('a character or a description is a form a reviewer may type', () => {
   for (const value of ['𮟃', '還', 'が', '葛\u{E0100}', '⿺辶𦊷', '⿰氵⿱冖月', '⿲木木木', '⿱⿰口口⿰口口', '〾⿰木？', '⿰木', '⿰⺡骨'])
@@ -102,4 +102,12 @@ test('a form holding a part no code point names is typed in its one spelling', (
   expect(typed('⿱{999}龴')).toBe('component');
   expect(['⿱&X-01653;龴', '⿱&X-99999;龴', '⿱&CDP-8BD0;龴'].map(formProblem)).toEqual(['component', 'component', 'component']);
   expect(typed('⿱&X-01653;一')).toEqual({ ...one, value: '⿱&X-00026;一' });
+});
+
+test('a part takes no variation selector, and a long form fits a request', () => {
+  expect(typed('⿱&X-00087;︀木')).toBe('component');
+  expect(typed('⿱⿵𠆢一木︀')).toEqual({ scheme: 'ids', value: '⿱&X-00087;木︀', namespace: null, version: null });
+  const longest = '⿰'.repeat(31) + '&X-00087;'.repeat(32);
+  expect(formProblem(longest)).toBeNull();
+  expect(longest.length).toBeLessThanOrEqual(FORM_TEXT_LONGEST);
 });

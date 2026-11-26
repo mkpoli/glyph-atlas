@@ -105,3 +105,11 @@ def test_a_form_holding_a_part_no_code_point_names_is_typed_in_its_one_spelling(
     for stale in ("⿱&X-01653;龴", "⿱&X-99999;龴", "⿱&CDP-8BD0;龴"):
         with pytest.raises(ValueError):
             representation.check(Representation("ids", stale))
+
+
+def test_a_part_takes_no_variation_selector_and_a_long_form_fits_a_request():
+    with pytest.raises(ValueError):
+        representation.typed("⿱&X-00087;︀木")
+    assert representation.typed("⿱⿵𠆢一木︀").value == "⿱&X-00087;木︀"
+    longest = "⿰" * 31 + "&X-00087;" * 32
+    assert representation.described(longest) and len(longest) <= representation.TEXT_LONGEST

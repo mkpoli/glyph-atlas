@@ -62,7 +62,7 @@ from .. import (
     written_with,
 )
 from ..production import production_info
-from ..representation import written
+from ..representation import TEXT_LONGEST, written
 from ..schema import Box, Character, Document, Page, Unit
 from . import corpus_source, status
 from .atlas import (
@@ -146,7 +146,7 @@ class LayerEdit(BaseModel):
     #: The box is wrong too, beside a wrong or joined character: the crop stays reported for it.
     bad_crop: bool = False
     #: A form claimed with the character it is a form of, on the evidence version the reviewer saw.
-    form: str | None = Field(default=None, min_length=1, max_length=256)
+    form: str | None = Field(default=None, min_length=1, max_length=TEXT_LONGEST)
     crop_version: str | None = Field(default=None, min_length=1, max_length=1024)
 
 

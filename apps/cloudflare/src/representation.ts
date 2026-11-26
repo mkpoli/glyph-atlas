@@ -14,6 +14,9 @@ import { DRAWN, DRAWN_NAMESPACE, DRAWN_VERSION } from './drawnFormsData';
 import { arity, units } from './idsOperators';
 
 export const FORM_LONGEST = 64;
+/** The longest text a request may name a form with: every component a part's identifier, nine code
+ *  units each. */
+export const FORM_TEXT_LONGEST = 10 * FORM_LONGEST;
 // Radicals, katakana letters, strokes, the ideograph blocks, private use and ？. Planes 2 and 3 hold
 // ideographs only.
 const COMPONENTS: [number, number][] = [[0x2E80, 0x2FDF], [0x30A1, 0x30FA], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],
@@ -85,7 +88,7 @@ export function formProblem(value: string): FormProblem | null {
     const n = arity(c);
     if (!n) {
       if (!component(c)) return 'component';
-      if (selector(chars[at])) at++;
+      if (selector(chars[at])) { if (c.length > 2) return 'component'; at++ }
       return null;
     }
     for (let i = 0; i < n; i++) { const problem = described(); if (problem) return problem }
