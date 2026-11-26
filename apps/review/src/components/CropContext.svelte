@@ -4,7 +4,7 @@
   import Glyph from './Glyph.svelte'
   import BoxEditor, { nudged } from './BoxEditor.svelte'
   import { t } from '../lib/i18n.svelte.js'
-  import { rubyLine } from '../lib/cropReadings.js'
+  import { lineRubies } from '../lib/cropReadings.js'
   import ReadingRuby from './ReadingRuby.svelte'
   import { toSource } from '../lib/cropBox.js'
   import { cropCut, isPaddedCrop } from '../lib/cropPaint.js'
@@ -76,8 +76,8 @@
     observer.observe(viewport)
     return () => observer.disconnect()
   })
-  // The ruby the page writes beside the crop's run, over the run on its line.
-  const read = $derived(rubyLine(data))
+  // The rubies of the crop's line: the one readers give its run, and those its transcription gives.
+  const read = $derived(lineRubies(data))
   const contextual = $derived(Boolean(data?.context !== false && data?.context_box && data?.crop_box && data?.context_image))
   const fullPage = $derived(contextual && !isCorpus && data?.full_page_available !== false && (expandPage || contextFailed) && Boolean(data?.image_sha256))
   const ready = $derived(contextual && (fullReady || contextReady))
@@ -246,7 +246,7 @@
       <button type="button" class="zoom-in" aria-label={t('crop.zoomIn')} title={t('crop.zoomIn')} disabled={disabled || !ready || zoom >= 4} onclick={() => magnify(1.25)}>+</button>
     </div>
   </div>
-  {#if data?.text}<div class="context-text"><span>{t('crop.transcription')}</span><p lang="ja">{#if read}{read.before}<ReadingRuby value={read.value} />{read.after}{:else}{data.text}{/if}</p></div>{/if}
+  {#if data?.text}<div class="context-text"><span>{t('crop.transcription')}</span><p lang="ja">{#if read}{#each read as part}{#if part.value}<ReadingRuby value={part.value} />{:else}{part.text}{/if}{/each}{:else}{data.text}{/if}</p></div>{/if}
 </div>
 
 <style>

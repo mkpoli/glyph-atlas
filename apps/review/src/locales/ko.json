@@ -79,6 +79,8 @@
   "reading.places.all": "모든 책",
   "reading.places.confirm": "{reading}(으)로 읽기",
   "reading.places.none": "다른 곳 없음",
+  "reading.transcribed": "번각",
+  "reading.confirm": "확인",
   "reading.letters": "이 가나의 자체",
   "reading.jibo": "유래 한자 {char}",
   "reading.needed": "후리가나나 읽기를 입력하세요.",

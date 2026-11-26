@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, opening, pressed, readingEntries, rubyLine, setReading, stretch, textParts } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, readingEntries, rubyLine, setReading, stretch, textParts, lineRubies, openingTranscribed, transcribedEntries, transcribedRubies } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -86,6 +86,46 @@ describe('a ruby on its line', () => {
   })
   it('stands whether or not its reading is disputed', () => {
     expect(rubyLine({ text: '諸器', reading: { status: 'disputed', values: [note, { ...note, reading: ['もろ', 'き'] }], ruby: { status: 'accepted', values: [value] } } })?.value).toBe(value)
+  })
+})
+
+describe('the rubies a transcription gives a line', () => {
+  // 材（ざい）また… 緻密（ちみつ）にして、諸器（しよき）に製（せい）す, counted over letters alone.
+  const given = { label: '器', text: '緻密にして、諸器に製す', transcribed_ruby: [[0, 2, 0, 'ちみつ'], [5, 2, 0, ['しよ', 'き']], [5, 2, 1, 'うつわ'], [8, 1, 0, 'せい']] }
+  it('are placed on its characters whatever its punctuation', () => {
+    expect(transcribedRubies(given).map(one => [one.from, one.to, one.side, one.run.join(''), one.ruby])).toEqual([
+      [0, 1, 'right', '緻密', ['ちみつ']], [6, 7, 'right', '諸器', ['しよ', 'き']], [6, 7, 'left', '諸器', ['うつわ']], [9, 9, 'right', '製', ['せい']]])
+    expect(transcribedRubies({ text: '諸、器', transcribed_ruby: [[0, 2, 0, 'しよき']] })).toEqual([])
+    expect([transcribedRubies({ text: '諸器' }), transcribedRubies(null)]).toEqual([[], []])
+  })
+  it('stand over the line, a reader\'s ruby first', () => {
+    expect(lineRubies(given)).toEqual([{ value: { run: ['緻', '密'], at: -1, ruby: ['ちみつ'] }, transcribed: true }, { text: 'にして、' },
+      { value: { run: ['諸', '器'], at: 1, ruby: ['しよ', 'き'] }, transcribed: true }, { text: 'に' }, { value: { run: ['製'], at: -1, ruby: ['せい'] }, transcribed: true }, { text: 'す' }])
+    const claimed = { run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }
+    const line = lineRubies({ ...given, reading: { status: 'asserted', values: [], ruby: { status: 'asserted', values: [claimed] } } })
+    expect(line.filter(part => part.value).map(part => [part.value.ruby.join(''), part.transcribed])).toEqual([['ちみつ', true], ['𛁈よき', false], ['せい', true]])
+    expect(lineRubies({ text: '諸器' })).toBeNull()
+  })
+  it('are the crop\'s own entry until a reader writes the run\'s ruby', () => {
+    expect(transcribedEntries(given)).toEqual([{ run: { run: ['諸', '器'], at: 1, ruby: ['しよ', 'き'] }, ruby: [{ run: ['諸', '器'], at: 1, ruby: ['しよ', 'き'] }],
+      left: [{ run: ['諸', '器'], at: 1, ruby: ['うつわ'] }], notes: [], transcribed: true }])
+    expect(readingEntries(null, given).map(entry => entry.transcribed)).toEqual([true])
+    const note = { run: ['諸', '器'], at: 1, reading: ['しょ', 'き'] }
+    expect(readingEntries({ status: 'asserted', values: [note] }, given).map(entry => [Boolean(entry.transcribed), entry.notes.length])).toEqual([[false, 1], [true, 0]])
+    const slot = { status: null, values: [], ruby: { status: 'asserted', values: [{ run: ['諸', '器'], at: 1, ruby: ['𛁈よ', 'き'] }] } }
+    expect(readingEntries(slot, given).map(entry => Boolean(entry.transcribed))).toEqual([false])
+    expect(transcribedEntries({ ...given, label: '密' })).toMatchObject([{ run: { run: ['緻', '密'], at: 1 } }])
+    expect(transcribedEntries({ ...given, label: 'に' })).toEqual([])
+  })
+  it('are not guessed where the line writes the crop\'s character twice, until its place is known', () => {
+    const twice = { label: '器', text: '器を諸器に', transcribed_ruby: [[2, 2, 0, 'しよき']] }
+    expect(transcribedEntries(twice)).toEqual([])
+    expect(transcribedEntries(twice, 3)).toMatchObject([{ run: { run: ['諸', '器'], at: 1, ruby: ['しよき'] } }])
+    expect(lineRubies(twice)[1].value.at).toBe(-1)
+  })
+  it('fill the editor where nobody has said anything', () => {
+    expect(openingTranscribed(given, 7)).toEqual({ value: { run: ['諸', '器'], at: 1, ruby: ['しよ', 'き'] }, reading: [], ruby: ['しよ', 'き'], left: ['うつわ'], method: null })
+    expect([openingTranscribed(given, 4), openingTranscribed({ label: '器', text: '諸器' }, 1)]).toEqual([null, null])
   })
 })
 

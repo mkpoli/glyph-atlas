@@ -755,6 +755,8 @@
   "reading.places.all": "所有書",
   "reading.places.confirm": "讀作「{reading}」",
   "reading.places.none": "沒有其他各處",
+  "reading.transcribed": "釋文",
+  "reading.confirm": "核對",
   "reading.letters": "此假名的字體",
   "reading.jibo": "字母「{char}」",
   "reading.needed": "請填寫旁註或讀音。",
