@@ -7,9 +7,7 @@ export const SPACE = '#glyphatlas:glyphatlas.org'
 // or who want to see the rooms before signing in.
 export const MATRIX_TO = `https://matrix.to/#/${SPACE}`
 export const CHATS = [
-  // The Matrix door carries no member count: the picker behind it offers two ways into one space, and
-  // one head count beside two doors to one place would read as two places.
-  { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org', count: false },
+  { name: 'Matrix', mark: 'matrix', href: 'https://chat.glyphatlas.org/#/room/#glyphatlas:glyphatlas.org' },
   { name: 'Discord', mark: 'discord', href: 'https://discord.gg/DR25YeAYSg' },
   { name: 'Telegram', mark: 'telegram', href: 'https://t.me/+Q4wiIzMijRwzOWE1' },
   { name: 'QQ', mark: 'qq', href: 'https://qm.qq.com/q/bKrGelyYIE' },
