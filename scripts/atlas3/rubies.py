@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """The 振り仮名 the transcriptions give, as R2 objects the site reads beside a crop's line.
 
 `atlas text build` keeps every line of the みんなで翻刻 clone in `text.sqlite`. This writes, for every
