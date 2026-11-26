@@ -1,8 +1,9 @@
 // Ideographic description sequences as the form picker reads and writes them, by the rules of the
 // Worker's `representation.ts` and `glyph_atlas.representation`: each operator takes its own number of
 // descriptions, and a component is an ideograph, a radical, a stroke, a katakana letter standing for a
-// component of that shape (コ, マ), a private-use character or ？ for a part no character names, with
-// an optional variation selector.
+// component of that shape (コ, マ), a private-use character, ？ for a part no character names, or a part
+// no code point names written as its identifier (`&X-00087;`, the top of 合), with an optional
+// variation selector.
 
 /** The operators, each with how many descriptions it takes, in the order a keyboard row offers them. */
 export const OPERATORS = [
@@ -39,7 +40,12 @@ export const EMPTY = '⬚'
 const EMPTY_READ = new Set([EMPTY, '＋'])
 
 const isSelector = char => char !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(char)
+/** A part no code point names, as a saved form writes it. */
+export const isPart = unit => /^&X-[0-9]{5};$/.test(unit ?? '')
+/** A text's units: each such part, and each other code point. */
+export const units = text => (text ?? '').match(/&X-[0-9]{5};|[\s\S]/gu) ?? []
 export const isComponent = char => {
+  if (isPart(char)) return true
   const point = char?.codePointAt(0)
   return point !== undefined && COMPONENTS.some(([low, high]) => point >= low && point <= high)
 }
@@ -90,7 +96,7 @@ export const isSequence = text => arity([...text ?? ''][0]) > 0
  * digits (`isLetter`), which the preview draws but no saved form names.
  */
 export function parse(text, { open = false } = {}) {
-  const chars = [...text ?? '']
+  const chars = units(text)
   if (open && !chars.length) return { tree: null }
   if (!chars.length || chars.length > LONGEST || (!open && !isSequence(text)) || /[\p{Cc}\p{Cf}\p{Z}]/u.test(text)) return { problem: 'character' }
   let at = 0
@@ -267,7 +273,7 @@ export function swapParts(tree, from, to) {
 export function tokenize(text) {
   if (!text) return []
   if (parse(text, { open: true }).problem) return []
-  const chars = [...text]
+  const chars = units(text)
   const out = []
   let ci = 0, offset = 0
   function read(path) {

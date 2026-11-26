@@ -11,11 +11,11 @@ export const DEPTH = 8
 export const SEARCH_PARTS = 8
 
 const SELECTOR = /^[︀-️\u{E0100}-\u{E01EF}]$/u
-/** A description's tokens: BabelStone's unencoded component `{n}` is one, a variation selector goes
- *  with the character before it. */
+/** A description's tokens: BabelStone's unencoded component `{n}` is one, and so is a part a saved
+ *  form writes as its identifier (`&X-00087;`); a variation selector goes with the character before it. */
 export function tokens(text) {
   const out = []
-  for (const [token] of (text ?? '').matchAll(/\{\d+\}|./gsu)) {
+  for (const [token] of (text ?? '').matchAll(/\{\d+\}|&X-\d{5};|./gsu)) {
     if (SELECTOR.test(token) && out.length) out[out.length - 1] += token
     else out.push(token)
   }

@@ -7,8 +7,9 @@ composer draws in its place. The file is fetched at a pinned commit and checked 
 
     uv run scripts/build_custom_parts.py
 
-Writes data/vocab/custom-parts.tsv, which `glyph_atlas.custom_parts` reads, and
-apps/cloudflare/src/customPartsData.ts, which the Worker reads.
+Writes data/vocab/custom-parts.tsv, which `glyph_atlas.custom_parts` reads,
+apps/cloudflare/src/customPartsData.ts, which the Worker reads, and
+apps/review/src/lib/customPartDrawings.js, which the site's composer reads.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
@@ -27,6 +29,8 @@ SHA256 = "22c430de0326d61d05cd868341acecadd320fa2528dd2e1f7f734cc099d50d3f"
 CACHE = ROOT / "cache" / "ids-input" / f"custom-components-{COMMIT[:12]}.json.gz"
 TABLE = ROOT / "data" / "vocab" / "custom-parts.tsv"
 MODULE = ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts"
+DRAWINGS = ROOT / "apps" / "review" / "src" / "lib" / "customPartDrawings.js"
+NUMBERED = re.compile(r"\{[0-9]{1,4}\}")
 #: Numbered parts whose fragment is ids-input's reading, not BabelStone's note 6 (its build_open_ids.mjs).
 EDITORIAL = {"{12}", "{82}"}
 _SETTLED: dict[int, tuple[dict[str, str], dict[str, list[str]]]] = {}
@@ -190,10 +194,41 @@ def module(data: dict) -> str:
     )
 
 
+def composer_names(data: dict) -> dict[str, str]:
+    """What the site's composer (han-compose) is given in place of each part a form may hold: the part in
+    encoded characters; else BabelStone's number or the CHISE entity or zi.tools chain, which a
+    composer holding a cut of it draws."""
+    from glyph_atlas import custom_parts
+
+    spelling, folds = _spellings(data)
+    table = custom_parts.Table({key: custom_parts.Part(key, tuple(names), tuple(draws), tuple(approximate), editorial, description,
+                                                       spelling.get(key, ""), tuple(folds.get(key, ())))
+                                for key, names, draws, approximate, editorial, description in rows(data)}, dict(retired(data)))
+    named: dict[str, str] = {}
+    for key, part in table.parts.items():
+        if part.spelling:
+            continue
+        name = table.drawn(f"&{key};") or next((name for name in part.names if NUMBERED.fullmatch(name)), None) \
+            or next((name for name in part.names if custom_parts.TOKEN.fullmatch(name)), None)
+        if name:
+            named[key] = name
+    return named
+
+
+def drawings(data: dict) -> str:
+    return (
+        "// Written by scripts/build_custom_parts.py from ids-input's table of parts no code point names; do not edit.\n"
+        "/** What the composer is given in place of each part a saved form may hold (`&X-00087;`): the part in encoded\n"
+        " *  characters, or BabelStone's number, a CHISE entity or a zi.tools chain. */\n"
+        f"export default {json.dumps(composer_names(data), ensure_ascii=False, separators=(',', ':'))}\n"
+    )
+
+
 def main() -> int:
     data = fetched()
     TABLE.write_text(table(data), encoding="utf-8")
     MODULE.write_text(module(data), encoding="utf-8")
+    DRAWINGS.write_text(drawings(data), encoding="utf-8")
     from glyph_atlas import custom_parts
 
     found = rows(data)
@@ -202,7 +237,7 @@ def main() -> int:
     print(f"{len(found)} parts, {encoded} drawn in encoded characters, {sum(1 for row in found if row[2]) - encoded} only with a "
           f"private-use glyph, {sum(len(row[1]) for row in found)} names, {len(retired(data))} retired; "
           f"{len(spelling)} written as their description, {sum(map(len, folds.values()))} descriptions written as "
-          f"{len(folds)} named parts")
+          f"{len(folds)} named parts; the composer is given {len(composer_names(data))} of them")
     return 0
 
 

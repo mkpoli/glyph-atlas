@@ -89,6 +89,24 @@ class Table:
 
         return self.fold(TOKEN.sub(written, text))
 
+    def drawn(self, text: str, depth: int = 0) -> str | None:
+        if depth > 8:
+            return None
+        missing = False
+
+        def written(found: re.Match[str]) -> str:
+            nonlocal missing
+            key = self.identifier(found.group())
+            out = next((out for draw in (self.parts[key].draws if key else ())
+                        if not PRIVATE.search(draw) and (out := self.drawn(draw, depth + 1)) is not None), None)
+            if out is None:
+                missing = True
+                return found.group()
+            return out
+
+        out = TOKEN.sub(written, text)
+        return None if missing else out
+
     def fold(self, text: str) -> str:
         """`text` with every part of it that draws one named part written as that part; the whole text
         is never replaced, and a text that is no one description is left as it is."""
@@ -157,23 +175,8 @@ def unknown(text: str) -> list[str]:
     return table().unknown(text)
 
 
-def drawn(text: str, depth: int = 0) -> str | None:
+def drawn(text: str) -> str | None:
     """`text` with each such part written as the first of its drawings that comes out in encoded
     characters only, or None where none does (BabelStone Han PUA's private-use glyph is none). A
     drawing may itself name such a part, so it is written out again."""
-    if depth > 8:
-        return None
-    missing = False
-
-    def written(found: re.Match[str]) -> str:
-        nonlocal missing
-        key = identifier(found.group())
-        out = next((out for draw in (parts()[key].draws if key else ())
-                    if not PRIVATE.search(draw) and (out := drawn(draw, depth + 1)) is not None), None)
-        if out is None:
-            missing = True
-            return found.group()
-        return out
-
-    out = TOKEN.sub(written, text)
-    return None if missing else out
+    return table().drawn(text)
