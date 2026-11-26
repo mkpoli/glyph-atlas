@@ -51,7 +51,7 @@ SKIPPED = set("〾㇯？")
 #: Unihan_IRGSources.txt). With the CJK Strokes block they are the strokes, and a swap of one of them
 #: against anything is no component.
 STROKES = set("一丨丶丿乀乁乙乚乛亅𠃉𠃊𠃋𠃌𠃍𠃎𠃑𠄌𠄎𡿨𪛙𬼂\U0002F802")
-UNENCODED = re.compile(r"\{\d+\}")
+UNENCODED = re.compile(r"\{\d+\}|&X-\d{5};")
 
 Tree = str | tuple[str, tuple["Tree", ...]]
 #: Where a part sits in its parent: the operator and the part's place in it (`slot`).

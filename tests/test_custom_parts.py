@@ -30,10 +30,31 @@ def test_spelt_writes_every_such_part_as_its_identifier():
     assert custom_parts.spelt("⿱{88}龴") == "⿱&X-00087;龴"
     assert custom_parts.spelt("⿰⿱{73}小系") == "⿰⿱&X-00072;小系"
     assert custom_parts.spelt("⿰&CDP-8BD0;寸") == "⿰&X-00007;寸"
-    # Descriptions in encoded characters stay as written, and an unknown part as it was typed.
-    assert custom_parts.spelt("⿱⿵𠆢一龴") == "⿱⿵𠆢一龴"
+    assert custom_parts.spelt("⿱&X-01653;一") == "⿱&X-00026;一"
+    # An unknown part stays as it was typed.
     assert custom_parts.spelt("⿱{999}一") == "⿱{999}一"
     assert custom_parts.unknown("⿱{999}{88}") == ["{999}"]
+
+
+def test_a_part_of_a_description_that_draws_one_named_part_is_that_part():
+    assert custom_parts.spelt("⿱⿵𠆢一龴") == "⿱&X-00087;龴"
+    # The whole description is never replaced, so a form is never one bare part.
+    assert custom_parts.spelt("⿵𠆢一") == "⿵𠆢一"
+    # ⿴𠀃三 draws both {73} and &CDP-8BA5;, and ⿻日乚 is 电, so neither is a part's spelling.
+    assert custom_parts.spelt("⿱⿴𠀃三八") == "⿱⿴𠀃三八"
+    assert custom_parts.spelt("⿱⿻日乚一") == "⿱⿻日乚一"
+    assert custom_parts.spelt("⿱⿵𠆢一") == "⿱⿵𠆢一"
+
+
+def test_a_part_known_only_as_a_description_is_written_as_it():
+    assert custom_parts.spelt("⿱&X-01788;一") == custom_parts.spelt("⿱⿹⿺㇉一灬一") == "⿱⿹&X-00022;灬一"
+
+
+def test_the_one_spelling_is_settled():
+    for part in custom_parts.parts().values():
+        for text in (*part.draws, *part.names, part.spelling, *part.folds):
+            once = custom_parts.spelt(f"⿰{text}木")
+            assert custom_parts.spelt(once) == once
 
 
 def test_drawn_writes_a_description_in_encoded_characters():
@@ -64,3 +85,10 @@ def test_the_table_matches_its_build(tmp_path, monkeypatch):
     data = build.fetched()
     assert (ROOT / "data" / "vocab" / "custom-parts.tsv").read_text(encoding="utf-8") == build.table(data)
     assert (ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts").read_text(encoding="utf-8") == build.module(data)
+
+
+def test_the_structure_layer_reads_a_part_as_one_component():
+    from glyph_atlas import han_component_variants, structures
+
+    assert han_component_variants.parse("⿱&X-00087;龴") == ("⿱", ("&X-00087;", "龴"))
+    assert structures.for_ids("⿱&X-00087;龴").label == "⿱&X-00087;龴"

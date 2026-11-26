@@ -17,6 +17,7 @@ import gzip
 import hashlib
 import json
 import urllib.request
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +29,7 @@ TABLE = ROOT / "data" / "vocab" / "custom-parts.tsv"
 MODULE = ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts"
 #: Numbered parts whose fragment is ids-input's reading, not BabelStone's note 6 (its build_open_ids.mjs).
 EDITORIAL = {"{12}", "{82}"}
+_SETTLED: dict[int, tuple[dict[str, str], dict[str, list[str]]]] = {}
 
 
 def fetched() -> dict:
@@ -71,6 +73,63 @@ def rows(data: dict) -> list[tuple[str, list[str], list[str], list[str], bool, s
             for key, part in sorted(parts.items())]
 
 
+def _encoded(text: str) -> str | None:
+    """The encoded character a description in encoded characters only describes, if any."""
+    from glyph_atlas import han_component_variants, refs
+
+    known = refs.descriptions()
+    try:
+        return known.named.get(known.folded_text(han_component_variants.parse(text)))
+    except ValueError:
+        return None
+
+
+def _spellings(data: dict) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """The one spelling of each part ids-input knows only as a description, and the descriptions
+    written as each named part: a description of a named part (one of its drawings, close and in
+    encoded characters) that draws no other part, and no encoded character, inside a larger one."""
+    if id(data) in _SETTLED:
+        return _SETTLED[id(data)]
+    from glyph_atlas import custom_parts
+
+    found = rows(data)
+    gone = dict(retired(data))
+    named = {key for key, names, *_ in found if any(custom_parts.TOKEN.fullmatch(name) for name in names)}
+    expressions = {key: names[0] for key, names, *_ in found
+                   if key not in named and names and not custom_parts.PRIVATE.search(names[0]) and _arity(names[0])}
+    spelling: dict[str, str] = {}
+    folds: dict[str, list[str]] = {}
+    for _ in range(16):
+        table = custom_parts.Table({key: custom_parts.Part(key, tuple(names), tuple(draws), tuple(approximate), editorial,
+                                                           description, spelling.get(key, ""), tuple(folds.get(key, ())))
+                                    for key, names, draws, approximate, editorial, description in found}, gone)
+        drawings: dict[str, set[str]] = defaultdict(set)
+        for key, names, draws, approximate, *_ in found:
+            if key in named:
+                for draw in draws:
+                    if _arity(draw) and draw not in approximate and not custom_parts.PRIVATE.search(draw):
+                        drawings[table.spelt(draw)].add(key)
+        following = {key: table.spelt(text) for key, text in expressions.items()}
+        for key, text in following.items():
+            drawings[text].add(key)
+        folding: dict[str, list[str]] = defaultdict(list)
+        for text, keys in sorted(drawings.items()):
+            if len(keys) == 1 and not table.unknown(text) and (key := next(iter(keys))) in named \
+                    and (custom_parts.IDENTIFIER.search(text) or _encoded(text) is None):
+                folding[key].append(text)
+        if following == spelling and folding == folds:
+            _SETTLED[id(data)] = spelling, folds
+            return spelling, folds
+        spelling, folds = following, dict(folding)
+    raise SystemExit("the spellings of the parts do not settle")
+
+
+def _arity(text: str) -> bool:
+    from glyph_atlas.han_components import BINARY, TERNARY, UNARY
+
+    return bool(text) and text[0] in BINARY | TERNARY | UNARY
+
+
 def retired(data: dict) -> list[tuple[str, str]]:
     """Identifiers taken out of use, with the one each was merged into (`''` for one withdrawn)."""
     return [(entry["id"], entry["note"].removeprefix("merged into ") if entry["note"].startswith("merged into ") else "")
@@ -88,13 +147,19 @@ def table(data: dict) -> str:
         "# draws: space-separated, what a composer may draw in its place, in ids-input's order: descriptions, some with",
         "#   the private-use glyph of BabelStone Han PUA that alone draws 69 numbered parts; approximate lists the ones",
         "#   that are close only; editorial marks a fragment ({12}, {82}) that is no reading of BabelStone's note 6.",
+        "# spelling: for a part ids-input knows only as a description of encoded characters, that description, which",
+        "#   is how a form holding the part is written.",
+        "# folds: space-separated, the descriptions written as this part inside a larger one: its drawings that draw no",
+        "#   other part and no encoded character.",
         "# retired: for an identifier taken out of use, the one it was merged into, or withdrawn.",
-        "# columns: id, names, draws, approximate, editorial, description, retired",
+        "# columns: id, names, draws, approximate, editorial, description, spelling, folds, retired",
     ]
+    spelling, folds = _spellings(data)
     for key, names, draws, approximate, editorial, description in rows(data):
-        lines.append("\t".join((key, " ".join(names), " ".join(draws), " ".join(approximate), "1" if editorial else "", description, "")))
+        lines.append("\t".join((key, " ".join(names), " ".join(draws), " ".join(approximate), "1" if editorial else "", description,
+                                spelling.get(key, ""), " ".join(folds.get(key, ())), "")))
     for key, into in retired(data):
-        lines.append("\t".join((key, "", "", "", "", "", into or "withdrawn")))
+        lines.append("\t".join((key, "", "", "", "", "", "", "", into or "withdrawn")))
     return "\n".join(lines) + "\n"
 
 
@@ -105,6 +170,8 @@ def module(data: dict) -> str:
         for name in names:
             named.setdefault(name, key)
     drawn = {key: draws for key, _, draws, *_ in rows(data) if draws}
+    spelling, folds = _spellings(data)
+    folded = {text: key for key, texts in folds.items() for text in texts}
     return (
         "// Written by scripts/build_custom_parts.py with data/vocab/custom-parts.tsv, from ids-input; edit neither here.\n"
         "/** Every spelling of a part no code point names, with the identifier ids-input gives the part. */\n"
@@ -116,6 +183,10 @@ def module(data: dict) -> str:
         "/** What a composer may draw in a part's place, in ids-input's order: descriptions, some with the private-use\n"
         " *  glyph of BabelStone Han PUA that alone draws 69 numbered parts. */\n"
         f"export const CUSTOM_PART_DRAWN: Record<string, string[]> = {json.dumps(drawn, ensure_ascii=False, separators=(',', ':'))};\n"
+        "/** The description a part ids-input knows only as one is written as. */\n"
+        f"export const CUSTOM_PART_SPELLING: Record<string, string> = {json.dumps(spelling, ensure_ascii=False, separators=(',', ':'))};\n"
+        "/** The descriptions written as a named part inside a larger one, each with that part. */\n"
+        f"export const CUSTOM_PART_FOLDS: Record<string, string> = {json.dumps(folded, ensure_ascii=False, separators=(',', ':'))};\n"
     )
 
 
@@ -127,8 +198,11 @@ def main() -> int:
 
     found = rows(data)
     encoded = sum(1 for row in found if custom_parts.drawn(f"&{row[0]};") is not None)
+    spelling, folds = _spellings(data)
     print(f"{len(found)} parts, {encoded} drawn in encoded characters, {sum(1 for row in found if row[2]) - encoded} only with a "
-          f"private-use glyph, {sum(len(row[1]) for row in found)} names, {len(retired(data))} retired")
+          f"private-use glyph, {sum(len(row[1]) for row in found)} names, {len(retired(data))} retired; "
+          f"{len(spelling)} written as their description, {sum(map(len, folds.values()))} descriptions written as "
+          f"{len(folds)} named parts")
     return 0
 
 

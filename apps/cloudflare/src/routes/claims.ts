@@ -15,7 +15,7 @@ import { actOnClaim, checkClaims, claimsOf, commitPlan, type CropNow, effectiveC
 import { canonical, literal } from '../input';
 import { readRecords, recordKey } from '../records';
 import { refileRuns } from './runs';
-import { FORM_LONGEST, anchoredForm, representationId, structureKey, typed, written, type FormProblem, type Representation } from '../representation';
+import { FORM_TEXT_LONGEST, anchoredForm, representationId, structureKey, typed, written, type FormProblem, type Representation } from '../representation';
 
 type Json = Record<string, any>;
 export type ClaimTools = {
@@ -142,7 +142,7 @@ export async function setForm(env: Env, input: Json, named: string, actor: strin
     if (crop == null) tools.fail(404, NOT_HERE);
     return { id: publicId(crop), form: await formOfCrop(env, crop), replaced: saved.replaced ?? null };
   }
-  const typedForm = input.form == null ? null : tools.text(input.form, 256, 'form');
+  const typedForm = input.form == null ? null : tools.text(input.form, FORM_TEXT_LONGEST, 'form');
   const representation = typedForm ? typed(tools.literal(typedForm)) : null;
   if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
   const crop = await ledger.crop(env, named);
@@ -264,7 +264,7 @@ export async function setForms(env: Env, input: Json, actor: string, tools: Clai
   const raw = input.crops;
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > FORM_BATCH_MAX) tools.fail(422, `A batch names 1–${FORM_BATCH_MAX} crops.`);
   const representations = raw.map((entry: Json) => {
-    const typedForm = entry?.form == null ? null : tools.text(entry.form, 256, 'form');
+    const typedForm = entry?.form == null ? null : tools.text(entry.form, FORM_TEXT_LONGEST, 'form');
     const representation = typedForm ? typed(tools.literal(typedForm)) : null;
     if (typeof representation === 'string') tools.fail(422, PROBLEMS[representation]);
     return representation as Representation | null;
@@ -512,7 +512,7 @@ async function namedStructure(env: Env, input: Json, tools: ClaimTools, ctx: Exe
     if (known && !row) tools.fail(422, 'No claim has named this structure.');
     return { structure: { id, label: row?.label ?? '' }, source: null };
   }
-  const char = tools.text(input.char, 4 * FORM_LONGEST, 'char', true)!;
+  const char = tools.text(input.char, FORM_TEXT_LONGEST, 'char', true)!;
   if (written(char).length !== 1 || written(char)[0] !== char) tools.fail(422, 'Name one character or description.');
   // A character's regional shape is no key of the load: it is found among the shapes of `of`.
   const of = input.of == null ? null : tools.text(input.of, 8, 'of', true)!;
@@ -546,7 +546,7 @@ export async function setStructure(env: Env, input: Json, named: string, actor: 
   const id = submissionId(input, tools), key = actor + ':' + id, signature = tools.canonical({ form: named, structure: input });
   let representation: Representation | null = null;
   if (!FORM_ID.test(named)) {
-    const value = typed(tools.literal(tools.text(named, 4 * FORM_LONGEST, 'form', true)!));
+    const value = typed(tools.literal(tools.text(named, FORM_TEXT_LONGEST, 'form', true)!));
     if (typeof value === 'string') tools.fail(422, PROBLEMS[value]);
     representation = value as Representation;
   }

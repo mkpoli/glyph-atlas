@@ -11,7 +11,7 @@ import { LOGICAL } from './review';
 import { StaleCrop, staleResponse, writtenCropField } from '../atlas3Crops';
 import { axisOf } from '../dating';
 import { type FormTools, GLYPHS_PER_DECISION, drawnHeads, isDescription } from '../forms';
-import { drawnForm, drawnFormsOf } from '../representation';
+import { FORM_TEXT_LONGEST, drawnForm, drawnFormsOf, isSequence, typed } from '../representation';
 import { writesPaused } from '../freeze';
 
 type Json = Record<string, any>;
@@ -261,8 +261,12 @@ async function decide(env: Env, request: Request, tools: FormTools, actor: strin
   const note = tools.text(input.note ?? '', 2000, 'note') ?? '';
   const kind = input.kind;
   if (!['cluster', 'glyph', 'inherit'].includes(kind)) tools.fail(422, 'Unknown decision kind.');
-  // A form is one of the family's characters or drawn forms, or a shape Unicode lacks written as a description.
-  const form = input.form == null ? null : tools.text(input.form, 256, 'form', true);
+  // A form is one of the family's characters or drawn forms, or a shape Unicode lacks written as a
+  // description, in its one spelling.
+  const named = input.form == null ? null : tools.text(input.form, FORM_TEXT_LONGEST, 'form', true);
+  const spelt = named != null && isSequence(named) ? typed(named) : null;
+  if (typeof spelt === 'string') tools.fail(422, 'This description is not one form.');
+  const form = spelt?.value ?? named;
   if (kind === 'inherit' && form != null) tools.fail(422, 'Following the cluster takes no form.');
   // A report: the glyphs are not this family's character, or their crop is bad. They keep no form.
   // A cluster can also be marked as mixed.

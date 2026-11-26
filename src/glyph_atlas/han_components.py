@@ -24,11 +24,12 @@ PARTS = 8
 SCAN = 3000
 
 # BabelStone's operators by how many operands each takes. ㇯ subtracts its second operand from its
-# first (㇯鸟丶 is 乌); 〾 marks a sequence as approximate. `{n}` and ？ name no encoded character.
+# first (㇯鸟丶 is 乌); 〾 marks a sequence as approximate. `{n}`, a part a saved form writes as its
+# identifier (`&X-00087;`, `custom_parts`) and ？ name no encoded character.
 BINARY = set("⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽㇯")
 TERNARY = set("⿲⿳")
 UNARY = set("⿾⿿〾")
-TOKEN = re.compile(r"\{\d+\}|.")
+TOKEN = re.compile(r"\{\d+\}|&X-\d{5};|.")
 
 
 def read_rows(name: str) -> list[list[str]]:
@@ -100,7 +101,7 @@ _described: dict[str, _Part] = {}
 def _evaluate(node: tuple, char: str, path: frozenset[str]) -> tuple[_Part, bool]:
     kind, value = node
     if kind == "leaf":
-        if value == char or value == "？" or value.startswith("{"):
+        if value == char or value == "？" or value.startswith(("{", "&X-")):
             return _Part(size=1), False
         # 王 writes 玉 in the forms table, but the 王 inside 玉 is not a second 玉.
         names = [name for name in _names(value) if name != char]
