@@ -518,6 +518,35 @@ try {
   console.log('PASS ⿰⿱匕失⿱コ疋 is saved as the crop\'s written form, the character kept')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
+  // Switch a nested 率 between its two center forms and two dot settings, then save
+  // the standalone registered figure and reopen the editor on its exact spelling.
+  async function reopenComposer() {
+    await browser.goto(service.base + '/en/crop/' + encodeURIComponent(id), { waitFor: ready, timeout: 90000 })
+    await browser.waitFor('document.querySelector(".form-add") && !document.querySelector(".form-add").disabled')
+    await browser.evaluate('document.querySelector(".form-add").click()')
+    await browser.waitFor('!!document.querySelector(".form-compose")')
+    await browser.evaluate('document.querySelector(".form-compose").click()')
+    await browser.waitFor('!!document.querySelector(".ids-field input")')
+  }
+  await reopenComposer()
+  await typeSequence('⿰率率')
+  await focusPath('1')
+  const spellings = ['⿱亠⿱⿲冫幺⿱丿丶十', '⿱亠⿱⿲𰀪幺⺀十', '率󠄀', '率󠄁']
+  for (const [i, form] of spellings.entries()) {
+    await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].click()`)
+    await becomes('⿰率' + form)
+    assert(await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].getAttribute('aria-pressed') === 'true'`), form + ' is not selected')
+  }
+  await typeSequence(spellings[3])
+  await becomes(spellings[3])
+  await browser.evaluate('document.querySelector(".ids-use").click()')
+  await browser.waitFor('!document.querySelector(".ids-composer")')
+  await browser.evaluate('document.querySelector(".save-character").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
+  assert(claimed(id).includes(spellings[3]), 'the selector was lost in the saved claim')
+  await reopenComposer()
+  await becomes(spellings[3])
+  console.log('PASS independent 率 forms, nesting, and persisted IVS')
   console.log('PASS ids form')
 } finally {
   await browser?.close()

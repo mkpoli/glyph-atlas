@@ -594,7 +594,7 @@
           </div>
           {#if composing}
             <div class="palette-composer">
-              <IdsComposer disabled={busy || !target} char={current.char} onuse={form => { composing = false; apply(form) }} />
+              <IdsComposer disabled={busy || !target} start={!chosen.size && pickedClusters.length <= 1 ? (pickedClusters[0] ?? cluster)?.form ?? '' : ''} char={current.char} onuse={form => { composing = false; apply(form) }} />
             </div>
           {/if}
         </div>
