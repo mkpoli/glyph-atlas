@@ -245,6 +245,7 @@ describe('readings the book gives a word elsewhere', () => {
     expect(rubiesElsewhere(given)).toEqual([{ from: 2, to: 3, run: ['諸', '器'], reading: ['しよ', 'き'], lines: 3, page: 28 },
       { from: 3, to: 3, run: ['器'], reading: ['うつは'], lines: 1, page: 29 }, { from: 3, to: 3, run: ['器'], reading: ['き'], lines: 1, page: 29 }])
     expect(rubiesElsewhere(crop())).toEqual([])
+    expect(rubiesElsewhere({ ...given, ruby_elsewhere: [[3, 0, 'き', 1, 29]] })).toEqual([])
   })
   it('gives a run its readings, and a place the longest word around it', () => {
     expect(readingsElsewhere(given, 2, 3).map(one => one.reading)).toEqual([['しよ', 'き']])

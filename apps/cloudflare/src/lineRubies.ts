@@ -20,7 +20,7 @@ export function rubyPack(page: unknown, number: unknown): string | null {
 // [start, length over the line's key, reading as a ruby gives it, the lines that give it, a page of one]
 export type RubyElsewhere = [number, number, string | string[], number, number];
 type Given = { reading: string | string[]; lines: number; page: number };
-const BASE_MAX = 12, ELSEWHERE_MAX = 24, READINGS_EACH = 2;
+const BASE_MAX = 12, ELSEWHERE_MAX = 64, READINGS_EACH = 2;
 const packWords = new WeakMap<Pack, Map<string, Map<string, Given>>>();
 /** The words of a pack: each base a right ruby stands over, with its readings, the lines that give each and a page of one. */
 function wordsOf(pack: Pack): Map<string, Map<string, Given>> {
@@ -30,7 +30,7 @@ function wordsOf(pack: Pack): Map<string, Map<string, Given>> {
   for (const [page, lines] of Object.entries(pack)) for (const [key, rubies] of Object.entries(lines)) {
     const chars = [...key], seen = new Set<string>();
     for (const [start, length, side, reading] of rubies) {
-      if (side !== 0 || length > BASE_MAX) continue;
+      if (side !== 0 || !(start >= 0 && length > 0 && length <= BASE_MAX && start + length <= chars.length)) continue;
       const base = chars.slice(start, start + length).join(''), text = [reading].flat().join('');
       if (!base || !text || seen.has(`${base}\n${text}`)) continue;
       seen.add(`${base}\n${text}`);
@@ -57,11 +57,14 @@ export async function lineRubies(env: Env, record: { page_id?: unknown; page_num
   const lines = pack[String(record.page_number)];
   const key = lineKey(record.text), here = lines && Object.hasOwn(lines, key) ? lines[key] : null;
   const words = wordsOf(pack), chars = [...key], elsewhere: RubyElsewhere[] = [];
+  // Where each character of the key stands among the line's characters: a word the punctuation parts is none here.
+  const places = (record.text.normalize('NFC').match(/\P{M}\p{M}*/gu) ?? []).flatMap((part, i) => /^[\p{L}\p{N}]/u.test(part) ? [i] : []);
+  const whole = (start: number, length: number) => places.length !== chars.length || places[start + length - 1] - places[start] === length - 1;
   const under = (start: number, length: number) => (here ?? []).some(([from, size, side]) => side === 0 && start < from + size && from < start + length);
-  for (let length = Math.min(BASE_MAX, chars.length); length > 0 && elsewhere.length < ELSEWHERE_MAX; length--) for (let start = 0; start + length <= chars.length; start++) {
+  for (let length = Math.min(BASE_MAX, chars.length); length > 0; length--) for (let start = 0; start + length <= chars.length && elsewhere.length + READINGS_EACH <= ELSEWHERE_MAX; start++) {
     const readings = words.get(chars.slice(start, start + length).join(''));
-    if (!readings || under(start, length)) continue;
+    if (!readings || under(start, length) || !whole(start, length)) continue;
     for (const given of [...readings.values()].sort((a, b) => b.lines - a.lines).slice(0, READINGS_EACH)) elsewhere.push([start, length, given.reading, given.lines, given.page]);
   }
-  return { here, elsewhere: elsewhere.slice(0, ELSEWHERE_MAX) };
+  return { here, elsewhere };
 }

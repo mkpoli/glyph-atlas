@@ -43,4 +43,6 @@ test('a word under no ruby on its line is given the readings the same pages give
   // The line's own ruby stands over 諸器, so nothing is offered under it; a 左訓 keeps no word from one.
   expect((await lineRubies(env, { page_id: `hl:${entry}:27`, page_number: 28, text: '緻密にして諸器に製す' })).elsewhere).toEqual([]);
   expect((await lineRubies(env, { ...page, text: '別の行' })).elsewhere).toEqual([]);
+  // A word the punctuation parts is none on this line; its characters alone still are.
+  expect((await lineRubies(env, { ...page, text: '諸、器' })).elsewhere).toEqual([[1, 1, 'うつは', 1, 29], [1, 1, 'き', 1, 29]]);
 });

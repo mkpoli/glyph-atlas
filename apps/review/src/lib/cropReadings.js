@@ -80,7 +80,7 @@ function onLine(crop) {
   const parts = textParts(crop?.text), places = parts.flatMap((part, i) => /^[\p{L}\p{N}]/u.test(part) ? [i] : [])
   return (start, length) => {
     const from = places[start], to = places[start + length - 1]
-    return from === undefined || to === undefined || to - from !== length - 1 ? null : { from, to, run: parts.slice(from, to + 1) }
+    return !(length > 0) || from === undefined || to === undefined || to - from !== length - 1 ? null : { from, to, run: parts.slice(from, to + 1) }
   }
 }
 

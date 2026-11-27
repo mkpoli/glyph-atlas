@@ -71,7 +71,7 @@
   const reads = $derived(reading.join(''))
   const kana = part => /^[\p{Script=Hiragana}\p{Script=Katakana}\p{M}ー]+$/u.test(part)
   // How the pages around this one read the run where a ruby stands over it. The line shown is the source's own.
-  const sourced = $derived(Boolean(line) && line.parts.join('') === textParts(item.text).join(''))
+  const sourced = $derived(Boolean(line?.held) && line.parts.length === textParts(item.text).length && line.parts.join('') === textParts(item.text).join(''))
   const elsewhere = $derived(sourced ? readingsElsewhere(item, from, to) : [])
 
   // The run's other crops, outlined on the page while the editor is open.
@@ -126,8 +126,9 @@
   // A reading the book gives the run elsewhere is a note here, resting on that place: this line writes no ruby.
   function take(given) {
     touched = true; error = ''; letters = null; method = 'parallel'
-    if (given.reading.length === places.length) { whole = false; places.forEach((place, i) => { readings[place] = given.reading[i] }) }
-    else { whole = true; wholeReading = given.reading.join('') }
+    // A ruby written over the run as one stays as it is written: the reading then stands over the run as one too.
+    if (given.reading.length === places.length && !(joined && wholeRuby.trim())) { whole = false; places.forEach((place, i) => { readings[place] = given.reading[i] }) }
+    else { if (!whole) wholeRuby = ruby.join('') || wholeRuby; whole = true; wholeReading = given.reading.join('') }
   }
   const taken = given => reads === given.reading.join('')
   function press(at) {
