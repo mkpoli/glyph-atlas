@@ -47,7 +47,11 @@ def test_a_part_of_a_description_that_draws_one_named_part_is_that_part():
 
 
 def test_a_part_known_only_as_a_description_is_written_as_it():
-    assert custom_parts.spelt("⿱&X-01788;一") == custom_parts.spelt("⿱⿹⿺㇉一灬一") == "⿱⿹&X-00022;灬一"
+    assert custom_parts.spelt("⿱&X-01546;一") == custom_parts.spelt("⿱⿰{24}⿶{112}丨一") == "⿱⿰&X-00024;⿶&X-00111;丨一"
+
+
+def test_a_description_joined_to_a_named_part_is_written_as_it():
+    assert custom_parts.spelt("⿱&X-01788;一") == custom_parts.spelt("⿱⿹⿺㇉一灬一") == "⿱&X-00001;一"
 
 
 def test_the_one_spelling_is_settled():
