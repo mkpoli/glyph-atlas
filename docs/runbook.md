@@ -174,7 +174,8 @@ uv run scripts/cut_guangyun_headwords.py ioc work/guangyun-ioc --table cache/tsh
 table (`data/sources/longkan-shoujing.yaml`), which gives each entry's half-leaf and its order on it and no
 column. `glyph_atlas.tape` places the headwords of a half-leaf along its columns read as one tape, anchored on
 the likeness of each crop to its character drawn in a font, and the script says when one is kept. Headwords the
-table itself makes doubtful (`glyph_atlas.longkan.unsettled`) are left out:
+table itself makes doubtful (`glyph_atlas.longkan.unsettled`) are left out, except that of a run written with one
+character the crop that alone looks like it is kept (`glyph_atlas.longkan.leads`):
 
 ```sh
 mkdir -p cache/qingque-data/data/古辞书综合 && curl -L -o cache/qingque-data/data/古辞书综合/龙龛手镜.csv \
