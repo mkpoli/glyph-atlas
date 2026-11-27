@@ -107,11 +107,11 @@ def _doubted(note: str) -> bool:
     return any("字頭" in item and any(word in item for word in _DOUBT) for item in _ITEMS.split(note))
 
 
-def unsettled(pages: dict[int, list[Entry]]) -> set[tuple[int, int]]:
+def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tuple[int, int]]:
     """The headwords, as row and place in it, whose character is no sure reading of what the print shows.
 
     - The table writes 俗, 正 and 通 forms that stand side by side with one character, although the print shows a
-      different shape for each.
+      different shape for each. Without `neighbours`, a row is not named for this alone.
     - A note on a headword says it was blank and filled in, or doubts it.
     - The character lacks the radical of its section (聴 under 口, where the print has 口 beside it). A section is
       tested when most of its headwords hold the radical; 雜部 and the like hold none.
@@ -126,9 +126,47 @@ def unsettled(pages: dict[int, list[Entry]]) -> set[tuple[int, int]]:
     for row, entry in entries.items():
         own = [c for c in heads[row] if c]
         near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ()) if c}
-        doubted = len(set(own)) < len(own) or bool(near & set(own)) or _doubted(entry.note)
+        doubted = (neighbours and (len(set(own)) < len(own) or bool(near & set(own)))) or _doubted(entry.note)
         for sub, char in enumerate(heads[row]):
             foreign = char is not None and len(char) == 1 and entry.section in tested and not _holds(char, entry.section)
             if doubted or foreign:
                 out.add((row, sub))
     return out
+
+
+def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, int]]]:
+    """For each headword written with the same character as one within `NEAR` rows of it, the others of its run.
+
+    The run goes on while the next one stands within `NEAR` rows of the last: 鉀 in rows 3, 5 and 7 is one run.
+    """
+    places: dict[str, list[tuple[int, int]]] = {}
+    for entries in pages.values():
+        for entry in entries:
+            for sub, char in enumerate(fields(entry)):
+                if char:
+                    places.setdefault(char, []).append((entry.row, sub))
+    out: dict[tuple[int, int], set[tuple[int, int]]] = {}
+    for spots in places.values():
+        spots.sort()
+        runs = [[spots[0]]]
+        for spot in spots[1:]:
+            if spot[0] - runs[-1][-1][0] <= NEAR:
+                runs[-1].append(spot)
+            else:
+                runs.append([spot])
+        for run in runs:
+            if len(run) > 1:
+                out.update({spot: set(run) - {spot} for spot in run})
+    return out
+
+
+def leads(spot: tuple[int, int], kin: dict[tuple[int, int], set[tuple[int, int]]], alike: dict[tuple[int, int], float],
+          least: float, lead: float) -> bool:
+    """Whether a headword's crop is at least `least` like its character and ahead of every crop of its run by `lead`.
+
+    Of a run the table writes with one character, the crop that alone looks like it is that character as printed;
+    the others are its variants. A headword whose run left no other crop to set it against does not lead.
+    """
+    own = alike.get(spot)
+    rivals = [alike[other] for other in kin.get(spot, ()) if other in alike]
+    return own is not None and own >= least and bool(rivals) and own - max(rivals) > lead
