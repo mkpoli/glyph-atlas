@@ -4449,3 +4449,58 @@ def test_non_additive_compendium_tools_can_toggle_without_hitting_repeat_cache(t
     assert "result" in third and "already_added" not in third
     assert lookup.compendium.check() == (5, True)
     assert fish_bot.Compendium("https://rare.example/mcp", None, "tok").check() == (5, True)
+
+
+def test_compendium_writes_stamp_bot_agent_and_hide_it_from_model(tmp_path, monkeypatch):
+    server = FakeCompendium()
+    server_tools = [
+        *COMPENDIUM_TOOLS,
+        {"name": "edit_record", "description": "Edit a record", "annotations": {"readOnlyHint": False},
+         "inputSchema": {"type": "object", "required": ["record", "rev", "agent"], "properties": {
+             "record": {"type": "string"},
+             "rev": {"type": "integer"},
+             "agent": {"type": "object", "properties": {"harness": {"type": "string"}, "model": {"type": "string"}}},
+         }}},
+    ]
+    orig = server.__call__
+
+    def with_agent(request, timeout=None):
+        body = json.loads(request.data)
+        if body["method"] == "tools/list":
+            payload = {"jsonrpc": "2.0", "id": body["id"], "result": {"tools": server_tools}}
+            return contextlib.nullcontext(type("R", (), {"headers": {}, "read": lambda self: json.dumps(payload).encode()})())
+        return orig(request, timeout)
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", with_agent)
+    store = fish_bot.Store(tmp_path / "chat.sqlite3")
+    agent = fish_bot._compendium_agent("大肥魚", "gemini-4-hydrogen")
+    assert agent == {"harness": "大肥魚", "model": "Gemini 4 Hydrogen"}
+    assert fish_bot._agent_model_name("gemini-2.5-flash") == "Gemini 2.5 Flash"
+    assert fish_bot._agent_model_name("Gemini 4 Hydrogen") == "Gemini 4 Hydrogen"
+
+    compendium = fish_bot.Compendium("https://rare.example/mcp", store, agent=agent)
+    lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False, compendium=compendium)
+    lookup.offer_compendium, lookup.may_write, lookup.caller, lookup.here = True, True, "@asker:example", ROOM
+
+    tools = {tool["name"]: tool for tool in lookup.specs() if tool["name"].startswith("rare_")}
+    edit_params = tools["rare_edit_record"]["parameters"]
+    assert "agent" not in edit_params["properties"]
+    assert edit_params["required"] == ["record", "rev"]
+
+    # Even if the model passes its own invented agent object, the bot overwrites it.
+    res = lookup.run("rare_edit_record", {
+        "record": "9", "rev": 1,
+        "agent": {"harness": "Glyph Atlas Matrix Bot", "model": "Wrong Model"},
+    })
+    assert "result" in res
+    sent_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
+    assert sent_args["agent"] == {"harness": "大肥魚", "model": "Gemini 4 Hydrogen"}
+
+    # Tools whose schema does not declare agent are left untouched.
+    assert "result" in lookup.run("rare_get_record", {"record": "9"})
+    get_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
+    assert "agent" not in get_args
+    assert "result" in lookup.run("rare_add_sighting", {"record": "9"})
+    sighting_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
+    assert "agent" not in sighting_args
+
