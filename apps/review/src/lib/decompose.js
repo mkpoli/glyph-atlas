@@ -1,7 +1,7 @@
 // What the IDS editor's "Take parts from" box reads: the characters or the description typed there,
 // each character's descriptions from `/layers/ids` (BabelStone IDS) with the source regions of
 // each, and the way the tree of them is stepped through by keys.
-import { isComponent, isDescription, leaves, parse, unalias } from './ids.js'
+import { isComponent, isDescription, isPart, leaves, parse, unalias } from './ids.js'
 
 /** How many characters the box decomposes at once. */
 export const ROOTS = 8
@@ -12,11 +12,12 @@ export const SEARCH_PARTS = 8
 
 const SELECTOR = /^[︀-️\u{E0100}-\u{E01EF}]$/u
 /** A description's tokens: BabelStone's unencoded component `{n}` is one, and so is a part a saved
- *  form writes as its identifier (`&X-00087;`); a variation selector goes with the character before it. */
+ *  form writes as its identifier (`&X-00087;`); a variation selector goes with the character before it, and
+ *  stands alone after such a part, which takes none. */
 export function tokens(text) {
   const out = []
   for (const [token] of (text ?? '').matchAll(/\{\d+\}|&X-\d{5};|./gsu)) {
-    if (SELECTOR.test(token) && out.length) out[out.length - 1] += token
+    if (SELECTOR.test(token) && out.length && !isPart(out[out.length - 1])) out[out.length - 1] += token
     else out.push(token)
   }
   return out
@@ -24,8 +25,9 @@ export function tokens(text) {
 /** The number of BabelStone's unencoded component `{n}`, or null for any other token. */
 export const unencoded = token => /^\{(\d+)\}$/.exec(token ?? '')?.[1] ?? null
 
-/** The character `/layers/ids` is asked about for a part: its variation selector dropped. */
-export const lookupChar = part => [...(part ?? '')][0] ?? ''
+/** The character `/layers/ids` is asked about for a part: its variation selector dropped; none for a part
+ *  no code point names (`&X-00087;`), which the route does not know. */
+export const lookupChar = part => isPart(part) ? '' : [...(part ?? '')][0] ?? ''
 
 /** Whether the structure route can be asked about `part`: one encoded component, not ？. */
 export const decomposable = part => typeof part === 'string' && isComponent(lookupChar(part)) && lookupChar(part) !== '？'
