@@ -5,7 +5,7 @@
   // dictionary that the characters write can be named with it.
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
-  import { RUN_MAX, beside, clearReading, cropLine, opening, openingTranscribed, pressed, readingEntries, setReading, stretch } from '../lib/cropReadings.js'
+  import { RUN_MAX, beside, clearReading, cropLine, opening, openingTranscribed, pressed, readingEntries, readingsElsewhere, setReading, stretch, textParts, wordElsewhere } from '../lib/cropReadings.js'
   import { toSource } from '../lib/cropBox.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
@@ -70,6 +70,9 @@
   const ruby = $derived(joined ? [wholeRuby.trim()] : places.map(place => (rubies[place] ?? '').trim()))
   const reads = $derived(reading.join(''))
   const kana = part => /^[\p{Script=Hiragana}\p{Script=Katakana}\p{M}ー]+$/u.test(part)
+  // How the pages around this one read the run where a ruby stands over it. The line shown is the source's own.
+  const sourced = $derived(Boolean(line?.held) && line.parts.length === textParts(item.text).length && line.parts.join('') === textParts(item.text).join(''))
+  const elsewhere = $derived(sourced ? readingsElsewhere(item, from, to) : [])
 
   // The run's other crops, outlined on the page while the editor is open.
   $effect(() => {
@@ -85,7 +88,9 @@
     const said = opening(item.reading, signedInUser()?.id), nobody = !said.value && !item.reading
     let opened = nobody ? openingTranscribed(item) ?? said : said
     method = opened.method ?? untrack(() => method)
-    place(cropLine(item), opened)
+    const first = cropLine(item)
+    place(first, opened)
+    if (nobody && !opened.value) reach(first)
     editing = true
     tick().then(() => root?.querySelector('.reading-over input')?.focus({ preventScroll: true }))
     neighbours = []
@@ -97,6 +102,7 @@
       const placed = cropLine(item, items)
       if (nobody) opened = (placed.held && placed.sure ? openingTranscribed(item, placed.at) : null) ?? said
       place(placed, opened)
+      if (nobody && !opened.value) reach(placed)
     }).catch(() => { /* The run is then saved on this crop alone. */ })
   }
   // Stand the crop on its line, with the run of an earlier reading where the line still holds it.
@@ -112,6 +118,19 @@
       else value.run.forEach((_, i) => { readings[from + i] = over[i] ?? ''; if (beside.length === value.run.length) rubies[from + i] = beside[i] })
     }
   }
+  // A crop nobody has read opens on the word it stands in, where the pages around it read that word.
+  function reach(placed) {
+    const word = placed.held && placed.sure ? wordElsewhere(item, placed.at) : null
+    if (word) ({ from, to } = word)
+  }
+  // A reading the book gives the run elsewhere is a note here, resting on that place: this line writes no ruby.
+  function take(given) {
+    touched = true; error = ''; letters = null; method = 'parallel'
+    // A ruby written over the run as one stays as it is written: the reading then stands over the run as one too.
+    if (given.reading.length === places.length && !(joined && wholeRuby.trim())) { whole = false; places.forEach((place, i) => { readings[place] = given.reading[i] }) }
+    else { if (!whole) wholeRuby = ruby.join('') || wholeRuby; whole = true; wholeReading = given.reading.join('') }
+  }
+  const taken = given => reads === given.reading.join('')
   function press(at) {
     touched = true; error = ''; letters = null
     // Another place of the same character, apart from the run, is where the crop stands instead.
@@ -274,6 +293,14 @@
           {#each letters.letters as one (one.letter)}
             <button type="button" aria-pressed={one.letter === letters.now} title={one.jibo ? t('reading.jibo', { char: one.jibo }) : undefined} disabled={busy}
               onpointerdown={e => e.preventDefault()} onmousedown={e => e.preventDefault()} onclick={() => write(one)}><span>{one.letter}</span>{#if one.jibo}<small>{one.jibo}</small>{/if}</button>
+          {/each}
+        </div>
+      {/if}
+      {#if elsewhere.length}
+        <div class="reading-words">
+          <span>{t('reading.elsewhere')}</span>
+          {#each elsewhere as given (given.reading.join('\n'))}
+            <button type="button" aria-pressed={taken(given)} disabled={busy} onclick={() => take(given)}><b lang="ja">{given.reading.join('・')}</b> <span>{t('cite.page', { page: given.page })}{#if given.lines > 1}{' '}×{given.lines}{/if}</span></button>
           {/each}
         </div>
       {/if}

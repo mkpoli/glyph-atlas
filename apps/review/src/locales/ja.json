@@ -758,6 +758,7 @@
   "reading.places.confirm": "{reading}と読む",
   "reading.places.none": "ほかの箇所はありません",
   "reading.transcribed": "翻刻",
+  "reading.elsewhere": "本書の別箇所",
   "reading.confirm": "確かめる",
   "reading.letters": "この仮名の字体",
   "reading.jibo": "字母{char}",

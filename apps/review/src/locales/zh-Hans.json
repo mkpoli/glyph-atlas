@@ -766,6 +766,7 @@
   "reading.places.confirm": "读作“{reading}”",
   "reading.places.none": "没有其他各处",
   "reading.transcribed": "释文",
+  "reading.elsewhere": "本书别处",
   "reading.confirm": "核对",
   "reading.letters": "此假名的字体",
   "reading.jibo": "字母“{char}”",
