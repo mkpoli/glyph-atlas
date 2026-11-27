@@ -216,3 +216,8 @@ def test_a_label_that_names_only_the_character_leaves_the_written_form_open():
     # Even a character with no other form is left open: the print may show a form Unicode lacks.
     lone = identity_fields({"unicode": "U+9C0A", "text_source": "鰊", "source_label_scope": "grapheme"}, "longkan-song")
     assert lone["written_character"] is None and lone["grapheme"]
+
+
+def test_an_unencoded_label_left_open_still_names_its_grapheme():
+    fields = identity_fields({"text_source": "⿰舟公", "source_label_scope": "grapheme"}, "longkan-song")
+    assert fields["written_character"] is None and fields["grapheme"] == "U+2FF0 U+821F U+516C"

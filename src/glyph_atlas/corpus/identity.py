@@ -141,6 +141,8 @@ def identity_fields(
                 # source labels unresolved; retain that result until reviewed.
                 written, basis = candidate, "visual_model"
                 ambiguous = ambiguous or (written is None and len(members) > 1)
+    # A label left open still names its grapheme: an unencoded one (an IDS) is its own.
+    named = written or (source_label if scoped else None)
     return {
         "source_label": source_label,
         "source_code_point": cp,
@@ -150,7 +152,7 @@ def identity_fields(
         "identity_evidence": SHAPE_EVIDENCE if basis == "glyph_shape" else NORMALIZATION_EVIDENCE if corpus in NORMALIZED_CORPORA else None,
         # A character with no family (one Unicode lacks, written as an IDS) is its own grapheme, as the
         # Worker files it.
-        "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(written)) if written else None),
+        "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(named)) if named else None),
         "family_members": members_for(family, written or encoded or source_label),
         "requires_family_scope": ambiguous,
         "visual_assignment": assignment,

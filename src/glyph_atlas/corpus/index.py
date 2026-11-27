@@ -1471,6 +1471,7 @@ def located_units(
                 "review",
                 "active",
                 "upstream",
+                "meta",
             )
             if c in dataset.schema.names
         ]
