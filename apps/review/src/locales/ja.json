@@ -761,6 +761,8 @@
   "reading.elsewhere": "本書の別箇所",
   "reading.confirm": "確かめる",
   "reading.letters": "この仮名の字体",
+  "reading.dictionary": "字書",
+  "reading.dictionaryOf": "{char}の字書の読み",
   "reading.jibo": "字母{char}",
   "reading.needed": "振り仮名か読みを入力してください。",
   "reading.save": "読みを保存",

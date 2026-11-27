@@ -61,8 +61,44 @@ function composerOutlines() {
   }
 }
 
+// Each kanji's Japanese readings, the inverse of `data/vocab/kanji-readings.json` (Unihan kJapanese, in
+// hiragana): emitted as KANJI_SHARDS static files by code point, so the reading editor reads the one or two a run needs.
+const KANJI_READINGS = fileURLToPath(new URL('../../data/vocab/kanji-readings.json', import.meta.url))
+const KANJI_SHARDS = 64, KANJI_PREFIX = '/kanji-readings/', KANJI_MODULE = '\0kanji-readings'
+function kanjiShards() {
+  const shards = Array.from({ length: KANJI_SHARDS }, () => ({}))
+  for (const [reading, kanji] of Object.entries(JSON.parse(readFileSync(KANJI_READINGS, 'utf8')).readings))
+    for (const char of new Set(kanji)) (shards[char.codePointAt(0) % KANJI_SHARDS][char] ??= []).push(reading)
+  for (const shard of shards) for (const char in shard) shard[char] = [...new Set(shard[char])].sort((a, b) => a.localeCompare(b, 'ja'))
+  return shards.map(shard => JSON.stringify(shard))
+}
+function kanjiReadings() {
+  let shards = null, emitted = false
+  const built = () => shards ??= kanjiShards()
+  return {
+    name: 'kanji-readings',
+    resolveId: id => id === 'kanji-readings' ? KANJI_MODULE : null,
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const found = /^\/kanji-readings\/(0|[1-9]\d*)\.json$/.exec((request.url ?? '').split('?')[0]), n = found ? Number(found[1]) : -1
+        if (n < 0 || n >= KANJI_SHARDS) return next()
+        response.setHeader('content-type', 'application/json')
+        response.end(built()[n])
+      })
+    },
+    load(id) {
+      if (id !== KANJI_MODULE) return null
+      if (!emitted && this.environment?.name === 'client' && this.meta && !this.meta.watchMode) {
+        emitted = true
+        built().forEach((source, n) => this.emitFile({ type: 'asset', fileName: `kanji-readings/${n}.json`, source }))
+      }
+      return `export const SHARDS = ${KANJI_SHARDS}, PREFIX = ${JSON.stringify(KANJI_PREFIX)}`
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [externalWasm, composerOutlines(), sveltekit()],
+  plugins: [externalWasm, composerOutlines(), kanjiReadings(), sveltekit()],
   define: { __ORT_VERSION__: JSON.stringify(ort.version) },
   build: { target: 'es2022', sourcemap: false },
   worker: { format: 'es' },
