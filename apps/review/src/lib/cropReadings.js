@@ -69,12 +69,39 @@ export function rubyLine(crop) {
  * characters: `{ from, to, side, run, ruby }`. One whose base the line parts is left out.
  */
 export function transcribedRubies(crop) {
-  const parts = textParts(crop?.text), places = parts.flatMap((part, i) => /^[\p{L}\p{N}]/u.test(part) ? [i] : [])
+  const placed = onLine(crop)
   return (crop?.transcribed_ruby ?? []).flatMap(([start, length, side, reading]) => {
-    const from = places[start], to = places[start + length - 1]
-    if (from === undefined || to === undefined || to - from !== length - 1) return []
-    return [{ from, to, side: side ? 'left' : 'right', run: parts.slice(from, to + 1), ruby: [reading].flat() }]
+    const span = placed(start, length)
+    return span ? [{ ...span, side: side ? 'left' : 'right', ruby: [reading].flat() }] : []
   })
+}
+// A span over the line's letters and numbers, as the places of the line's characters; null where the line parts it.
+function onLine(crop) {
+  const parts = textParts(crop?.text), places = parts.flatMap((part, i) => /^[\p{L}\p{N}]/u.test(part) ? [i] : [])
+  return (start, length) => {
+    const from = places[start], to = places[start + length - 1]
+    return from === undefined || to === undefined || to - from !== length - 1 ? null : { from, to, run: parts.slice(from, to + 1) }
+  }
+}
+
+/**
+ * The readings the pages around a crop's give a word of its line that stands here under no ruby
+ * (`ruby_elsewhere`: start and length over the line's letters and numbers, the reading as the ruby there
+ * gives it, the lines that give it and a page of one): `{ from, to, run, reading, lines, page }`.
+ */
+export function rubiesElsewhere(crop) {
+  const placed = onLine(crop)
+  return (crop?.ruby_elsewhere ?? []).flatMap(([start, length, reading, lines, page]) => {
+    const span = placed(start, length)
+    return span ? [{ ...span, reading: [reading].flat(), lines, page }] : []
+  })
+}
+/** The readings given elsewhere to the run from `from` to `to` of the crop's line. */
+export const readingsElsewhere = (crop, from, to) => rubiesElsewhere(crop).filter(one => one.from === from && one.to === to)
+/** The longest word around the place `at` that is read elsewhere, of more than one character, or null. */
+export function wordElsewhere(crop, at) {
+  const [longest] = rubiesElsewhere(crop).filter(one => one.from <= at && at <= one.to && one.to > one.from).sort((a, b) => (b.to - b.from) - (a.to - a.from) || b.lines - a.lines)
+  return longest ? { from: longest.from, to: longest.to } : null
 }
 
 /**

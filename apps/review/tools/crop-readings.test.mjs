@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const request = mock()
 mock.module('../src/lib/client.js', () => ({ request }))
-const { beside, clearReading, cropLine, opening, pressed, readingEntries, rubyLine, setReading, stretch, textParts, lineRubies, openingTranscribed, transcribedEntries, transcribedRubies } = await import('../src/lib/cropReadings.js')
+const { beside, clearReading, cropLine, opening, pressed, readingEntries, rubyLine, setReading, stretch, textParts, lineRubies, openingTranscribed, transcribedEntries, transcribedRubies, readingsElsewhere, rubiesElsewhere, wordElsewhere } = await import('../src/lib/cropReadings.js')
 const { HENTAIGANA, lettersAt, plainKana } = await import('../src/lib/hentaigana.js')
 afterAll(() => mock.restore())
 beforeEach(() => request.mockReset())
@@ -235,5 +235,25 @@ describe('the reading client', () => {
     request.mockResolvedValue({ reading: null, word: null })
     for (const word of [undefined, null, { id: 'ja/のみ/副助詞', form: 'certain', method: 'ruby' }]) await setReading(crop(), { ...value, word })
     expect(request.mock.calls.map(([, body]) => 'word' in body ? body.word : 'none')).toEqual(['none', null, { id: 'ja/のみ/副助詞', form: 'certain', method: 'ruby' }])
+  })
+})
+
+describe('readings the book gives a word elsewhere', () => {
+  // 「この諸器、また器」: 諸器 is read on three other lines, 器 alone two ways.
+  const given = crop({ text: 'この諸器、また器', ruby_elsewhere: [[2, 2, ['しよ', 'き'], 3, 28], [3, 1, 'うつは', 1, 29], [3, 1, 'き', 1, 29], [3, 3, 'きまた', 1, 30]] })
+  it('places each on the line, and leaves out one the punctuation parts', () => {
+    expect(rubiesElsewhere(given)).toEqual([{ from: 2, to: 3, run: ['諸', '器'], reading: ['しよ', 'き'], lines: 3, page: 28 },
+      { from: 3, to: 3, run: ['器'], reading: ['うつは'], lines: 1, page: 29 }, { from: 3, to: 3, run: ['器'], reading: ['き'], lines: 1, page: 29 }])
+    expect(rubiesElsewhere(crop())).toEqual([])
+  })
+  it('gives a run its readings, and a place the longest word around it', () => {
+    expect(readingsElsewhere(given, 2, 3).map(one => one.reading)).toEqual([['しよ', 'き']])
+    expect(readingsElsewhere(given, 3, 3).map(one => one.reading)).toEqual([['うつは'], ['き']])
+    expect(readingsElsewhere(given, 2, 2)).toEqual([])
+    expect(wordElsewhere(given, 3)).toEqual({ from: 2, to: 3 })
+    expect(wordElsewhere(given, 2)).toEqual({ from: 2, to: 3 })
+    // A character read alone elsewhere is no word to open on.
+    expect(wordElsewhere({ ...given, ruby_elsewhere: [[3, 1, 'き', 1, 29]] }, 3)).toBeNull()
+    expect(wordElsewhere(given, 0)).toBeNull()
   })
 })

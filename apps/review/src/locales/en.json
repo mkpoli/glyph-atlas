@@ -798,6 +798,7 @@
   "reading.places.confirm": "Read {reading}",
   "reading.places.none": "No other places",
   "reading.transcribed": "transcription",
+  "reading.elsewhere": "Elsewhere in the book",
   "reading.confirm": "Check",
   "reading.letters": "Letters of this kana",
   "reading.jibo": "Derived from {char}",

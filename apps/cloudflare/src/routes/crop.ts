@@ -70,7 +70,7 @@ export async function inspected(env: Env, found: FoundCrop, ctx?: ExecutionConte
   const [graphemes, forms, structures, readings, words, transcribed, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropStructures(env, [id]),
     cropReadings(env, [id]), cropWords(env, [id]),
     // A pack that cannot be read leaves the crop without its transcription's rubies, and it still opens.
-    lineRubies(env, found.record, ctx).catch(() => null), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
+    lineRubies(env, found.record, ctx).catch(() => ({ here: null, elsewhere: [] })), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
   const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
   // A claim of a key of its character's own grapheme, made before the two joined, reads it as no other. A record that
   // names no grapheme is of its character's.
@@ -80,7 +80,7 @@ export async function inspected(env: Env, found: FoundCrop, ctx?: ExecutionConte
   const styles = numbered.results.map(row => row.key);
   const record = { ...found.record, ...(filed ? { grapheme: filed, own_grapheme: own } : {}), grapheme_claim: claim, form: forms.get(id) ?? null,
     structure: structures.get(id) ?? null, reading: readings.get(id) ?? null, word: words.get(id) ?? null,
-    ...(transcribed ? { transcribed_ruby: transcribed } : {}), style_choices: styles };
+    ...(transcribed.here ? { transcribed_ruby: transcribed.here } : {}), ...(transcribed.elsewhere.length ? { ruby_elsewhere: transcribed.elsewhere } : {}), style_choices: styles };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };
 }

@@ -17,12 +17,51 @@ export function rubyPack(page: unknown, number: unknown): string | null {
   const entry = typeof page === 'string' ? /^[a-z]+:([0-9a-f]{32}):\d+$/i.exec(page)?.[1] : null;
   return entry && Number.isSafeInteger(number) && (number as number) > 0 ? `${PREFIX}${entry.toLowerCase()}/${Math.floor(((number as number) - 1) / PACK_PAGES)}.json.gz` : null;
 }
-/** The rubies the transcription gives a crop's line, over the characters of its key; null for none. */
-export async function lineRubies(env: Env, record: { page_id?: unknown; page_number?: unknown; text?: unknown }, ctx?: ExecutionContext): Promise<LineRuby[] | null> {
+// [start, length over the line's key, reading as a ruby gives it, the lines that give it, a page of one]
+export type RubyElsewhere = [number, number, string | string[], number, number];
+type Given = { reading: string | string[]; lines: number; page: number };
+const BASE_MAX = 12, ELSEWHERE_MAX = 24, READINGS_EACH = 2;
+const packWords = new WeakMap<Pack, Map<string, Map<string, Given>>>();
+/** The words of a pack: each base a right ruby stands over, with its readings, the lines that give each and a page of one. */
+function wordsOf(pack: Pack): Map<string, Map<string, Given>> {
+  let words = packWords.get(pack);
+  if (words) return words;
+  words = new Map();
+  for (const [page, lines] of Object.entries(pack)) for (const [key, rubies] of Object.entries(lines)) {
+    const chars = [...key], seen = new Set<string>();
+    for (const [start, length, side, reading] of rubies) {
+      if (side !== 0 || length > BASE_MAX) continue;
+      const base = chars.slice(start, start + length).join(''), text = [reading].flat().join('');
+      if (!base || !text || seen.has(`${base}\n${text}`)) continue;
+      seen.add(`${base}\n${text}`);
+      let readings = words.get(base);
+      if (!readings) words.set(base, readings = new Map());
+      const given = readings.get(text);
+      // A reading cut over its characters says more than the same one over the whole base.
+      if (given) { given.lines++; if (Array.isArray(reading) && !Array.isArray(given.reading)) given.reading = reading; }
+      else readings.set(text, { reading, lines: 1, page: Number(page) });
+    }
+  }
+  packWords.set(pack, words);
+  return words;
+}
+/**
+ * What the transcription gives a crop's line: `here`, the rubies over the characters of its key, and `elsewhere`,
+ * the readings the same 32 pages give a word of the line that stands here under no ruby, longest word first.
+ */
+export async function lineRubies(env: Env, record: { page_id?: unknown; page_number?: unknown; text?: unknown }, ctx?: ExecutionContext): Promise<{ here: LineRuby[] | null; elsewhere: RubyElsewhere[] }> {
   const name = rubyPack(record.page_id, record.page_number);
-  if (!name || typeof record.text !== 'string' || !record.text) return null;
+  if (!name || typeof record.text !== 'string' || !record.text) return { here: null, elsewhere: [] };
   const pack = await readPack(env, name, ctx);
-  const lines = pack?.[String(record.page_number)];
-  const key = lineKey(record.text);
-  return lines && Object.hasOwn(lines, key) ? lines[key] : null;
+  if (!pack) return { here: null, elsewhere: [] };
+  const lines = pack[String(record.page_number)];
+  const key = lineKey(record.text), here = lines && Object.hasOwn(lines, key) ? lines[key] : null;
+  const words = wordsOf(pack), chars = [...key], elsewhere: RubyElsewhere[] = [];
+  const under = (start: number, length: number) => (here ?? []).some(([from, size, side]) => side === 0 && start < from + size && from < start + length);
+  for (let length = Math.min(BASE_MAX, chars.length); length > 0 && elsewhere.length < ELSEWHERE_MAX; length--) for (let start = 0; start + length <= chars.length; start++) {
+    const readings = words.get(chars.slice(start, start + length).join(''));
+    if (!readings || under(start, length)) continue;
+    for (const given of [...readings.values()].sort((a, b) => b.lines - a.lines).slice(0, READINGS_EACH)) elsewhere.push([start, length, given.reading, given.lines, given.page]);
+  }
+  return { here, elsewhere: elsewhere.slice(0, ELSEWHERE_MAX) };
 }

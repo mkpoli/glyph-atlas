@@ -754,6 +754,7 @@
   "reading.places.confirm": "讀「{reading}」",
   "reading.places.none": "無他處",
   "reading.transcribed": "釋文",
+  "reading.elsewhere": "別見",
   "reading.confirm": "覈",
   "reading.letters": "假名字體",
   "reading.jibo": "字母{char}",
