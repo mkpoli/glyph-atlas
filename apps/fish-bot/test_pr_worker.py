@@ -412,3 +412,18 @@ def test_the_configuration_names_checkouts_and_a_plain_label(tmp_path):
     file.write_text('worktrees = "~/w"\nlabel = "bug; rm"\n[[repos]]\nname = "owner/repo"\npath = "~/r"\n', encoding="utf-8")
     with pytest.raises(ValueError):
         w.Config.load(file)
+
+
+def test_a_description_that_closes_the_issue_is_not_told_to_again(site):
+    config, _, _ = site
+    hub = FakeHub([issue()])
+    body = "**TL;DR** **Paging.** Fixed.\n\nCloses #7. Reported in chat."
+    w.Worker(config, hub, writes({"a.txt": "two\n"}, body=body)).once()
+    assert hub.drafts[0][2] == body + "\n"
+
+
+def test_closing_another_issue_does_not_count(site):
+    config, _, _ = site
+    hub = FakeHub([issue()])
+    w.Worker(config, hub, writes({"a.txt": "two\n"}, body="Closes #70.")).once()
+    assert hub.drafts[0][2] == "Closes #70.\n\nCloses #7\n"

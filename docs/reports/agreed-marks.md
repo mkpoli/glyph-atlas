@@ -27,6 +27,15 @@ crops.
 
 Only crops still on their first cut are marked: the index holds that image.
 
+## Flagged crops in Quick Review
+
+`scripts/atlas3/quiz_marks.py --forms agreed-marks.json` loads the flagged crops as suspects of basis
+`form` (`migrations-atlas/0023_suspect_basis.sql`): a round deals them among its doubted crops, and the
+tile offers the neighbours' character as the reading. The classifier's mark on a crop stands, so of the
+1,813 flagged crops 1,324 get a mark and 489 keep the classifier's (3 of them with the same reading).
+A mark holds while the crop keeps its label and its first cut: a box a reviewer has redrawn hides it,
+and the table drops it when the crop is cut again.
+
 ## The form bar against the reviews
 
 Collected crops whose last verdict is a confirmation or a wrong-character report naming a character

@@ -15,6 +15,7 @@
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
+  import TileSizeSlider from '../components/TileSizeSlider.svelte'
   import CharacterSearch from '../components/CharacterSearch.svelte'
   import ImageSearch from '../components/ImageSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
@@ -1532,10 +1533,10 @@
 {#snippet sectionHeading(section)}
   {@const head = section.head}{@const tiles = sectionTiles(section)}{@const offered = sectionOffered(tiles)}{@const state = sectionChosen(selected, tiles, offered)}
   <div class="visual-grid-heading section-heading" class:book-heading={head.book}>
-    {#if reviewer && byBook && tiles.length}<button class="section-select" role="checkbox" aria-disabled={!offered.length && state === 'none'} aria-checked={state === 'some' ? 'mixed' : state === 'all'} aria-label={`${t('bulk.selectUnreviewed')} · ${section.heading}`} title={t('bulk.selectUnreviewed')} onclick={() => chooseSection(tiles, offered)}><span aria-hidden="true">{state === 'all' ? '✓' : state === 'some' ? '–' : ''}</span></button>{/if}
+    {#if reviewer && tiles.length}<button class="section-select" role="checkbox" aria-disabled={!offered.length && state === 'none'} aria-checked={state === 'some' ? 'mixed' : state === 'all'} aria-label={`${t('bulk.selectUnreviewed')} · ${section.heading}`} title={t('bulk.selectUnreviewed')} onclick={() => chooseSection(tiles, offered)}><span aria-hidden="true">{state === 'all' ? '✓' : state === 'some' ? '–' : ''}</span></button>{/if}
     {#if head.book?.page}<a class="book-title" href={localize('/books/' + encodeURIComponent(head.book.page))} lang="ja">{head.text}</a>{:else if head.book}<span class="book-title" lang={head.book.document === 'unrecorded' ? undefined : 'ja'}>{head.text}</span>{:else}<span>{section.heading}</span>{/if}
     {#if head.date}<span>{head.date}</span>{/if}{#if head.book}<span>{t('explore.meta.glyphs', { count: head.count })}</span>{/if}
-    {#if byBook && state !== 'none'}<span class="section-count">{formatNumber(tiles.filter(item => selected.has(item.id)).length)} / {formatNumber(tiles.length)}</span>{/if}
+    {#if state !== 'none'}<span class="section-count">{formatNumber(tiles.filter(item => selected.has(item.id)).length)} / {formatNumber(tiles.length)}</span>{/if}
   </div>
 {/snippet}
 {#snippet bookMore(head)}
@@ -1608,7 +1609,7 @@
         <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
           {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
         </div>
-        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+        <TileSizeSlider min={0} max={ZOOMS.length - 1} value={ZOOMS.indexOf(zoom)} label={t('explore.zoom.label')} valuetext={`${zoom}px`} oninput={i => zoomTo(ZOOMS[i])} />
       </div>
       <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
@@ -1677,7 +1678,6 @@
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
-  .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
   .sheet-count{font-variant-numeric:tabular-nums}
   /* While the image is painted the button keeps the focus and takes no second press. */
   .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
@@ -1695,10 +1695,6 @@
   .toolbar-view{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 0}
   .view-settings,.view-actions{display:flex;align-items:center;gap:12px}
   .view-actions{margin-left:auto}
-  /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
-  :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
-  .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
-  .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
   /* A narrower screen stacks each script's count under its name and shows the deal as an icon, so the
      scripts keep the first row. */
   @media(max-width:1240px){
@@ -1724,7 +1720,6 @@
     .toolbar-view :global(.ink-toggle),.toolbar-view .layout-toggle{flex:1 1 calc(50% - 4px)}
     .toolbar-view :global(.ink-toggle button),.toolbar-view .layout-toggle button{flex:1}
     .sheet-save span{margin-left:6px;font-size:11px}
-    .zoom-control input{width:48px}
   }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}
