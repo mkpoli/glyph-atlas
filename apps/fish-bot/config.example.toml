@@ -25,6 +25,9 @@ writes_per_person_per_hour = 4
 # A fine-grained token with Issues read/write on this repository only, and Metadata read-only.
 token_file = "/etc/fish-bot/github-token"
 repo = "mkpoli/glyph-atlas"
+# The label that asks for a draft pull request, which a program on a maintainer's machine writes.
+# Empty turns asking for drafts off.
+draft_label = "fish-pr"
 
 [bot]
 user_id = "@bigfatfish:glyphatlas.org"
@@ -97,6 +100,8 @@ max_issues_per_day = 5
 # Feedback about the community's sites and tools is filed without anyone asking, at most three of
 # the day's issues.
 file_feedback = true
+# Drafts that may be asked for in a day, by everyone together; one person asks for one.
+max_drafts_per_day = 3
 room_cooldown_seconds = 60
 call_window_seconds = 86400
 max_rooms = 200

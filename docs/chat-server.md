@@ -409,6 +409,14 @@ the log names a concrete request. `!fish review` proposes a title and keeps it f
 issue` files that proposal, or reads the room again when none is pending. Filing is capped at five
 issues a day and one every ten minutes; model calls are capped per user and across the bot.
 
+Anyone can also ask her for a pull request ("做個 PR", "open a PR for #123"). The desk finds the open
+issue or files one, and puts the label `fish-pr` (`draft_label`) on it; a program on a maintainer's
+machine takes it from there, and she writes nothing herself. One person may ask once a day and everyone
+together three times (`max_drafts_per_day`); an issue that carries the label or one of its later forms
+is not asked for again. Every ten minutes she looks at the issues she labelled, and tells the room once
+when a draft is up, with its address from the comment on the issue, or that none came of it. After a
+week without either she stops looking.
+
 Feedback is filed without anyone asking (`file_feedback`). In any turn, a visit included, she marks
 lines that report something broken in, or ask for a change to, the community's sites and tools; the
 desk then reads the room, and files when the request is new and it is at least 0.85 sure, posting the
