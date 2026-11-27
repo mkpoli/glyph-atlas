@@ -829,13 +829,13 @@ describe('a crop read in a run', () => {
 });
 
 describe('a batch of form picks', () => {
-  it('claims one value on every crop at once, names its form once, and is undone by sending each replaced value back', async () => {
+  it.each(['⿺辶𦊷', '率󠄁'])('claims %s once across crops and restores each replaced value on undo', async (form) => {
     const { db, env, tools, local, corpus, version, post } = setup();
     await setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: '還' }, publicId(local), 'reader', tools);
-    const batch = { id: crypto.randomUUID(), crops: [{ id: publicId(local), crop_version: version(local), form: '⿺辶𦊷' },
-      { id: publicId(corpus), crop_version: version(corpus, 'rev1'), form: '⿺辶𦊷' }] };
+    const batch = { id: crypto.randomUUID(), crops: [{ id: publicId(local), crop_version: version(local), form },
+      { id: publicId(corpus), crop_version: version(corpus, 'rev1'), form }] };
     const marked = await post('/atlas/forms', batch) as any;
-    expect(marked.crops.map((c: any) => [c.id, c.form.values[0].text, c.replaced])).toEqual([[publicId(local), '⿺辶𦊷', '還'], [publicId(corpus), '⿺辶𦊷', null]]);
+    expect(marked.crops.map((c: any) => [c.id, c.form.values[0].text, c.replaced])).toEqual([[publicId(local), form, '還'], [publicId(corpus), form, null]]);
     expect(db.query('SELECT count(*) AS n FROM forms').get()).toEqual({ n: 2 });
     expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by'").get()).toEqual({ n: 2 });
     // The same batch sent again is the same write.

@@ -13,6 +13,7 @@
   // directly on its box, and a selected grass radical offers its Connected, Split and Inward forms.
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
+  import { isFigure } from '../lib/mjFigures.js'
   import { rateFormsFor } from 'han-compose/rate-forms'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPreview from './IdsPreview.svelte'
@@ -95,7 +96,7 @@
   $effect(() => {
     const of = char
     untrack(() => {
-      const typed = isSequence(start) || rateFormsFor(start).length ? start
+      const typed = isSequence(start) || isFigure(start) || rateFormsFor(start).length ? start
         : !start && rateFormsFor(of).length ? of : ''
       const initial = !typed ? (startCharacter(start) || startCharacter(of)) : ''
       past = []; future = []; note = ''
@@ -153,7 +154,7 @@
   const pending = $derived(gap ? t('form.ids.problem.empty', { n: gap.at(-1) + 1, name: name(partAt(tree, gap.slice(0, -1)).op) })
     : leaves(tree).some(leaf => !isComponent(leaf.char)) ? t('form.ids.problem.component') : '')
   const rootForms = $derived(rateFormsFor(whole))
-  const usable = $derived(!gap && !typed.problem && (isDescription(whole) || rootForms.some(form => form.text === whole)))
+  const usable = $derived(!gap && !typed.problem && (isDescription(whole) || (isFigure(whole) && isComponent(whole))))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
   const grass = $derived(chosen ? grassForm(picked, chosen, tree) : null)
   const text = part => part === null || part === undefined ? '' : write(part)
