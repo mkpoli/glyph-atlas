@@ -10,10 +10,10 @@
   import { fade } from 'svelte/transition'
   import { composerDrawer } from '../lib/composer/config.js'
   import { composerText } from '../lib/composer/parts.js'
-  import { tooLarge } from 'han-compose'
+  import { parseDescription, tooLarge } from 'han-compose'
   import { FACE, STROKE, badge, placeholder } from '../lib/composer/preview.js'
   import { roughLayout } from '../lib/composer/rough.js'
-  import { OP_NAMES, leaves, loadDrawing, parse, samePath, EMPTY } from '../lib/ids.js'
+  import { OP_NAMES, leaves, loadDrawing, samePath, EMPTY } from '../lib/ids.js'
   import { t } from '../lib/i18n.svelte.js'
   let { tree, sequence = '', chosen = null } = $props()
 
@@ -48,7 +48,7 @@
       composerText(text).catch(() => null).then(drawable => {
         if (!live) return null
         if (drawable === null) return { status: 'failed' }
-        const expanded = drawable === text ? null : parse(drawable, { open: true }).tree
+        const expanded = drawable === text ? null : (() => { try { return parseDescription(drawable) } catch { return null } })()
         if (expanded && tooLarge(expanded)) return { status: 'capped' }
         return composerDrawer().draw(drawable, sketch => { if (live) sketched = { text, leaves: sketch } })
       }).then(answer => {

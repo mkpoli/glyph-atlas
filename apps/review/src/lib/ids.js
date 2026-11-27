@@ -1,9 +1,9 @@
 // Ideographic description sequences as the form picker reads and writes them, by the rules of the
 // Worker's `representation.ts` and `glyph_atlas.representation`: each operator takes its own number of
 // descriptions, and a component is an ideograph, a radical, a stroke, a katakana letter standing for a
-// component of that shape (コ, マ), a private-use character, ？ for a part no character names, or a part
-// no code point names written as its identifier (`&X-00087;`, the top of 合), with an optional
-// variation selector.
+// component of that shape (コ, マ), a private-use character or ？ for a part no character names, each
+// with an optional variation selector, or a part no code point names written as its identifier
+// (`&X-00087;`, the top of 合), which takes none.
 
 /** The operators, each with how many descriptions it takes, in the order a keyboard row offers them. */
 export const OPERATORS = [
