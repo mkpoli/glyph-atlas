@@ -7,7 +7,8 @@ composer draws in its place. The file is fetched at a pinned commit and checked 
 
     uv run scripts/build_custom_parts.py
 
-Writes data/vocab/custom-parts.tsv, which `glyph_atlas.custom_parts` reads,
+Reads data/vocab/custom-part-donors.tsv, the drawing chosen for each part. Writes
+data/vocab/custom-parts.tsv, which `glyph_atlas.custom_parts` reads,
 apps/cloudflare/src/customPartsData.ts, which the Worker reads, and
 apps/review/src/lib/customPartDrawings.js, which the site's composer reads.
 """
@@ -30,6 +31,8 @@ CACHE = ROOT / "cache" / "ids-input" / f"custom-components-{COMMIT[:12]}.json.gz
 TABLE = ROOT / "data" / "vocab" / "custom-parts.tsv"
 MODULE = ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts"
 DRAWINGS = ROOT / "apps" / "review" / "src" / "lib" / "customPartDrawings.js"
+#: What the composer draws a part with, where a choice was made (scripts/part_donor_candidates.py).
+DONORS = ROOT / "data" / "vocab" / "custom-part-donors.tsv"
 NUMBERED = re.compile(r"\{[0-9]{1,4}\}")
 #: Numbered parts whose fragment is ids-input's reading, not BabelStone's note 6 (its build_open_ids.mjs).
 EDITORIAL = {"{12}", "{82}"}
@@ -173,7 +176,7 @@ def module(data: dict) -> str:
     for key, names, *_ in rows(data):
         for name in names:
             named.setdefault(name, key)
-    drawn = {key: draws for key, _, draws, *_ in rows(data) if draws}
+    drawn = {key: kept for key, _, draws, approximate, *_ in rows(data) if (kept := [draw for draw in draws if draw not in approximate])}
     spelling, folds = _spellings(data)
     folded = {text: key for key, texts in folds.items() for text in texts}
     return (
@@ -184,8 +187,8 @@ def module(data: dict) -> str:
         f"export const CUSTOM_PART_RETIRED: Record<string, string> = {json.dumps(dict(retired(data)), separators=(',', ':'))};\n"
         "/** Every identifier in use. */\n"
         f"export const CUSTOM_PARTS: readonly string[] = {json.dumps([key for key, *_ in rows(data)], separators=(',', ':'))};\n"
-        "/** What a composer may draw in a part's place, in ids-input's order: descriptions, some with the private-use\n"
-        " *  glyph of BabelStone Han PUA that alone draws 69 numbered parts. */\n"
+        "/** What a composer may draw in a part's place, in ids-input's order, less those that are close only: descriptions,\n"
+        " *  some with the private-use glyph of BabelStone Han PUA that alone draws 69 numbered parts. */\n"
         f"export const CUSTOM_PART_DRAWN: Record<string, string[]> = {json.dumps(drawn, ensure_ascii=False, separators=(',', ':'))};\n"
         "/** The description a part ids-input knows only as one is written as. */\n"
         f"export const CUSTOM_PART_SPELLING: Record<string, string> = {json.dumps(spelling, ensure_ascii=False, separators=(',', ':'))};\n"
@@ -194,32 +197,40 @@ def module(data: dict) -> str:
     )
 
 
+def donors() -> dict[str, str]:
+    """The drawing chosen for each part that has one, empty where every candidate drew badly."""
+    chosen: dict[str, str] = {}
+    for line in DONORS.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            key, drawing, *_ = line.split("\t")
+            chosen[key] = drawing
+    return chosen
+
+
 def composer_names(data: dict) -> dict[str, str]:
-    """What the site's composer (han-compose) is given in place of each part a form may hold: the part in
-    encoded characters; else BabelStone's number or the CHISE entity or zi.tools chain, which a
-    composer holding a cut of it draws."""
+    """What the site's composer (han-compose) is given in place of each part a form may hold: only the
+    drawing chosen for it in `custom-part-donors.tsv`, a description in encoded characters or a cut from a
+    character holding it, which composed well in every character tried. Any other part has none, and a
+    form holding it shows as text."""
     from glyph_atlas import custom_parts
 
-    spelling, folds = _spellings(data)
-    table = custom_parts.Table({key: custom_parts.Part(key, tuple(names), tuple(draws), tuple(approximate), editorial, description,
-                                                       spelling.get(key, ""), tuple(folds.get(key, ())))
-                                for key, names, draws, approximate, editorial, description in rows(data)}, dict(retired(data)))
+    spelling, _ = _spellings(data)
+    live = {key for key, *_ in rows(data)} - set(spelling)
     named: dict[str, str] = {}
-    for key, part in table.parts.items():
-        if part.spelling:
+    for key, drawing in donors().items():
+        if not drawing or key not in live:
             continue
-        name = table.drawn(f"&{key};") or next((name for name in part.names if NUMBERED.fullmatch(name)), None) \
-            or next((name for name in part.names if custom_parts.TOKEN.fullmatch(name)), None)
-        if name:
-            named[key] = name
+        if custom_parts.TOKEN.search(drawing) or custom_parts.PRIVATE.search(drawing) or custom_parts.UNWRITTEN in drawing:
+            raise SystemExit(f"{DONORS}: {key} is drawn with {drawing}, which is not in encoded characters only")
+        named[key] = drawing
     return named
 
 
 def drawings(data: dict) -> str:
     return (
         "// Written by scripts/build_custom_parts.py from ids-input's table of parts no code point names; do not edit.\n"
-        "/** What the composer is given in place of each part a saved form may hold (`&X-00087;`): the part in encoded\n"
-        " *  characters, or BabelStone's number, a CHISE entity or a zi.tools chain. */\n"
+        "/** What the composer is given in place of a part a saved form may hold (`&X-00087;`): the drawing chosen for it\n"
+        " *  (data/vocab/custom-part-donors.tsv). A part not listed has none, and a form holding it shows as text. */\n"
         f"export default {json.dumps(composer_names(data), ensure_ascii=False, separators=(',', ':'))}\n"
     )
 
