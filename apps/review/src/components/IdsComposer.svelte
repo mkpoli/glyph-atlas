@@ -779,15 +779,17 @@
       <legend class="ids-title">{t('chips.forms')} · {rateForms[0].host}</legend>
       <div class="ids-rate-options">
         {#each rateForms as form (form.id)}
+          {@const spelling = form.text.replace(/[\u{E0100}-\u{E01EF}]/gu, selector => " " + point(selector) + " ").trim()}
           <button type="button" class="ids-rate-option" {disabled} aria-pressed={rateToken === form.text}
-            title={form.text} onclick={() => selectRateForm(form)}>
+            title={spelling} aria-label={spelling} onclick={() => selectRateForm(form)}>
             {#if rateDrawing}
               <svg viewBox="0 0 1000 1000" aria-hidden="true">
                 <path class="rate-sans" d={rateDrawing(form.text, 'sans')} />
                 <path class="rate-serif" d={rateDrawing(form.text, 'serif')} />
               </svg>
+            {:else}
+              <span>{spelling}</span>
             {/if}
-            <span lang="zh-Hans">{form.label}</span>
           </button>
         {/each}
       </div>
@@ -992,9 +994,9 @@
   .ids-apply{flex:none;min-height:38px;padding:5px 11px;font-size:13px;white-space:nowrap}
   .ids-tools > button{min-height:38px;padding:5px 9px;font-size:13px}
   .ids-rate-forms{border:0;margin:0;padding:0;min-width:0}
-  .ids-rate-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-width:29em;margin-top:4px}
-  .ids-rate-option{display:flex;align-items:center;gap:.6em;padding:5px 8px;font-size:14px}
-  .ids-rate-option svg{width:2.6em;height:2.6em;flex:none;fill:currentColor}
+  .ids-rate-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-width:11em;margin-top:4px}
+  .ids-rate-option{display:grid;place-items:center;min-height:52px;padding:3px;font-size:14px;overflow-wrap:anywhere}
+  .ids-rate-option svg{width:44px;height:44px;fill:currentColor}
   .rate-serif,:global(:root[data-typeface=serif]) .rate-sans{display:none}
   :global(:root[data-typeface=serif]) .rate-serif{display:inline}
   .ids-rate-option[aria-pressed=true]{border-color:var(--accent);background:var(--surface-selected)}

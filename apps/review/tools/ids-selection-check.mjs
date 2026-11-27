@@ -59,6 +59,8 @@ try {
     await type('⿰率率')
     await click('.ids-tree [data-path="1"]')
     await browser.waitFor('document.querySelectorAll(".ids-rate-option svg").length === 4')
+    const labels = await browser.evaluate('[...document.querySelectorAll(".ids-rate-option")].map(button => [button.innerText.trim(), button.getAttribute("aria-label")])')
+    assert.deepEqual(labels, [['', variants[0]], ['', variants[1]], ['', '率 U+E0100'], ['', '率 U+E0101']])
     for (const [index, spelling] of variants.entries()) {
       await browser.evaluate(`document.querySelectorAll(".ids-rate-option")[${index}].click()`)
       await browser.waitFor(`${field}?.value === ${JSON.stringify('⿰率' + spelling)}`)
