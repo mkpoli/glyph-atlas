@@ -671,8 +671,9 @@ def test_config_without_a_bot_table_uses_the_defaults(tmp_path):
     assert fish_bot.Config.load(path).room_ids == ()
 
 
-def act(*lines, react_to=None, react="", issue=False, sticker="", interest=0):
-    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker, interest=interest)
+def act(*lines, react_to=None, react="", issue=False, sticker="", interest=0, feedback=False):
+    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker, interest=interest,
+                        feedback=feedback)
 
 
 def test_reads_a_call_by_a_han_alias_inside_a_sentence():
@@ -758,6 +759,108 @@ def test_a_chat_that_asks_for_an_issue_reaches_the_issue_desk(tmp_path):
     bot.answer(ROOM, trigger)
     assert len(github.created) == 1
     assert store.outcome("$call")[0] == "opened"
+
+
+def sent_texts(matrix):
+    return [sent[1]["body"] for sent in matrix.sent]
+
+
+def noticing_bot(tmp_path, decision_value, *, issues=None, config=None):
+    github = FakeGitHub(issues=issues)
+    bot, matrix, store = make_bot(tmp_path, decision_value=decision_value, github=github, config=config,
+                                  act=act("欸真的耶", feedback=True))
+    return bot, matrix, store, github
+
+
+def forget_rooms_read(bot):
+    read = bot._feedback_read()
+    bot.store.set_setting("feedback-read", json.dumps({**read, "rooms": {}}))
+
+
+def report(bot, event_id="$bug", text="大肥魚 搜尋頁按下一頁會跳回第一頁"):
+    trigger = event(text, event_id=event_id)
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+
+
+def test_feedback_nobody_asked_to_file_is_filed_and_linked(tmp_path):
+    bot, matrix, store, github = noticing_bot(tmp_path, decision(confidence=0.9, reply="記下來了～"))
+    report(bot)
+    assert len(github.created) == 1 and bot.gemini.calls[0][4].mode == "noticed"
+    assert [text for text in sent_texts(matrix) if "記下來了～" in text and "/issues/" in text]
+    assert store.outcome("$bug")[0] == "chatted"
+
+
+@pytest.mark.parametrize("value", [decision(open=False), decision(confidence=0.8)])
+def test_feedback_that_is_unclear_is_dropped_without_a_word(tmp_path, value):
+    bot, matrix, store, github = noticing_bot(tmp_path, value)
+    report(bot)
+    assert not github.created and sent_texts(matrix) == ["欸真的耶"]
+    assert store.pending(ROOM) is None
+
+
+def test_feedback_already_open_is_pointed_to_once(tmp_path):
+    known = fish_bot.IssueRef(number=12, title="Search pagination resets", labels=(), url="https://github.com/mkpoli/glyph-atlas/issues/12")
+    bot, matrix, _, github = noticing_bot(tmp_path, decision(duplicate_of=12, reply="這個有人記過了"), issues=[known])
+    report(bot)
+    forget_rooms_read(bot)
+    report(bot, "$again")
+    assert not github.created
+    assert len([text for text in sent_texts(matrix) if "/issues/12" in text]) == 1
+
+
+def test_feedback_is_read_seldom_and_leaves_issues_for_those_who_ask(tmp_path):
+    bot, _, store, github = noticing_bot(tmp_path, decision(open=False))
+    report(bot)
+    report(bot, "$second")
+    assert len(bot.gemini.calls) == 1
+    forget_rooms_read(bot)
+    for number in range(3):
+        store.add_issue("mkpoli/glyph-atlas", 100 + number, "t", "https://example/1", ROOM, f"$old{number}")
+    store.db.execute("UPDATE issues SET created_at=?", (fish_bot.now_ms() - 3_600_000,))
+    store.db.commit()
+    report(bot, "$third")
+    assert len(bot.gemini.calls) == 1 and not github.created
+
+
+def test_the_limits_on_reading_feedback_outlive_a_restart(tmp_path):
+    bot, _, store, github = noticing_bot(tmp_path, decision(open=False))
+    report(bot)
+    again = fish_bot.Bot(bot.config, store, FakeMatrix(), FakeGemini(decision(), act=act("嗯", feedback=True)), github)
+    report(again, "$second")
+    assert not again.gemini.calls and not github.created
+
+
+def test_an_issue_whose_answer_was_lost_is_looked_up_before_the_next(tmp_path):
+    bot, _, _, github = noticing_bot(tmp_path, decision(confidence=0.95))
+    github.issues = [fish_bot.IssueRef(number=1, title="Other", labels=(), url="https://example/1")]
+    github.error = fish_bot.GitHubError("timed out")
+    bot.github._issues = list(github.issues)
+    report(bot)
+    assert bot.github._issues == []
+
+
+def test_a_failing_look_at_the_limits_leaves_the_chat_answered(tmp_path, monkeypatch):
+    bot, _, store, _ = noticing_bot(tmp_path, decision())
+    monkeypatch.setattr(store, "last_issue_at", lambda: (_ for _ in ()).throw(sqlite3.DatabaseError("broken")))
+    report(bot)
+    assert store.outcome("$bug")[0] == "chatted"
+
+
+def test_feedback_is_not_filed_when_switched_off(tmp_path):
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, file_feedback=False)
+    bot, _, _, github = noticing_bot(tmp_path, decision(), config=config)
+    report(bot)
+    assert not bot.gemini.calls and not github.created
+
+
+def test_a_visit_that_finds_feedback_reads_the_lines_after_the_first_unread(tmp_path, monkeypatch):
+    bot, _, store, github = noticing_bot(tmp_path, decision(confidence=0.95, reply="記下來了～"))
+    store.add_event("$first", ROOM, "@a:example", fish_bot.now_ms() - 5000, "早", "m.text", backfilled=False)
+    store.add_event("$bug", ROOM, "@a:example", fish_bot.now_ms() - 1000, "搜尋頁按下一頁會跳回第一頁", "m.text", backfilled=False)
+    bot._notice(ROOM, "$first", "")
+    assert len(github.created) == 1
+    assert "搜尋頁按下一頁會跳回第一頁" in [str(row["body"]) for row in bot.gemini.calls[0][2]]
 
 
 def test_reacts_to_the_message_the_model_picks(tmp_path):

@@ -409,6 +409,13 @@ the log names a concrete request. `!fish review` proposes a title and keeps it f
 issue` files that proposal, or reads the room again when none is pending. Filing is capped at five
 issues a day and one every ten minutes; model calls are capped per user and across the bot.
 
+Feedback is filed without anyone asking (`file_feedback`). In any turn, a visit included, she marks
+lines that report something broken in, or ask for a change to, the community's sites and tools; the
+desk then reads the room, and files when the request is new and it is at least 0.85 sure, posting the
+link. For one already open it posts that issue's link, once a day per room. Otherwise it says nothing.
+Such readings are paid from the money for unasked work, come at most six a day and one per room every
+half hour, and leave two of the day's issues for people who ask.
+
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
 and directories:
 
