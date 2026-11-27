@@ -47,7 +47,7 @@ X-00039		𠂎𡊂	checked again: unremoved donor strokes
 X-00040		𣇅𣒘	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00041	𠕋	狦𠜂𠱡	drew well with each character's own glyph excluded: all three hosts match
 X-00042		丑夛录	no candidate drew well with each character's own glyph excluded: 丑 wrong for every candidate
-X-00043	⺕	争亊事	drew well with each character's own glyph excluded: 争 right; other rows cannot draw; cand 2 wrong
+X-00043		争亊事	drew wrongly in a character holding it, its own glyph excluded, on a second check
 X-00044	⿱十冖	孛疐索	drew well with each character's own glyph excluded: 孛 疐 索 match
 X-00045	㇯北匕	𩍫北	Clean lower host without stray strokes
 X-00046	⿻日乚	蝇龟竜	Both hosts closely match
@@ -73,7 +73,7 @@ X-00067	㇯黑灬	黙㸃	Closest match with complete strokes
 X-00068	㇯戠日	𢧂𢨀	Cleanest non-donor composition
 X-00069	业	掽湴潽	drew well with each character's own glyph excluded: all three hosts match
 X-00070		印裦	All drawable candidates have fragments
-X-00071	𠀉	印裦褎	drew well with each character's own glyph excluded: 印 裦 褎 match
+X-00071		印裦褎	drew wrongly in a character holding it, its own glyph excluded, on a second check
 X-00072		俱具惧	no candidate drew well with each character's own glyph excluded: inner bars float off the frame
 X-00073	皀	卿厩喞	drew well with each character's own glyph excluded: 卿 厩 喞 match
 X-00074		嚼欝	All have missing strokes or fragments
@@ -512,7 +512,7 @@ X-00804	⿲丿二丨	斉𠂁𠫼	Matches both hosts cleanly
 X-00805	乀	𡆡𢎡𣐧	Closest stroke shape across both hosts
 X-00806		巪𦭍𧰳	no candidate drew well with each character's own glyph excluded: third row broken
 X-00807		𣶒	drew well only in the character it was cut from
-X-00808	⿻尸一	𢀞	drew well with each character's own glyph excluded: matches
+X-00808		𢀞	drew wrongly in a character holding it, its own glyph excluded, on a second check
 X-00810		匆卥㢴	checked again: inner strokes misplaced or missing
 X-00811		𠙭𢧯	checked again: detached fragments and overlapping strokes
 X-00813		𢀖𭖀𮌇	checked again: inner strokes misplaced in third row
@@ -750,7 +750,7 @@ X-01132		曓㬥㬧	no candidate drew well in every character
 X-01133	㇯𢶦扌	𩑅	drew well with each character's own glyph excluded: matches
 X-01134		䢉𢍱𢍹	no candidate drew well in every character
 X-01141	舟	𦩚𦩛𦩳	Correct width and complete strokes
-X-01143	⿳十罒心	徳聴	drew well with each character's own glyph excluded: both hosts match
+X-01143		徳聴	drew wrongly in a character holding it, its own glyph excluded, on a second check
 X-01145	仌	𭰐𮎯	drew well with each character's own glyph excluded: both hosts match
 X-01149	𦕒	𣩚	drew well with each character's own glyph excluded: matches
 X-01151	歰	譅𧴙	Complete strokes, matching proportions
