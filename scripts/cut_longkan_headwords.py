@@ -198,7 +198,7 @@ def main() -> int:
         raise SystemExit("the classifier export has no features")
     anchors = tape.Anchors(args.fonts.split(","), classifier.features)
     slots_of = {page: longkan.slots(rows) for page, rows in entries.items()}
-    unsettled, settled_but_kin = longkan.unsettled(entries), longkan.unsettled(entries, neighbours=False)
+    unsettled, held = longkan.unsettled(entries), longkan.unsettled(entries, neighbours=False)
     kin = longkan.kin(entries)
 
     found, last = [], None  # `last`: the half-leaf last borne out, as its index in the book (two to a scan page), and its table page
@@ -287,43 +287,43 @@ def main() -> int:
                                 "page_cost": round(float(f["cost"]), 3), "label": "table headword"}))
         return True
 
-    # A headword held only for a neighbour of its character waits until every crop of its run is placed.
+    # The headwords are kept in a second pass, in reading order: one held only for a neighbour of its character is
+    # set against every crop of its run, wherever on the book's pages that was placed.
     placed: dict[tuple[int, int], float] = {}
-    waiting: list[tuple[dict, dict, tape.Slot, int, float, float]] = []
+    chosen: list[tuple[dict, dict, tape.Slot, int, float, float, bool]] = []
     for k, f in enumerate(found):
         row = {key: f[key] for key in ("leaf", "side", "skipped", "table_page", "cost", "margin") if key in f}
         if k in in_order:
             slots = slots_of[f["table_page"]]
             chance = tape.posterior(slots, f["page"], f["alike"], f["head"] * f["page"].pitch, f["row"] * f["page"].pitch)
             best = tape.solve(slots, f["page"], f["alike"], f["head"] * f["page"].pitch, f["row"] * f["page"].pitch)[0]
-            kept = doubtful = 0
+            row["kept"] = row["unsettled"] = 0
             for n, slot in enumerate(slots):
                 j = best.get(n)
-                char = slot.char
-                if j is None or slot.entry < 0 or char is None or np.isnan(f["alike"][n, j]):
+                if j is None or slot.entry < 0 or slot.char is None or np.isnan(f["alike"][n, j]):
                     continue
                 if chance[n, j] < POSTERIOR:
                     continue
-                placed[(slot.entry, slot.sub)] = float(f["alike"][n, j])
+                spot = (slot.entry, slot.sub)
+                placed[spot] = float(f["alike"][n, j])
                 if f["alike"][n, j] < FLOOR:
                     continue
                 if f["alike"][n, j] < ALIKE and not tape.unrivalled(slots, f["alike"], n, j, LEAD, NEAR):
                     continue
-                if (slot.entry, slot.sub) in unsettled:
-                    doubtful += 1
-                    if (slot.entry, slot.sub) not in settled_but_kin:
-                        waiting.append((f, row, slot, j, float(chance[n, j]), float(f["alike"][n, j])))
+                if spot in held:
+                    row["unsettled"] += 1
                     continue
-                kept += keep(f, slot, j, float(chance[n, j]), float(f["alike"][n, j]))
-            row["kept"], row["unsettled"] = kept, doubtful
+                chosen.append((f, row, slot, j, float(chance[n, j]), float(f["alike"][n, j]), spot in unsettled))
         else:
             row.setdefault("skipped", "page not borne out" if not f.get("good") else "out of order")
         report.append(row)
-    for f, row, slot, j, chance, alike in waiting:
-        if longkan.leads((slot.entry, slot.sub), kin, placed, KIN_ALIKE, KIN_LEAD) and keep(f, slot, j, chance, alike):
+    for f, row, slot, j, chance, alike, by_kin in chosen:
+        if by_kin and not longkan.leads((slot.entry, slot.sub), kin, placed, KIN_ALIKE, KIN_LEAD):
+            row["unsettled"] += 1
+        elif keep(f, slot, j, chance, alike):
             row["kept"] += 1
-            row["unsettled"] -= 1
-            row["kin"] = row.get("kin", 0) + 1
+            if by_kin:
+                row["kin"] = row.get("kin", 0) + 1
 
     args.output.mkdir(parents=True, exist_ok=True)
     command = " ".join(["scripts/cut_longkan_headwords.py", *sys.argv[1:]])
