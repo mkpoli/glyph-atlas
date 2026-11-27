@@ -55,8 +55,15 @@ def test_a_position_without_one_unit_breaks_the_run():
 
 def test_marks_gaps_runs_and_retired_units_are_never_part_of_one():
     units = [unit(0), unit(1, kind=UnitKind.GAP), unit(2), unit(3, granularity="sequence"),
-             unit(4), unit(5, active=False), unit(6), unit(7).model_copy(update={"box": None})]
+             unit(4), unit(5, active=False), unit(6), unit(7).model_copy(update={"box": None}),
+             unit(8), unit(9, kind=UnitKind.PUNCTUATION), unit(10), unit(11, kind=UnitKind.VOICING_MARK)]
     assert adjacent_ngrams(units) == []
+
+
+def test_iteration_marks_join_adjacent_runs():
+    units = [unit(0), unit(1, kind=UnitKind.ITERATION_MARK), unit(2)]
+    assert ids(adjacent_ngrams(units)) == [
+        ("L1:0", "L1:1"), ("L1:0", "L1:1", "L1:2"), ("L1:1", "L1:2")]
 
 
 def test_a_trigram_needs_both_neighbours_near():

@@ -79,6 +79,8 @@
   "reading.places.all": "모든 책",
   "reading.places.confirm": "{reading}(으)로 읽기",
   "reading.places.none": "다른 곳 없음",
+  "reading.transcribed": "번각",
+  "reading.confirm": "확인",
   "reading.letters": "이 가나의 자체",
   "reading.jibo": "유래 한자 {char}",
   "reading.needed": "후리가나나 읽기를 입력하세요.",
@@ -515,6 +517,7 @@
   "run.order.hand": "필사 우선",
   "run.order.source": "자료순",
   "run.near.label": "관련 글자열",
+  "run.near.iteration": "반복 부호 표기",
   "run.near.inside": "안에 든 글자열",
   "run.near.longer": "더 긴 글자열",
   "run.near.siblings": "첫머리가 {lead}인 다른 글자열",
@@ -1354,5 +1357,10 @@
   "form.ids.menu.split": "나누기",
   "form.ids.menu.swap": "바꾸기",
   "form.ids.menu.copy": "복사",
-  "form.ids.problem.draft": "입력란의 글자가 아직 기술열이 아닙니다. 먼저 마무리하거나 지우세요."
+  "form.ids.problem.draft": "입력란의 글자가 아직 기술열이 아닙니다. 먼저 마무리하거나 지우세요.",
+  "form.ids.variants.label": "{part}의 자형",
+  "form.ids.grass.head": "초두머리",
+  "form.ids.grass.connected": "붙임",
+  "form.ids.grass.split": "분리",
+  "form.ids.grass.inward": "세로획이 안쪽"
 }

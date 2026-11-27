@@ -20,7 +20,7 @@ class Decision(BaseModel):
     cluster: str | None = Field(default=None, max_length=200)
     units: list[str] | None = Field(default=None, max_length=5000)
     # A family's character, or a description of a shape Unicode lacks.
-    form: str | None = Field(default=None, max_length=256)
+    form: str | None = Field(default=None, max_length=representation.TEXT_LONGEST)
     note: str = Field(default="", max_length=2000)
     issue: Literal["mixed", "character", "crop"] | None = None
     character: str | None = Field(default=None, max_length=8)

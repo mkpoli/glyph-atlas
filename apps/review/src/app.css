@@ -7,12 +7,13 @@
    the reader's own fonts and ends in the face, which draws what they lack. Under Atlas Serif the
    whole interface is set in it, behind a serif for the Latin it leaves out. Sealie draws the small
    seal block alone and stands first, since a font installed on the reader's machine can answer for
-   a seal character with an empty box. */
+   a seal character with an empty box. The drawn forms' faces (drawn-forms.css) follow it: they draw only
+   the site's own private-use code points, so a drawn form shows in plain text too, a search box or a title. */
 :root {
   --char-face: "Atlas Sans";
   --char-generic: sans-serif;
-  --char-font: "Sealie", var(--char-face), "GenZui Sans", "Noto Serif Tangut", var(--char-generic);
-  --ga-font-ui: "Sealie", Inter, "Helvetica Neue", Arial, "Noto Sans", "GenZui Sans", "Noto Serif Tangut", sans-serif, var(--char-face);
+  --char-font: "Sealie", "Glyph Atlas Drawn Forms", var(--char-face), "GenZui Sans", "Noto Serif Tangut", var(--char-generic);
+  --ga-font-ui: "Sealie", "Glyph Atlas Drawn Forms", Inter, "Helvetica Neue", Arial, "Noto Sans", "GenZui Sans", "Noto Serif Tangut", sans-serif, var(--char-face);
   font-family: var(--ga-font-ui);
   color: var(--ink);
   background: var(--paper);
@@ -23,7 +24,8 @@
 /* A scheme the reader chose in the menu overrides the system's. The tokens themselves live in
    packages/design-system and are imported above. */
 :root[data-typeface=serif]{--char-face:"Atlas Serif";--char-generic:serif;
-  --ga-font-ui:"Sealie","Source Serif 4","Source Serif Pro","Noto Serif",Georgia,"Times New Roman","Atlas Serif","GenZui Sans","Noto Serif Tangut",serif}
+  --char-font:"Sealie","Glyph Atlas Drawn Forms Serif",var(--char-face),"GenZui Sans","Noto Serif Tangut",var(--char-generic);
+  --ga-font-ui:"Sealie","Glyph Atlas Drawn Forms Serif","Source Serif 4","Source Serif Pro","Noto Serif",Georgia,"Times New Roman","Atlas Serif","GenZui Sans","Noto Serif Tangut",serif}
 /* Each option of the menu's face choice is set in its own face. */
 .typeface-option[data-face=sans]{font-family:"Atlas Sans",sans-serif}.typeface-option[data-face=serif]{font-family:"Atlas Serif",serif}
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
@@ -204,7 +206,7 @@ html[data-ink="bw"] .context-region img{filter:grayscale(1) contrast(1.05)}
    the Nôm characters it holds; every other character falls through to the fonts after it. Its range
    takes in the small seal block, so Sealie stands before it and a seal character does not fetch it. */
 @font-face{font-family:"Plangothic vi-Hani";src:url("/fonts/Plangothic-vi-Hani.woff2") format("woff2");font-display:swap;unicode-range:U+20000-3FFFF;ascent-override:88%;descent-override:12%;line-gap-override:0%}
-:root:lang(vi-Hani),.language-options [lang=vi-Hani]{font-family:"Sealie",Inter,"Helvetica Neue",Arial,"Noto Sans","Plangothic vi-Hani","GenZui Sans","Noto Serif Tangut",sans-serif}
+:root:lang(vi-Hani),.language-options [lang=vi-Hani]{font-family:"Sealie","Glyph Atlas Drawn Forms",Inter,"Helvetica Neue",Arial,"Noto Sans","Plangothic vi-Hani","GenZui Sans","Noto Serif Tangut",sans-serif}
 :root[data-typeface=serif]:lang(vi-Hani),:root[data-typeface=serif] .language-options [lang=vi-Hani]{font-family:var(--ga-font-ui)}
 :root:lang(vi-Hani) :is(.overline,.tile-footer,.collection-bottom,.tile-id,.quiz-tile-tools kbd,.review-actions kbd,.review-form kbd,.form-choice small,.form-choice kbd,.chip-identity,.layer-code,.candidate-code,.candidate-name,.glyph-codepoint){font-family:ui-monospace,SFMono-Regular,Consolas,monospace,"Plangothic vi-Hani"}
 /* The wide tracking suits a wordmark of three to five Han characters; a Latin-script name keeps its own. */

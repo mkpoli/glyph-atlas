@@ -8,7 +8,9 @@
   // parts, where an empty slot shows (and is written) as ⬚. Selecting text in the sequence field
   // selects that part in the tree so clicking an operator or component acts on it. Parts can be
   // reordered within a node or swapped across branches by dragging (mouse or touch), lifting with
-  // Space, or pressing Alt+Arrow; right-click, Menu or Shift+F10 opens a part's context menu.
+  // Space, or pressing Alt+Arrow; right-click, Menu or Shift+F10 opens a part's context menu. A
+  // component with drawn variation sequences shows a corner toggle button opening a variant menu
+  // directly on its box, and a selected grass radical offers its Connected, Split and Inward forms.
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import { rateFormsFor } from 'han-compose/rate-forms'
@@ -23,7 +25,7 @@
     namingOperator, isComponent, leaves, EMPTY } from '../lib/ids.js'
   import { lookupChar, regionNames, startCharacter, variants } from '../lib/decompose.js'
   import { ids } from '../lib/layers.js'
-  import { figuresFor } from '../lib/partFigures.js'
+  import { componentVariantForms, figuresFor, grassForm, grassIVS, grassShape, variationSequenceMap } from '../lib/partFigures.js'
   import { base, t } from '../lib/i18n.svelte.js'
   let { start = '', char = '', disabled = false, onuse } = $props()
 
@@ -31,6 +33,8 @@
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
   const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
   const HISTORY = 100
+  const GRASS_FORMS = [grassIVS.connected, grassIVS.split, grassIVS.inward]
+  const grassLabel = form => form === grassIVS.connected ? t('form.ids.grass.connected') : form === grassIVS.split ? t('form.ids.grass.split') : t('form.ids.grass.inward')
   const PART_DRAG = 'application/x-ids-part'
   // Where the preview's drawings come from and the terms they carry.
   const SOURCES = 'https://github.com/mkpoli/glyph-atlas/blob/main/docs/licensing.md#composer-drawings'
@@ -56,7 +60,17 @@
     return asked
   }
   const sequencesOf = c => known[c]?.sequences ?? []
-  // The registered figures of each component met, asked with its descriptions; a failed read is asked again.
+  // Preload the export's variation-sequence index once so every component box in the tree knows
+  // immediately whether it has selectable IVS forms; retry twice on transient failure.
+  let variantMap = $state.raw(new Map())
+  $effect(() => {
+    let live = true, timer
+    const load = waits => variationSequenceMap().then(found => { if (live) variantMap = found },
+      () => { if (live && waits.length) timer = setTimeout(() => load(waits.slice(1)), waits[0]) })
+    load([2000, 8000])
+    return () => { live = false; clearTimeout(timer) }
+  })
+  // The registered MJ figures of each component met, asked with its descriptions; a failed read is asked again.
   let figures = $state({})
   const figuring = new Set()
   function readFigures(c) {
@@ -64,6 +78,14 @@
     figuring.add(c)
     figuresFor(c).then(found => { figures = { ...figures, [c]: found } }, () => figuring.delete(c))
   }
+  function formsFor(part) {
+    if (typeof part !== 'string') return []
+    const c = lookupChar(part)
+    const sequences = variantMap.get(c)
+    if (!sequences?.length) return []
+    return componentVariantForms(c, sequences, figures[c] ?? [])
+  }
+  const isVaried = part => typeof part === 'string' && part !== lookupChar(part)
 
   // Each crop starts again: from a description or single character the reader had typed into the
   // search, or else from the character's own. What is typed into the search afterwards leaves the
@@ -133,6 +155,7 @@
   const rootForms = $derived(rateFormsFor(whole))
   const usable = $derived(!gap && !typed.problem && (isDescription(whole) || rootForms.some(form => form.text === whole)))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
+  const grass = $derived(chosen ? grassForm(picked, chosen, tree) : null)
   const text = part => part === null || part === undefined ? '' : write(part)
 
   // A change to the tree, kept for undoing, a run of typing in the field as one; the field shows it
@@ -278,6 +301,62 @@
   function remove(path) { if (!disabled && !draftBlocked() && path && isNode(partAt(tree, path))) change(unwrap(tree, path), path) }
   function empty(path) { if (!disabled && !draftBlocked() && path && partAt(tree, path) !== null) change(clear(tree, path), path) }
 
+  // Floating variant-select menu opened from a component box's corner toggle button.
+  // Uses native popover="auto" (top-layer above <dialog>) with CSS Anchor Positioning when supported
+  // and a viewport-clamped fallback otherwise.
+  let variantMenu = $state(null), variantMenuEl = $state(null)
+  const variantPart = $derived(variantMenu ? partAt(tree, variantMenu.path) : undefined)
+  const variantForms = $derived(variantMenu ? formsFor(variantPart) : [])
+  async function openVariants(path, anchor, { keyboard = false } = {}) {
+    if (disabled) return
+    const part = partAt(tree, path)
+    if (typeof part !== 'string') return
+    readFigures(lookupChar(part))
+    const list = formsFor(part)
+    if (!list.length) return
+    const r = anchor.getBoundingClientRect()
+    const cols = Math.min(Math.max(list.length, 3), 6), rows = Math.ceil(list.length / 6)
+    const W = cols * 42 + 16, H = 30 + rows * 42 + 10
+    const x = Math.max(8, Math.min(r.right - W, innerWidth - W - 8))
+    const y = r.bottom + 4 + H > innerHeight - 8 ? Math.max(8, r.top - H - 4) : r.bottom + 4
+    variantMenu = { path, x, y }
+    choose(path, { toggle: false })
+    await tick()
+    if (variantMenuEl) {
+      if (variantMenuEl.matches(':popover-open')) variantMenuEl.hidePopover()
+      try { variantMenuEl.showPopover({ source: anchor }) } catch { variantMenuEl.showPopover() }
+      if (keyboard) (variantMenuEl.querySelector('[aria-checked="true"]') ?? variantMenuEl.querySelector('[role="menuitemradio"]'))?.focus()
+      else variantMenuEl.focus({ preventScroll: true })
+    }
+  }
+  function closeVariants({ refocus = true } = {}) {
+    const path = variantMenu?.path ?? null
+    if (variantMenuEl?.matches(':popover-open')) variantMenuEl.hidePopover()
+    variantMenu = null
+    if (refocus && path) root?.querySelector(`.ids-forms-toggle[data-toggle-path="${CSS.escape(pathKey(path))}"]`)?.focus()
+  }
+  function pickVariant(char) {
+    const path = variantMenu?.path
+    if (!path || draftBlocked()) return
+    const current = partAt(tree, path)
+    if (typeof current === 'string' && current !== char) change(replaceAt(tree, path, char), path)
+    closeVariants()
+  }
+  function variantMenuKey(event) {
+    const items = [...(variantMenuEl?.querySelectorAll('[role="menuitemradio"]:not([disabled])') ?? [])]
+    const at = items.indexOf(document.activeElement)
+    const dir = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key]
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeVariants() }
+    else if (event.key === 'Tab') closeVariants({ refocus: false })
+    else if (dir) { event.preventDefault(); items[(at + dir + items.length) % items.length]?.focus() }
+    else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); items[event.key === 'Home' ? 0 : items.length - 1]?.focus() }
+  }
+  function pickGrass(form) {
+    if (disabled || !chosen || draftBlocked()) return
+    if (picked === form) return
+    change(replaceAt(tree, chosen, form), chosen)
+  }
+
   // The part field: Apply or Enter puts what it holds in the chosen slot and moves on to the next empty one.
   const pieceDirty = $derived(Boolean(piece.trim()) && (chosen === null || unalias(piece.trim()) !== text(picked)))
   function enter() {
@@ -356,6 +435,7 @@
   let touch = null, ghost = $state(null), swallowed = false
   function touchDown(event) {
     if (event.pointerType !== 'touch' || disabled) return
+    if (event.target.closest?.('.ids-forms-toggle')) return
     const box = event.target.closest?.('[data-hover-path]')
     if (!box || !treeEl?.contains(box)) return
     const path = parsePath(box.getAttribute('data-hover-path') ?? '')
@@ -464,7 +544,7 @@
   // the page's own shortcuts (a crop's review letters, the forms page's undo) leave it alone.
   function keydown(event) {
     if (event.isComposing || event.key === 'Process' || disabled) return
-    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-context-menu')) return
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .ids-context-menu, .ids-forms-menu')) return
     // Undo and redo work from anywhere in the editor; the focus stays in a picker or start-from-character search that has it.
     const command = event.ctrlKey || event.metaKey, inPicker = Boolean(event.target.closest?.('.ids-pick-tabs, .ids-pick-panel, .ids-start'))
     const after = () => { if (!inPicker) focusChosen() }
@@ -476,14 +556,19 @@
     const op = event.shiftKey ? null : CODES[event.code] ?? KEYS[event.key]
     if (op) { event.preventDefault(); operator(op); focusChosen(); return }
     if (event.key === 'Tab' && event.target.closest('.ids-tree') && tree !== null) {
-      // From the part that has the focus, else the chosen one.
-      const from = event.target.closest('[data-path]')?.dataset.path
-      const all = paths(tree), at = all.findIndex(path => from !== undefined ? pathKey(path) === from : samePath(path, chosen))
+      // Step through tree parts and corner variant toggles in DOM order.
+      const stops = [...(root?.querySelectorAll('.ids-tree [data-path], .ids-tree .ids-forms-toggle') ?? [])]
+        .filter(el => !el.disabled)
+      const at = stops.indexOf(event.target.closest('[data-path], .ids-forms-toggle'))
       const next = at + (event.shiftKey ? -1 : 1)
-      if (next < 0 || next >= all.length) return
+      if (at < 0 || next < 0 || next >= stops.length) return
       event.preventDefault()
-      choose(all[next])
-      focusChosen()
+      const dest = stops[next]
+      if (dest.dataset.path !== undefined) {
+        const path = dest.dataset.path === '' ? [] : dest.dataset.path.split('.').map(Number)
+        choose(path, { toggle: false })
+      }
+      dest.focus()
       return
     }
     if (event.key === 'Backspace' || event.key === 'Delete') { event.preventDefault(); empty(target()); focusChosen(); return }
@@ -544,6 +629,7 @@
     </div>
   {:else}
     {@const label = part === null ? t('form.ids.empty') : part}
+    {@const partForms = formsFor(part)}
     <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} class:dragged class:carried
       class:over={overKind(path) === 'move'} class:swap={overKind(path) === 'swap'} aria-pressed={selected} aria-keyshortcuts="Space"
       data-path={pathKey(path)} data-hover-path={pathKey(path)} draggable={!disabled && path.length > 0} {disabled}
@@ -552,6 +638,21 @@
       onclick={() => choose(path)} oncontextmenu={event => { event.preventDefault(); openMenu(path, event.clientX, event.clientY) }}
       onkeydown={event => partKey(event, path)} ondragstart={event => startDrag(event, path)} ondragend={endDrag}
       ondragover={event => dragover(event, path)} ondragleave={() => { overPath = null; overSwap = false }} ondrop={event => drop(event, path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
+    {#if partForms.length}
+      {@const isOpen = variantMenu !== null && samePath(variantMenu.path, path)}
+      <button type="button" class="ids-forms-toggle" class:varied={isVaried(part)} {disabled}
+        data-toggle-path={pathKey(path)} aria-haspopup="menu" aria-expanded={isOpen}
+        style:anchor-name={isOpen ? `--ids-forms-${uid.replace(/[^a-zA-Z0-9_-]/g, '_')}` : undefined}
+        aria-label={t('form.ids.variants.label', { part: lookupChar(part) })}
+        title={t('form.ids.variants.label', { part: lookupChar(part) })}
+        onkeydown={event => {
+          if (event.key === 'Backspace' || event.key === 'Delete') event.stopPropagation()
+          if (event.key === 'ArrowDown' && !isOpen) { event.preventDefault(); openVariants(path, event.currentTarget, { keyboard: true }) }
+        }}
+        onclick={event => { if (isOpen) closeVariants(); else openVariants(path, event.currentTarget, { keyboard: event.detail === 0 }) }}>
+        <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      </button>
+    {/if}
   {/if}
 {/snippet}
 
@@ -607,10 +708,30 @@
     <div class="ids-tree" role="group" aria-label={t('form.ids.structure')} bind:this={treeEl}
       onpointerdown={touchDown} onpointermove={touchMove} onpointerup={touchUp} onpointercancel={touchCancel}
       onclickcapture={event => { if (swallowed) { swallowed = false; event.stopImmediatePropagation(); event.preventDefault() } }}>
-      {@render box(tree, [], null)}
+      <div class="ids-tree-root">{@render box(tree, [], null)}</div>
       {#if ghost}<div class="ids-touch-ghost" aria-hidden="true" style:left="{ghost.x}px" style:top="{ghost.y}px">{ghost.text}</div>{/if}
     </div>
     <IdsPreview {tree} sequence={whole} {chosen} />
+  </div>
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div class="ids-forms-menu" popover="auto" role="menu" tabindex="-1" bind:this={variantMenuEl}
+    aria-label={variantForms.length ? t('form.ids.variants.label', { part: variantForms[0].char }) : ''}
+    style:position-anchor={variantMenu ? `--ids-forms-${uid.replace(/[^a-zA-Z0-9_-]/g, '_')}` : undefined}
+    style:--menu-x={variantMenu ? `${variantMenu.x}px` : undefined}
+    style:--menu-y={variantMenu ? `${variantMenu.y}px` : undefined}
+    ontoggle={event => { if (event.newState === 'closed' && variantMenu) variantMenu = null }}
+    onkeydown={variantMenuKey}>
+    {#if variantMenu && variantForms.length && typeof variantPart === 'string'}
+      <p class="ids-forms-title">{t('form.ids.variants.label', { part: variantForms[0].char })}</p>
+      <div class="ids-forms-grid" role="group" aria-label={t('form.ids.variants.label', { part: variantForms[0].char })}>
+        {#each variantForms as form (form.char)}
+          {@const label = [point(form.char), form.mj].filter(Boolean).join(' · ')}
+          <button type="button" role="menuitemradio" class="ids-forms-item" data-form={form.char}
+            aria-checked={variantPart === form.char} title={label} aria-label={`${form.char} ${label}`}
+            onclick={() => pickVariant(form.char)}><FigureText text={form.char} /></button>
+        {/each}
+      </div>
+    {/if}
   </div>
   <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div class="ids-context-menu" popover="auto" role="menu" tabindex="-1" bind:this={menuEl}
@@ -671,21 +792,36 @@
       </div>
     </fieldset>
   {/if}
-  {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
-    <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: picked })}>
-      <span class="ids-title">{@render named('form.ids.swaps', picked)}</span>
-      <div class="ids-options">
-        {#each figured as figure (figure.char)}
-          <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
-            onclick={() => place(figure.char)}><FigureText text={figure.char} /></button>
-        {/each}
-        {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
-          <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
-        {/each}
-        {#each splits as sequence (sequence)}
-          <button type="button" class="ids-swap ids-split" {disabled} title={t('form.ids.split', { part: picked })} onclick={() => split(sequence)}>{sequence}</button>
-        {/each}
-      </div>
+  {#if grass || (typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length))}
+    <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: text(picked) })}>
+      {#if grass}
+        <div class="ids-grass-group" role="group" aria-labelledby={`${uid}-grass`}>
+          <span class="ids-title" id={`${uid}-grass`}>{t('form.ids.grass.head')}</span>
+          <div class="ids-options">
+            {#each GRASS_FORMS as form (form)}
+              <button type="button" class="ids-grass" aria-pressed={grass === grassShape(form)} {disabled}
+                title={point(form)} onclick={() => pickGrass(form)}>
+                <span class="ids-grass-glyph" aria-hidden="true">{grassShape(form)}</span>{grassLabel(form)}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length)}
+        <span class="ids-title">{@render named('form.ids.swaps', picked)}</span>
+        <div class="ids-options">
+          {#each figured as figure (figure.char)}
+            <button type="button" class="ids-swap ids-figure" {disabled} title={[point(figure.char), figure.mj].filter(Boolean).join(' · ')} aria-label={[figure.char, point(figure.char), figure.mj].filter(Boolean).join(' ')}
+              onclick={() => place(figure.char)}><FigureText text={figure.char} /></button>
+          {/each}
+          {#each swaps[lookupChar(picked)] ?? [] as item (item.char)}
+            <button type="button" class="ids-swap" {disabled} title={`${picked} → ${item.char} · ${item.count}`} onclick={() => swap(item)}>{item.char}</button>
+          {/each}
+          {#each splits as sequence (sequence)}
+            <button type="button" class="ids-swap ids-split" {disabled} title={t('form.ids.split', { part: picked })} onclick={() => split(sequence)}>{sequence}</button>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
   <div class="ids-search">
@@ -744,12 +880,12 @@
   .ids-view > .ids-tree{flex:1;min-width:0}
   @media (max-width:520px){.ids-view{flex-direction:column-reverse;align-items:center}.ids-view > .ids-tree{align-self:stretch}}
   .ids-tree{display:grid;justify-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-subtle);min-height:72px}
+  .ids-tree-root{position:relative;display:grid;width:min(100%,360px)}
   .ids-tree [data-hover-path]{touch-action:none}
   .ids-node{position:relative;display:flex;flex-direction:column;min-width:0;padding:22px 6px 6px;
     border:1.5px dashed var(--line-strong);border-radius:8px;cursor:pointer}
   .ids-node[draggable="true"],.ids-op[draggable="true"],.ids-part[draggable="true"]{cursor:grab}
   .ids-node[draggable="true"]:active,.ids-op[draggable="true"]:active,.ids-part[draggable="true"]:active{cursor:grabbing}
-  .ids-tree > .ids-node,.ids-tree > .ids-part{width:min(100%,360px)}
   .ids-node.chosen,.ids-node.swap{border-style:solid;border-color:var(--accent);background:var(--accent-light)}
   .ids-node.over{border-style:solid;border-color:var(--accent)}
   .ids-node.dragged,.ids-op.dragged,.ids-part.dragged{opacity:.45}
@@ -761,7 +897,7 @@
   .ids-unwrap{padding:0 5px;font-size:13px;line-height:1.2;color:var(--muted);border-color:transparent;background:none}
   .ids-unwrap:not(:disabled):hover{color:var(--wrong);border-color:var(--wrong)}
   .ids-parts{flex:1;display:flex;gap:6px;min-width:0}
-  .ids-cell{flex:1;display:grid;min-width:0}
+  .ids-cell{position:relative;flex:1;display:grid;min-width:0}
   .row > .ids-parts{flex-direction:row}
   .column > .ids-parts,.stack > .ids-parts{flex-direction:column}
   /* An enclosure: the first part fills the box, its glyph on the closed side, and the second sits
@@ -796,13 +932,45 @@
   .ids-part.empty{font-size:18px;color:var(--muted);border-style:dashed;border-color:var(--line-strong);background:transparent}
   .ids-part.chosen,.ids-part.swap{border:2px solid var(--accent);padding:1px 5px;background:var(--accent-light)}
   .ids-part.over{border:2px solid var(--accent);padding:1px 5px}
-  .ids-op:focus-visible,.ids-part:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+  .ids-op:focus-visible,.ids-part:focus-visible,.ids-forms-toggle:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
   .ids-touch-ghost{position:fixed;z-index:60;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;
     padding:4px 10px;border:1px solid var(--accent);border-radius:10px;background:var(--surface);color:var(--ink);
     font-family:var(--ids-font);font-size:20px;line-height:1.3;box-shadow:0 8px 20px var(--shadow);transform:translate(-50%,-50%)}
 
+  /* Corner variant-select toggle on each component box with drawn variation sequences. */
+  .ids-forms-toggle{position:absolute;z-index:2;right:3px;bottom:3px;display:grid;place-items:center;width:18px;height:18px;padding:0;
+    border-radius:5px;color:var(--muted);background:var(--surface)}
+  .ids-forms-toggle svg{width:12px;height:12px}
+  .ids-forms-toggle:not(:disabled):hover,.ids-forms-toggle[aria-expanded="true"],.ids-forms-toggle.varied{color:var(--accent);border-color:var(--accent)}
+  /* Keep an enclosing component's toggle inside its closed band, clear of the enclosed part. */
+  .enclosure > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{right:2px;bottom:2px;width:16px;height:16px}
+  .enclosure > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle svg{width:10px;height:10px}
+  :is([data-op="⿸"],[data-op="⿵"]) > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{bottom:auto;top:2px}
+  [data-op="⿹"] > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{right:auto;bottom:auto;left:2px;top:2px}
+  :is([data-op="⿷"],[data-op="⿽"]) > .ids-parts > .ids-cell[data-index="0"] > .ids-forms-toggle{right:auto;left:2px}
+
+  /* Variant menu popover: CSS Anchor Positioning when supported, viewport-clamped fallback otherwise. */
+  .ids-forms-menu{padding:6px;width:max-content;max-width:min(280px,calc(100vw - 16px));
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px var(--shadow-menu)}
+  .ids-forms-menu:focus{outline:none}
+  .ids-forms-menu:popover-open{display:flex;flex-direction:column;gap:4px}
+  @supports (position-area: block-end){
+    .ids-forms-menu{inset:auto;margin:4px 0 0;position-area:block-end span-inline-start;
+      position-try-fallbacks:flip-block,flip-inline,flip-block flip-inline}
+  }
+  @supports not (position-area: block-end){
+    .ids-forms-menu{position:fixed;inset:auto;margin:0;left:var(--menu-x,8px);top:var(--menu-y,8px)}
+  }
+  .ids-forms-title{margin:2px 4px;font-size:11px;color:var(--muted)}
+  .ids-forms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:4px;min-width:126px}
+  .ids-forms-item{display:grid;place-items:center;min-width:38px;min-height:38px;padding:2px 6px;font-size:24px;line-height:1.1;
+    font-family:var(--ids-font);border-radius:6px}
+  .ids-forms-item:not(:disabled):hover,.ids-forms-item:focus-visible{border-color:var(--accent);background:var(--accent-hover)}
+  .ids-forms-item[aria-checked="true"]{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+
   .ids-context-menu{position:fixed;inset:auto;margin:0;padding:6px;width:max-content;max-width:260px;
     border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px var(--shadow-menu)}
+  .ids-context-menu:focus{outline:none}
   .ids-context-menu:popover-open{display:flex;flex-direction:column;gap:2px}
   .ids-menu-title{margin:2px 6px 4px;font-size:11px;color:var(--muted)}
   .ids-menu-ops{display:grid;grid-template-columns:repeat(6,32px);gap:2px}
@@ -829,11 +997,14 @@
   .rate-serif,:global(:root[data-typeface=serif]) .rate-sans{display:none}
   :global(:root[data-typeface=serif]) .rate-serif{display:inline}
   .ids-rate-option[aria-pressed=true]{border-color:var(--accent);background:var(--surface-selected)}
-  .ids-swaps{display:flex;flex-direction:column;gap:4px}
+  .ids-swaps,.ids-grass-group{display:flex;flex-direction:column;gap:4px}
   .ids-options{display:flex;flex-wrap:wrap;gap:6px}
+  .ids-grass{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;font-size:13px}
+  .ids-grass-glyph{font:20px/1.2 var(--ids-font)}
+  .ids-grass[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
   .ids-swap{min-width:40px;padding:3px 8px;font-size:20px;line-height:1.2;font-family:var(--ids-font)}
   .ids-split{font-size:16px;color:var(--muted)}
-  .ids-swap:not(:disabled):hover{border-color:var(--accent)}
+  .ids-swap:not(:disabled):hover,.ids-grass:not(:disabled):hover{border-color:var(--accent)}
   .ids-problem{margin:0;font-size:12px;color:var(--fault)}
   .ids-pending{margin:0;font-size:12px;color:var(--muted)}
   .ids-search{display:flex;flex-direction:column;gap:4px}

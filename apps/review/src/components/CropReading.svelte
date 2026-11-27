@@ -5,7 +5,7 @@
   // dictionary that the characters write can be named with it.
   import { tick, untrack } from 'svelte'
   import { line as readLine } from '../lib/client.js'
-  import { RUN_MAX, beside, clearReading, cropLine, opening, pressed, readingEntries, setReading, stretch } from '../lib/cropReadings.js'
+  import { RUN_MAX, beside, clearReading, cropLine, opening, openingTranscribed, pressed, readingEntries, setReading, stretch } from '../lib/cropReadings.js'
   import { toSource } from '../lib/cropBox.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
@@ -35,7 +35,9 @@
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
   let chosen = $state(undefined), probable = $state(false), changed = false
 
-  const entries = $derived(readingEntries(item.reading))
+  const entries = $derived(readingEntries(item.reading, item))
+  // Whether all there is to show is what the transcription gives, which a reader has yet to look at.
+  const unseen = $derived(entries.length > 0 && entries.every(entry => entry.transcribed))
   const words = $derived(item.word?.values ?? [])
   // The reading that stands alone, whose run the other places of can be read alike; how many there are is asked after a save.
   const standing = $derived(entries.length === 1 && entries[0].notes.length === 1 && item.reading.status !== 'disputed' ? entries[0].notes[0] : null)
@@ -80,7 +82,8 @@
     // Whose reading it opens with waits until the page knows who reads.
     await sessionStarted()
     error = ''; chosen = undefined; changed = false; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
-    const opened = opening(item.reading, signedInUser()?.id)
+    const said = opening(item.reading, signedInUser()?.id), nobody = !said.value && !item.reading
+    let opened = nobody ? openingTranscribed(item) ?? said : said
     method = opened.method ?? untrack(() => method)
     place(cropLine(item), opened)
     editing = true
@@ -89,7 +92,11 @@
     arriving = item.origin === 'corpus' ? null : readLine(item.id, { reach: RUN_MAX - 1 }).then(({ items }) => {
       if (!editing) return
       neighbours = items
-      if (!touched) place(cropLine(item, items), opened)
+      if (touched) return
+      // With its neighbours the crop's place on the line is known, and so is the ruby the transcription gives it.
+      const placed = cropLine(item, items)
+      if (nobody) opened = (placed.held && placed.sure ? openingTranscribed(item, placed.at) : null) ?? said
+      place(placed, opened)
     }).catch(() => { /* The run is then saved on this crop alone. */ })
   }
   // Stand the crop on its line, with the run of an earlier reading where the line still holds it.
@@ -221,7 +228,7 @@
     </div>
     {#if slots.some(slot => slot?.status === 'disputed') || item.word?.status === 'disputed'}<span class="reading-disputed">{t('reading.disputed')}</span>{/if}
     {#if !editing}<div class="reading-acts">
-      <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{entries.length || words.length ? t('reading.edit') : t('reading.add')}</button>
+      <button type="button" class="reading-set" disabled={busy || !known} onclick={open}>{unseen && !words.length ? t('reading.confirm') : entries.length || words.length ? t('reading.edit') : t('reading.add')}</button>
       {#if standing && placesText(standing) && counted?.others !== 0}<button type="button" disabled={busy} onclick={() => showing = true}>{t('reading.places')}{#if counted?.others}{' '}{counted.others}{/if}</button>{/if}
     </div>{/if}
   </div>

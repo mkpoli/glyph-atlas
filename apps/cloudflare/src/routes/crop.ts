@@ -12,6 +12,7 @@ import { axisOf } from '../dating';
 import { honkokuPage } from '../honkoku';
 import { cropForms, cropGraphemes, cropStructures, cropWords } from '../cropPanels';
 import { cropReadings } from '../cropReadings';
+import { lineRubies } from '../lineRubies';
 import { keyHeads, RUN_MAX } from '../ledger';
 import { MARKS, codePoints, cropVersion, cropVersions, foundCrop, recordIssue, recordState, type FoundCrop } from '../cropRecords';
 
@@ -62,12 +63,14 @@ const documentFor = ({ row, record }: FoundCrop): string | null => row.kind === 
 const FILING = new Set(['asserted', 'accepted', 'adjudicated']);
 /** A crop's record for its inspector, with its grapheme, form, structure, reading, word, book's dates and the claims they
  *  rest on. A grapheme claim that holds names the grapheme the crop is filed under, and `own_grapheme` is its character's. */
-export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
+export async function inspected(env: Env, found: FoundCrop, ctx?: ExecutionContext): Promise<Json> {
   const id = found.row.id, document = documentFor(found);
   // The styles a reviewer may give it: those a publication has numbered (`setStyle`), read as they stand, since a
   // publication may number one after the isolate's code table was read.
-  const [graphemes, forms, structures, readings, words, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropStructures(env, [id]),
-    cropReadings(env, [id]), cropWords(env, [id]), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
+  const [graphemes, forms, structures, readings, words, transcribed, dates, numbered] = await Promise.all([cropGraphemes(env, [id]), cropForms(env, [id]), cropStructures(env, [id]),
+    cropReadings(env, [id]), cropWords(env, [id]),
+    // A pack that cannot be read leaves the crop without its transcription's rubies, and it still opens.
+    lineRubies(env, found.record, ctx).catch(() => null), bookDates(env, document), env.ATLAS.prepare(`SELECT key FROM codes WHERE field='style' AND key<>'unassessed' ORDER BY key`).all<{ key: string }>()]);
   const claim = graphemes.get(id) ?? null, filed = FILING.has(claim?.status) ? claim!.values[0]?.grapheme : null;
   // A claim of a key of its character's own grapheme, made before the two joined, reads it as no other. A record that
   // names no grapheme is of its character's.
@@ -76,7 +79,8 @@ export async function inspected(env: Env, found: FoundCrop): Promise<Json> {
   const own = heads && (heads.get(filed!) === heads.get(character) ? filed : heads.get(character));
   const styles = numbered.results.map(row => row.key);
   const record = { ...found.record, ...(filed ? { grapheme: filed, own_grapheme: own } : {}), grapheme_claim: claim, form: forms.get(id) ?? null,
-    structure: structures.get(id) ?? null, reading: readings.get(id) ?? null, word: words.get(id) ?? null,    style_choices: styles };
+    structure: structures.get(id) ?? null, reading: readings.get(id) ?? null, word: words.get(id) ?? null,
+    ...(transcribed ? { transcribed_ruby: transcribed } : {}), style_choices: styles };
   const honkoku = honkokuPage(record, document);
   return { ...record, ...(honkoku ? { honkoku_url: honkoku } : {}), ...dates };
 }
@@ -288,7 +292,7 @@ export async function cropRoute(env: Env, ctx: ExecutionContext, url: URL): Prom
     const found = await named(env, ctx, url, character[1]);
     if (found instanceof Response) return found;
     if (character[2]) return json(await suggestions(env, ctx, found, q, Boolean(character[3])));
-    return json(await inspected(env, found));
+    return json(await inspected(env, found, ctx));
   }
   return null;
 }

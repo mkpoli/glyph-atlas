@@ -20,6 +20,7 @@ of a cluster that listed it. A form is always a member of the glyph's family.
 """
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import json
 import os
@@ -336,7 +337,11 @@ def record(kind: str, *, form: str | None = None, cluster: str | None = None,
     if len(families) != 1:
         raise DecisionError("A decision covers glyphs of one family.")
     family = families.pop()
-    # A form is one of the family's characters or drawn forms, or a shape Unicode lacks written as a description.
+    # A form is one of the family's characters or drawn forms, or a shape Unicode lacks written as a
+    # description, in its one spelling.
+    if form is not None and representation.is_sequence(form):
+        with contextlib.suppress(ValueError):
+            form = representation.typed(form).value
     if (form is not None and form not in family_members(family) and not representation.described(form)
             and form not in drawn_members(family)):
         raise DecisionError(f"{form} is not a form of this family.")

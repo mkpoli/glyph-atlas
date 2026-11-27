@@ -94,6 +94,8 @@
   // The last answer stays until the next one arrives, so the rows below do not jump while it loads.
   // A signed-in reader opens the 構形 to arrange them, and the row is read again once they have.
   let composed = $state([]), twins = $state([]), arranging = $state(false), arrangedTimes = $state(0)
+  // The derived forms are drawn once the list is open, since each drawing is a request.
+  let derivedOpen = $state(false)
   const cardChar = $derived(card?.char)
   $effect(() => {
     const chars = composedOf, char = cardChar
@@ -180,9 +182,9 @@
         {/each}
         {#each seals as member (member.code_point)}{@render choice(member)}{/each}
         {#if variants.derived.length}
-          <details class="derived">
+          <details class="derived" bind:open={derivedOpen}>
             <summary>{t('chips.derived')} <small>{formatNumber(variants.derived.length)}</small></summary>
-            <div class="variant-chips">
+            {#if derivedOpen}<div class="variant-chips">
               {#each variants.derived as v (v.code_point ?? v.char)}
                 {#if v.code_point}
                   <a class="variant" href={localize(characterAddress(v.code_point))} title={derivedTitle(v)}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /><sup class="derived-mark" aria-hidden="true">*</sup>{#if named(v)}<small class="code">{v.code_point}</small>{/if}{#if crops(v)}<small>{formatNumber(crops(v))}</small>{/if}</a>
@@ -190,7 +192,7 @@
                   <span class="variant unencoded" title={derivedTitle(v)}><span class="derived-form" title="" {@attach idsCard(v.char, { lang: 'zh' })}><ScriptText text={v.char} script={v.script} lang="zh" titled={false} /></span><sup class="derived-mark" aria-hidden="true">*</sup></span>
                 {/if}
               {/each}
-            </div>
+            </div>{/if}
           </details>
         {/if}
       </div>
