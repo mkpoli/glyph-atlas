@@ -276,6 +276,14 @@ def secrets_of(path: Path) -> list[str]:
     return forms
 
 
+def kept_back(config: Config) -> list[str]:
+    """What must never be pushed or posted: the agent's login in its forms, and this machine's own paths.
+    The box hides the paths behind other names, but its table of mounts still shows where they lead."""
+    places = [Path.home(), config.worktrees, config.state, config.codex_home, *([config.tools] if config.tools else [])]
+    paths = {str(place) for found in places for place in (found, found.resolve()) if len(place.parts) > 2}
+    return [*secrets_of(config.codex_home / "auth.json"), *sorted(paths)]
+
+
 def settings(checkout: Path) -> list[tuple[str, str]]:
     """Every git setting in force in a checkout, as name and value."""
     listed = run(["git", "config", "--list", "-z"], cwd=checkout)
@@ -412,7 +420,7 @@ class Worker:
             declined = isinstance(refusal, Declined)
             log.info("%s#%s: no draft: %s", repo.name, number, refusal)
             reason = tidy(str(refusal), MAX_COMMENT)
-            if leaks(reason, secrets_of(self.config.codex_home / "auth.json")):
+            if leaks(reason, kept_back(self.config)):
                 reason = "the reason given cannot be shown"
             self.hub.comment(repo.name, number, f"No draft pull request came of this: {reason}")
             self.hub.relabel(repo.name, number, add=f"{label}-{'declined' if declined else 'failed'}", remove=f"{label}-working")
@@ -450,7 +458,7 @@ class Worker:
             # Git must not be run here any more: it would follow the pointer to wherever it now leads.
             made.append("spoiled")
             raise Refused("the worktree was tampered with")
-        secrets = secrets_of(self.config.codex_home / "auth.json")
+        secrets = kept_back(self.config)
         notes = self.notes(worktree)
         if "decline" in notes:
             raise Declined(notes["decline"])

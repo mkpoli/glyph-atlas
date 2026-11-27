@@ -472,3 +472,19 @@ def test_inside_the_box_the_test_tools_can_be_run_and_not_changed(site, tmp_path
     assert done.returncode == 0, done.stderr
     assert done.stdout.startswith("linted\nimported\n") and "__pycache__" not in done.stdout
     assert (tools / "fishtool.py").read_text(encoding="utf-8") == "NAME = 'imported'\n" and not (tools / "__pycache__").exists()
+
+
+def test_a_path_of_this_machine_is_never_pushed_or_posted(site, tmp_path):
+    config, origin, _ = site
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    config = w.dataclasses.replace(config, tools=tools)
+    assert str(Path.home()) in w.kept_back(config) and str(tools) in w.kept_back(config)
+
+    hub = FakeHub([issue()])
+    w.Worker(config, hub, writes({"a.txt": f"seen at {tools}/bin\n"})).once()
+    assert heads(origin) == ["main"] and "secret" in hub.comments[0][1] and str(tmp_path) not in hub.comments[0][1]
+
+    hub = FakeHub([issue(number=8)])
+    w.Worker(config, hub, writes({"a.txt": "two\n"}, body=f"Tools were at {config.worktrees}.")).once()
+    assert heads(origin) == ["main"] and "secret" in hub.comments[0][1] and str(tmp_path) not in hub.comments[0][1]
