@@ -43,8 +43,8 @@
         shown = { key: ++shownCount, url }
         step = 'final'
       })
-      // A part no code point names is drawn by its drawing (`parts.js`); one with none, or a table that cannot be
-      // read, fails without the composer. The drawing can make the description too large to compose.
+      // A part no code point names is drawn by its drawing, or as an empty slot where it has none (`parts.js`); a
+      // table that cannot be read fails without the composer. The drawing can make the description too large to compose.
       composerText(text).catch(() => null).then(drawable => {
         if (!live) return null
         if (drawable === null) return { status: 'failed' }

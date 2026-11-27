@@ -2,9 +2,10 @@
 // piece of one, that is exactly how BabelStone IDS or CHISE IDS describe a character is given to the composer
 // as that character, so it draws as the character's own glyph, as ⿰女子 draws as 好. Each part left is given
 // the drawing chosen for it (`customPartDrawings.js`): the composer's own cut of it, or a drawing that
-// composed well in characters holding it. A form holding a part with neither is not handed to the composer
-// at all: it stays text. The table is read the first time a form holds such a part.
-import { arity, units } from '../ids.js'
+// composed well in characters holding it. A part with neither is an empty slot (⬚), which the drawing shows
+// as the editor's placeholder in the box the part takes. The table is read the first time a form holds such
+// a part.
+import { EMPTY, arity, units } from '../ids.js'
 
 const PART = /&X-[0-9]{5};/g
 let table = null
@@ -28,12 +29,10 @@ function asCharacters(text, characters) {
   }
 }
 
-/** `text` as the composer reads it, each part no code point names by its drawing; null where a part has none. */
+/** `text` as the composer reads it, each part no code point names by its drawing, or an empty slot where it has none. */
 export async function composerText(text) {
   if (!text.includes('&X-')) return text
   table ??= import('../customPartDrawings.js').then(module => module, error => { table = null; throw error })
   const { default: named, characters } = await table
-  let missing = false
-  const written = asCharacters(text, characters).replace(PART, part => named[part.slice(1, -1)] ?? (missing = true, part))
-  return missing ? null : written
+  return asCharacters(text, characters).replace(PART, part => named[part.slice(1, -1)] ?? EMPTY)
 }

@@ -11,7 +11,6 @@ const painted = new Map(), painting = new Map()
 // A sequence that could not be drawn is tried again after five minutes, as `loadDrawing` asks again
 // after a miss, so a failed request does not keep it as text for the whole visit.
 const MISS_MS = 5 * 60 * 1000
-const NONE = {}
 
 /** The browser's drawing of the description `text`: its URL, null where it cannot be drawn, undefined until known. */
 export const paintedDrawing = text => painted.get(text.normalize('NFC'))
@@ -21,12 +20,12 @@ export function paintDrawing(text) {
   text = text.normalize('NFC')
   if (painted.has(text)) return Promise.resolve(painted.get(text))
   if (typeof Worker === 'undefined') return Promise.resolve(null)
-  // A form holding a part with no drawing (`composerText` answers null) is never drawn, so it is not asked again.
-  if (!painting.has(text)) painting.set(text, composerText(text).then(sequence => sequence === null ? NONE : composerPainter().paint(sequence)).catch(() => null).then(drawn => {
-    const url = drawn?.d ? URL.createObjectURL(new Blob([drawingSvg(drawn)], { type: 'image/svg+xml' })) : null
+  // A part no code point names with no drawing is an empty slot (`parts.js`), drawn as the editor's placeholder.
+  if (!painting.has(text)) painting.set(text, composerText(text).then(sequence => composerPainter().paint(sequence)).catch(() => null).then(drawn => {
+    const url = drawn?.d ? URL.createObjectURL(new Blob([drawingSvg(drawn, { placeholders: true })], { type: 'image/svg+xml' })) : null
     painted.set(text, url)
     painting.delete(text)
-    if (url === null && drawn !== NONE) setTimeout(() => painted.delete(text), MISS_MS)
+    if (url === null) setTimeout(() => painted.delete(text), MISS_MS)
     return url
   }))
   return painting.get(text)
