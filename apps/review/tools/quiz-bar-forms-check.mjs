@@ -7,7 +7,7 @@
  * forms the service reads from the reference tables (its variants among them).
  *
  * Run through devrun:
- *   devrun bun apps/review/tools/quiz-bar-forms-check.mjs [--shots dir]
+ *   devrun bun apps/review/tools/quiz-bar-forms-check.mjs [--as 図] [--shots dir]
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -33,11 +33,19 @@ try {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1000, deviceScaleFactor: 2, mobile: false })
   if (as) {
     // The round of `as` is dealt the fixture's あ crops, written as `as`.
-    await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/atlas?*', requestStage: 'Request' }] })
+    // The local service keeps no form claims (`/atlas/forms`), so they are answered as the Worker answers them.
+    await browser.send('Fetch.enable', { patterns: [{ urlPattern: '*/atlas?*', requestStage: 'Request' }, { urlPattern: '*/atlas/forms', requestStage: 'Request' }] })
     browser.listeners.push(async m => {
       if (m.method !== 'Fetch.requestPaused') return
       const { requestId, request } = m.params
       const url = new URL(request.url)
+      if (url.pathname === '/atlas/forms' && request.method === 'POST') {
+        const asked = JSON.parse(request.postData ?? '{}')
+        const crops = (asked.crops ?? []).map(crop => ({ id: crop.id, form: { status: 'held', values: [{ text: crop.form }] }, replaced: null }))
+        await browser.send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+          body: Buffer.from(JSON.stringify({ id: asked.id, crops })).toString('base64') })
+        return
+      }
       if (url.searchParams.get('purpose') === 'review' && url.searchParams.get('grapheme') === grapheme) {
         url.searchParams.set('grapheme', 'U+3042')
         const payload = await (await fetch(url)).json()
@@ -76,35 +84,48 @@ try {
   console.log(`ok   the bar offers all ${expected.length} members and variants of ${grapheme}`)
 
   if (as) {
-    // A number key marks the selection as the bar's form at its place. A member of the grapheme names the crops'
-    // character; a variant outside it is claimed on them and leaves their character as it is.
-    await browser.evaluate(`(() => { window.posts = []; const send = window.fetch; window.fetch = (input, init = {}) => { if (init.method === 'POST') posts.push([String(input), JSON.parse(init.body)]); return send(input, init) } })()`)
+    // A number key or a click marks the selection as the bar's form at its place. A member of the grapheme names the
+    // crops' character; a variant outside it is claimed on them and leaves their character as it is.
+    const posts = []
+    await browser.send('Network.enable')
+    browser.listeners.push(m => {
+      if (m.method !== 'Network.requestWillBeSent' || m.params.request.method !== 'POST') return
+      try { posts.push([m.params.request.url, JSON.parse(m.params.request.postData ?? 'null')]) } catch { posts.push([m.params.request.url, null]) }
+    })
     const chips = await browser.evaluate(`[...document.querySelectorAll('.form-bar .form-chip')].map(chip => { const copy = chip.cloneNode(true); copy.querySelectorAll('kbd, sup').forEach(node => node.remove()); return copy.textContent.trim() })`)
-    const press = async (key, tiles) => {
-      await browser.evaluate('posts.length = 0')
-      await browser.evaluate(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    // Select two crops not marked before, then press a number key or click the chip at `place`; answer what was posted.
+    const mark = async (place, tiles) => {
+      posts.length = 0
+      await browser.evaluate(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
       await browser.waitFor('document.querySelectorAll(".quiz-tile.selected").length === 0', 5000).catch(() => {})
-      for (const n of tiles) await browser.evaluate(`document.querySelectorAll('.quiz-tile .quiz-choice:not([disabled])')[${n}]?.click()`)
-      await browser.evaluate(`document.activeElement?.blur(); dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true }))`)
-      await browser.waitFor('posts.length > 0', 15000).catch(() => {})
-      await Bun.sleep(1500)
-      return browser.evaluate('posts')
+      for (const unit of tiles) await browser.evaluate(`document.querySelector('.quiz-tile[data-unit="${unit}"] .quiz-choice')?.click()`)
+      if (place < 10) await browser.evaluate(`document.activeElement?.blur(); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '${(place + 1) % 10}', bubbles: true }))`)
+      else await browser.evaluate(`document.querySelectorAll('.form-bar .form-chip')[${place}].click()`)
+      for (let waited = 0; waited < 15000 && !posts.some(([url]) => url.includes('/atlas/corrections')); waited += 250) await Bun.sleep(250)
+      await Bun.sleep(1000)
+      const claimed = posts.filter(([url]) => url.includes('/atlas/forms')).flatMap(([, body]) => body?.crops?.map(crop => crop.form) ?? [])
+      const named = posts.filter(([url]) => url.includes('/atlas/corrections')).map(([, body]) => body?.character)
+      return { claimed, named, how: place < 10 ? `key ${(place + 1) % 10}` : 'a click' }
     }
-    const member = card.members.map(m => m.char).find(char => char !== as)
-    const memberKey = String(chips.indexOf(member) + 1)
-    const outside = (card.variants ?? []).map(v => v.char).find(char => chips.indexOf(char) >= 0 && chips.indexOf(char) < 10 && !card.members.some(m => m.char === char))
-    const outsideKey = String((chips.indexOf(outside) + 1) % 10)
-    const onMember = await press(memberKey, [0, 1])
-    const named = onMember.filter(([url]) => url.includes('/atlas/corrections')).map(([, body]) => body.character)
-    assert(named.length && named.every(char => char === member), `key ${memberKey} should name ${member}: ${JSON.stringify(onMember)}`)
-    console.log(`ok   key ${memberKey} marks the selection as the member ${member}`)
+    const members = card.members.map(m => m.char)
+    const units = await browser.evaluate(`[...document.querySelectorAll('.quiz-tile')].map(tile => tile.dataset.unit)`)
+    const member = members.find(char => char !== as)
+    const onMember = await mark(chips.indexOf(member), units.slice(0, 2))
+    assert(onMember.named.length && onMember.named.every(char => char === member) && !onMember.claimed.length, `${onMember.how} should name ${member}: ${JSON.stringify(onMember)}`)
+    console.log(`ok   ${onMember.how} marks the selection as the member ${member}`)
+    const outside = (card.variants ?? []).map(v => v.char).find(char => chips.includes(char) && !members.includes(char))
     if (outside) {
-      const onOutside = await press(outsideKey, [0, 1])
-      const claimed = onOutside.filter(([url]) => url.includes('/atlas/forms')).flatMap(([, body]) => body.crops.map(crop => crop.form))
-      const renamed = onOutside.filter(([url]) => url.includes('/atlas/corrections')).map(([, body]) => body.character)
-      assert(claimed.length && claimed.every(form => form === outside), `key ${outsideKey} should claim ${outside}: ${JSON.stringify(onOutside)}`)
-      assert(!renamed.includes(outside), `key ${outsideKey} should leave the crops' character: ${JSON.stringify(onOutside)}`)
-      console.log(`ok   key ${outsideKey} claims the variant ${outside} and keeps the crops' character`)
+      const onOutside = await mark(chips.indexOf(outside), units.slice(2, 4))
+      assert(onOutside.claimed.length && onOutside.claimed.every(form => form === outside), `${onOutside.how} should claim ${outside}: ${JSON.stringify(onOutside)}`)
+      assert(!onOutside.named.includes(outside), `${onOutside.how} should leave the crops' character: ${JSON.stringify(onOutside)}`)
+      console.log(`ok   ${onOutside.how} claims the variant ${outside} and keeps the crops' character`)
+    }
+    // A member's registered figure (a character with a variation selector) is claimed and names that member.
+    const figure = chips.find(chip => /[\u{E0100}-\u{E01EF}]/u.test(chip) && members.includes([...chip][0]) && [...chip][0] !== as)
+    if (figure) {
+      const onFigure = await mark(chips.indexOf(figure), units.slice(4, 6))
+      assert(onFigure.claimed.includes(figure) && onFigure.named.every(char => char === [...figure][0]) && onFigure.named.length, `${onFigure.how} should claim ${figure} as ${[...figure][0]}: ${JSON.stringify(onFigure)}`)
+      console.log(`ok   ${onFigure.how} claims the figure ${figure} and names ${[...figure][0]}`)
     }
   }
 } finally {
