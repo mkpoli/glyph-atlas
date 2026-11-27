@@ -16,7 +16,10 @@ out: the page costs `COST` a headword or less and beats the next page by `MARGIN
 run in order. The label is the table's headword; the print may show a variant of it. A headword the table leaves
 blank is placed with the rest and not kept, and so is one whose row `longkan.unsettled` names. One it names only
 for a neighbour written with the same character is kept when its crop leads that run (`longkan.leads`): at least
-`KIN_ALIKE` like the character and ahead of every other crop of the run placed at `POSTERIOR` by `KIN_LEAD`.
+`KIN_ALIKE` like the character and ahead of every other crop of the run placed at `POSTERIOR` by `KIN_LEAD`. The
+others of the run are the 俗, 正 and 通 forms the dictionary lists beside it: each is kept with a label that names
+the character and not its printed form (`label_scope` "grapheme"), so the site files it under the character's
+字種 with its written form open.
 
 `OUTPUT` becomes a dataset: one document per volume, a page per scan page with a kept headword, a line and a unit
 per headword. `--report` says why each half-leaf was kept or not; `--leaves` bounds a run to these PDF pages.
@@ -259,7 +262,7 @@ def main() -> int:
     units: list[Unit] = []
     report = []
 
-    def keep(f: dict, slot: tape.Slot, j: int, chance: float, alike: float) -> bool:
+    def keep(f: dict, slot: tape.Slot, j: int, chance: float, alike: float, scope: str | None = None) -> bool:
         """Add the headword `slot` as box `j` of half-leaf `f`, paired at `chance` and `alike` its character; whether it was added."""
         entry = next(e for e in entries[f["table_page"]] if e.row == slot.entry)
         box = native(f["page"].candidates[j][2], copy["enlarge"])
@@ -284,7 +287,8 @@ def main() -> int:
                           classification=Classification.IDENTIFIED if one else Classification.UNIDENTIFIED, script=Script.HAN,
                           method="detect-align", review=ReviewState.MACHINE, upstream={"source": SOURCE, "entry_id": str(slot.entry), "copy": copy["id"]},
                           meta={"segmentation": SEGMENTATION, "posterior": round(float(chance), 4), "similarity": round(alike, 3),
-                                "page_cost": round(float(f["cost"]), 3), "label": "table headword"}))
+                                "page_cost": round(float(f["cost"]), 3), "label": "table headword",
+                                **({"label_scope": scope} if scope else {})}))
         return True
 
     # The headwords are kept in a second pass, in reading order: one held only for a neighbour of its character is
@@ -318,12 +322,17 @@ def main() -> int:
             row.setdefault("skipped", "page not borne out" if not f.get("good") else "out of order")
         report.append(row)
     for f, row, slot, j, chance, alike, by_kin in chosen:
-        if by_kin and not longkan.leads((slot.entry, slot.sub), kin, placed, KIN_ALIKE, KIN_LEAD):
-            row["unsettled"] += 1
-        elif keep(f, slot, j, chance, alike):
+        spot = (slot.entry, slot.sub)
+        if not by_kin or longkan.leads(spot, kin, placed, KIN_ALIKE, KIN_LEAD):
+            if keep(f, slot, j, chance, alike):
+                row["kept"] += 1
+                if by_kin:
+                    row["kin"] = row.get("kin", 0) + 1
+        elif spot in kin and keep(f, slot, j, chance, alike, scope="grapheme"):
             row["kept"] += 1
-            if by_kin:
-                row["kin"] = row.get("kin", 0) + 1
+            row["variants"] = row.get("variants", 0) + 1
+        else:
+            row["unsettled"] += 1
 
     args.output.mkdir(parents=True, exist_ok=True)
     command = " ".join(["scripts/cut_longkan_headwords.py", *sys.argv[1:]])
@@ -333,7 +342,7 @@ def main() -> int:
     tables.write(args.output / "lines.parquet", lines, Line)
     tables.write(args.output / "units.parquet", units, Unit, command=command)
     totals = {"half_leaves": len(found), "used": len(in_order), "kept": len(units), "unsettled": sum(r.get("unsettled", 0) for r in report),
-              "kin": sum(r.get("kin", 0) for r in report),
+              "kin": sum(r.get("kin", 0) for r in report), "variants": sum(r.get("variants", 0) for r in report),
               "headwords": sum(1 for k in in_order for s in slots_of[found[k]["table_page"]] if s.entry >= 0),
               "skipped": dict(Counter(r["skipped"] for r in report if "skipped" in r))}
     if args.report:
