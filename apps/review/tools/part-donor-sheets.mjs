@@ -7,7 +7,8 @@
 //
 // `many` (the default) draws the parts with a choice to make, two characters each; checking a choice takes
 // the chosen drawing alone (`one`) in three.
-import { compose, drawingSvg, fromUrl } from 'han-compose'
+import { compose, drawingSvg } from 'han-compose'
+import { exportSource, sourceFor } from 'han-compose/source'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -17,13 +18,15 @@ const [input, dir, from = '0', to = '100000', per = '12', which = 'many', count 
 mkdirSync(dir, { recursive: true })
 const all = JSON.parse(readFileSync(input, 'utf8')).filter(row => which === 'any' || (which === 'one' ? row.candidates.length === 1 : row.candidates.length > 1))
 const rows = all.slice(Number(from), Number(to))
-const source = fromUrl(`https://ids-input-composer.mkpoli.workers.dev/${COMPOSER_VERSION}/`)
+// As the site draws: the export once, with the package's bundled outlines (its cuts of parts, numbered outlines) over it.
+const exported = exportSource(`https://ids-input-composer.mkpoli.workers.dev/${COMPOSER_VERSION}/`)
+const sourceOf = text => sourceFor(text, { exported, fontStyle: 'sans' })
 // A host is composed with its own glyph excluded, so the composer cannot draw it whole and hide the part.
 const svg = async (text, host = null) => {
   for (let i = 0; i < 4; i++) {
     try {
       // A drawing the composer makes only approximately (an operator it does not draw) is no candidate.
-      const drawn = await compose(source, text, host ? { exclude: [host] } : {})
+      const drawn = await compose(sourceOf(text), text, host ? { exclude: [host] } : {})
       return drawn.approximate?.length ? `<span style="color:#b00;font-size:10px">approximate: ${esc(drawn.approximate.join(' '))}</span>` : drawingSvg(drawn, { size: 72, padding: 2 })
     }
     catch (e) { const m = String(e?.message ?? e); if (/No glyph|more components|fewer components|not a/i.test(m)) return null; await new Promise(r => setTimeout(r, 1500 * (i + 1))) }

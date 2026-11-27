@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { gunzipSync } from 'node:zlib'
 import { descriptionEnd, isDescription, parse, tokenize, units } from '../src/lib/ids.js'
 import { scriptParts } from '../src/lib/identity.js'
 import { lookupChar, tokens } from '../src/lib/decompose.js'
@@ -42,7 +44,12 @@ describe('a saved form holding a part no code point names', () => {
     expect(tooLarge(parse(text, { open: true }).tree)).toBe(false)
     expect(tooLarge(parseDescription(await composerText(text)))).toBe(true)
   })
-  it('names no part the composer cannot read', () => {
-    for (const drawing of Object.values(drawings)) expect(drawing).not.toMatch(/[？{]/u)
+  it('names only parts the composer holds a cut or outline of', () => {
+    const read = name => JSON.parse(gunzipSync(readFileSync(new URL(`../node_modules/han-compose/data/${name}`, import.meta.url))).toString('utf8'))
+    const held = new Set([...Object.keys(read('custom-forms.json.gz').forms.sans), ...Object.keys(read('numbered-sans-outlines.json.gz').records)])
+    for (const drawing of Object.values(drawings)) {
+      expect(drawing).not.toMatch(/[？{]/u)
+      if (/^&[^;]+;$|^#\(|^[\uE000-\uF8FF]$/u.test(drawing)) expect(held.has(drawing)).toBe(true)
+    }
   })
 })
