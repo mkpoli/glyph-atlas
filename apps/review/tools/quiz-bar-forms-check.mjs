@@ -74,6 +74,39 @@ try {
   const missing = expected.filter(char => !bar.includes(char))
   assert(!missing.length, `the bar lacks forms of the grapheme: ${missing.join(' ')}`)
   console.log(`ok   the bar offers all ${expected.length} members and variants of ${grapheme}`)
+
+  if (as) {
+    // A number key marks the selection as the bar's form at its place. A member of the grapheme names the crops'
+    // character; a variant outside it is claimed on them and leaves their character as it is.
+    await browser.evaluate(`(() => { window.posts = []; const send = window.fetch; window.fetch = (input, init = {}) => { if (init.method === 'POST') posts.push([String(input), JSON.parse(init.body)]); return send(input, init) } })()`)
+    const chips = await browser.evaluate(`[...document.querySelectorAll('.form-bar .form-chip')].map(chip => { const copy = chip.cloneNode(true); copy.querySelectorAll('kbd, sup').forEach(node => node.remove()); return copy.textContent.trim() })`)
+    const press = async (key, tiles) => {
+      await browser.evaluate('posts.length = 0')
+      await browser.evaluate(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+      await browser.waitFor('document.querySelectorAll(".quiz-tile.selected").length === 0', 5000).catch(() => {})
+      for (const n of tiles) await browser.evaluate(`document.querySelectorAll('.quiz-tile .quiz-choice:not([disabled])')[${n}]?.click()`)
+      await browser.evaluate(`document.activeElement?.blur(); dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true }))`)
+      await browser.waitFor('posts.length > 0', 15000).catch(() => {})
+      await Bun.sleep(1500)
+      return browser.evaluate('posts')
+    }
+    const member = card.members.map(m => m.char).find(char => char !== as)
+    const memberKey = String(chips.indexOf(member) + 1)
+    const outside = (card.variants ?? []).map(v => v.char).find(char => chips.indexOf(char) >= 0 && chips.indexOf(char) < 10 && !card.members.some(m => m.char === char))
+    const outsideKey = String((chips.indexOf(outside) + 1) % 10)
+    const onMember = await press(memberKey, [0, 1])
+    const named = onMember.filter(([url]) => url.includes('/atlas/corrections')).map(([, body]) => body.character)
+    assert(named.length && named.every(char => char === member), `key ${memberKey} should name ${member}: ${JSON.stringify(onMember)}`)
+    console.log(`ok   key ${memberKey} marks the selection as the member ${member}`)
+    if (outside) {
+      const onOutside = await press(outsideKey, [0, 1])
+      const claimed = onOutside.filter(([url]) => url.includes('/atlas/forms')).flatMap(([, body]) => body.crops.map(crop => crop.form))
+      const renamed = onOutside.filter(([url]) => url.includes('/atlas/corrections')).map(([, body]) => body.character)
+      assert(claimed.length && claimed.every(form => form === outside), `key ${outsideKey} should claim ${outside}: ${JSON.stringify(onOutside)}`)
+      assert(!renamed.includes(outside), `key ${outsideKey} should leave the crops' character: ${JSON.stringify(onOutside)}`)
+      console.log(`ok   key ${outsideKey} claims the variant ${outside} and keeps the crops' character`)
+    }
+  }
 } finally {
   await browser?.close()
   await service.stop?.()

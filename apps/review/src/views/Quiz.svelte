@@ -11,7 +11,7 @@
   import Glyph from '../components/Glyph.svelte'
   import CropReview from '../components/CropReview.svelte'
   import CropForm from '../components/CropForm.svelte'
-  import { markForms, unmarkForms } from '../lib/cropForms.js'
+  import { listGrapheme, markForms, unmarkForms } from '../lib/cropForms.js'
   import { styleCrops, styleOf, unstyleCrops } from '../lib/cropStyle.js'
   import QuizFocus from '../components/QuizFocus.svelte'
   import CopyId from '../components/CopyId.svelte'
@@ -402,6 +402,18 @@
   let formError = $state(''), formDone = $state(null)
   // The style chosen in the selection bar: given with the next form, or alone.
   let formStyle = $state(null)
+  // The forms the bar offers a selection: those the inspector offers a crop of the round's grapheme
+  // (`listGrapheme`), its members until they are read and where they cannot be, with the character each names.
+  let barRead = $state({ of: '', chips: [], bases: null })
+  $effect(() => {
+    const char = graphemeChar
+    if (!char) return
+    let live = true
+    listGrapheme(char, [char]).then(found => { if (live) barRead = { of: char, chips: found.chips ?? [], bases: found.bases ?? null } }, () => {})
+    return () => { live = false }
+  })
+  const barForms = $derived(barRead.of === graphemeChar && barRead.chips.length ? barRead.chips : members)
+  const barNames = $derived(barRead.of === graphemeChar ? barRead.bases : null)
   /** Give `chosen` the style, after what the same press gave them (`done`); the crops keep their place in the round
    *  and take the revision the style left. Crops just corrected are styled as they stand. */
   async function styleChosen(chosen, style, done = null) {
@@ -424,10 +436,11 @@
     return styleChosen(markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id)), formStyle)
   }
   const CORRECTION_BATCH = 144
-  async function assignForm(form, chosen, claims = {}, relabel = false) {
+  async function assignForm(form, chosen, claims = {}, relabel = false, named = undefined) {
     if (!chosen.length) return
-    const namesCharacter = relabel || (members.includes(form) && !isFigure(form) && !isDescription(form))
-    const characterOf = i => namesCharacter ? form : i.written_character || i.label
+    // `named` is the character the form names, given where the bar knows it (null: none, each crop keeps its own).
+    const namesCharacter = named !== undefined ? named !== null : relabel || (members.includes(form) && !isFigure(form) && !isDescription(form))
+    const characterOf = i => namesCharacter ? named ?? form : i.written_character || i.label
     const crops = chosen.filter(i => !((i.written_character || i.label) === characterOf(i) && i.state === 'checked'))
     // One run of batches for each character the crops are corrected to.
     const byCharacter = new Map()
@@ -482,7 +495,7 @@
    * crop's claim back, so the crop stands as it was. A crop whose claim is kept while writes are paused
    * leaves the selection, and the claim goes once they resume. Answers the error a claim stopped with.
    */
-  async function markClaimed(form, chosen) {
+  async function markClaimed(form, chosen, named = undefined) {
     if (!chosen.length) return null
     let marked = [], kept = [], failure = null
     saving = true
@@ -493,7 +506,7 @@
       const before = chosen.find(i => i.id === crop.id)
       return [crop.id, { form, replaced, before, crop: { ...before, ...crop } }]
     }))
-    await assignForm(form, Object.values(claims).map(claim => claim.crop), claims)
+    await assignForm(form, Object.values(claims).map(claim => claim.crop), claims, false, named)
     const lost = Object.values(claims).filter(claim => !markedAs[claim.crop.id])
     if (lost.length) await unmarkForms(lost).catch(() => {})
     const waited = kept.map(crop => crop.id)
@@ -502,11 +515,17 @@
     return failure
   }
   /** Mark the selection as `form`: a character by correction alone, a description claimed on each
-   *  crop first. */
+   *  crop first. A form of the bar names the character its chip stands for (`barNames`): a member itself,
+   *  a member's figure or regional shape that member, a variant outside the grapheme none, which is
+   *  claimed with the crops' own character kept. */
   async function markSelection(form) {
     if (saving || loading || step !== 'select') return
     const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id)), style = formStyle
-    if (isDescription(form) || isFigure(form)) {
+    const named = barNames?.has(form) ? barNames.get(form) : undefined
+    if (named !== undefined && !(named === form && !isDescription(form) && !isFigure(form))) {
+      const failure = await markClaimed(form, chosen, named)
+      if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
+    } else if (isDescription(form) || isFigure(form)) {
       const failure = await markClaimed(form, chosen)
       if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
     } else await assignForm(form, chosen, {}, true)
@@ -923,7 +942,7 @@
       const index = keys.indexOf(e.key.toLowerCase())
       if (index >= 0 && ordered[index] && !control) { e.preventDefault(); toggle(ordered[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
-      const form = members['1234567890'.indexOf(e.key)]
+      const pick = barForms['1234567890'.indexOf(e.key)], form = typeof pick === 'string' ? pick : pick?.char
       if (/^[0-9]$/.test(e.key) && form && markable.length) { e.preventDefault(); markSelection(form) }
       if (e.key === 'Escape') clearSelection()
       return
@@ -1152,7 +1171,7 @@
   {/if}
 
   {#if step === 'select' && !loading && !items.length}<div class="empty"><span class="empty-mark">字</span><h2>{categories.length ? t('quiz.empty.chooseCharacter') : t('quiz.empty.allCaughtUp')}</h2>{#if categories.length}<button class="primary" onclick={() => categoryOpen = true}>{t('quiz.chooseCharacterButton')}</button>{:else}<a href={localize('/flagged')} class="primary">{t('quiz.reviewFlagged')}</a>{/if}</div>
-  {:else}<div class="quiz-actionbar">{#if step === 'select' && (markable.length || formDone || formError)}<FormBar count={markable.length} forms={members} grapheme={graphemeChar} busy={saving} error={formError} done={formDone} bind:style={formStyle}
+  {:else}<div class="quiz-actionbar">{#if step === 'select' && (markable.length || formDone || formError)}<FormBar count={markable.length} forms={barForms} grapheme={graphemeChar} busy={saving} error={formError} done={formDone} bind:style={formStyle}
     onassign={markSelection} onstyle={styleSelection} onclear={clearSelection} onundo={undoForm} ondismiss={() => { formDone = null; formError = '' }} />{/if}<div class="round-selection"><span class="selection-dot" class:has-flags={decided > 0}></span><strong>{t('quiz.decided', { count: decided })}</strong>{#if undecided}<span>{t('quiz.undecided', { count: undecided })}</span>{/if}{#if Object.keys(skipped).length}<small>{t('quiz.skippedNotSaved', { count: Object.keys(skipped).length })}</small>{/if}{#if Object.keys(failed).length}<small>{t('quiz.unavailableCount', { count: Object.keys(failed).length })}</small>{/if}</div><div class="quiz-submit">
     <span class="keyboard-hint">{step === 'select' ? t('quiz.keyboardHint.select') : t('quiz.keyboardHint.forms') + ' · ' + (offersSuggestions(currentIssue) ? t('quiz.keyboardHint.correct') + ' · ' + t('quiz.keyboardHint.issues') : t('quiz.keyboardHint.issues'))}</span>
     {#if step === 'select'}<button class="quiet-link skip-selected" disabled={loading || saving || exhausted || (!decidable.length && !selection.length)} onclick={() => skip(selection.length ? selection : decidable.map(i => i.id))} title={skipHint()}>{selection.length ? t('quiz.skipSelected', { skip: skipLabel() }) : skipLabel()}</button>{/if}
