@@ -15,6 +15,11 @@ codex_home = "~/.codex"
 model = "gpt-6-astra"
 effort = "high"
 
+# Optional: test tools for the agent, which has no network to install any. Fill the directory once with
+#   uv pip install --python /usr/bin/python3 --target ~/.local/share/fish-pr/tools pytest ruff
+# and add what the repositories' tests import. The agent sees it read-only.
+# tools = "~/.local/share/fish-pr/tools"
+
 # A repository and its checkout here. Only `origin/main` and `.git` of the checkout are used.
 [[repos]]
 name = "mkpoli/glyph-atlas"
