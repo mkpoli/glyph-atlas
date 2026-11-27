@@ -9,7 +9,7 @@
         "@better-auth/passkey": "^1.7.7",
         "@glyph-atlas/design-system": "file:../../packages/design-system",
         "better-auth": "^1.7.7",
-        "han-compose": "github:mkpoli/han-compose#9c2269f2",
+        "han-compose": "github:mkpoli/han-compose#62bcf2ccd66b6f7d8756c49b436a6d892606560c",
         "onnxruntime-web": "1.30.0",
       },
       "devDependencies": {
@@ -372,7 +372,7 @@
 
     "guid-typescript": ["guid-typescript@1.0.9", "", {}, "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ=="],
 
-    "han-compose": ["han-compose@github:mkpoli/han-compose#9c2269f", { "dependencies": { "clipper-lib": "6.4.2", "d3-contour": "4.0.2" } }, "mkpoli-han-compose-9c2269f", "sha512-Hcn4RNCkfUsiuBZ+sCqTvUotPAuKJ2jArNUL9Aj8GOyzwOcu+aC+o6ty7Q2jMdJOUNeDTrwRK4TR2bmC2NAqGA=="],
+    "han-compose": ["han-compose@github:mkpoli/han-compose#62bcf2c", { "dependencies": { "clipper-lib": "6.4.2", "d3-contour": "4.0.2" } }, "mkpoli-han-compose-62bcf2c", "sha512-X87cRlYu55fOsuq/rxn95MQvq4NvBy8YPyTk6YL8M85LLyXp7NOCDkuPp5E1Oikk6xt9R9xZFlCRHFfLBTSnBA=="],
 
     "internmap": ["internmap@2.0.3", "", {}, "sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg=="],
 

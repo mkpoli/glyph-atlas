@@ -38,6 +38,7 @@
   import { markForms, unmarkForms } from '../lib/cropForms.js'
   import { styleCrops, styleOf, unstyleCrops } from '../lib/cropStyle.js'
   import { isDescription } from '../lib/ids.js'
+  import { isFigure } from '../lib/mjFigures.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
@@ -1153,7 +1154,7 @@
     const target = bulkTarget, style = bulkStyle
     if ((!target && !style) || bulkBusy) return
     if (!target) { bulkError = ''; bulkReport = []; return styleBulk(display.filter(item => selected.has(item.id) && selectable(item)), style) }
-    if (isDescription(target)) return describeBulk(target, style)
+    if (isDescription(target) || isFigure(target)) return describeBulk(target, style)
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     // A tile a person already checked as the character has nothing to change; every other one is sent,
     // and one already written as the character is confirmed.
