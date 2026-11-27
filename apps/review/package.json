@@ -26,7 +26,7 @@
     "@better-auth/passkey": "^1.7.7",
     "@glyph-atlas/design-system": "file:../../packages/design-system",
     "better-auth": "^1.7.7",
-    "han-compose": "github:mkpoli/han-compose#f3b647d948f2375cd651d5c5af667b8d03ba1b72",
+    "han-compose": "github:mkpoli/han-compose#8b7f1f9f2b125fd7f5cff91c9370382fbc4f1c09",
     "onnxruntime-web": "1.30.0"
   }
 }
