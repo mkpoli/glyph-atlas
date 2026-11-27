@@ -416,6 +416,44 @@ link. For one already open it posts that issue's link, once a day per room. Othe
 Such readings are paid from the money for unasked work, come at most six a day and one per room every
 half hour, and leave two of the day's issues for people who ask.
 
+Draft pull requests are written by `apps/fish-bot/pr_worker.py`, which runs on the maintainer's own machine, not on the server. Every ten minutes
+it lists the open issues labelled `fish-pr`, oldest first, and for each one makes a worktree off
+`origin/main`, has Codex work on it there, and opens a draft pull request that closes the issue. It
+never merges. The label moves to `fish-pr-working`, then to `fish-pr-opened`, `fish-pr-declined` (the
+agent found it is not a small fix, and says why on the issue) or `fish-pr-failed`, and a comment on the issue gives the draft's address. Only people who can
+label issues can ask, which is the repository's own access rule.
+
+The issue text comes from a public chat, so the agent gets it as data and runs boxed in:
+
+- bubblewrap gives it a small world: the worktree at `/work`, the system's programs (`/usr`, `/nix/store`,
+  a few files of `/etc`), and Codex with its own login. No home directory, no other project, no key, no
+  `.git`, no `/mnt`, `/tmp` or `/var`, and no path that names the machine's user.
+- Codex's `workspace-write` sandbox takes the network from the commands it runs and lets them write
+  only in the worktree. It cannot commit or push.
+- The worktree's pointer to its repository is hidden from the agent and cannot be replaced; a worktree
+  whose pointer changed anyway is deleted unread.
+- The worker stages what is left, with git's hooks, filters and file monitor off, and refuses it when it touches
+  `.github`, `.husky`, `.gitmodules`, any `.gitattributes` or a file of secrets, adds a symbolic link or
+  a submodule, is larger than 40 files or 3,000 added lines, or holds anything that looks like a secret:
+  every changed file is read whole, and the agent's own login is looked for plain, reversed, in hex, in
+  base64 and in pieces. The commit message, the title, the description and a decline's reason are read
+  the same way before they are posted, and lose any line saying what wrote them.
+- Three attempts a day (`per_day`), forty minutes each (`minutes`).
+
+Two things the box does not do. The agent's commands can read its own login file, since Codex needs it
+there; the checks on what is pushed and posted are what keep it in. And a draft's code runs in the pull
+request's checks like any contributor's: those workflows use no secrets and a read-only token, and
+`.github` is barred, but read a draft before running its code anywhere else.
+
+The worker leaves a checkout alone whose files pass through a git filter such as LFS, or whose git
+settings run a program by a relative path (a filter, a
+signing program, an alias), since the agent could put a program there.
+
+Install: copy `pr_worker.py` to `~/.local/share/fish-pr/`, write `~/.config/fish-pr/config.toml` from
+`pr-worker.example.toml`, run `pr_worker.py --labels` once, and enable `fish-pr.timer` with
+`fish-pr.service` in `~/.config/systemd/user/`. `journalctl --user -u fish-pr` shows each run; what the
+agent printed is under `logs/` in the state directory.
+
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
 and directories:
 
