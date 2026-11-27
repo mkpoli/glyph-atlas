@@ -1,7 +1,8 @@
 <script>
   // The bar over a round's selection: how many crops are chosen, the forms of the round's grapheme to
   // mark them as, any other character found by search, a form written as an ideographic description
-  // sequence instead, and the result of the last marking with its undo.
+  // sequence instead, and the result of the last marking with its undo. `onassign` is given the form, and
+  // `true` where it is one of the chips, which names the character its chip stands for.
   import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import FormChips from './FormChips.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
@@ -23,7 +24,7 @@
   {#if count}
     <b class="selection-count">{t('bulk.selected', { count })}</b>
     {#if onconfirm}<button type="button" class="primary bulk-confirm" disabled={busy} onclick={onconfirm} title={t('bulk.looksRight.about')}><span aria-hidden="true">✓</span> {t('bulk.looksRight')}</button>{/if}
-    <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: graphemeLabel(grapheme) })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
+    <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: graphemeLabel(grapheme) })} title={char => t('bulk.apply', { char })} onchoose={char => onassign(char, true)} />
     <div class="form-assign">
       <CharacterSearch compact bind:value={query} label={t('bulk.character.label')} placeholder={t('bulk.character.placeholder')}
         oninput={() => target = ''} onselect={item => { target = item.char; query = item.char }} />

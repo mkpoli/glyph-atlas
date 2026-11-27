@@ -523,13 +523,13 @@
     return failure
   }
   /** Mark the selection as `form`: a character by correction alone, a description claimed on each
-   *  crop first. A form of the bar names the character its chip stands for (`barNames`): a member itself,
+   *  crop first. A chip of the bar (`chip`) names the character it stands for (`barNames`): a member itself,
    *  a member's figure or regional shape that member, a variant outside the grapheme none, which is
    *  claimed with the crops' own character kept. */
-  async function markSelection(form) {
+  async function markSelection(form, chip = false) {
     if (saving || loading || step !== 'select') return
     const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id)), style = formStyle
-    const named = barNames?.has(form) ? barNames.get(form) : undefined
+    const named = chip && barNames?.has(form) ? barNames.get(form) : undefined
     if (named !== undefined && !(named === form && !isDescription(form) && !isFigure(form))) {
       const failure = await markClaimed(form, chosen, named)
       if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
@@ -1036,7 +1036,7 @@
       if (index >= 0 && ordered[index] && !control) { e.preventDefault(); toggle(ordered[index].id) }
       // 1–0 mark the selection as the grapheme's forms, in the bar's order.
       const pick = barForms['1234567890'.indexOf(e.key)], form = typeof pick === 'string' ? pick : pick?.char
-      if (/^[0-9]$/.test(e.key) && form && markable.length) { e.preventDefault(); markSelection(form) }
+      if (/^[0-9]$/.test(e.key) && form && markable.length) { e.preventDefault(); markSelection(form, true) }
       if (e.key === 'Escape') clearSelection()
       return
     }
