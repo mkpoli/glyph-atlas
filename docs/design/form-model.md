@@ -37,8 +37,7 @@ authority; the derivation from the IDS is a proposal. A reviewer's `folds_into` 
 structures are one 構形: the forms of the first are grouped under the second.
 
 **Representation.** A way of naming a form: a Unicode sequence, an Ideographic Variation Sequence, an
-MJ id, a GlyphWiki name, an IDS (kept exactly as written; a normalised IDS is only a versioned search
-key), or a private-use code point with its namespace and version. The site's own private-use
+MJ id, a GlyphWiki name, an IDS with registered component names stored in their canonical spelling, or a private-use code point with its namespace and version. The site's own private-use
 mapping is the table of drawn forms, shapes with no other name such as a cursive form written in one
 stroke, each with a drawing (docs/decisions/0014-drawn-forms.md). A form can have several, and a
 representation is never its identity. A code point anchors at most one broad form, the encoded form

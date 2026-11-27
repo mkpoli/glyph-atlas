@@ -96,7 +96,7 @@ def _length(value: str) -> int:
 
 
 def is_sequence(value: str) -> bool:
-    """Whether `value` is written as a description, which starts with an operator."""
+    """Whether a value starts with an operator or names a registered variant operand on its own."""
     return bool(value) and (_arity(value[0]) > 0 or value in custom_parts.YAO_SPELLINGS)
 
 
@@ -233,7 +233,7 @@ def check(representation: Representation) -> Representation:
         raise ValueError(f"Unknown scheme {scheme!r}.")
     if scheme == "ids":
         if not is_sequence(value):
-            raise ValueError("A description starts with an operator.")
+            raise ValueError("A description starts with an operator or names a registered variant.")
         check_text(value)
     elif scheme in ("unicode", "ivs", "pua"):
         check_text(value)
