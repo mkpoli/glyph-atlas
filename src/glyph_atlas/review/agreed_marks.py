@@ -10,8 +10,8 @@ A crop is `agreed` when its streak is full and all `K` carry its label. A crop w
 one other label of its 字種 is `flagged` with that label. Any other crop is left to a reviewer.
 
 `run` writes `<similar>/agreed-marks.json`: `agreed`, the pending collected crops that pass, each
-with the label and the cut it was judged under, and `flagged`, each with its label and the form its
-neighbours carry. Only a crop still on its first cut is marked: the index holds that image. It also
+with the label and the cut it was judged under, and `flagged`, each with its label, the form its
+neighbours carry and its cut. Only a crop still on its first cut is marked: the index holds that image. It also
 tests the form rule on the crops reviewers gave a verdict on (`verdicts`, `measured`).
 """
 from __future__ import annotations
@@ -170,7 +170,7 @@ def run(similar: Path, *, mirror: Path, atlas: Path, k: int = K, streak: int = S
     full = {n for n, count in zip(pending, streaks(labels, pages, vectors, k=streak, rows=pending)[0].tolist(), strict=True)
             if count >= streak}
     agreed = {ids[n]: {"label": labels[n], "cut": known[n][5]} for n in pending if n in full and found[n][0] == k}
-    flagged = {ids[n]: {"label": labels[n], "form": found[n][1]} for n in pending if found[n][1]}
+    flagged = {ids[n]: {"label": labels[n], "form": found[n][1], "cut": known[n][5]} for n in pending if found[n][1]}
     result = {"method": METHOD, "k": k, "streak": streak,
               "counts": {"pending": len(pending), "full_streak": len(full),
                          "agreed": len(agreed), "flagged": len(flagged)},

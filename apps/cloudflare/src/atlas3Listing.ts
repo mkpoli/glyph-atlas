@@ -87,15 +87,19 @@ export async function listingItems(env: Env, ids: number[], reads: CropReads = {
   });
 }
 
-// The classifier's doubt about a crop's label, and the quiz's shape order: one primary-key probe each.
-// The doubt is held against the crop as it shows now (`suspectOf`), never read from `crops.flags`.
-export const marksQuery = () => `SELECT j.value AS crop,s.p,s.reads_as,s.label,s.box,h.shape_order FROM json_each(?) j
+// The doubt about a crop's label, the classifier's or its neighbours' (`basis`), and the quiz's shape
+// order: one primary-key probe each. The doubt is held against the crop as it shows now (`suspectOf`),
+// never read from `crops.flags`.
+export const marksQuery = () => `SELECT j.value AS crop,s.p,s.reads_as,s.label,s.box,s.basis,h.shape_order FROM json_each(?) j
   LEFT JOIN suspects s ON s.crop=j.value LEFT JOIN shapes h ON h.crop=j.value`;
-export type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null };
+export type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null; basis?: string | null };
 // A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled,
-// re-cut or redrawn since is no longer what it judged.
+// re-cut or redrawn since is no longer what it judged. A mark from the crop's neighbours (`form`)
+// names no box: it is given on a first cut, the table drops it when the crop is cut again, and a box a
+// reviewer has redrawn (`box_pending`) hides it until then.
 export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | null {
   if (!mark || mark.label !== item.label) return null;
+  if (mark.basis === 'form') return item.box_pending ? null : { p: mark.p, reads_as: mark.reads_as, basis: 'form' };
   const a = mark.box, b = item.box ?? null;
   const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
   return same ? { p: mark.p, reads_as: mark.reads_as } : null;
@@ -104,7 +108,7 @@ export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | 
 export async function marksOf(env: Env, ids: number[]): Promise<Map<number, { suspect: Suspect | null; shape_order: number | null }>> {
   if (!ids.length) return new Map();
   const rows = (await env.ATLAS.prepare(marksQuery()).bind(JSON.stringify(ids)).all<{ crop: number; p: number | null; reads_as: string | null;
-    label: string | null; box: string | null; shape_order: number | null }>()).results;
+    label: string | null; box: string | null; basis: string | null; shape_order: number | null }>()).results;
   return new Map(rows.map(row => [row.crop, { shape_order: row.shape_order,
-    suspect: row.label === null ? null : { p: row.p!, reads_as: row.reads_as, label: row.label, box: row.box === null ? null : JSON.parse(row.box) } }]));
+    suspect: row.label === null ? null : { p: row.p!, reads_as: row.reads_as, label: row.label, box: row.box === null ? null : JSON.parse(row.box), basis: row.basis } }]));
 }
