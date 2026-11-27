@@ -450,7 +450,9 @@ class Worker:
         if any(leaks(text, secrets) for text in (commit, title, body)):
             raise Refused("its description holds what looks like a secret")
         body_file = self.config.state / f"body-{number}.md"
-        body_file.write_text(f"{body}\n\nCloses #{number}\n", encoding="utf-8")
+        if not re.search(rf"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #{number}\b", body, re.IGNORECASE):
+            body = f"{body}\n\nCloses #{number}"
+        body_file.write_text(f"{body}\n", encoding="utf-8")
         try:
             run([*git, "commit", "-q", "--no-verify", "-m", commit], cwd=worktree)
             run([*git, "push", "-q", "--no-verify", "-u", "origin", branch], cwd=worktree, timeout=300)
