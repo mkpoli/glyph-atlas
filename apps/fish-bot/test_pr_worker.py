@@ -427,3 +427,48 @@ def test_closing_another_issue_does_not_count(site):
     hub = FakeHub([issue()])
     w.Worker(config, hub, writes({"a.txt": "two\n"}, body="Closes #70.")).once()
     assert hub.drafts[0][2] == "Closes #70.\n\nCloses #7\n"
+
+
+def test_test_tools_are_offered_only_when_their_directory_is_there(site, tmp_path):
+    config, _, _ = site
+    worktree = config.worktrees / "repo-issue-7"
+    assert w.BOX_TOOLS not in " ".join(w.box(config, worktree))
+    missing = w.dataclasses.replace(config, tools=tmp_path / "none")
+    assert w.BOX_TOOLS not in " ".join(w.box(missing, worktree))
+
+    (tmp_path / "tools").mkdir()
+    with_tools = w.dataclasses.replace(config, tools=tmp_path / "tools")
+    args = w.box(with_tools, worktree)
+    joined = " ".join(args)
+    assert f"--ro-bind {tmp_path / 'tools'} {w.BOX_TOOLS}" in joined and f"PYTHONPATH {w.BOX_TOOLS}" in joined
+    assert args[args.index("PATH") + 1].split(":")[:2] == [f"{w.BOX_CODEX}/bin", f"{w.BOX_TOOLS}/bin"]
+
+    told, untold = writes({"a.txt": "two\n"}), writes({"a.txt": "two\n"})
+    w.Worker(with_tools, FakeHub([issue()]), told).once()
+    assert "python3 -m pytest" in told.prompts[0] and "{tools}" not in told.prompts[0]
+    w.Worker(missing, FakeHub([issue(number=8)]), untold).once()
+    assert "pytest" not in untold.prompts[0] and "{tools}" not in untold.prompts[0]
+
+
+def test_inside_the_box_the_test_tools_can_be_run_and_not_changed(site, tmp_path):
+    config, _, _ = site
+    if shutil.which("bwrap") is None or subprocess.run(["bwrap", "--ro-bind", "/", "/", "true"], check=False).returncode:
+        pytest.skip("bubblewrap cannot start here")
+    worktree = tmp_path / "work"
+    worktree.mkdir()
+    (config.state / "codex-home").mkdir(parents=True)
+    (config.state / "codex-home" / "auth.json").touch()
+    codex = tmp_path / "pkg" / "bin" / "codex"
+    codex.parent.mkdir(parents=True)
+    codex.write_text("", encoding="utf-8")
+    tools = tmp_path / "tools"
+    (tools / "bin").mkdir(parents=True)
+    (tools / "fishtool.py").write_text("NAME = 'imported'\n", encoding="utf-8")
+    (tools / "bin" / "fishlint").write_text("#!/bin/sh\necho linted\n", encoding="utf-8")
+    (tools / "bin" / "fishlint").chmod(0o755)
+    config = w.dataclasses.replace(config, codex=codex, tools=tools)
+    script = "fishlint && python3 -c 'import fishtool; print(fishtool.NAME)'; (echo x > /opt/tools/fishtool.py) 2>/dev/null; ls -a"
+    done = subprocess.run([*w.box(config, worktree), "sh", "-c", script], capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("linted\nimported\n") and "__pycache__" not in done.stdout
+    assert (tools / "fishtool.py").read_text(encoding="utf-8") == "NAME = 'imported'\n" and not (tools / "__pycache__").exists()
