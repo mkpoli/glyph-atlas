@@ -288,7 +288,7 @@ def act(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str,
 
     A retraction is the asserter's (`owned` names the actor's other journal ids); an accept or reject
     is anyone else's; an adjudication needs `adjudicator`. Retracting one member of an alternative set
-    retracts the set.
+    retracts the set. A verdict on a claim taken back would count for nothing, so it is refused.
     """
     signature = canonical(request)
     saved = previous(conn, key, signature)
@@ -306,6 +306,8 @@ def act(conn: sqlite3.Connection, *, key: str, actor: str, request: Mapping[str,
         raise LedgerError(422, "A claim is already its asserter's own; retract it instead.")
     if action == "adjudicate" and not adjudicator:
         raise LedgerError(403, "Only an adjudicator can decide between claims.")
+    if action != "retract" and _retracted(conn, target):
+        raise LedgerError(409, "This claim was taken back.")
     targets = [target]
     if found["alternative_set"] and action == "retract":
         targets = [i for (i,) in conn.execute("SELECT id FROM assertions WHERE alternative_set=? ORDER BY rowid",
