@@ -4282,6 +4282,9 @@ def test_an_unreachable_compendium_leaves_the_other_tools(tmp_path, monkeypatch)
     (["Fish, add this to the compendium please"], True, True), (["Fish, don't add this to the compendium"], True, False),
     (["大肥魚我現在應該已經給你權限了，幫我加好不好喵"], True, True), (["大肥魚 能不能幫我加一下"], True, True),
     (["大肥魚 可不可以放上去，補一下"], True, True), (["大肥魚 不要加進珍字集覽", "大肥魚 好啦還是加吧"], True, True),
+    (["大肥魚 那個字的出處寫錯了，幫我改一下"], True, True), (["大肥魚 把讀音更正為 kau3"], True, True),
+    (["Fish, please fix the reading on that one"], True, True), (["大肥魚 不要改那條記錄"], True, False),
+    (["Fish, don't change that record"], True, False), (["大肥魚 別動它"], False, False),
 ])
 def test_a_call_that_speaks_of_the_compendium_or_of_adding_may_add_unless_told_not_to(tmp_path, lines, offered, adds):
     bot, _, store = make_bot(tmp_path)

@@ -372,14 +372,15 @@ answers with a brief of everything she remembers from every room she reads: what
 building, the subjects that keep coming back, decisions and recent news, in the language of the
 request.
 
-She adds to 珍字集覽 (rare.glyphatlas.org) when someone asks her to, through its MCP endpoint
+She adds to 珍字集覽 (rare.glyphatlas.org), and corrects what is there, when someone asks her to, through its MCP endpoint
 (`[compendium]`). A call gets its tools when the caller's lines, the line they answer or the six lines
-before speak of the compendium or of adding; the match is wide, since without the tools she can only ask
-to be called again. Whether an addition was asked for is hers to read from the caller's words, and the
-tools that add stay shut for a caller whose newest line says not to. She adds a record or a sighting, at
-most ten an hour and four for one person, and never the same one twice in a day. She cites the asker's message as a via, and every addition is written down in the table
+before speak of the compendium or of adding or changing; the match is wide, since without the tools she can only ask
+to be called again. Whether a write was asked for is hers to read from the caller's words, and the
+tools that write stay shut for a caller whose newest line says not to. She adds a record or a sighting, or
+edits one against the revision she has just read, at most ten writes an hour and four for one person, and
+never the same one twice in a day. An edit is kept in the record's history on the site. She cites the asker's message as a via, and every write is noted in the table
 `compendium_writes`. Pictures go by public address, so a picture posted only in the chat needs a link.
-She cannot change or remove what is there. Without a token she writes under the one anonymous name the
+She cannot remove a record or a sighting. Without a token she writes under the one anonymous name the
 endpoint hands her, kept in the table `settings`.
 
 She knows Unicode from `unicode-18.0.0.json.gz`, built by `make_unicode.py` from the Unicode Character
