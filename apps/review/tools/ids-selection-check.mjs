@@ -32,7 +32,7 @@ try {
       const saved = []
       for (const crop of crops) {
         const response = await send('/atlas/characters/' + encodeURIComponent(crop.id) + '/form', {
-          ...init, body: JSON.stringify({ id: crypto.randomUUID(), form: crop.form, crop_version: crop.crop_version })
+          ...init, body: JSON.stringify({ id: crypto.randomUUID(), client_id: "ids-selection-check", form: crop.form, crop_version: crop.crop_version })
         })
         if (!response.ok) return response
         saved.push(await response.json())

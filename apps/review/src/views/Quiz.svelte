@@ -426,7 +426,8 @@
   const CORRECTION_BATCH = 144
   async function assignForm(form, chosen, claims = {}, relabel = false) {
     if (!chosen.length) return
-    const characterOf = i => relabel ? form : i.written_character || i.label
+    const namesCharacter = relabel || (members.includes(form) && !isFigure(form) && !isDescription(form))
+    const characterOf = i => namesCharacter ? form : i.written_character || i.label
     const crops = chosen.filter(i => !((i.written_character || i.label) === characterOf(i) && i.state === 'checked'))
     // One run of batches for each character the crops are corrected to.
     const byCharacter = new Map()
