@@ -462,6 +462,18 @@ Install: copy `pr_worker.py` to `~/.local/share/fish-pr/`, write `~/.config/fish
 `fish-pr.service` in `~/.config/systemd/user/`. `journalctl --user -u fish-pr` shows each run; what the
 agent printed is under `logs/` in the state directory.
 
+The agent has no network, so it can run only the test tools already on the machine. To give it some,
+fill a directory once and name it as `tools` in the configuration:
+
+```sh
+uv pip install --python /usr/bin/python3 --target ~/.local/share/fish-pr/tools pytest ruff
+```
+
+Install with the system's Python, as above, so that no file in the directory names a home directory.
+The agent sees the directory read-only at `/opt/tools`, with its `bin` on `PATH` and its packages
+importable, and is told to try `python3 -m pytest` and `ruff check`. Add what a repository's tests
+import in the same way.
+
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
 and directories:
 
