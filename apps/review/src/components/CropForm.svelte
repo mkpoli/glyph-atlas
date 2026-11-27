@@ -243,7 +243,7 @@
         </div>
       {/if}
       {#if composing}
-        <IdsComposer {disabled} start={query.trim()} char={written} onuse={char => add({ char })} />
+        <IdsComposer {disabled} start={query.trim() || (typeof chosen === 'string' ? chosen : current)} char={written} onuse={char => add({ char })} />
       {:else}
         <button type="button" class="form-compose" {disabled} onclick={() => composing = true}>{t('form.ids.compose')}</button>
       {/if}

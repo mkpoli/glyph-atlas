@@ -113,9 +113,10 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
     length in `SIZES`. A line is vertical unless its id is in `horizontal`, as `Line.vertical` is.
 
     Each unit's `seq` is the one before it plus one: a position with no unit, or with two, breaks the
-    run there. A gap, an unreadable unit, a mark or an unsegmented run is never part of one, and neither
-    is a unit without a box. Two neighbours too far apart on the page break the run as well: further than
-    `REACH` times the longer side of their boxes or the line's usual step (`Spacing`).
+    run there. Iteration marks (`UnitKind.ITERATION_MARK`) join adjacent character units in runs; a
+    gap, an unreadable unit, punctuation, a voicing mark or an unsegmented run is never part of one,
+    and neither is a unit without a box. Two neighbours too far apart on the page break the run as
+    well: further than `REACH` times the longer side of their boxes or the line's usual step (`Spacing`).
 
     A line in `blocks` holds several columns read one after another, as a CODH block does: it steps
     from the foot of one column to the head of the next, and with small characters that step can fall
@@ -130,7 +131,8 @@ def adjacent_ngrams(units: Iterable[Unit | Glyph], horizontal: Container[str] = 
     for line, positions in lines.items():
         # The positions held by one unit that can be part of a run; any other position breaks it.
         held = {seq: found[0] for seq, found in positions.items() if len(found) == 1
-                and found[0].kind == UnitKind.CHAR and found[0].granularity == "char" and found[0].box}
+                and found[0].kind in (UnitKind.CHAR, UnitKind.ITERATION_MARK)
+                and found[0].granularity == "char" and found[0].box}
         wraps = line in blocks
         # A block's columns may each be spaced their own way, so a block reaches by its boxes alone.
         spacing = Spacing() if wraps else Spacing.of(

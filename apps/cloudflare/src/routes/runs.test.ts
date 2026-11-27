@@ -8,7 +8,7 @@ import { listingItems } from '../atlas3Listing';
 import { d1 } from '../forms.test';
 import { filedQuery, redrawLimits } from '../cropRecords';
 import { bookCharactersQuery, bookFormsQuery, booksQuery, corpusFormsQuery, runCountQuery,
-  reviewedQuery, cropRunsQuery, refileRuns, runGraphemesQuery, runHasQuery, runHeadsQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
+  reviewedQuery, cropRunsQuery, refileRuns, runGraphemesQuery, runHasQuery, runHeadsQuery, runLongCountQuery, runOccurrencesQuery, runProbeQuery, runRangeQuery, runStatsInQuery, runWorksQuery, runsRoute, writtenStatement } from './runs';
 
 type Json = any;
 const databases: Database[] = [];
@@ -371,10 +371,13 @@ describe('runs on the new layout', () => {
   it('read every table by its key or an index', () => {
     const f = fixture();
     const plan = (db: Database, sql: string, values: unknown[]) => db.query('EXPLAIN QUERY PLAN ' + sql).all(...(values as any[])).map((r: Json) => r.detail as string);
-    // A capped subquery's own rows (`s`, `(subquery-n)`) and a bound list (`j`) are read whole.
-    const scans = (details: string[]) => details.filter(d => /^SCAN /.test(d) && !/^SCAN (j|s|json_each|\(subquery-\d+\))( |$)/.test(d));
+    // A capped subquery's own rows (`a`, `s`, `(subquery-n)`) and a bound list (`j`) are read whole.
+    const scans = (details: string[]) => details.filter(d => /^SCAN /.test(d) && !/^SCAN (a|j|s|json_each|\(subquery-\d+\))( |$)/.test(d));
     const shapes: [Database, string, unknown[]][] = [
       [f.runsDb, runRangeQuery(), [3, 'んし', 'んし\u{10FFFF}', '']], [f.runsDb, runHasQuery(), [2, 'んし']],
+      [f.runsDb, runStatsInQuery(), [2, '["かゝ","かヽ"]']],
+      [f.runsDb, runLongCountQuery(4, 0), ['んしん', 'んし']],
+      [f.runsDb, runLongCountQuery(4, 1), ['しんし', 'んし']],
       [f.runsDb, bookFormsQuery(2), ['ん', 'し', 2, 'んし', 1]], [f.runsDb, bookFormsQuery(3), ['ん', 'し', 'ん', 3, 'んしん', 1]],
       [f.runsDb, runProbeQuery(false), ['んしん']], [f.runsDb, runProbeQuery(true), [1, 'んしん']],
       [f.atlas, runGraphemesQuery(), ['["ん"]']], [f.atlas, booksQuery(), ['[1]']],
@@ -403,6 +406,50 @@ describe('runs on the new layout', () => {
     for (const sql of [runOccurrencesQuery(2, 0, true, true), runCountQuery(2, 0, true), bookFormsQuery(2)])
       expect(plan(f.runsDb, sql, sql === bookFormsQuery(2) ? ['ん', 'し', 2, 'んし', 1] : [1, 2, 'んし', 0, ...(sql.includes('OFFSET') ? [48, 0] : [])]).join('; '))
         .toContain('run_book (size=? AND graphemes=? AND book=?)');
+    // Iteration-mark lookups use primary keys with no temp B-tree sort, and long-run counts bound anchor rows first.
+    const iterPlan = plan(f.runsDb, runStatsInQuery(), [2, '["かゝ","かヽ"]']).join('; ');
+    expect(iterPlan).toContain('SEARCH run_stats USING PRIMARY KEY (size=? AND graphemes=?)');
+    expect(iterPlan).not.toContain('TEMP B-TREE');
+    const longIterPlan = plan(f.runsDb, runLongCountQuery(4, 0), ['んしん', 'んし']).join('; ');
+    expect(longIterPlan).toContain('CO-ROUTINE a');
+    expect(longIterPlan).toContain('SEARCH runs USING PRIMARY KEY (size=? AND graphemes=?)');
+    expect(longIterPlan).toMatch(/INDEX run_first \(first=\?\)/);
+  });
+
+  it('associates iteration-mark (踊り字) variants bidirectionally in /atlas/runs/related', async () => {
+    const f = fixture();
+    // Seed かか (64), かヽ (3), かゝ (12), 人人 (7), 人〻 (83), 人々 (2), つれ〲 (5), a 4-crop つれづれ run, and あゝゝゝ.
+    f.runsDb.exec(`
+      INSERT INTO run_stats(size,graphemes,n,down) VALUES
+        (2,'かか',64,64),(2,'かヽ',3,3),(2,'かゝ',12,12),
+        (2,'人人',7,7),(2,'人〻',83,83),(2,'人々',2,2),
+        (3,'つれ〲',5,5),(3,'つれづ',4,4),(3,'れづれ',4,4),
+        (3,'あゝゝ',2,2),(3,'ゝゝゝ',2,2);
+      INSERT INTO runs(size,graphemes,hand,shuffle,first,second,third,book) VALUES
+        (3,'つれづ',0,1,9001,9002,9003,1),
+        (2,'づれ',0,2,9003,9004,NULL,1),
+        (3,'れづれ',0,2,9002,9003,9004,1),
+        (3,'あゝゝ',0,3,9101,9102,9103,1),
+        (2,'ゝゝ',0,4,9103,9104,NULL,1),
+        (3,'ゝゝゝ',0,4,9102,9103,9104,1);
+    `);
+    const related = async (q: string) => (await (await ask(f.newEnv, '/atlas/runs/related?text=' + encodeURIComponent(q))).json() as Json).iteration;
+
+    // Spelled-out → iteration marks (most frequent first).
+    expect((await related('かか')).map((r: Json) => [r.text, r.n])).toEqual([['かゝ', 12], ['かヽ', 3]]);
+    // Iteration mark → spelled-out and sibling iteration marks.
+    expect((await related('かヽ')).map((r: Json) => [r.text, r.n])).toEqual([['かか', 64], ['かゝ', 12]]);
+    // Katakana folds to hiragana head first, so カカ associates かゝ and かヽ.
+    f.atlas.exec(`INSERT INTO graphemes(id,text,head) VALUES(10,'か',NULL),(11,'カ',10);`);
+    expect((await related('カカ')).map((r: Json) => [r.text, r.n])).toEqual([['かゝ', 12], ['かヽ', 3]]);
+    // Han iteration marks work both ways across 々 and 〻.
+    expect((await related('人人')).map((r: Json) => [r.text, r.n])).toEqual([['人〻', 83], ['人々', 2]]);
+    expect((await related('人々')).map((r: Json) => [r.text, r.n])).toEqual([['人〻', 83], ['人人', 7]]);
+    // Multi-char くの字点 works both ways across lengths 3 ↔ 4 (つれづれ ↔ つれ〲).
+    expect((await related('つれづれ')).map((r: Json) => [r.text, r.n])).toEqual([['つれ〲', 5]]);
+    expect((await related('つれ〲')).map((r: Json) => [r.text, r.n])).toEqual([['つれづれ', 1]]);
+    // Fully repeated 4-char form (あゝゝゝ) is found even when earlier single-substitution candidates are absent.
+    expect((await related('ああああ')).map((r: Json) => [r.text, r.n])).toEqual([['あゝゝゝ', 1]]);
   });
 });
 

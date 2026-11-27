@@ -829,13 +829,13 @@ describe('a crop read in a run', () => {
 });
 
 describe('a batch of form picks', () => {
-  it('claims one value on every crop at once, names its form once, and is undone by sending each replaced value back', async () => {
+  it.each(['⿺辶𦊷', '率󠄁'])('claims %s once across crops and restores each replaced value on undo', async (form) => {
     const { db, env, tools, local, corpus, version, post } = setup();
     await setForm(env, { id: crypto.randomUUID(), crop_version: version(local), form: '還' }, publicId(local), 'reader', tools);
-    const batch = { id: crypto.randomUUID(), crops: [{ id: publicId(local), crop_version: version(local), form: '⿺辶𦊷' },
-      { id: publicId(corpus), crop_version: version(corpus, 'rev1'), form: '⿺辶𦊷' }] };
+    const batch = { id: crypto.randomUUID(), crops: [{ id: publicId(local), crop_version: version(local), form },
+      { id: publicId(corpus), crop_version: version(corpus, 'rev1'), form }] };
     const marked = await post('/atlas/forms', batch) as any;
-    expect(marked.crops.map((c: any) => [c.id, c.form.values[0].text, c.replaced])).toEqual([[publicId(local), '⿺辶𦊷', '還'], [publicId(corpus), '⿺辶𦊷', null]]);
+    expect(marked.crops.map((c: any) => [c.id, c.form.values[0].text, c.replaced])).toEqual([[publicId(local), form, '還'], [publicId(corpus), form, null]]);
     expect(db.query('SELECT count(*) AS n FROM forms').get()).toEqual({ n: 2 });
     expect(db.query("SELECT count(*) AS n FROM assertions WHERE predicate='represented_by'").get()).toEqual({ n: 2 });
     // The same batch sent again is the same write.
@@ -1098,6 +1098,40 @@ describe('the ledger read', () => {
     expect(exported.headers.get('content-disposition')).toBe('attachment; filename="atlas-ledger.json"');
     expect(await exported.json()).toMatchObject({ kind: 'atlas-ledger', assertions: [{ seq: 1, subject: publicId(local), crop: publicId(local) }],
       actions: [{ seq: 1, action: 'accept' }], next: { after: 1, actions_after: 1 }, done: false });
+  });
+
+  it('refuses a verdict on a claim taken back, with the one that stands in its place', async () => {
+    const { db, claim, post } = setup();
+    const word = (object: string) => claim([{ object, confidence: 1, confidence_scheme: 'form' }], 'reader', 'ruby');
+    const [first] = (await word(W)).assertions, [second] = (await word(OTHER)).assertions;
+    const act = (target: string, action: string, me = { id: 'other', admin: false }, id = crypto.randomUUID()) => post(`/atlas/claims/${target}/actions`, { id, action }, me) as Promise<any>;
+    const rows = () => (db.query('SELECT count(*) AS n FROM assertion_actions').get() as { n: number }).n, before = rows();
+    // The reader's later claim took the first one's place; the verdict on it is not carried over, since it says otherwise.
+    for (const [action, me] of [['accept', undefined], ['reject', undefined], ['adjudicate', { id: 'judge', admin: true }]] as const) {
+      const refused = await act(first, action, me as any).catch(error => error);
+      expect([refused.message, refused.extra]).toEqual(['409 This claim was taken back.', { standing: [second] }]);
+    }
+    expect([rows(), db.query('SELECT count(*) AS n FROM ledger_submissions WHERE id LIKE ?').get('other:%')]).toEqual([before, { n: 0 }]);
+    // One sent before it was taken back, and sent again, answers as it did.
+    const id = crypto.randomUUID(), accepted = await act(second, 'accept', undefined, id);
+    await act(second, 'retract', { id: 'reader', admin: false });
+    expect((await act(second, 'accept', undefined, id)).actions).toEqual(accepted.actions);
+    const none = await act(second, 'reject').catch(error => error);
+    expect([none.message, none.extra]).toEqual(['409 This claim was taken back.', { standing: [] }]);
+  });
+
+  it('refuses a verdict on a claim taken back between its read and its write', async () => {
+    const { db, env, claim, post } = setup();
+    const [made] = (await claim([{ object: W, confidence: 1, confidence_scheme: 'form' }], 'reader', 'ruby')).assertions;
+    const batch = (env as any).ATLAS.batch.bind((env as any).ATLAS);
+    (env as any).ATLAS.batch = (statements: any[]) => {
+      db.query("INSERT INTO assertion_actions(id,assertion,action,actor,at) VALUES('raced',?,'retract','reader','now')").run(made);
+      (env as any).ATLAS.batch = batch;
+      return batch(statements);
+    };
+    const refused = await (post(`/atlas/claims/${made}/actions`, { id: crypto.randomUUID(), action: 'accept' }, { id: 'other', admin: false }) as Promise<any>).catch(error => error);
+    expect([refused.message, refused.extra]).toEqual(['409 This claim was taken back.', { standing: [] }]);
+    expect(db.query("SELECT id FROM assertion_actions WHERE assertion=?").all(made)).toEqual([{ id: 'raced' }]);
   });
 
   it('gives a book its dates and the date claims that stand', async () => {

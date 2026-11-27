@@ -286,6 +286,9 @@ mautrix-discord then shows it for accounts logged in to it, as hers is. mautrix-
 passes on no typing for relayed accounts, and QQ's bot API has none for groups
 (@tencent-connect/qqbot-nodejs 1.0.6, `sendTyping`).
 
+A call is answered once its caller has been quiet for three seconds, ten at most, with typing shown
+from the start. A forwarded post or a picture sent right after the call is read in the same turn.
+
 She stays in a conversation. For four minutes after she speaks, she reads each new line in that room
 after a pause of a few seconds and decides whether it is for her: a follow-up, a correction such as
 "I mean the whole server!", or a thank-you gets an answer or an emoji without anyone naming her
@@ -370,9 +373,11 @@ building, the subjects that keep coming back, decisions and recent news, in the 
 request.
 
 She adds to 珍字集覽 (rare.glyphatlas.org) when someone asks her to, through its MCP endpoint
-(`[compendium]`). A turn gets its tools only when the lines ask about it; it may read the records then,
-and when the asker's own words ask for an addition it may add a record or a sighting, at most ten an
-hour and four for one person, and never the same one twice in a day. She cites the asker's message as a via, and every addition is written down in the table
+(`[compendium]`). A call gets its tools when the caller's lines, the line they answer or the six lines
+before speak of the compendium or of adding; the match is wide, since without the tools she can only ask
+to be called again. Whether an addition was asked for is hers to read from the caller's words, and the
+tools that add stay shut for a caller whose newest line says not to. She adds a record or a sighting, at
+most ten an hour and four for one person, and never the same one twice in a day. She cites the asker's message as a via, and every addition is written down in the table
 `compendium_writes`. Pictures go by public address, so a picture posted only in the chat needs a link.
 She cannot change or remove what is there. Without a token she writes under the one anonymous name the
 endpoint hands her, kept in the table `settings`.
@@ -403,6 +408,59 @@ latest messages, checks the open issues for duplicates, and files in `mkpoli/gly
 the log names a concrete request. `!fish review` proposes a title and keeps it for a day; `!fish
 issue` files that proposal, or reads the room again when none is pending. Filing is capped at five
 issues a day and one every ten minutes; model calls are capped per user and across the bot.
+
+Anyone can also ask her for a pull request ("做個 PR", "open a PR for #123"). The desk finds the open
+issue or files one, and puts the label `fish-pr` (`draft_label`) on it; a program on a maintainer's
+machine takes it from there, and she writes nothing herself. One person may ask once a day and everyone
+together three times (`max_drafts_per_day`); an issue that carries the label or one of its later forms
+is not asked for again. Every ten minutes she looks at the issues she labelled, and tells the room once
+when a draft is up, with its address from the comment on the issue, or that none came of it. After a
+week without either she stops looking.
+
+Feedback is filed without anyone asking (`file_feedback`). In any turn, a visit included, she marks
+lines that report something broken in, or ask for a change to, the community's sites and tools; the
+desk then reads the room, and files when the request is new and it is at least 0.85 sure, posting the
+link. For one already open it posts that issue's link, once a day per room. Otherwise it says nothing.
+Such readings are paid from the money for unasked work, come at most six a day and one per room every
+half hour, and leave two of the day's issues for people who ask.
+
+Draft pull requests are written by `apps/fish-bot/pr_worker.py`, which runs on the maintainer's own machine, not on the server. Every ten minutes
+it lists the open issues labelled `fish-pr`, oldest first, and for each one makes a worktree off
+`origin/main`, has Codex work on it there, and opens a draft pull request that closes the issue. It
+never merges. The label moves to `fish-pr-working`, then to `fish-pr-opened`, `fish-pr-declined` (the
+agent found it is not a small fix, and says why on the issue) or `fish-pr-failed`, and a comment on the issue gives the draft's address. Only people who can
+label issues can ask, which is the repository's own access rule.
+
+The issue text comes from a public chat, so the agent gets it as data and runs boxed in:
+
+- bubblewrap gives it a small world: the worktree at `/work`, the system's programs (`/usr`, `/nix/store`,
+  a few files of `/etc`), and Codex with its own login. No home directory, no other project, no key, no
+  `.git`, no `/mnt`, `/tmp` or `/var`, and no path that names the machine's user.
+- Codex's `workspace-write` sandbox takes the network from the commands it runs and lets them write
+  only in the worktree. It cannot commit or push.
+- The worktree's pointer to its repository is hidden from the agent and cannot be replaced; a worktree
+  whose pointer changed anyway is deleted unread.
+- The worker stages what is left, with git's hooks, filters and file monitor off, and refuses it when it touches
+  `.github`, `.husky`, `.gitmodules`, any `.gitattributes` or a file of secrets, adds a symbolic link or
+  a submodule, is larger than 40 files or 3,000 added lines, or holds anything that looks like a secret:
+  every changed file is read whole, and the agent's own login is looked for plain, reversed, in hex, in
+  base64 and in pieces. The commit message, the title, the description and a decline's reason are read
+  the same way before they are posted, and lose any line saying what wrote them.
+- Three attempts a day (`per_day`), forty minutes each (`minutes`).
+
+Two things the box does not do. The agent's commands can read its own login file, since Codex needs it
+there; the checks on what is pushed and posted are what keep it in. And a draft's code runs in the pull
+request's checks like any contributor's: those workflows use no secrets and a read-only token, and
+`.github` is barred, but read a draft before running its code anywhere else.
+
+The worker leaves a checkout alone whose files pass through a git filter such as LFS, or whose git
+settings run a program by a relative path (a filter, a
+signing program, an alias), since the agent could put a program there.
+
+Install: copy `pr_worker.py` to `~/.local/share/fish-pr/`, write `~/.config/fish-pr/config.toml` from
+`pr-worker.example.toml`, run `pr_worker.py --labels` once, and enable `fish-pr.timer` with
+`fish-pr.service` in `~/.config/systemd/user/`. `journalctl --user -u fish-pr` shows each run; what the
+agent printed is under `logs/` in the state directory.
 
 The program is `apps/fish-bot/fish_bot.py`, standard library only. On the server, make its account
 and directories:

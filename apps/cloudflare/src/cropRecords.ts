@@ -138,6 +138,11 @@ export async function underHeads(env: Env, found: { record: Json; char: string |
   });
 }
 
+/** The style the crop is listed under: its publication's, or one a reviewer gave it (`unit`), which they may change.
+ *  `style_inherited` is its publication's, the one it goes back to; an overlay keeps it while a reviewer's style stands. */
+export const styleFields = (row: Pick<RecordRow, 'style' | 'own_style' | 'base_style'>) => ({ style: recordStyle(row.style),
+  style_basis: row.own_style ? 'unit' : 'none', style_editable: true, style_inherited: recordStyle(row.own_style ? row.base_style : row.style) });
+
 /** The record of a crop from its row and the published fields (`base`: the bundle entry, or the corpus
  *  glyph's published record). `source_id` is the id the crop had before the cutover, which listings carry
  *  too (`cropItems`), so an address written with it (a citation's version token) is still read. */
@@ -148,10 +153,7 @@ export function cropRecord(row: RecordRow, base: Json, source: string): Json {
   Object.assign(record, { id: publicId(row.id), source_id: source, ...(corpus ? { origin: 'corpus' } : {}) });
   if (!corpus) Object.assign(record, { label: row.char ?? record.label, production: row.production ?? 'unknown', page_id: row.page_key });
   Object.assign(record, { state: recordState(row.state), revision: row.settled });
-  // The style the crop is listed under: its publication's, or one a reviewer gave it (`unit`), which they may change.
-  // `style_inherited` is its publication's, the one it goes back to; an overlay keeps it while a reviewer's style stands.
-  Object.assign(record, { style: recordStyle(row.style), style_basis: row.own_style ? 'unit' : 'none', style_editable: true,
-    style_inherited: recordStyle(row.own_style ? row.base_style : row.style) });
+  Object.assign(record, styleFields(row));
   // A review keeps the crop's category on its record, and the issue it stands flagged for.
   if (row.reviewed) record.category = row.category ?? categoryOf(record.label ?? '');
   if (row.reviewed || row.issue !== null) record.issue = record.state !== 'flagged' ? null : recordIssue(row.issue);

@@ -264,7 +264,9 @@ export async function planSubjectClaim(env: Env, claim: { key: string; actor: st
 
 /** The rows of one action by `actor` on claim `target`: a retraction is the asserter's (under any id
  *  they hold), an accept or a reject anyone else's, an adjudication an admin's; retracting one
- *  alternative retracts its set. */
+ *  alternative retracts its set. A verdict on a claim taken back would count for nothing, so it is refused,
+ *  with the claims that now stand in the slot for its asserter (`standing`): they may say otherwise than
+ *  the one judged, so the verdict is not carried over to them. */
 export async function planAction(env: Env, act: { key: string; actor: string; target: string; action: string; reason: string;
   admin: boolean; at: string }, tools: LedgerTools) {
   const { key, actor, target, action, reason, at } = act;
@@ -274,6 +276,7 @@ export async function planAction(env: Env, act: { key: string; actor: string; ta
   if (action === 'retract' && !found.mine) tools.fail(403, 'Only the person who made a claim can retract it.');
   if ((action === 'accept' || action === 'reject') && found.mine) tools.fail(422, 'A claim is already its asserter\'s own; retract it instead.');
   if (action === 'adjudicate' && !act.admin) tools.fail(403, 'Only an adjudicator can decide between claims.');
+  if (action !== 'retract') await refuseRetracted(env, found, tools.fail);
   const members = action === 'retract' && found.alternative_set
     ? (await env.ATLAS.prepare('SELECT id FROM assertions WHERE alternative_set=? ORDER BY rowid').bind(found.alternative_set).all<{ id: string }>()).results.map(r => r.id)
     : [target];
@@ -281,11 +284,24 @@ export async function planAction(env: Env, act: { key: string; actor: string; ta
     (SELECT 1 FROM assertion_actions x WHERE x.assertion=json_each.value AND x.action='retract')`).bind(JSON.stringify(members)).all<{ id: string }>()).results.map(r => r.id) : members;
   if (!open.length) tools.fail(409, 'This claim was already retracted.');
   const ids = open.map(() => 'cf:' + crypto.randomUUID());
-  const statements = open.map((one, i) => env.ATLAS.prepare('INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?,?,?,?,?,?,?)')
+  // A verdict names its claim only while nobody has taken it back: taken back since it was read, the row names none, which the
+  // table refuses, and the batch with it.
+  const statements = open.map((one, i) => env.ATLAS.prepare(`INSERT INTO assertion_actions(id,submission,assertion,action,actor,at,reason) VALUES(?1,?2,
+    ${action === 'retract' ? '?3' : "CASE WHEN EXISTS(SELECT 1 FROM assertion_actions x WHERE x.assertion=?3 AND x.action='retract') THEN NULL ELSE ?3 END"},?4,?5,?6,?7)`)
     .bind(ids[i], key, one, action, actor, at, reason));
   const subject: Subject = found.crop != null ? { crop: found.crop } : { subject: found.subject };
   return { statements, keys: [[found.subject, found.predicate, found.scope, found.slot]] as Slot[], crops: found.crop != null ? [found.crop as number] : [],
-    actions: ids, subject };
+    actions: ids, subject, claim: found };
+}
+
+/** The claims of `claim`'s asserter that stand in its slot: what they say there since they took it back. */
+export const standingQuery = () => `SELECT a.id FROM assertions a WHERE a.subject=?1 AND a.predicate=?2 AND a.scope=?3 AND a.slot=?4
+  AND (a.asserted_by=?5 OR a.asserted_by IN (SELECT o.key FROM actors o JOIN actors w ON w.user=o.user WHERE w.key=?5 AND w.user IS NOT NULL))
+  AND NOT EXISTS (SELECT 1 FROM assertion_actions x WHERE x.assertion=a.id AND x.action='retract') ORDER BY a.rowid`;
+async function refuseRetracted(env: Env, claim: Json, fail: LedgerTools['fail']) {
+  if (!await env.ATLAS.prepare("SELECT 1 FROM assertion_actions x WHERE x.assertion=? AND x.action='retract'").bind(claim.id).first()) return;
+  const standing = (await env.ATLAS.prepare(standingQuery()).bind(claim.subject, claim.predicate, claim.scope, claim.slot, claim.asserted_by).all<{ id: string }>()).results;
+  fail(409, 'This claim was taken back.', { standing: standing.map(row => row.id) });
 }
 
 /** The response saved for submission `key`, or null; a reuse of its id with another request is refused. */
@@ -413,7 +429,12 @@ export async function actOnClaim(env: Env, input: Json, target: string, actor: s
   const at = new Date().toISOString();
   const plan = await planAction(env, { key, actor, target, action: tools.text(input.action, 16, 'action', true)!,
     reason: tools.text(input.reason ?? '', 500, 'reason') ?? '', admin, at }, tools);
-  const saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, ...plan.subject, actions: plan.actions }, tools);
+  let saved: Json;
+  try { saved = await commitPlan(env, { key, actor, signature, at }, plan, { submission: key, ...plan.subject, actions: plan.actions }, tools) } catch (error) {
+    // The claim may have been taken back between the read and the batch, which then refuses the verdict.
+    if (input.action !== 'retract') await refuseRetracted(env, plan.claim, tools.fail);
+    throw error;
+  }
   return { ...answered(saved), current: await currentOf(env, plan.subject) };
 }
 

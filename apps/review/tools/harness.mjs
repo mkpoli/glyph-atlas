@@ -8,13 +8,41 @@
  */
 
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 export const HERE = import.meta.dir
 export const ROOT = resolve(HERE, '..', '..', '..')
 export const APP = join(ROOT, 'apps', 'review')
+
+const FOLDER = 'atlas-review-', OWNER = '.owner'
+/** Whether the process that made a folder still runs: its pid and the time it started, which a later process of the same pid does not share. */
+const started = pid => { try { return readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ')[19] } catch { return null } }
+/** Whether a process can still write; one that ended and nobody has waited for cannot. */
+const running = pid => { try { return !/^.*\) [ZX] /s.test(readFileSync(`/proc/${pid}/stat`, 'utf8')) } catch { return false } }
+/** Removes the folders of checks that were killed before they removed their own (one of a run still going, or kept with
+ *  `--keep`, stays; so does a folder no check signed). */
+export function sweep(parent = tmpdir()) {
+  for (const name of readdirSync(parent).filter(name => name.startsWith(FOLDER))) {
+    let owner
+    try { owner = JSON.parse(readFileSync(join(parent, name, OWNER), 'utf8')) } catch { continue }
+    if (!owner.keep && (owner.started === null || started(owner.pid) !== owner.started)) rmSync(join(parent, name), { recursive: true, force: true })
+  }
+}
+/** A folder for one run, signed by this process, which removes it when it ends or is told to; the next run removes it
+ *  where this one is killed outright. */
+export function folder({ keep = false, parent = tmpdir() } = {}) {
+  sweep(parent)
+  const directory = mkdtempSync(join(parent, FOLDER))
+  writeFileSync(join(directory, OWNER), JSON.stringify({ pid: process.pid, started: started(process.pid), keep }))
+  if (!keep) {
+    process.on('exit', () => rmSync(directory, { recursive: true, force: true }))
+    // A handler takes the signal's own ending away, so it ends the run as the signal would have.
+    for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) process.once(signal, () => process.exit(code))
+  }
+  return directory
+}
 
 /** The command-line options the three tools share. */
 export function options(argv = process.argv.slice(2)) {
@@ -23,11 +51,12 @@ export function options(argv = process.argv.slice(2)) {
     if (index >= 0 && argv[index + 1] && !argv[index + 1].startsWith('--')) return argv[index + 1]
     return fallback
   }
+  const keep = argv.includes('--keep')
   return {
-    keep: argv.includes('--keep'),
+    keep,
     python: value('python', join(ROOT, '.venv', 'bin', 'python')),
     port: Number(value('port', '0')),
-    directory: resolve(value('directory', mkdtempSync(join(tmpdir(), 'atlas-review-')))),
+    directory: resolve(value('directory') ?? folder({ keep })),
     external: value('server', null),
     // With `--server`, the review service the page server at that address forwards to.
     externalApi: value('api', null),
@@ -70,9 +99,16 @@ export async function boot(config) {
   const api = config.external ? (config.externalApi ?? config.external).replace(/\/$/, '') : `http://127.0.0.1:${config.port}`
   const base = config.external ? config.external.replace(/\/$/, '') : `http://127.0.0.1:${webPort}`
   let fixture = null
+  let build = null
   let server = null
   let web = null
   const log = []
+  // What writes in the folder goes before it, however the run ends.
+  process.prependListener('exit', () => {
+    const left = [build, web, server].filter(child => child && child.exitCode === null && !child.signalCode)
+    for (const child of left) child.kill('SIGKILL')
+    for (let tries = 0; tries < 200 && left.some(child => running(child.pid)); tries++) Bun.sleepSync(5)
+  })
 
   if (!config.external) {
     // A dataset directory that a previous run left behind would carry its reviewed state in
@@ -80,7 +116,7 @@ export async function boot(config) {
     for (const stale of ['review.sqlite', 'review.sqlite-wal', 'review.sqlite-shm', 'reviews.jsonl']) {
       rmSync(join(config.directory, stale), { force: true })
     }
-    const build = Bun.spawn([config.python, join(HERE, 'fixture.py'), config.directory], {
+    build = Bun.spawn([config.python, join(HERE, 'fixture.py'), config.directory], {
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -128,7 +164,8 @@ export async function boot(config) {
     // The page server renders the interface and forwards API paths to the service. It serves the
     // last build of `apps/review`, so a check runs against what `bun run build` produced.
     if (!existsSync(join(APP, '.svelte-kit', 'output'))) throw new Error('apps/review has no build; run `bun run build` there first')
-    web = Bun.spawn(['bunx', 'vite', 'preview', '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'], {
+    // Vite itself: killed outright, `bunx` would leave it running.
+    web = Bun.spawn([join(APP, 'node_modules', '.bin', 'vite'), 'preview', '--port', String(webPort), '--strictPort', '--host', '127.0.0.1'], {
       cwd: APP, env: { ...process.env, ATLAS_REVIEW_API: api }, stdout: 'pipe', stderr: 'pipe',
     })
     for (const stream of [web.stdout, web.stderr]) {

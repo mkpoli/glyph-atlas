@@ -1,8 +1,11 @@
-"""Write Quick review's computed marks into glyph-atlas-v3: the classifier's suspects (`suspects`) and
-the shape order (`shapes`), each crop named by its integer id (`migrations-atlas/0003_history.sql`).
+"""Write Quick review's computed marks into glyph-atlas-v3: the suspects (`suspects`: the classifier's,
+and those a crop's neighbours give), the shape order (`shapes`) and the agreed crops (`agreed`), each
+crop named by its integer id (`migrations-atlas/0003_history.sql`, `0022_agreed.sql`,
+`0023_suspect_basis.sql`).
 
     ATLAS3_DIR=work/atlas-v3 python3 scripts/atlas3/quiz_marks.py \\
-        [--suspects hosted.json corpus.json ...] [--shapes <dataset>/quiz-shapes.json] [--send]
+        [--suspects hosted.json corpus.json ...] [--shapes <dataset>/quiz-shapes.json]
+        [--agreed <similar>/agreed-marks.json] [--forms <similar>/agreed-marks.json] [--send]
 
 - `--suspects`: marks files in precedence order, from `atlas review catalogue-suspects` over the
   catalogues the site serves, `atlas review corpus-suspects` for the corpus glyphs, or `atlas review
@@ -10,8 +13,13 @@ the shape order (`shapes`), each crop named by its integer id (`migrations-atlas
   answer, marked or not: a file lists what it scored in `scored_ids`, else only its marks count as
   scored. So the hosted catalogue's marks go first and the corpus glyphs' last.
 - `--shapes`: the `quiz-shapes.json` of the dataset the published catalogue was exported from.
+- `--agreed`: the `agreed-marks.json` of `atlas review agreed-marks`; its `agreed` crops are loaded,
+  but for one whose cut the local copy holds differently.
+- `--forms`: the same file; its `flagged` crops become suspects of basis `form`, each reading as the
+  character its neighbours carry. A crop cut again since, or one the classifier marks, is left out.
 
-Each table given is replaced whole; a table not given is left as it is. Every text id resolves through
+Each set of marks given is replaced whole; one not given is left as it is: the classifier's suspects
+and the neighbours' are two sets in one table. Every text id resolves through
 out/mirror.sqlite, which is only read; a mark on a crop the mirror lacks is left out with a count.
 
 Only what differs from the local copy (out/atlas.sqlite) is sent, in parts named by their content and
@@ -36,9 +44,12 @@ from build import OUT
 from load_history import GROUP, built, deliver, row_statements
 from publish import applied, lit, query
 
-# Each table this writes, its columns and key.
-TABLES = {"suspects": (("crop", "p", "reads_as", "label", "box"), ("crop",)),
-          "shapes": (("crop", "shape_order"), ("crop",))}
+# Each set of marks this writes: its table, columns, key, and the rows of the table that are its own.
+SUSPECT = ("crop", "p", "reads_as", "label", "box", "basis")
+TABLES = {"suspects": ("suspects", SUSPECT, ("crop",), "basis IS NULL"),
+          "shapes": ("shapes", ("crop", "shape_order"), ("crop",), None),
+          "agreed": ("agreed", ("crop", "label"), ("crop",), None),
+          "forms": ("suspects", SUSPECT, ("crop",), "basis = 'form'")}
 RUNS = OUT / "quiz-marks"
 
 
@@ -62,7 +73,7 @@ def suspects(files):
                                         and all(isinstance(v, (int, float)) and not isinstance(v, bool)
                                                 and math.isfinite(v) for v in box.values())):
                 sys.exit(f"{path}: {identity}: box must be x, y, w and h, or null")
-            marks[identity] = (p, reads, label, None if box is None else json.dumps(box, sort_keys=True))
+            marks[identity] = (p, reads, label, None if box is None else json.dumps(box, sort_keys=True), None)
         scored |= set(document.get("scored_ids") or document["suspects"])
     return marks
 
@@ -74,6 +85,28 @@ def shapes(path):
         if not isinstance(order, int) or isinstance(order, bool) or order < 0:
             sys.exit(f"{path}: {identity}: shape order must be a non-negative integer")
     return {identity: (order,) for identity, order in orders.items()}
+
+
+def agreed(path):
+    """Each agreed text id's label and the cut it was judged on, from an agreed-marks.json."""
+    marks = json.loads(Path(path).read_text())["agreed"]
+    for identity, mark in marks.items():
+        label, cut = (mark.get("label"), mark.get("cut")) if isinstance(mark, dict) else (None, None)
+        if not isinstance(label, str) or not label or not isinstance(cut, int) or isinstance(cut, bool) or cut < 0:
+            sys.exit(f"{path}: {identity}: an agreed crop names the label and the cut it was judged under")
+    return {identity: (mark["label"], mark["cut"]) for identity, mark in marks.items()}
+
+
+def forms(path):
+    """Each flagged text id's mark and the cut it was judged on, from an agreed-marks.json: it reads as
+    the character its neighbours carry, none of which carry its own."""
+    marks = json.loads(Path(path).read_text())["flagged"]
+    for identity, mark in marks.items():
+        label, form, cut = (mark.get("label"), mark.get("form"), mark.get("cut")) if isinstance(mark, dict) else (None,) * 3
+        if (not isinstance(label, str) or not label or not isinstance(form, str) or not form or form == label
+                or not isinstance(cut, int) or isinstance(cut, bool) or cut < 0):
+            sys.exit(f"{path}: {identity}: a flagged crop names its label, another form and the cut it was judged under")
+    return {identity: (0.0, mark["form"], mark["label"], None, "form", mark["cut"]) for identity, mark in marks.items()}
 
 
 def by_crop(marks, ids, table, left):
@@ -96,11 +129,12 @@ def statements(wanted, atlas):
     """Groups of statements that turn the local copy's tables into `wanted` ({table: {crop: row}}); a
     row's statements stay in one group. Also, per table, the rows removed, added, changed and written."""
     groups, changes = [], {}
-    for table, new in wanted.items():
-        cols, key = TABLES[table]
+    for name, new in wanted.items():
+        table, cols, key, own = TABLES[name]
         names = ",".join(cols)
-        held = {r[0]: r for r in atlas.execute(f"SELECT {names} FROM {table}")}
-        rows = [[f"DELETE FROM {table} WHERE crop = {lit(c)};"] for c in sorted(held) if c not in new]
+        held = {r[0]: r for r in atlas.execute(f"SELECT {names} FROM {table}" + (f" WHERE {own}" if own else ""))}
+        # A row another set has taken since is that set's: only this set's own rows are removed.
+        rows = [[f"DELETE FROM {table} WHERE crop = {lit(c)}{f' AND {own}' if own else ''};"] for c in sorted(held) if c not in new]
         removed = len(rows)
         # Each row is removed before it is written, so its statements apply again without a conflict.
         rows += [[f"DELETE FROM {table} WHERE crop = {lit(c)};", *row_statements(table, list(cols), list(key), r)]
@@ -108,7 +142,7 @@ def statements(wanted, atlas):
         added = sum(c not in held for c in new)
         for i in range(0, len(rows), GROUP):
             groups.append([s for r in rows[i:i + GROUP] for s in r])
-        changes[table] = {"rows": len(new), "removed": removed, "added": added, "changed": len(rows) - removed - added,
+        changes[name] = {"rows": len(new), "removed": removed, "added": added, "changed": len(rows) - removed - added,
                           "written": sum(len(r) for r in rows) - added}
     return groups, changes
 
@@ -151,10 +185,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--suspects", type=Path, nargs="+", help="quiz-suspects.json files, in precedence order")
     parser.add_argument("--shapes", type=Path, help="the published dataset's quiz-shapes.json")
+    parser.add_argument("--agreed", type=Path, help="agreed-marks.json of `atlas review agreed-marks`")
+    parser.add_argument("--forms", type=Path, help="agreed-marks.json, for its flagged crops")
     parser.add_argument("--send", action="store_true", help="load the parts into glyph-atlas-v3")
     args = parser.parse_args()
-    if not args.suspects and not args.shapes:
-        parser.error("name --suspects, --shapes or both")
+    if not args.suspects and not args.shapes and not args.agreed and not args.forms:
+        parser.error("name --suspects, --shapes, --agreed or --forms")
     lock = open(OUT / "mirror.lock", "w")  # noqa: SIM115 -- held until the process exits
     fcntl.flock(lock, fcntl.LOCK_EX)
     mirror = sqlite3.connect(f"file:{OUT / 'mirror.sqlite'}?mode=ro", uri=True)
@@ -167,6 +203,10 @@ def main():
         build = mirror.execute("SELECT value FROM meta WHERE key='build'").fetchone()[0]
         if not applied("glyph-atlas-v3", f"build:{build}"):
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
+    if args.agreed and not has(atlas, "agreed"):
+        sys.exit("the local copy has no agreed table; apply migrations-atlas/0022_agreed.sql to it and to glyph-atlas-v3 first")
+    if (args.suspects or args.forms) and "basis" not in {r[1] for r in atlas.execute("PRAGMA table_info(suspects)")}:
+        sys.exit("the local copy's suspects have no basis; apply migrations-atlas/0023_suspect_basis.sql to it and to glyph-atlas-v3 first")
     catch_up(atlas, keep=args.send)
     ids = dict(mirror.execute("SELECT text, id FROM ids"))
     left, wanted = {}, {}
@@ -174,6 +214,25 @@ def main():
         wanted["suspects"] = by_crop(suspects(args.suspects), ids, "suspects", left)
     if args.shapes:
         wanted["shapes"] = by_crop(shapes(args.shapes), ids, "shapes", left)
+    if args.agreed:
+        # A crop repaired since it was judged is no longer the image the mark was given on.
+        cuts = dict(atlas.execute("SELECT id, cut FROM crops WHERE kind = 0"))
+        rows = by_crop(agreed(args.agreed), ids, "agreed", left)
+        wanted["agreed"] = {crop: (crop, label) for crop, (_, label, cut) in rows.items() if cuts.get(crop) == cut}
+        if len(rows) > len(wanted["agreed"]):
+            left["agreed on crops cut again since, left out"] = len(rows) - len(wanted["agreed"])
+    if args.forms:
+        cuts = dict(atlas.execute("SELECT id, cut FROM crops WHERE kind = 0"))
+        # The classifier's mark on a crop stands: the ones being loaded now, else the ones held.
+        taken = set(wanted["suspects"]) if args.suspects else {r[0] for r in atlas.execute("SELECT crop FROM suspects WHERE basis IS NULL")}
+        rows = by_crop(forms(args.forms), ids, "forms", left)
+        wanted["forms"] = {}
+        for crop, (_, *mark, cut) in rows.items():
+            reason = "cut again since" if cuts.get(crop) != cut else "the classifier marks" if crop in taken else None
+            if reason:
+                left[f"forms on crops {reason}, left out"] = left.get(f"forms on crops {reason}, left out", 0) + 1
+            else:
+                wanted["forms"][crop] = (crop, *mark)
     groups, changes = statements(wanted, atlas)
     report = figures(changes, left)
     (OUT / "quiz-marks-report.txt").write_text(report)
