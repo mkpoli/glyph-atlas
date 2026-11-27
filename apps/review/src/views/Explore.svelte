@@ -15,6 +15,7 @@
   import ScriptText from '../components/ScriptText.svelte'
   import ScriptLine from '../components/ScriptLine.svelte'
   import ImageStyleToggle from '../components/ImageStyleToggle.svelte'
+  import TileSizeSlider from '../components/TileSizeSlider.svelte'
   import CharacterSearch from '../components/CharacterSearch.svelte'
   import ImageSearch from '../components/ImageSearch.svelte'
   import CharacterChips from '../components/CharacterChips.svelte'
@@ -36,7 +37,9 @@
   import { paint } from '../lib/collageImage.js'
   import { holderName, licenceName } from '../lib/licence.js'
   import { markForms, unmarkForms } from '../lib/cropForms.js'
+  import { styleCrops, styleOf, unstyleCrops } from '../lib/cropStyle.js'
   import { isDescription } from '../lib/ids.js'
+  import { isFigure } from '../lib/mjFigures.js'
   import { confirmationBatches, confirmationBody, confirmationOutcome, chosenCrops, confirmationPlan, correctionBatches, restoredCrops, sendBatches, sendEach } from '../lib/corrections.js'
   import { arrowTarget, sectionChosen, toggled, withRange, withSection } from '../lib/selection.js'
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
@@ -119,7 +122,7 @@
   // different services page them — and they are merged for display only.
   let picked = $state(opened?.picked ?? null), expand = $state(opened?.expand ?? 'none'), local = $state(opened?.local ?? []), corpus = $state(opened?.corpus ?? [])
   let visual = $state(opened?.visual ?? ''), analysis = $state(opened?.analysis ?? null), familyTotal = $state(opened?.familyTotal ?? null), unassignedCount = $state(opened?.unassignedCount ?? null)
-  let corpusTotal = $state(opened?.corpusTotal ?? 0), pickId = 0, corpusFault = $state(opened?.corpusFault ?? null)
+  let corpusTotal = $state(opened?.corpusTotal ?? 0), pickId = 0, readingPick = 0, corpusFault = $state(opened?.corpusFault ?? null)
   // Where each list's next page starts: the cursor its last page named, or null at its end.
   let localAfter = $state(opened?.localAfter ?? null), corpusAfter = $state(opened?.corpusAfter ?? null)
   // Whether the collection's list has answered a page since it was last cleared.
@@ -148,13 +151,14 @@
    * grapheme's with what it is narrowed to, or the collection with its search and filters. The view changes what it
    * shows in place and rewrites the address to match, so typing never leaves the page.
    */
+  const shownAddress = () => picked?.code_point
+    ? galleryAddress(picked, expand, { visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
+    // Text still being chosen from the candidate list is not a search yet.
+    : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })
   function showInAddress() {
     // While a crop is open the address is the crop's; the list's own entry keeps the list's.
     if (!addressed || page.state.inspect) return
-    const [path, search = ''] = (picked?.code_point
-      ? galleryAddress(picked, expand, { visual, style, ...(expand === 'variants' ? {} : { order: dateOrder, years: yearRange }) })
-      // Text still being chosen from the candidate list is not a search yet.
-      : collectionAddress({ q: choosing ? '' : query.trim(), grapheme, work, group: filter })).split('?')
+    const [path, search = ''] = shownAddress().split('?')
     const target = localize(path) + (search && '?' + search)
     // A shallow rewrite leaves `page.url` as it was loaded, so the address bar is what is compared.
     if (location.pathname + location.search !== target) replaceState(target, page.state)
@@ -838,8 +842,9 @@
   }
   // Choosing a candidate is choosing what to look at: the grid becomes that character's gallery.
   // `of` is whether it is chosen as a character or as a grapheme, or says so for the card; `scope` is a
-  // character address's. A grapheme is shown by its head's card, whichever member names it.
-  async function pick(item, of = 'character', scope = null) {
+  // character address's, and `years` the range an address narrows it to. A grapheme is shown by its head's
+  // card, whichever member names it.
+  async function pick(item, of = 'character', scope = null, years = '') {
     let expansionWillLoad = false
     // Any choice but one of the run's tabs leaves the run.
     if (!splitting) split = null
@@ -847,10 +852,10 @@
     choosing = false
     clearTimeout(searchTimer)
     requestId += 1; booksRead += 1
-    const current = ++pickId
+    const current = readingPick = ++pickId
     picked = null
     // A year range is the last character's; another may have nothing in it.
-    yearRange = ''
+    yearRange = years
     // A chip passes a code point and a candidate row passes itself; whichever it is, the card is
     // given the fields the chips read so a half-known character never renders as undefined.
     const bare = { char: '', characters: [], derived: [], jibo: [], expansions: [], candidates: null }
@@ -869,8 +874,10 @@
         analysis = card.visual_analysis ?? null
       } catch { if (!closed && current === pickId) picked = { ...bare, ...item } }
     }
-    if (!closed && current === pickId) { if (!picked) picked = { ...bare, ...item }; if (!expansionWillLoad) load() }
+    if (!closed && current === pickId) { readingPick = 0; if (!picked) picked = { ...bare, ...item }; if (!expansionWillLoad) load() }
   }
+  // Whether a choice waits for its card: nothing is picked yet, and no search is on show.
+  const picking = () => readingPick !== 0 && readingPick === pickId
   function fitsGallery(row) {
     if (!picked) return true
     if (!matchesVisualGroup(row, visual)) return false
@@ -963,7 +970,7 @@
   // click, a tap or Space toggles a tile, Shift takes the range from the last one in display order, the
   // arrow keys move between tiles, and Esc leaves the mode.
   const reviewer = $derived(Boolean(session.state.user && !session.state.user.anonymous))
-  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkBusy = $state(false), bulkError = $state('')
+  let selecting = $state(false), selected = $state(new Set()), anchor = null, bulkTarget = $state(''), bulkStyle = $state(null), bulkBusy = $state(false), bulkError = $state('')
   // The last batch save, with its undo, and the crops it could not save, by reason.
   let bulkDone = $state(null), bulkReport = $state([])
   // A character's page offers the forms its card lists as the character to give a selection.
@@ -1115,10 +1122,40 @@
     }))
     patch(change, current)
   }
+  // A tile as the gallery shows it now, or null where it no longer belongs there.
+  const shownAs = next => (flagged && !waiting(next.state)) || !fitsGallery(next) ? null : next
+  /**
+   * Give `crops` the style chosen in the bar, after the character or form the same Apply gave them (`done`, then
+   * held with the style for Undo). A crop just corrected is named with no revision and styled as it stands.
+   */
+  async function styleBulk(crops, style, done = null) {
+    if (!style || !crops.length) return
+    let styled = [], refused = [], kept = []
+    bulkBusy = true
+    try { ({ styled, refused, kept } = await styleCrops(crops, style)) }
+    catch (e) { styled = e.styled ?? []; refused = e.refused ?? []; kept = e.kept ?? []; bulkError = failure(e) }
+    finally { bulkBusy = false }
+    if (refused.length && !bulkError) bulkError = t('bulk.refused', { count: refused.length })
+    if (kept.length && !bulkError) bulkError = t('client.pausedKept')
+    if (styled.length) {
+      restyle(styled)
+      bulkDone = done ? { ...done, styled, style } : { kind: 'style', styled, style, count: styled.length }
+    } else if (done) bulkDone = done
+    const handled = new Set([...styled.map(({ after }) => after.id), ...kept.map(crop => crop.id), ...refused.map(entry => entry.id)])
+    selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    if (refused.length) await refresh(refused.map(entry => entry.id))
+  }
+  /** Tiles take the style a save gave their crops, over what they show now (a character corrected in the same
+   *  Apply included). */
+  function restyle(styled) {
+    const now = Object.fromEntries(styled.map(({ after }) => [after.id, { ...tileById(after.id) ?? after, ...styleOf(after) }]))
+    patch(Object.fromEntries(Object.entries(now).map(([id, next]) => [id, shownAs(next)])), now)
+  }
   async function applyBulk() {
-    const target = bulkTarget
-    if (!target || bulkBusy) return
-    if (isDescription(target)) return describeBulk(target)
+    const target = bulkTarget, style = bulkStyle
+    if ((!target && !style) || bulkBusy) return
+    if (!target) { bulkError = ''; bulkReport = []; return styleBulk(display.filter(item => selected.has(item.id) && selectable(item)), style) }
+    if (isDescription(target) || isFigure(target)) return describeBulk(target, style)
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     // A tile a person already checked as the character has nothing to change; every other one is sent,
     // and one already written as the character is confirmed.
@@ -1156,9 +1193,12 @@
       runsChanged()
       readGroupStats()
     }
+    // The style goes to the crops corrected and to those that were already the character.
+    const styling = chosen.filter(item => item.id in before || !crops.includes(item)).map(item => item.id in before ? { ...item, revision: null } : item)
     // What was saved, kept or refused leaves the selection; what a later batch never reached stays selected.
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
     if (refused.length) await refresh(refused)
+    if (style && !bulkError) await styleBulk(styling, style, bulkDone)
   }
   /** What a batch save that stopped says: the site's own reasons for a rate limit or a crop that changed. */
   const failure = e => e.status === 429 ? t('bulk.tooMany') : e.status === 409 ? t('bulk.changed') : e.message
@@ -1213,11 +1253,12 @@
     selected = new Set([...selected].filter(id => !handled.has(id) && !gone(id))); anchor = null
     const stale = outcome.report.filter(entry => entry.reason !== 'flagged').map(entry => entry.id)
     if (stale.length) await refresh(stale)
+    if (bulkStyle && outcome.saved.size && !bulkError) await styleBulk(Object.values(now), bulkStyle, bulkDone)
   }
   // A form written as an ideographic description sequence is a claim on each selected crop and no review,
   // as it is on one crop: the tiles keep their character and take the form.
   const withForms = marked => Object.fromEntries(marked.flatMap(({ crop }) => { const tile = display.find(item => item.id === crop.id); return tile ? [[crop.id, { ...tile, form: crop.form }]] : [] }))
-  async function describeBulk(target) {
+  async function describeBulk(target, style = null) {
     const chosen = display.filter(item => selected.has(item.id) && selectable(item))
     let marked = [], kept = []
     bulkBusy = true; bulkError = ''; bulkReport = []
@@ -1231,6 +1272,7 @@
     }
     const handled = new Set([...marked, ...kept.map(crop => ({ crop }))].map(({ crop }) => crop.id))
     selected = new Set([...selected].filter(id => !handled.has(id))); anchor = null
+    if (style && !bulkError) await styleBulk(marked.map(({ crop }) => crop), style, bulkDone)
   }
   async function undoDescribed(done) {
     let marked = []
@@ -1243,8 +1285,21 @@
     bulkDone = left.length ? { ...done, described: left, count: left.length } : null
   }
   async function undoBulk() {
-    const done = bulkDone
+    let done = bulkDone
     if (!done || bulkBusy) return
+    // The style given last goes first, each crop back to its own style or the one it inherits.
+    if (done.styled?.length) {
+      bulkBusy = true; bulkError = ''
+      let back, failed = null
+      try { back = await unstyleCrops(done.styled) }
+      catch (e) { back = { styled: e.styled ?? [], refused: e.refused ?? [], kept: e.kept ?? [] }; failed = e }
+      finally { bulkBusy = false }
+      if (back.styled.length) restyle(back.styled)
+      const left = done.styled.filter(({ after }) => !back.styled.some(each => each.after.id === after.id))
+      if (left.length) { bulkDone = { ...done, styled: left }; bulkError = failed ? failure(failed) : back.kept.length ? t('client.pausedKept') : t('bulk.refused', { count: left.length }); return }
+      if (done.kind === 'style') { bulkDone = null; return }
+      done = bulkDone = { ...done, styled: [] }
+    }
     if (done.kind === 'form') return undoDescribed(done)
     bulkBusy = true; bulkError = ''
     try {
@@ -1347,18 +1402,25 @@
   onDestroy(() => { sheetJob?.abort(); clearTimeout(sheetFault) })
   /**
    * Back or Forward to an address this view rewrote loads the page as it was first loaded, while the
-   * address bar keeps what the view had moved on to. The view follows the address bar.
+   * address bar keeps what the view had moved on to; a link to the address the page was first loaded at
+   * keeps that page, and with it this view. The view follows the address bar.
    */
   function followAddress() {
     const { path } = delocalize(location.pathname)
-    const named = galleryPage(path), scope = new URLSearchParams(location.search).get('scope')
-    if (named && named.codePoint !== picked?.code_point) pick({ code_point: named.codePoint }, named.of, scope)
-    // Back or Forward between a grapheme, its head and the head's variants: the widening the address names.
-    else if (named && expandFor(named.of, scope) !== expand) expand = expandFor(named.of, scope)
-    else if (path === '/') {
-      const wanted = new URLSearchParams(location.search)
+    if (path + location.search === shownAddress() && !picking()) return
+    const named = galleryPage(path), wanted = new URLSearchParams(location.search)
+    const asked = name => wanted.get(name) ?? '', scope = wanted.get('scope')
+    if (named) {
+      const widened = expandFor(named.of, scope), narrowed = style !== asked('style') || dateOrder !== asked('order') || yearRange !== asked('years') || visual !== asked('visual')
+      style = asked('style'); dateOrder = asked('order')
+      if (named.codePoint !== picked?.code_point) return pick({ code_point: named.codePoint }, named.of, scope, asked('years'))
+      yearRange = asked('years')
+      // A grapheme, its head and the head's variants are one character widened; the widening reads the gallery.
+      if (widened !== expand) expand = widened
+      else if (narrowed) { visual = asked('visual'); load() }
+    } else if (path === '/') {
       const q = wanted.get('q') ?? '', g = wanted.get('grapheme') ?? '', w = wanted.get('work') ?? '', group = wanted.get('group') ?? 'all'
-      if (!picked && q === query.trim() && g === grapheme && w === work && group === filter) return
+      if (!picking() && !picked && q === query.trim() && g === grapheme && w === work && group === filter) return
       clearTimeout(searchTimer); pickId += 1; choosing = false
       visual = ''; analysis = null; familyTotal = null; unassignedCount = null
       picked = null; expand = 'none'; local = []; corpus = []; corpusTotal = 0; corpusAfter = null; localAfter = null; localAnswered = false
@@ -1380,7 +1442,7 @@
     charRunsFor: charRuns?.char === charRunsFor ? charRunsFor : '', confirmedHere, showWithheld, scrollY })
   beforeNavigate(navigation => {
     if (!addressed) return
-    const state = display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
+    const state = picking() ? null : display.length && (!loading || growing) ? capture() : picked ? null : { seed, showWithheld, partial: true }
     keepView([current, navigation.type === 'popstate' ? null : entry()], state)
   })
   function restore(back) {
@@ -1403,13 +1465,15 @@
   if (back?.partial) seed = back.seed
   else if (restored) restore(restored)
   // Back or Forward between two entries of the same page keeps this view, so it takes the one kept for
-  // the entry it lands on, and its scroll position, itself.
+  // the entry it lands on, and its scroll position, itself. A link keeps it where the page was first loaded
+  // at the address it names, whatever the view has shown since.
   let arrived = false
   afterNavigate(navigation => {
     if (!arrived) { arrived = true; return }
     current = entry()
-    const view = navigation.type === 'popstate' && addressed ? keptView() : null
-    if (!view || view.partial || view.showWithheld !== showWithheld) return
+    if (!addressed) return
+    const view = navigation.type === 'popstate' ? keptView() : null
+    if (!view || view.partial || view.showWithheld !== showWithheld) { followAddress(); return }
     // Reads the view had on their way answer for what it showed before.
     requestId += 1; pickId += 1; runsRequest += 1; catalogueRequest?.abort()
     clearTimeout(searchTimer); choosing = false
@@ -1469,10 +1533,10 @@
 {#snippet sectionHeading(section)}
   {@const head = section.head}{@const tiles = sectionTiles(section)}{@const offered = sectionOffered(tiles)}{@const state = sectionChosen(selected, tiles, offered)}
   <div class="visual-grid-heading section-heading" class:book-heading={head.book}>
-    {#if reviewer && byBook && tiles.length}<button class="section-select" role="checkbox" aria-disabled={!offered.length && state === 'none'} aria-checked={state === 'some' ? 'mixed' : state === 'all'} aria-label={`${t('bulk.selectUnreviewed')} · ${section.heading}`} title={t('bulk.selectUnreviewed')} onclick={() => chooseSection(tiles, offered)}><span aria-hidden="true">{state === 'all' ? '✓' : state === 'some' ? '–' : ''}</span></button>{/if}
+    {#if reviewer && tiles.length}<button class="section-select" role="checkbox" aria-disabled={!offered.length && state === 'none'} aria-checked={state === 'some' ? 'mixed' : state === 'all'} aria-label={`${t('bulk.selectUnreviewed')} · ${section.heading}`} title={t('bulk.selectUnreviewed')} onclick={() => chooseSection(tiles, offered)}><span aria-hidden="true">{state === 'all' ? '✓' : state === 'some' ? '–' : ''}</span></button>{/if}
     {#if head.book?.page}<a class="book-title" href={localize('/books/' + encodeURIComponent(head.book.page))} lang="ja">{head.text}</a>{:else if head.book}<span class="book-title" lang={head.book.document === 'unrecorded' ? undefined : 'ja'}>{head.text}</span>{:else}<span>{section.heading}</span>{/if}
     {#if head.date}<span>{head.date}</span>{/if}{#if head.book}<span>{t('explore.meta.glyphs', { count: head.count })}</span>{/if}
-    {#if byBook && state !== 'none'}<span class="section-count">{formatNumber(tiles.filter(item => selected.has(item.id)).length)} / {formatNumber(tiles.length)}</span>{/if}
+    {#if state !== 'none'}<span class="section-count">{formatNumber(tiles.filter(item => selected.has(item.id)).length)} / {formatNumber(tiles.length)}</span>{/if}
   </div>
 {/snippet}
 {#snippet bookMore(head)}
@@ -1545,7 +1609,7 @@
         <div class="layout-toggle" role="group" aria-label={t('explore.layout.label')}>
           {#each [['collage', () => t('explore.layout.collage')], ['grid', () => t('explore.layout.grid')]] as [value, text]}<button class:active={layout === value} aria-pressed={layout === value} onclick={() => layOut(value)}>{text()}</button>{/each}
         </div>
-        <label class="zoom-control" title={t('explore.zoom.label')}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input type="range" min="0" max={ZOOMS.length - 1} step="1" value={ZOOMS.indexOf(zoom)} aria-label={t('explore.zoom.label')} oninput={event => zoomTo(ZOOMS[Number(event.currentTarget.value)])} /><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg></label>
+        <TileSizeSlider min={0} max={ZOOMS.length - 1} value={ZOOMS.indexOf(zoom)} label={t('explore.zoom.label')} valuetext={`${zoom}px`} oninput={i => zoomTo(ZOOMS[i])} />
       </div>
       <div class="view-actions">
         <!-- A round asks about one written character, so it is offered only for a grapheme of one form. -->
@@ -1596,7 +1660,7 @@
     {:else}{#each sections as section (section.key)}{#if section.heading}{@render sectionHeading(section)}{/if}<div class="collage-block" style={section.block}>{#each section.tiles.filter(([, i]) => i < reach) as [item, i, style] (item.id)}{@render tile(item, i, style)}{/each}</div>{#if section.head?.book?.next}{@render bookMore(section.head)}{/if}{/each}{/if}
   </div>
   {#if !choosing && !loading && !sections.length}<div class="empty"><span class="empty-mark">{picked || (settled && settled.total === 0) ? '∅' : flagged ? '✓' : '∅'}</span><h2>{#if picked}<ScriptLine line={withText(corpusFault ? 'explore.empty.samplesFailed' : 'explore.empty.noOccurrenceOf', 'char', { char: galleryName(subject ?? picked) })} />{:else if settled && settled.total === 0}{around('explore.empty.noOccurrenceOfTerm', 'term')[0]}{@render term()}{around('explore.empty.noOccurrenceOfTerm', 'term')[1]}{:else}{flagged ? t('explore.empty.nothingFlagged') : t('explore.empty.noCharacters')}{/if}</h2>{#if query}<button class="primary" onclick={clearQuery}>{t('explore.clearSearch')}</button>{:else}<a href={localize('/review')} class="primary">{t('explore.startRound')}</a>{/if}</div>{/if}
-  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
+  {#if selecting || bulkDone || bulkError || bulkReport.length}<BulkBar {selecting} count={selected.size} runs={runsChosen.length} choices={bulkChoices} bind:target={bulkTarget} bind:style={bulkStyle} busy={bulkBusy} error={bulkError} done={bulkDone} report={bulkReport}
     onconfirm={confirmSelected} onapply={applyBulk} onselectall={selectShown} onclear={clearSelection} onleave={stopSelecting} onundo={undoBulk} onopen={openReported}
     ondismiss={() => { bulkDone = null; bulkError = ''; bulkReport = [] }} />{/if}
   <div class="scroll-sentinel" bind:this={sentinel} aria-hidden="true">{#if hasMore && loading && display.length}…{/if}</div>
@@ -1614,7 +1678,6 @@
   .browse-unit{display:flex;gap:2px;padding:8px 8px 6px}
   .browse-unit button{border:0;border-radius:5px;background:transparent;padding:5px 10px;font-size:12px;color:var(--muted)}
   .browse-unit button[aria-pressed="true"]{background:var(--surface-selected);color:var(--ink)}
-  .zoom-control{display:flex;align-items:center;gap:6px;color:var(--muted)}
   .sheet-count{font-variant-numeric:tabular-nums}
   /* While the image is painted the button keeps the focus and takes no second press. */
   .sheet-save[aria-disabled="true"]{cursor:default;opacity:.45}
@@ -1632,10 +1695,6 @@
   .toolbar-view{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px 0}
   .view-settings,.view-actions{display:flex;align-items:center;gap:12px}
   .view-actions{margin-left:auto}
-  /* The server cannot know the reader's size, so the slider waits for the page to wake rather than show the wrong one. */
-  :global(html:not([data-hydrated])) .zoom-control{visibility:hidden}
-  .zoom-control svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
-  .zoom-control input{width:84px;padding:0;border:0;background:none;accent-color:var(--accent-solid)}
   /* A narrower screen stacks each script's count under its name and shows the deal as an icon, so the
      scripts keep the first row. */
   @media(max-width:1240px){
@@ -1661,7 +1720,6 @@
     .toolbar-view :global(.ink-toggle),.toolbar-view .layout-toggle{flex:1 1 calc(50% - 4px)}
     .toolbar-view :global(.ink-toggle button),.toolbar-view .layout-toggle button{flex:1}
     .sheet-save span{margin-left:6px;font-size:11px}
-    .zoom-control input{width:48px}
   }
   .select-toggle{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;padding:6px 11px;color:var(--muted)}
   .select-toggle[aria-pressed="true"]{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-color)}

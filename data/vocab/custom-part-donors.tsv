@@ -1,0 +1,879 @@
+# What the site's composer draws each part no code point names with, where a choice was made; see
+#   scripts/part_donor_candidates.py and apps/review/tools/part-donor-sheets.mjs. Each candidate (a description in
+#   encoded characters, or a cut: a character less its other parts) was composed into characters holding the part
+#   and compared with their glyphs, on the composer export of 2026-11-27; the one chosen was then drawn in every
+#   character tried and kept only where it drew well in all of them. An empty drawing: none did, and the part
+#   shows as text.
+# columns: id, drawing, characters compared, note
+X-00001		焉舃𤇟	no candidate drew well in every character
+X-00002	㇯免儿	晩象	Closest clean match
+X-00003	⿱⺈⿵冂人	夐奐嫓	Complete and well proportioned
+X-00004	⿱⿻⿰丨丨丷冖	䝉𫎇	Cleanest in both hosts
+X-00005		𬿬𱻱	checked again: fragmented and misplaced strokes
+X-00006		段𦂰𠃈	no candidate drew well in every character
+X-00007	㇯專寸	惠䦄	Clean and close to originals
+X-00008	⿻⿱㇒一乚	扥䣨䤜	Clean strokes and balanced proportions
+X-00009		𩵜𪝪	All drawable candidates have fragments
+X-00010		嬴巩羸	no candidate drew well in every character
+X-00011		兆函崡	no candidate drew well in every character
+X-00012		龍㡣𦢫	checked again: right component shrunken and displaced
+X-00013	㇯虍七	𠭗𣤝	Clean donor composition
+X-00014		侯候叏	checked again: second row has displaced upper strokes
+X-00015		玈祣覛	no candidate drew well in every character
+X-00016	㇯鼠臼	巤鬛	Clean matching lower strokes
+X-00017	㇯朗月	剆勆	Both hosts match closely
+X-00018	㇯既旡	匓即廄	Clean matching shapes
+X-00019	㇯更一	茰㤤	Clean strokes and proportions
+X-00020	丸	兿势勢	Both hosts match closely
+X-00021	㇯祭示	詧豋	Only clean usable candidate
+X-00022	㇯与一	写考	Closest match across hosts
+X-00023		與㼂	Both candidates have broken strokes
+X-00024		水艮飞	checked again: detached and distorted strokes
+X-00025		丧喪展	checked again: severe stroke fragmentation
+X-00026	㇯韲韭	齊䐡	Close match, clean strokes
+X-00027		𣷒𤣥𥾬	no candidate drew well in every character
+X-00028	㇯武止	弐貮	Good stroke alignment
+X-00029	㇯幾人	畿㡬	Clean second-host composition
+X-00030	㇯彑一	彖𠐫	Clean matching composition
+X-00031		卥囪㢴	no candidate drew well in every character
+X-00032		𠪹𣓝𥩒	checked again: missing and misplaced upper strokes
+X-00033		雋𭹅	All drawable candidates retain fragments
+X-00034		匁䇖𠦨	no candidate drew well in every character
+X-00035		𠖵𡍙𫖼	checked again: third row severely overlaps
+X-00036		憂戞㥑	no candidate drew well in every character
+X-00037		敹睿肻	no candidate drew well in every character
+X-00038		嚢囊橐	checked again: third row upper strokes overlap
+X-00039		𠂎𡊂	checked again: unremoved donor strokes
+X-00040		𣇅𣒘	checked again: incorrect lower component strokes
+X-00041		狦𠜂𠱡	checked again: internal horizontal strokes missing
+X-00042		夛录	checked again: stray central stroke
+X-00043		争亊事	no candidate drew well in every character
+X-00044	⿱十冖	孛疐索	Closest proportions across both hosts
+X-00045	㇯北匕	𩍫北	Clean lower host without stray strokes
+X-00046	⿻日乚	蝇龟竜	Both hosts closely match
+X-00047		嘄嬝蟂	checked again: lower strokes missing or malformed
+X-00048	㐄	夅年舛	Complete strokes and matching proportions
+X-00049	⿰丨丿	班辨帅	Clean strokes and balanced proportions
+X-00050		丣尸巨	no candidate drew well in every character
+X-00051		馬𣚝𩡧	checked again: broken strokes and stray fragments
+X-00053		乌凫	All candidates have fragmented strokes
+X-00054		𠂶𱣠	checked again: upper strokes displaced
+X-00055		慶𡦭	checked again: interior strokes crowded and distorted
+X-00056	㇯無灬	橆舞	Clean strokes and matching proportions
+X-00057	㇯在土	存𪙯	Closer upper component shape
+X-00058		劉斵	checked again: stray fragments and missing strokes
+X-00059	⿹勹灬	舄𠍶𡦗	Clean compositions across both hosts
+X-00060		䆋𡤞	Drawable candidates have broken strokes
+X-00061		𫻶𮍐	checked again: lower strokes overlap in second row
+X-00062	㇯崋山	華𭏬	Clean strokes and matching proportions
+X-00063		𥣨𥤠	checked again: right component malformed
+X-00066	⿴⿰丨丨𠄠	面髙囬	Clean interiors in both hosts
+X-00067	㇯黑灬	黙㸃	Closest match with complete strokes
+X-00068	㇯戠日	𢧂𢨀	Cleanest non-donor composition
+X-00069		掽湴潽	no candidate drew well in every character
+X-00070		印裦	All drawable candidates have fragments
+X-00071		印裦	Broken strokes in both rows
+X-00072	⿴𠀃三	俱具惧	Complete strokes and balanced proportions
+X-00073		卿厩	All drawable candidates have broken strokes
+X-00074		嚼欝	All have missing strokes or fragments
+X-00075		𡕣𡿴	checked again: stray fragments along left edge
+X-00076	⿱⿸厂一一	㒫𧹉𡿰	Both compositions are clean and complete
+X-00077	⿱⿻口⿰丨丨一	壷𢨖𣙶	Clean strokes in both hosts
+X-00078		壼𡔲	checked again: stray fragments and overlapping strokes
+X-00079	⿱冖八	滘罕罙	Clean and closest proportions
+X-00080		𠭶𥼡	Stray fragments in both rows
+X-00081	聿	晝書畫	Both compositions closely match
+X-00082		帝旁𠆘	no candidate drew well in every character
+X-00083		皮𨬀𪭃	checked again: components displaced and compressed
+X-00084		𠮈	checked again: lower left strokes collide
+X-00085		州糹㳤	no candidate drew well in every character
+X-00086	⿳亠口冖	亭亮亳	Complete strokes and matching proportions
+X-00087	⿵𠆢一	今令仱	Both hosts clean and faithful
+X-00088		𪚽𮧂	All retain stray stroke fragments
+X-00090		䆋	Fragmented left strokes
+X-00091		𤔞𧑴𮂪	checked again: component shapes substantially distorted
+X-00092		亀竃縄	no candidate drew well in every character
+X-00093	㇯其八	甚𫞪	Clean composition of 甚
+X-00094		倉𢀞𦙪	no candidate drew well in every character
+X-00095		𭄏𭞥𭅍	checked again: missing strokes and fragments
+X-00096	㇯戠音	我戢	Clean and faithful 我 composition
+X-00097	㇯曹日	𪴊𡬭	Closest component shape in lower host
+X-00098		𥥼𥹤	checked again: broken strokes in both rows
+X-00099		𤾤𧵐	checked again: first row structure distorted
+X-00101		𢄖𬞂	Broken strokes and stray fragments
+X-00103		𦧁𫞴	Missing strokes or incorrect structure
+X-00104		𩐔𭓽	checked again: fragmented and misplaced strokes
+X-00105		𠭫𮣅	checked again: fragmented component strokes
+X-00107		冎骨	All have missing or misplaced strokes
+X-00108	⿻⿱㇒一丿	刋圱谸	Clean strokes across both hosts
+X-00109	冂	𦉪𦉫	Close match in both hosts
+X-00110		𠁬𡆵	checked again: missing strokes and fragments
+X-00111		𤌵𤔘	checked again: broken strokes in both rows
+X-00112		奐幣弊	no candidate drew well in every character
+X-00113	⿱土八	坴夌燅	Complete strokes and balanced proportions
+X-00114		𦅳𫭣𠖣	checked again: component shapes substantially altered
+X-00115		䴡𤅯𧠀	checked again: missing and misplaced strokes
+X-00116	⿺𠃊⺊	延㢟𠣏	Complete and well proportioned
+X-00117		𮆔𮈺𮓟	checked again: extensive broken stroke fragments
+X-00118		𤕋𦒇𡄉	checked again: components distorted and overlapping
+X-00119		𤁟𦒫𢄛	checked again: internal strokes displaced
+X-00120		𪓻𰯘𱰂	no candidate drew well in every character
+X-00121		宐𧧼	checked again: interior strokes fragmented
+X-00122		𱡧𱤶𱬰	checked again: top structure malformed
+X-00124	⿱𠂈𰀠	𨒢	Close match, clean strokes
+X-00125	⿻臼木	𦌆	Matches structure and proportions
+X-00127	⿻丶𬼂	𲋷	Clean and closely matched
+X-00130	癶	𭓽	Clean and reasonably close
+X-00132		𲌘	Fragmented left component
+X-00133		𭏬	Missing strokes and isolated fragments
+X-00135		𬻵𭁐	checked again: strokes displaced and fragmented
+X-00136	⿱龷𰀠	𲓻	Structure matches despite weight difference
+X-00138	⿱⿱卝罒冖	薨蘉	Closest structure and proportions in both hosts
+X-00146	彑	𡟇	Close match, complete strokes
+X-00148	𥈠	㲊䥧𧸩	Complete strokes and balanced proportions
+X-00150	⿱帚又	㑴𠖗𡎹	Both compositions closely match the real glyphs
+X-00151		𣳋	Question mark or own donor only
+X-00154	⿰丨臼	𫺼	Matches visible stroke structure
+X-00155	⿱卄両	満	Clean match with sensible proportions
+X-00156	⿳⿱爫⿰丨冃罒又	𬎝	Matches the real glyph closely
+X-00157		𫠕	the composer draws it only approximately (㇯)
+X-00158	⿻亻⿴囗丷	𢭣	Clean strokes and matching structure
+X-00159	⿻𡗗丷	𰃤	Matches structure and proportions
+X-00160	⿻三夂	𪎍	Close match, clean strokes
+X-00161	⿱冖⿰𰀄⿺乚𠁣	𣀴	Matches structure and proportions
+X-00162	⿸⿹屮㇇㇏	𢫂	Close match, complete strokes
+X-00163		𧜸	Required inner strokes missing
+X-00168		𥤢	Wrong internal shape
+X-00169		𠖍𦬮	checked again: stray upper strokes in first row
+X-00175	宛	𤾂𥺹	Clean and closest across both hosts
+X-00178	瓜	𧵟	Matches real glyph closely
+X-00182	解	𧞊𧴛	Matches both hosts; balanced proportions
+X-00184	廓	𮟜	Matches structure and proportions
+X-00185		𣫅	Broken left strokes
+X-00186	滑	𠿭	Clean and closely matched
+X-00187	含	𧳘	Matches real glyph closely
+X-00188	幾	𡡤𡼠𧝞	Closest shapes and spacing in both hosts
+X-00194	吟	𥆽𩒻𪑑	Matches both glyphs without gaps
+X-00197	形	𭑾𮏂	Complete strokes and matching proportions
+X-00198	系	𩓇	Matches real glyph closely
+X-00202		𮫵	checked again: right component shrunken and displaced
+X-00203		𮅰	checked again: lower component compressed and misplaced
+X-00205	今	𪚕𪚬	Matches both hosts; clean stroke structure
+X-00206	差	𫟿	Clean strokes, close match
+X-00207		𢀝	Missing middle horizontal stroke
+X-00215	州	𫟻	Matches glyph proportions
+X-00216	終	𢴋𤍑	Closest shapes and proportions
+X-00217		𧑸𭹻	the cleanest candidate holds a part no table writes (？)
+X-00221	色	𬻖𮎝𮎞	Matches both real glyphs
+X-00222	甚	𠗮	Clean and faithful
+X-00223	盛	𭵵	Matches stroke structure
+X-00225		𨥔	checked again: right component reduced to fragment
+X-00226	扇	𨃩	Clean, balanced composition
+X-00232	底	𡞖𦝉𧍉	Correct width and complete strokes
+X-00235		𥳻	checked again: lower component displaced rightward
+X-00238	納	𢟕𣘆𣻀	Closest proportions in both hosts
+X-00239	扉	𢵞	Close match throughout
+X-00241	奉	𡞗𢔓𢺒	Clean strokes and matching proportions
+X-00243		㺬𩬰	Both leave stray fragments
+X-00244		摩䳸	Both retain unwanted strokes
+X-00245		𮈵𮟟	checked again: missing enclosing strokes
+X-00246		𡖵𥯊	checked again: second row has displaced strokes
+X-00251	兩	𭝏	Clean and faithful
+X-00252		瑜諭	All replacements show stray fragments
+X-00255		𭔵	checked again: malformed lower left strokes
+X-00257	咎	𠴰𥻀𭡗	Closest match in both hosts
+X-00258	咼	𧼽	Clean strokes, close match
+X-00259	嚴	𠘥𢺘	Clean and well proportioned in both hosts
+X-00260	奐	𠗫	Matches shape and proportions
+X-00262	寫	𭀄	Clean and faithful
+X-00266	歔	𡃧	Matches the real glyph
+X-00270	爲	撝䃣䈧	Clean strokes and matching proportions
+X-00271		卽	checked again: left component fragmented and distorted
+X-00272	盧	𠫂	Clean strokes, matching proportions
+X-00277	艾	𮇗𮩜	Closest match in both hosts
+X-00278		蔖虐	Fragments remain in every candidate
+X-00280	贅	𭚍	Matches the real glyph
+X-00283	鑁	𭍊	Clean and close match
+X-00284	閭	𢣻	Matches structure and proportions
+X-00290	靡	𤓒	Clean and faithful
+X-00292		𣎜鼅	Residual strokes and broken outlines
+X-00293	荆	𭱧	Matches the real glyph
+X-00294		竮𦉇	Both candidates have broken strokes
+X-00295	匀	𭙋	Clean and closely matches
+X-00298		嬾𡃤	checked again: components excessively compressed and separated
+X-00300		堲𡷦	Missing strokes or donor remnants
+X-00302		槪䀈	Unwanted donor strokes remain
+X-00303	⿳一𠃑一	𣲅	Matching strokes and proportions
+X-00304	圊	𭱿	Clean and closely matches
+X-00305		𠭣喙	Fragments remain around upper strokes
+X-00306		熜聰	Broken strokes and donor remnants
+X-00308		㚑	Cannot draw
+X-00309	灵	𠴌𧼍𭝊	Closest match across both hosts
+X-00311	⿱⿹𠃌㐅一	𭴥	Clean composition with matching proportions
+X-00314	寽	𭹑	Closely matches the real glyph
+X-00315	尃	𠣵𠪻	Closest proportions in both hosts
+X-00316	峉	𭹧	Matching structure and proportions
+X-00318	𢛳	𭢙𭲖	Matches both glyphs cleanly
+X-00319	㇯𥡨禾	𧁉	Clean; candidate 2 is compressed
+X-00322	煞	𤐑	Clean and closely matches
+X-00323		拔	checked again: broken strokes and scattered fragments
+X-00327	臽	𢴼𢽣	Full strokes and matching proportions
+X-00331	乜	𭑫𭴂𮓲	Best size and spacing
+X-00332	侌	𣸊	Matching strokes and proportions
+X-00333	启	𨌋𨐳	Matches both hosts without compression
+X-00334	啚	𡳄𮈻	Correct component size in both hosts
+X-00335	⿱土八	𢌻	Clean strokes and sensible proportions
+X-00336	垔	𡞻	Clean, close match
+X-00338	戫	𭲼	Matches strokes and proportions
+X-00339		䚾	checked again: strokes compressed and misplaced
+X-00341	寺	𠱾	Clean, close match
+X-00343		𣪸	Stray fragments below left component
+X-00346	㇯㣥彳	𤲔𨂄	Clean strokes and balanced proportions
+X-00348	俞	㓱㡏㢏	Closest match across both hosts
+X-00349	奐	𡺌𩝆	Complete strokes and matching proportions
+X-00350	挈	𠹙𤠵	Closest match across both hosts
+X-00351	茸	𩮙	Matches dense stroke structure
+X-00352	偃	𩻖𪅬	Clean and correctly proportioned
+X-00353	莞	𣻻	Matches strokes and proportions
+X-00354	莘	𣻿	Clean, close match
+X-00360	筵	𢷩	Matches strokes and proportions
+X-00361	蓉	𤁇	Clean, close match
+X-00364	撮	𢤎	Matches strokes and proportions
+X-00366	蔡	𡂠	Clean, close match
+X-00367	餒	𡃲	Matches strokes and proportions
+X-00369	縣	𥌭	Matches glyph; clean strokes
+X-00371	薰	𤓂	Matches glyph and proportions
+X-00373	藝	𡤦	Clean, faithful composition
+X-00375	竇	𤅋	Matches glyph; complete strokes
+X-00377	冇	𠕆𠕇	Clean strokes and matching proportions in both hosts
+X-00378	癹	𣸍	Matches shape and spacing
+X-00380	筶	𮟐	Clean strokes and proportions
+X-00381	薉	𤃴	Matches dense stroke structure
+X-00382	藋	𤒽	Clean, faithful composition
+X-00384	处	𢛃𧏓	Matches both hosts cleanly
+X-00386	㦮	䬻𠈙	Closest stroke shapes and proportions
+X-00390	⿱日⺝	𡝭𦑉𩐯	Matches both hosts’ proportions
+X-00391		碌䘵	All alternatives contain fragments
+X-00394	䎳	𠭪	Matches glyph and proportions
+X-00395	䒱	𣺜	Matches shape; no fragments
+X-00397	䚺	𭢖	Complete strokes; matching proportions
+X-00399	閚	𭲻	Matches glyph; clean composition
+X-00400	隨	𡃴	Close match, clean strokes
+X-00404	巩	𩢽	Matches shape and proportions
+X-00405		卿	checked again: crowded, misplaced central strokes
+X-00406	㢟	𦚺	Close match, complete strokes
+X-00409	𥁃	𭰻	Matches structure and proportions
+X-00410	㚇	𡞧	Close match, clean composition
+X-00411	𦐇	𧪦𮍓	Closest match across both hosts
+X-00412	虑	𮣶	Close match, clean strokes
+X-00413	𤔔	𡡗𢿢𢿳	Clean strokes and matching proportions
+X-00415		䟈𦼺𧒵	no candidate drew well in every character
+X-00428	𨑦	𤊂	Matches shape and proportions
+X-00429	𡿺	𩏀	Clean, faithful composition
+X-00433	𨾏	𪅥	Matches the real glyph
+X-00438	⿰⿱廿⿻口土隹	𤒿	Clean strokes and proportions
+X-00441	⿱廿⿻冂从	𫆊	Close match throughout
+X-00442		𧿗	Only alternative is question mark
+X-00443		𢛀	checked again: upper bars detached from uprights
+X-00448	⿻干㗊	𡂤	Faithful shape and spacing
+X-00452		𣯰	checked again: left component fragmented and displaced
+X-00453		𪔬	checked again: lower strokes compressed and misplaced
+X-00454		𢐶	checked again: right component compressed and disconnected
+X-00455		𥤑𨤝	checked again: severely compressed, overlapping strokes
+X-00457	⿻厸大	𠴃	Clean, close match
+X-00458		𣞞𦌩	Substitutions collapse into fragment clusters
+X-00459	⿱⿻土䀠八	𤪬	Clean strokes and matching proportions
+X-00460	⿻乇从	𡋸𤈯	Matches both hosts cleanly
+X-00461	⿵冂㸚	𢐳𣙡𦢣	Clean, well-matched proportions
+X-00462		𠒃𡲯𡲱	checked again: strokes collide in lower hosts
+X-00463		𠦵	Upper component flattened with missing strokes
+X-00464		𠄊	Cannot draw
+X-00465		𡙫𦹬	checked again: central strokes missing
+X-00466	⿻⿱卝干誩	𠑫𡤮𨟪	Matches both reference glyphs
+X-00467		𣃿𨁓	Both alternatives contain stray fragments
+X-00468		蕐𡼀	checked again: part compressed and misplaced
+X-00469	𡋑	𢒡	Close match to real glyph
+X-00470	⿻𰀁从	𡨔𥙽𥦑	Closest match in both hosts
+X-00471	⿻又丷	宻𠬴𡝾	Preserves shape and proportions
+X-00472		𧬿𩧖	checked again: part severely compressed
+X-00473	⿻乚⿰⿱丶㇀⿱㇒丶	㞑	Clean and reasonably close
+X-00474	⿻工⿱从吅	𠮎𢍮𥷣	Matches both reference glyphs
+X-00475	⿻丨⿱丷⿵冂㸚	𢺊𤕨	Closest structure and proportions
+X-00476	⿻土𠈌	𡕲𢋾𢷇	Matches both hosts cleanly
+X-00477	⿻十𠈌	𢾶𤲷	Matches both hosts closely
+X-00478	⿻口⿻人丷	𡏳	Matches structure and proportions
+X-00479		𢑘	Angular crossings distort the part
+X-00480		𡱕	checked again: interior strokes crowded and displaced
+X-00481	⿱一⿻山𠈌	𡳘	Clean and closely matching
+X-00482	⿻𦥔𠮛	𡡋	Matches stroke structure closely
+X-00483		𡣣	No drawable candidate
+X-00484		𠦙𣎴𥁪	checked again: first host cannot draw
+X-00487	⿻⿱亠⿻⿱凵丨凵昍	𡅟	Close match; clean proportions
+X-00489	⿻干⿴囗从	𩮟	Matches strokes and structure
+X-00491	⿻千⿱𠈌二	𦡘	Close match; complete strokes
+X-00492	⿻⿱乊一亅	𠰜	Matches shape and spacing
+X-00493	⿻丷大	𢽇	Clean and closely matched
+X-00495		𡔂𣋴	checked again: missing diagonal strokes
+X-00496		𤬣	Upper component has wrong shape
+X-00497	⿻木吕	𢱠𤐬	Clean strokes matching both hosts
+X-00504		𦡳	Lower right strokes collapsed into fragments
+X-00505		𪔂	Outer strokes missing
+X-00508	⿻⿱⿻口一口木	𨘒	Matches dense structure cleanly
+X-00509	⿻𦘒𠚪	𤌂	Matches strokes and proportions
+X-00510	⿻吕氺	𢠮	Close match; clean structure
+X-00511		𦍛	Lower strokes have wrong shape
+X-00512		㽔䝉懞	checked again: upper strokes missing or misplaced
+X-00517		𠧳𠧹	checked again: second row has incorrect strokes
+X-00519	⿻口木	𣫻	Matches structure and proportions
+X-00522		𤔬	drew well only in the character it was cut from
+X-00524		𢩺	drew well only in the character it was cut from
+X-00527	⿻彖丶	𣺵	Clean, close match
+X-00532	⿻丨⿵冂⿰𰀁𰀁	𥧀	Matches strokes and proportions
+X-00536		𡩪	drew well only in the character it was cut from
+X-00538	臼	𢃵	Clean, close match
+X-00540		𢀯𢀰	Question mark replaces required strokes
+X-00541		𠕗	drew well only in the character it was cut from
+X-00542	⿹⺄⿻丨㇒	𠅂	Clean, close match
+X-00543		酳𡮡𥦴	checked again: broken strokes in lower rows
+X-00544		𠔇	Question mark replaces required strokes
+X-00545		𠆭	Question mark replaces required strokes
+X-00546		𣝖	Missing strokes in left component
+X-00548		𠤺	drew well only in the character it was cut from
+X-00549		県𠀚	no candidate drew well in every character
+X-00553		𩁪𩁳	checked again: left component fragmented and incomplete
+X-00554		𦱼	the cleanest candidate holds a part no table writes (？)
+X-00558	⿻日𠤎	𤧜	Matches host cleanly
+X-00559	⿻丨口	𠗀𩥾	Cleaner strokes and closer structure
+X-00560		𧀍	the composer cannot draw it
+X-00561	⿻𠃊人	𣷬	Close match; clean strokes
+X-00563		𢍴	the composer draws it only approximately (⿾)
+X-00567	⿻口⿰丿丨	𩢏	Matches host cleanly
+X-00569		𨛙	checked again: left component severely compressed
+X-00570	⿻乃丶	𩉶	Close match, clean strokes
+X-00572	⿰丨三	𤤃𨼺	Matches structure and proportions
+X-00574	⿻冄⿰丨丨	𨱸	Matches structure and proportions
+X-00578		𨘄	checked again: lower internal strokes malformed
+X-00579		𣑛𨔲	no candidate drew well in every character
+X-00581	⿷匚二	𨒎	Clean, close match
+X-00582		𦇂	drew well only in the character it was cut from
+X-00583		𨀔𫡒𬓭	checked again: middle row loses upper structure
+X-00586		𦆍	checked again: internal strokes displaced
+X-00590		𠁵𥾒	checked again: second row lower strokes misplaced
+X-00591		𤕦𦷠	the composer draws it only approximately (⿼)
+X-00593	㇯𦱦艹	𣊳	Closest proportions and stroke placement
+X-00595		𦬝	drew well only in the character it was cut from
+X-00596		𧘵	checked again: components overlap and sit unevenly
+X-00604		𥬺𬝂	Missing strokes and stray fragments
+X-00608		𦕁	drew well only in the character it was cut from
+X-00609	⿻口㇉	𦕊	Clean and closely matching
+X-00610		𡫤𦔪	checked again: first row missing stacked strokes
+X-00612		𥥼	drew well only in the character it was cut from
+X-00613		𥦐	drew well only in the character it was cut from
+X-00614		𥦪	drew well only in the character it was cut from
+X-00615		𥥢	drew well only in the character it was cut from
+X-00616	⿻⺕人	𡷳𤵵	Clean strokes and consistent proportions
+X-00617	⿻口⿰丨丨	𤽚𨰔	Complete strokes; closest overall match
+X-00620		𡗭𥞗	Lower strokes missing or fragmented
+X-00622	㇯㇯𤰴由一	𥀡	Close match; clean strokes and proportions
+X-00623	⿻⿱冖冂乚	𥑯	Clean and closely matches
+X-00625		𢤏	drew well only in the character it was cut from
+X-00626	⿵冂⿲⿱丶丶丨⿱丶丶	𧷧	Close match with clean strokes
+X-00627	⿻十⿵冂㸚	𨗃	Clean strokes and matching structure
+X-00629	⿻几二	𤊚	Closely matches the real glyph
+X-00630		𣃯𬼊	Interior stroke missing; other candidate fragmented
+X-00633		𦥾𦦊	checked again: broken strokes in both rows
+X-00634		𤗣	drew well only in the character it was cut from
+X-00636	⿻刀⿱丶丶	𤘞	Clean and closely matches
+X-00639	⿻一束	𣷵	Matching strokes and proportions
+X-00640		𣊜	drew well only in the character it was cut from
+X-00641		𣆜	Question mark replaces component
+X-00644		𣥒	the composer draws it only approximately (⿿)
+X-00645		𢧟	Placeholder or own donor
+X-00646		𧫬	Upper component has wrong shape
+X-00649		𠪹	checked again: fragmented and displaced lower strokes
+X-00650	𱒅	𡿹	Close match
+X-00652		𢇖	the composer draws it only approximately (⿾)
+X-00653		𡞐	checked again: disconnected and misplaced right components
+X-00654	⿻屮亼	𡴡	Matching strokes and proportions
+X-00655		𡴈𤇟	Wrong enclosing shape in both rows
+X-00656	⿻丨⿳コ𠮛人	𢉫	Structure preserved
+X-00664		𪊩𬗜	checked again: missing and misplaced strokes
+X-00665		𠰇	checked again: lower component malformed
+X-00666	𭺜	𠱏	Close match
+X-00667	⿻𬺰乀	𠮼	Close match
+X-00668		𡭼	checked again: strokes fragmented and misplaced
+X-00670	⿻口儿	𡗽𤙸𦰋	Best match across both hosts
+X-00671	⿻丷𠕒	𪔀	Clean, matching structure
+X-00677		𡔝	Placeholder or own donor
+X-00679	⿰⿱𠃊丆尸	𠭝	Close match
+X-00680	⿻二儿	𠭌	Clean strokes, close match
+X-00681	⿻串一	𠫺	Matches structure and proportions
+X-00682	⿻中𠆢	𠫩	Clean and visually consistent
+X-00683	⿻丁⿱𠃋㇀	𠡅	Matches real glyph closely
+X-00684	凹	𠚜	Complete strokes, matching enclosure
+X-00685		𠚖	No assessable complete drawing
+X-00687		𠙊	Missing outer frame strokes
+X-00689		𠤞𦷣	Fragments beneath upper component
+X-00690	⿱⿻且⿲丨丨丨八	𠔰	Close match, clean strokes
+X-00693		𠋓	Placeholder or own donor
+X-00694	⿻丂丨	𠁮𠂔	Clean strokes and matching proportions
+X-00696		𠂮𠨷	Missing connecting stroke or fragments
+X-00698	𬺷	𠦇	Matches the real glyph
+X-00701		𠁲	Fragments beneath left component
+X-00702	⿻弓人	𢎮	Close match, sensible proportions
+X-00703		𠄣	checked again: inner strokes misplaced
+X-00706		𦭢	checked again: numerous stray stroke fragments
+X-00707	⿱⿰𠮝口禸	𠎘	Clean composition, slight roof differences
+X-00709		𠌆𠓳	All rendered candidates have fragmented strokes
+X-00711		𤞹𧫲	Question marks or fragmented lower strokes
+X-00712		𧊨𧧛	no candidate drew well in every character
+X-00713	⿱己乂	𤓷𧦮	Cleanest match and proportions
+X-00714		𦙛𧦏	no candidate drew well in every character
+X-00715		逺𬡄	Both candidates leave scattered stroke fragments
+X-00716		𧡉	checked again: strokes fragmented throughout
+X-00717		𧴷	Only substitution displays a question mark
+X-00718		𡕣𡿴	checked again: both rows severely fragmented
+X-00719		𣈌𥆴	Both candidates lose upper horizontal strokes
+X-00720		𠉓𨥄	checked again: distorted upper strokes in second row
+X-00721	肀	唐𢈏𤨫	Clean strokes in both hosts
+X-00722	⿻臼木	𠟾𠟿𠢶	Matches both host glyphs
+X-00723		𡺒𧑩𫝕	the composer draws it only approximately (㇯)
+X-00725	⿻千从	𠚏	Close match, clean composition
+X-00726	⿻丷𠕒	𡙪	Matches structure and proportions
+X-00727	⿻丷屮	𤰒	Clean, close match
+X-00729	𮍌	𠗱	Matches strokes and proportions
+X-00730		𠒅𠚞	All candidates contain fragmented interior strokes
+X-00731		𡠑	drew well only in the character it was cut from
+X-00732		𡪼	no candidate drew well in every character
+X-00734		𣥿𣹹	Both candidates leave fragments below
+X-00735		𢧹	Numerous broken stroke fragments
+X-00736		㦱𢦱	checked again: misplaced and overlapping strokes
+X-00738		𤡞𤴗	All drawable substitutions have fragmented lower strokes
+X-00739	𠃚	𠯶	Clean, matching structure
+X-00740		𠫪𡎸	checked again: compressed overlapping strokes in second row
+X-00741	㇉	𠧤𠧷	Both hosts closely match
+X-00742		𥥏𦮅𩒌	no candidate drew well in every character
+X-00744		𦦜𨺼	checked again: severely compressed and misplaced components
+X-00745	𤓰	𮤌	Matches interior strokes
+X-00746	⿻土吅	𡃟𣞸𫮶	Preserves full component size and structure
+X-00747		傘𠍘𡙹	no candidate drew well in every character
+X-00748		𠛲𤽆	no candidate drew well in every character
+X-00749	⿻口⿰丿丨	𠥲𡂣𣙶	Closest proportions with complete strokes
+X-00750	⿻几一	𡊬𣳞𤇛	Clean strokes and matching proportions
+X-00751		𡙝	Fragmented and missing strokes
+X-00752	⿻乚𠃊	𠬜𣎹𣦾	Closest shape in both hosts
+X-00753	㇯舏舌	叫𠬞	Clean and closest to host strokes
+X-00754	⿻⿳口一口丨	𡝤𡡎	Complete strokes and correct proportions
+X-00755	⿻凵人	𠜇𡴨𡴩	Matches both host glyphs
+X-00756		𣂼𱼱	checked again: strokes crowded and displaced
+X-00757		𢋟𤎉	checked again: internal strokes collapsed
+X-00758	𠙵	𠁿𣏁	Matches both hosts closely
+X-00759		𠃨𠩀𢿔	no candidate drew well in every character
+X-00760	⿸⿹丅丿丨	𡉹𢒴𣂘	Closest strokes in both hosts
+X-00761		其甚䑓	no candidate drew well in every character
+X-00762		䦇𠀁𠄄	no candidate drew well in every character
+X-00763		𢋐𣦳𧇪	no candidate drew well in every character
+X-00765		爾䕥𠑂	no candidate drew well in every character
+X-00766		𠿧𡄙𣟘	checked again: missing structure in final row
+X-00767	⿱㇒⿻一止	𡋨𤧧𤸕	Clean strokes and correct alignment
+X-00768		𢨖𣓝𥺠	checked again: upper component structure mismatches
+X-00769	𡸁	𭆵𮃙𮛸	Closest match in both hosts
+X-00770	⿻𣄼丨	𠃫𠢾𠦱	Complete and correctly scaled
+X-00771	⿻臼乚	𡘹𢀀𣼜	Matching shape and proportions
+X-00773	𱼀	炙䏑将	Correct size and placement
+X-00774	⿱目攵	𠷙𡙐	Both compositions match closely
+X-00775	𣆪	𠪋𪉷	Complete strokes and balanced proportions
+X-00776		𨺅	the composer draws it only approximately (⿾)
+X-00777		兪冐前	no candidate drew well in every character
+X-00778	㇯亙二	𡧧	Closest clean composition
+X-00779	匕	皍頃顷	Both hosts closely match
+X-00780	⿻丶𬼂	赱𠯁𦂵	Preserves strokes and proportions
+X-00781	⿻乚⿰丶丶	厯𠪱	Closest spacing and shape
+X-00783		𢳢𬻇𭁇	no candidate drew well in every character
+X-00784	己	𠃚	Close match throughout
+X-00785	羊	䍨䍩䍪	Correct component size
+X-00786		头𠂐𧊼	checked again: first row cannot draw
+X-00787		可𠁨𲏂	no candidate drew well in every character
+X-00788		䳴𠴅	Fragments or wrong shape throughout
+X-00790	丰	寿	Matches real glyph
+X-00791		勿彧𢃂	no candidate drew well in every character
+X-00792	卩	𠬝	Clean, matching strokes
+X-00793		乔亣介	no candidate drew well in every character
+X-00794		𣕤	checked again: upper strokes compressed and tangled
+X-00795		𠎖𦈫	the composer draws it only approximately (㇯)
+X-00796		畱𡋲𥁶	no candidate drew well in every character
+X-00797		兎𭀣𭀥	checked again: first row missing upper structure
+X-00798	⿻⿰丨丨八	𠀜𰁜	Matches the real glyph cleanly
+X-00799		㰓	Detached upper fragments
+X-00802		䇂𠲗𥫇	no candidate drew well in every character
+X-00803	⿻⿱⿻口一口丨	婁	Close match, clean strokes
+X-00804	⿲丿二丨	斉𠂁𠫼	Matches both hosts cleanly
+X-00805	乀	𡆡𢎡𣐧	Closest stroke shape across both hosts
+X-00806		巪𦭍𧰳	checked again: third row lower strokes collapsed
+X-00807		𣶒	drew well only in the character it was cut from
+X-00808	⿻尸一	𢀞	Clean and close match
+X-00810		匆卥㢴	checked again: inner strokes misplaced or missing
+X-00811		𠙭𢧯	checked again: detached fragments and overlapping strokes
+X-00813		𢀖𭖀𮌇	checked again: inner strokes misplaced in third row
+X-00814	⿻冖丿	𢏐	Matches glyph cleanly
+X-00815	㇯枾木	𩐊	Closer stroke placement and proportions
+X-00816		妻	drew well only in the character it was cut from
+X-00817		以	drew well only in the character it was cut from
+X-00819	⿻二巾	乕𧚜	Clean and proportionally faithful
+X-00820		鼎𣇓𩆹	no candidate drew well in every character
+X-00822		夜	checked again: upper strokes detached and misplaced
+X-00823	⿻口人	𢮦𥇥𩂲	Complete forms without stray fragments
+X-00825		𣳌	checked again: stray horizontal stroke crosses lower part
+X-00826	㇯那⻏	𦐃𩑫	Clean strokes and matching proportions
+X-00827	⿻兀一	発𣷨	Closer shape with intact strokes
+X-00830		甩𣯠	Fragments or missing strokes
+X-00831		𬻱𮒆𱧼	checked again: incorrect inner strokes and overlaps
+X-00832		㛼牐	Both candidates retain fragments
+X-00833		壷𬻫𱴕	no candidate drew well in every character
+X-00836		𤓑	Upper left strokes missing
+X-00837		𠅑𨙘𪜁	no candidate drew well in every character
+X-00838		伞𠬵𡅴	checked again: broken placement in second and third rows
+X-00839	⿻土丷	啬𠒀𨪲	Closest match across both hosts
+X-00841		堇勤	checked again: upper strokes detached; lower structure compressed
+X-00842	𦫳	𦭇	Clean and close match
+X-00843	𠃋	𢎞	Clean and closely matched
+X-00844	⿱灭又	鋄𤥙𦯘	Best proportions across both hosts
+X-00845	㸒	婬淫𠗝	Closest proportions in both hosts
+X-00846		𩮒	checked again: lower strokes missing
+X-00847	𧴪	䐝䞆䣔	Clean strokes and matching width
+X-00848	⿳⺊𠔿⿵冂厶	竊𦺃	Complete and well proportioned
+X-00849	㇯𣽄氵	罽𣟈	Closest lower component shape
+X-00850	䨣	𤃸	Close match with complete strokes
+X-00851		𢨋	the composer draws it only approximately (⿿)
+X-00853		𡙷	drew well only in the character it was cut from
+X-00854	氷	砯𠘤	Matches both host glyphs
+X-00855		臦𦣩	the composer draws it only approximately (⿾)
+X-00856		㑹	drew well only in the character it was cut from
+X-00859	𱼀	䚻䟸𠭟	Complete component at matching scale
+X-00860		𠊗𡽽𤺠	checked again: upper component loses strokes
+X-00861		曾會	checked again: middle strokes missing
+X-00862		爂爨璺	checked again: upper structure malformed
+X-00863		𠃁𠨁𠼁	checked again: lower component misplaced
+X-00864		𢿅𪘏	checked again: detached fragments in second row
+X-00865		㦲𠐂𠮠	no candidate drew well in every character
+X-00866	⿰亻丨	攸㶖𠇉	Matches stroke spacing and width
+X-00867	⿱幺夊	後𡕺𨒥	Matches both hosts’ proportions
+X-00868	⿱勹又	歿沒𥆉	Clean and appropriately sized
+X-00869		直	checked again: enclosure strokes broken
+X-00870		興輿	checked again: surrounding component compressed and incomplete
+X-00871		㖜㙶	checked again: components fragmented and misplaced
+X-00872	⿱亠丷	产商啇	Preserves upper strokes and proportions
+X-00873	⿱从龰	從緃踨	Full strokes and balanced proportions
+X-00874	⿱⿱十罒一	𢛳	Clean and closely matched
+X-00875	⿰𱼀犬	然𤢅𪆈	Clean and faithful in both hosts
+X-00876	⿱爫冖	愛爱舜	Closest proportions across both hosts
+X-00877		對𣫩𤎀	checked again: second row loses left-side strokes
+X-00878		奂𠀃𠀇	no candidate drew well in every character
+X-00880		原㣎𡮂	checked again: third row cannot draw
+X-00881	㇯侯亻	候	Cleaner shared component
+X-00882		免𤽪𩈠	checked again: third row component displaced above
+X-00883	⿹耳𤣩	聽𢌖	Closest stroke weight and spacing
+X-00884	㇯单丷	単單	Correct structure and balanced height
+X-00885	⿵冂𢆉	南𠧲𡁑	Matches both hosts without compression
+X-00886	⿱囪心	𢊕𣎗𥎋	Clean strokes and balanced proportions
+X-00887	⿱口一	或𥆰𧥀	Closest match across both hosts
+X-00888		実	drew well only in the character it was cut from
+X-00889	⿰丶丿	班疈辨	Clean central strokes in both hosts
+X-00890	⺆	𡛱	Matching outline and proportions
+X-00891		奍𠂦𠂵	checked again: lower rows retain stray fragments
+X-00892	龹	𪀲	Clean matching upper component
+X-00893	⿻⺕亅	争爭𤔇	Both compositions closely match
+X-00894	氺	眔𤂎𥃜	Clean and complete strokes
+X-00895		𠩖𢗱𣌦	checked again: first row has detached upper fragments
+X-00897		度	drew well only in the character it was cut from
+X-00899		帶𢂸	checked again: first row cannot draw
+X-00900	又	𡛹𱨠	Clean strokes; closest proportions
+X-00901	⿹𠃌口	局𦯗	Matches both host glyphs
+X-00902	⿱𠂉子	逰𧌕𨒣	Natural spacing and proportions
+X-00903	⿱乛耳	聼𠖙𠫊	Correct ear size and placement
+X-00904	⿻丨⿵冂𠓜	兩㒼𧸕	Full-sized, balanced compositions
+X-00905	㇯留田	斵貿	Closest match to upper host
+X-00906		款隷𢕥	no candidate drew well in every character
+X-00908	⿱𠂉一	𡣵𤂟𥂭	Matches both without stray fragments
+X-00909		𠬫𡰻𣆸	checked again: second row cannot draw
+X-00910		囊𬋟	Missing strokes and stray fragments
+X-00911	⿱左⺝	堶媠惰	Closest proportions in both hosts
+X-00912		𣦨	checked again: left component severely compressed
+X-00913	⿵戌𣥂	嵗歲	Preserves full lower-component proportions
+X-00914		亦𠋰𠻏	no candidate drew well in every character
+X-00915	杀	𤞠	Close match with clean strokes
+X-00916	𬀷	䵰𤳈𥏻	Matches both hosts without gaps
+X-00917	⿱日罒	曼𣋍𧯐	Matches stacked shapes and spacing
+X-00918		𣘒	Wrong component shape
+X-00919	⿱肀口	唐	Matching structure and proportions
+X-00921		𦸹𧣚𩿴	no candidate drew well in every character
+X-00923		岡	drew well only in the character it was cut from
+X-00924		囟囱粤	no candidate drew well in every character
+X-00925		覧鍳	checked again: upper component compressed and detached
+X-00926	⺶	𤈩𧨁𨌅	Matches both hosts closely
+X-00927	⿱龴疋	疑𠈴	Natural proportions in both hosts
+X-00928		𡵗𣅳𥸸	no candidate drew well in every character
+X-00929	㇯𤕼爿	𣙘	Recognisable and intact
+X-00930		俢𩝶	no candidate drew well in every character
+X-00931		亷兼	Wrong shape or fragments
+X-00932	⿱白方	敫㰾	Both hosts match cleanly
+X-00933	𢇁	㬎	Clean and closely matched
+X-00934	㇯展尸	𠺂	Cleaner strokes across hosts
+X-00935	⿳一由八	寅	Clean and closely matched
+X-00936	㇯拜龵	拝𥿙	Natural spacing and complete strokes
+X-00937	⿱刀巴	絕	Matches shape and proportions
+X-00938	⿱廿⺝	𢻎𣪚𣮠	Matches both hosts closely
+X-00939		㬌𠩤𡭴	checked again: third row cannot draw
+X-00940		𠀺𣚞	checked again: upper component loses strokes
+X-00941		𪭃𬅒	checked again: first row has wrong internal structure
+X-00942		鹽	Cannot draw
+X-00943		䀋	checked again: enclosed component collapsed and incomplete
+X-00944		尋𠋸𢙢	no candidate drew well in every character
+X-00945	⿱𠂉品	臨𡐈𡻵	Correct scale and complete strokes
+X-00946		席𦆐	checked again: second row has overlapping strokes
+X-00947	𠂎	卯𠂑𠨥	Matches both reference shapes
+X-00948		𡔻𡔾𢧺	no candidate drew well in every character
+X-00949	巤	𡂏	Clean complete composition
+X-00951	𠬶	㓎䯹𠜘	Closest size and stroke placement
+X-00952	𰯲	擥覽譼	Preserves full structure and proportions
+X-00954		玈祣㢳	checked again: lower right stroke structure differs
+X-00956	⿸厂彡	彥𢒊𦫞	Matches connected structure and scale
+X-00957	⿻土从	嗇𠑏𠩟	Clean strokes and matching proportions
+X-00958		𤲽	Fragmented upper left strokes
+X-00959	⿱⿱卝罒冖	甍瞢薎	Closest match across both hosts
+X-00960	𠂛	延𠭐𤜺	Clean and well proportioned
+X-00964		犀	checked again: interior strokes collide and distort
+X-00965	𱥯	𨭁𩧞𪏧	Complete strokes without fragments
+X-00967		𣥩𦴹𩓯	no candidate drew well in every character
+X-00968		嬊燕鷰	no candidate drew well in every character
+X-00969	𥞤	穀𥡮	Matches both hosts cleanly
+X-00970		奧𢍢𣙾	no candidate drew well in every character
+X-00971		𣓘	no candidate drew well in every character
+X-00972		棄𤟬𦜫	checked again: first row upper strokes overlap
+X-00973		𥱺𦸊𪄷	checked again: first row compressed with malformed strokes
+X-00975		鼉鼍	checked again: upper components severely compressed
+X-00976		敖	Cannot draw
+X-00977	⿱𠂉巾	鉓饰𥍦	Both hosts closely match
+X-00978	𱼭	湼隉㷐	Complete strokes and matching proportions
+X-00979	𱖔	𢽠𨝔	Clean and faithful in both hosts
+X-00980	⿹弓土	疆𠱣𨕿	Best size and stroke placement
+X-00981		𧔠	Lower strokes fragmented
+X-00982	⿱口𠕁	嗣翤𪼺	Both hosts match cleanly
+X-00983		粱	checked again: upper strokes crowded and malformed
+X-00984	𱗐	廛𠪨	Closest overall proportions in both hosts
+X-00985	𬎾	𣷈𪲯𫃯	Complete and correctly proportioned
+X-00986		鳳	drew well only in the character it was cut from
+X-00987	⿳山一糸	𢾰	Closely matches real glyph
+X-00989	⿺元攴	冦	Clean and well proportioned
+X-00990		亇尔𠉎	no candidate drew well in every character
+X-00991		戛	checked again: upper strokes compressed and detached
+X-00993	⿻⺕人	庚𡌻𤵨	Closest proportions; no stray fragments
+X-00994	𰡮	釜𠞑𣺨	Complete strokes and matching proportions
+X-00995		刁𣅬𥄀	checked again: lower strokes misplaced in compounds
+X-00996	㇯壺士	𣄟𣝄	Clean composition; others have fragments
+X-00997	⿻十从	賫赍𡀅	Matches both hosts cleanly
+X-00998		𭡌𮨗	Residual fragments in both
+X-00999	尣	尦尩䝇	Closest overall shape in both hosts
+X-01000		𮮡	checked again: extra bend at lower right
+X-01003	⿻口人	𱻫	Matches strokes and proportions
+X-01004	⿹㇉灬	𣿱	Clean composition matching reference
+X-01008		𢈘	checked again: interior horizontal stroke missing
+X-01011		𬻥	Question mark replaces part
+X-01012	⿰丶丿	𱍷	Matches the real glyph
+X-01014	呙	𮉨	Clean and well proportioned
+X-01016	𣶒	䄗䨊𪔥	Clean strokes and matching proportions
+X-01017	丸	𪐟	Clean strokes and matching proportions
+X-01018		亥𠀔𠃕	checked again: first row loses crossing strokes
+X-01019	𠃑	𮢇	Close match with intact strokes
+X-01020		𥹤	checked again: grid horizontal stroke missing
+X-01022	区	𥐰	Matches the real glyph
+X-01023		將𠙝	no candidate drew well in every character
+X-01027		𡹘𦄊𦜑	no candidate drew well in every character
+X-01028	派	𩹘	Clean, close visual match
+X-01031	父	㵚𠛈𣏤	Matches both reference glyphs
+X-01032	納	𠺶	Matches strokes and proportions
+X-01033		揺𢝾	no candidate drew well in every character
+X-01034		冏𣌬𣠌	no candidate drew well in every character
+X-01036		𡕄𩀙	Drawable row has missing strokes
+X-01037		𫝐	Part contains fragmented strokes
+X-01039	苔	𢞇	Clean, close visual match
+X-01040	苗	𣬍	Matches the real glyph
+X-01042	草	𣺞	Clean and closely matched
+X-01044	薩	𡄳	Clean, close match
+X-01045	起	𠺬𤠳	Closest match in both hosts
+X-01047		𥽣	checked again: right component collapsed and overlapping
+X-01048		𠷍	checked again: right component strokes misplaced
+X-01050	𠆢	𥀐	Clean, close match
+X-01051		六共只	no candidate drew well in every character
+X-01052	又	䬸	Matches overall structure
+X-01057		𫝀𬪹	checked again: misplaced strokes in both rows
+X-01061	夊	麥	Clean, matching proportions
+X-01063		𥭍𧐬	checked again: first row upper strokes broken
+X-01064		𠙿	Question mark replaces part
+X-01066		𢑚𥅱	Missing strokes or fragments
+X-01067	止	㒪𠑛𡖰	Matches both hosts cleanly
+X-01068		𢩀	checked again: enclosing strokes distorted
+X-01073		𠹉𢕃𥰀	checked again: third row strokes overlap
+X-01074		𭦢	the composer draws it only approximately (㇯)
+X-01076		𱵮	checked again: upper component compressed and overlapping
+X-01077		図	checked again: interior strokes distorted and misplaced
+X-01078	⿸𡰣𠃍	𣪃	Matches strokes and proportions
+X-01079	⿱八𠆢	𠊯𠝠𢙋	Closest overall stroke arrangement
+X-01080	⿹勹乂	𱯗	Clean strokes and reasonable proportions
+X-01081		𠨇𠨌	checked again: fragmented upper strokes
+X-01082	⿱厶大	叁参奙	Matches both hosts and spacing
+X-01083		𠅷𠆀	checked again: disconnected strokes in second row
+X-01086		𩨶	checked again: right component has altered strokes
+X-01087		𨹩	checked again: lower strokes severely compressed
+X-01092	龸	𮚑	Close match, clean strokes
+X-01093		𡲩𡲬𧞘	checked again: interior strokes differ substantially
+X-01095	⿱⿱⺊冖一	䜭𣴸𥌄	Cleanest composition in both hosts
+X-01098	𤰔	恵	Matches structure and proportions
+X-01100	⿱乛氺	函	Closest clean composition
+X-01102		𥵭𫓕	Fragmented in both rows
+X-01104	⿱一⿻丷屮	𡴌	Matches structure, slightly heavier
+X-01105		𤳣	Missing connecting strokes
+X-01106		𮯆	checked again: right component breaks into fragments
+X-01110	⿴囗仌	𠅓𠤽𠧪	Closest size and proportions
+X-01111	⿱⺈旧	陥𥦇	Closest match across both hosts
+X-01114		睂	checked again: left descending stroke displaced
+X-01115		𠤛	Candidate 1 is a question mark
+X-01116	⿻𦍌㇒	𭃱	Clean, close match
+X-01117	⿱⺈旧	焔𣵥	Closest proportions in both hosts
+X-01121		𧓚𧖁	Both candidates leave stroke fragments
+X-01124	𫩠	𪺌	Matches shape and proportions
+X-01128	㇯𠸝口	偼媫	Clean strokes in both hosts
+X-01130		粵	Candidate 1 has the wrong shape
+X-01131		𩇊	checked again: scattered disconnected stroke fragments
+X-01132		曓㬥㬧	no candidate drew well in every character
+X-01133	㇯𢶦扌	𩑅	Cleaner strokes and closer proportions
+X-01134		䢉𢍱𢍹	no candidate drew well in every character
+X-01141	舟	𦩚𦩛𦩳	Correct width and complete strokes
+X-01143	⿳十罒心	徳聴	Matches both hosts cleanly
+X-01145	仌	𭰐𮎯	Clean, matches both hosts
+X-01149	𦕒	𣩚	Clean, close match
+X-01151	歰	譅𧴙	Complete strokes, matching proportions
+X-01152	烕	𡟬	Matches structure and proportions
+X-01155	羼	𮟨	Clean and visually consistent
+X-01156	肁	𢾹	Matches strokes and proportions
+X-01158	虒	𤗢𥉘𥠱	Closest match in both hosts
+X-01161	达	𫟼	Clean, close match
+X-01162	戾	𠜺	Matches structure and proportions
+X-01164	雞	𭌲	Clean, close match
+X-01165	㇯謠言	搖瑤	Matching upper strokes and proportions
+X-01168	𪘂	𭌰	Clean, close match
+X-01169	㼌	𮊏	Matches shape and proportions
+X-01171		莽𦳕	Both candidates leave stroke fragments
+X-01174	㠯	𭟹𮂂𮃻	Closest match in both hosts
+X-01175		𢌱𭚤	Fragments or missing upper strokes
+X-01176	丙	𮩺	Clean, matching strokes
+X-01177		夆寿	Both candidates leave stroke fragments
+X-01179		𢳼	no candidate drew well in every character
+X-01182		勉冕	Both candidates leave upper fragments
+X-01184		鐕𮚋	checked again: upper strokes fragmented in both rows
+X-01190	冕	𭲀𮃦	Matches both hosts closely
+X-01192	⿱关力	𭰼𮠲	Matches stroke shapes and proportions
+X-01196	厲	𮩖	Clean, close match
+X-01197	及	𣼘	Matches real glyph
+X-01199		𭨗	no candidate drew well in every character
+X-01201		𨮒𩴲	checked again: components compressed and displaced
+X-01202		𭛸	checked again: fragmented and missing strokes
+X-01204	妢	𭝇	Clean, matching proportions
+X-01205	妥	𩳕𮋪	Closest match in both hosts
+X-01206	娑	𭢃	Close match, clean strokes
+X-01207	嬭	𭌮	Matches shape and proportions
+X-01211	寃	𮐵	Clean and closely matched
+X-01214	屑	𮔱	Matches the real glyph
+X-01216		𭙁𭽏𮄪	no candidate drew well in every character
+X-01219	延	𭖮𭦋𮁺	Both compositions closely match originals
+X-01226	戻	𢽲𩸭𮭂	Clean strokes and matching proportions
+X-01228	⿱日匂	掲渇	Closest match in both hosts
+X-01230		肭䏙	All candidates leave broken stroke fragments
+X-01234		殺𣻑	Both candidates leave fragments
+X-01238		𭳄𮊑	Extra strokes or missing component strokes
+X-01243		寘嵮	All candidates have fragmented strokes
+X-01247		𭣊	no candidate drew well in every character
+X-01248	臈	𭌫	Matches structure and strokes
+X-01250	舊	𭍸	Clean enclosure and interior
+X-01251	芷	𮞟	Close match throughout
+X-01252	苑	𭝪𮞫	Clean and consistent across hosts
+X-01253	苙	𭵋	Matches strokes and proportions
+X-01254	苟	敬𮏆	Clean strokes in both hosts
+X-01264	蒦	𭶹	Clean and closely matched
+X-01266	蕎	𭔣	Matches the real glyph
+X-01270		甤蕤	Fragments and unwanted horizontal strokes
+X-01272	迧	𭵍	Clean, close glyph match
+X-01280	册	𩬥	Clean strokes and matching proportions
+X-01282		𠘺𣫺	Both substitutions contain extraneous strokes
+X-01283		犕糒	Both candidates leave stray stroke fragments
+X-01285	丑	𥄨	Clean, close glyph match
+X-01286		𢕧𢰚	checked again: missing and displaced strokes
+X-01288		𣭣𦨸	Stray strokes in both candidates
+X-01289	⿹勹⿺𠃊㐅	𥑪	Clean strokes and matching structure
+X-01291	⿱㇒犮	𱦗	Clean, close glyph match
+X-01292	咼	𡐫	Clean strokes and matching structure
+X-01296		𥄙祖	Box fragments remain in both
+X-01298	𨟽	𭵷	Clean, close glyph match
+X-01299		𢮮𢸻	checked again: fragmented and misplaced strokes
+X-01300	⿱𠄢一	𣷻	Close match, clean strokes
+X-01301		㺸㺸	Extra horizontal stroke fragments
+X-01303		𥠞	checked again: missing strokes and disconnected fragments
+X-01305		𪎎	drew well only in the character it was cut from
+X-01307		𦹗	drew well only in the character it was cut from
+X-01309	⿻肀𬺻	𨕛	Close match, complete strokes
+X-01310	⿸𬺷乀	𩂚	Clean and closely matched
+X-01311	⿱廿⿻⿲㇒丨人冂	𣺏	Matches structure and proportions
+X-01312		𮓠	Stray grid-like stroke fragments
+X-01313		𭖲	drew well only in the character it was cut from
+X-01316		𥁫	drew well only in the character it was cut from
+X-01317		𤅌	drew well only in the character it was cut from
+X-01320		𭥟	drew well only in the character it was cut from
+X-01322	⿱㇒冈	𡴓𤥱𥑨	Closest match in both hosts; clean strokes
+X-01324		𬺶	drew well only in the character it was cut from
+X-01325	⿳一从工	𪂐	Close match, clean strokes
+X-01326		𮬁	drew well only in the character it was cut from
+X-01327		𰒥𰲞	the composer draws it only approximately (⿿)
+X-01328	⿰方⿱𠂉畨	𤃳	Close structure and proportions
+X-01330		㯱㯻㰆	checked again: missing and compressed middle strokes
+X-01331		𣤧𣿰𧢕	checked again: upper structure loses strokes
+X-01333	𰀡	䝨𪷃𪾋	Complete upper strokes match both hosts
+X-01334	⿱一⿻冂⿰丨丨	𧟺𧟾𧠀	Full-width top matches both glyphs
+X-01335		𤕈	the cleanest candidate holds a part no table writes (？)
+X-01336		𦀱	drew well only in the character it was cut from
+X-01337		𣽐𨭀𩰽	checked again: third row has malformed strokes
+X-01341	⿲土矢匕	𥏰	Close match, complete strokes
+X-01342	⿰⿱山𠮛攵	㣲𡠾	Both compositions closely match
+X-01353		𣄨𥷋	checked again: second row is fragmented
+X-01356		𢮴𣞦𨽅	checked again: missing strokes and detached fragments
+X-01357	⿳一⿴⿰丨丨𠄠⿵冂𢆉	𢡤	Good structure and proportions
+X-01358		𨙨	the composer draws it only approximately (⿾)
+X-01361		𭳛	Fragmented upper and middle strokes
+X-01364		𲦌	checked again: extra upper strokes overlap
+X-01367		㧛䛓	Upper vertical strokes truncated
+X-01371		𱦻𱧙	checked again: second row has displaced strokes
+X-01373		𱱄	checked again: lower strokes dissolve into fragments
+X-01374	⿻冂丄	𠯧	Clean matching structure
+X-01375		𲁓	the composer draws it only approximately (⿿)
+X-01376		𰨇	the composer draws it only approximately (⿿)
+X-01379	⿱廿⿻丨网	𤂒	Matches reference structure and proportions
+X-01380		𠇇	Only drawable candidate is a question mark
+X-01381		𥑚𱯬𲀑	checked again: interior diagonals change the structure
+X-01383		𠎗	checked again: broken strokes and scattered fragments
+X-01387		𣠯	checked again: lower structure is compressed and overlapping
+X-01389		𮗙	the composer draws it only approximately (⿿)
+X-01392		𧹂	the composer draws it only approximately (⿿)
+X-01394		𬢆	the composer draws it only approximately (⿿)
+X-01396	⿻全丷	𤐻	Clean structure matching reference
+X-01398	⿱𮂱旨	鑙𬭿	Clean strokes and matching proportions
+X-01399		荣	checked again: upper strokes fragmented and missing
+X-01400		娛𡷤	Unwanted strokes remain in all candidates
+X-01404	鬲	𢡍	Matches reference cleanly
+X-01408	⿱廿⿻口土	𠏏𠏽𡅤	Closest match across both hosts
+X-01409		𦮆	Wrong lower shape with missing strokes
+X-01412		𢒅	Candidate 1 lacks left enclosure; candidate 2 is own donor.
+X-01417	㢏	𭭖	Clean composition matching reference
+X-01421	卨	𮃥𮄑	Complete forms with matching proportions
+X-01425	龜	𤒅	Matches host closely; clean strokes
+X-01426	冥	㟰㨠	Matches both reference glyphs
+X-01427	亢	㰠㼚㽘	Clean and proportionally faithful
+X-01429	𫼉	𬙣	Matches host proportions and strokes

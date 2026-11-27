@@ -25,14 +25,14 @@ mkdirSync(shotsDir, { recursive: true })
 
 const service = await boot(config)
 let browser
+const errors = []
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 
 try {
   browser = await Browser.launch({ width: 1440, height: 1000 })
   await browser.writeAs('quiz-view-check')
-  const errors = []
   browser.listeners.push(m => {
-    if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.text)
+    if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails?.exception?.description || m.params.exceptionDetails?.text)
   })
 
   // Intercept the U+3042 review deal to assign three realistic forms (あ, ア, 𛀂) across the fixture crops.
@@ -94,6 +94,7 @@ try {
   await setViewport2x(1440, 1000)
   await browser.goto(`${service.base}/en/review/U+3042`, {
     waitFor: 'document.querySelectorAll(".quiz-section").length === 3',
+    timeout: 60000,
   })
   await browser.waitFor('[...document.querySelectorAll(".quiz-tile img")].every(i => i.complete && i.naturalWidth > 0)', 20000)
 
@@ -186,6 +187,64 @@ try {
   await browser.waitFor('document.querySelectorAll(".quiz-section").length === 3')
   console.log('ok   mode, tile size, and By form persist across reload')
 
+  // 6b. Parity controls: Ink toggle (Original / B&W), Quick Review guide popover, Explore link, Arrow-key nav, Bulk Looks right + Undo.
+  assert(await browser.evaluate(`document.querySelector('.quiz-topline a.open-explore')?.getAttribute('href')`) === '/en/grapheme/U+3042', 'Quick Review links to grapheme in Explore')
+  await click('.quiz-view-controls .ink-toggle button:nth-child(2)')
+  assert(await browser.evaluate(`document.documentElement.dataset.ink`) === 'bw', 'Ink toggle switches Quick Review to B&W')
+  await click('.quiz-view-controls .ink-toggle button:nth-child(1)')
+  assert(await browser.evaluate(`document.documentElement.dataset.ink`) === 'original', 'Ink toggle restores Original')
+
+  await click('.quiz-guide-toggle')
+  await browser.waitFor(`document.querySelector('.quiz-guide-popover')?.matches(':popover-open')`, 5000)
+  await browser.evaluate('scrollTo(0, 0)')
+  await browser.screenshot(join(shotsDir, 'guide-popover-light.png'))
+  await browser.key('Escape')
+  await browser.waitFor(`!document.querySelector('.quiz-guide-popover')?.matches(':popover-open')`, 5000)
+
+  // Arrow-key navigation across tiles in select step.
+  await browser.evaluate(`document.querySelectorAll('.quiz-choice')[0].focus()`)
+  await browser.key('ArrowRight')
+  const secondId = await browser.evaluate(`document.querySelectorAll('.quiz-tile')[1]?.dataset.unit`)
+  const focusedId = await browser.evaluate(`document.activeElement?.closest('.quiz-tile')?.dataset.unit`)
+  assert(focusedId === secondId, `ArrowRight moves focus to next tile (${focusedId} vs ${secondId})`)
+
+  // Bulk "Looks right" confirmation + Undo in FormBar (and arrow navigation hops over disabled confirmed tile).
+  await click('.quiz-section[data-form="あ"] .quiz-tile:nth-child(2) .quiz-choice')
+  await browser.waitFor(`document.querySelector('.form-bar .bulk-confirm') !== null`, 5000)
+  await click('.form-bar .bulk-confirm')
+  await browser.waitFor(`document.querySelector('.form-bar .form-done') !== null`, 15000)
+  const doneText = await browser.evaluate(`document.querySelector('.form-bar .form-done')?.innerText ?? ''`)
+  assert(doneText.includes('confirmed'), `Looks right reports confirmation (${doneText})`)
+  assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.assigned').length`) === 1, 'confirmed tile shows assigned state')
+  await browser.evaluate(`document.querySelectorAll('.quiz-choice')[0].focus()`)
+  await browser.key('ArrowRight')
+  const thirdId = await browser.evaluate(`document.querySelectorAll('.quiz-tile')[2]?.dataset.unit`)
+  const hoppedId = await browser.evaluate(`document.activeElement?.closest('.quiz-tile')?.dataset.unit`)
+  assert(hoppedId === thirdId, `ArrowRight hops over confirmed/disabled tile (${hoppedId} vs ${thirdId})`)
+  await browser.evaluate(`[...document.querySelectorAll('.form-bar button')].find(b => b.innerText === 'Undo').click()`)
+  await browser.waitFor(`!document.querySelector('.form-bar .form-done')`, 15000)
+  assert(await browser.evaluate(`document.querySelectorAll('.quiz-tile.assigned').length`) === 0, 'Undo restores confirmed tile')
+  await browser.key('Escape')
+  console.log('ok   Explore/Quick Review parity controls (Ink, Guide, Explore link, Arrow keys, Looks right + Undo)')
+
+  // 6c. Explore parity: shared custom TileSizeSlider on Explore light & dark + Quick Review link on grapheme page.
+  await browser.goto(`${service.base}/en/`, {
+    waitFor: 'document.querySelector(".explore .zoom-control input[type=range]") !== null',
+  })
+  assert(await browser.evaluate(`getComputedStyle(document.querySelector('.explore .zoom-control input[type="range"]')).appearance`) === 'none', 'Explore uses custom-styled TileSizeSlider')
+  await browser.evaluate('scrollTo(0, 0)')
+  await browser.screenshot(join(shotsDir, 'explore-toolbar-light.png'))
+  await browser.setColorScheme('dark')
+  await Bun.sleep(100)
+  await browser.screenshot(join(shotsDir, 'explore-toolbar-dark.png'))
+  await browser.setColorScheme('light')
+  // Return to Quick Review for mobile checks.
+  await browser.goto(`${service.base}/en/review/U+3042`, {
+    waitFor: 'document.querySelectorAll(".quiz-section").length === 3',
+    timeout: 60000,
+  })
+  console.log('ok   Explore uses shared custom TileSizeSlider')
+
   // 7. Mobile (390px and 320px): zero horizontal overflow in both Compact and Cards modes.
   for (const width of [390, 320]) {
     await setViewport2x(width, 844)
@@ -211,6 +270,7 @@ try {
   console.log('\nquiz-view-check passed')
 } catch (error) {
   if (browser) await browser.screenshot(join(shotsDir, 'failure.png')).catch(() => {})
+  if (errors.length) console.log('Browser errors:', errors)
   console.log('Service log:', service.log.slice(-6).join('').slice(-4000))
   throw error
 } finally {

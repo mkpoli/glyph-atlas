@@ -182,6 +182,14 @@ class FakeGitHub:
     def open_issues(self):
         return self.issues
 
+    def add_label(self, number, label):
+        if self.error is not None:
+            raise self.error
+        self.labelled = [*getattr(self, "labelled", []), (number, label)]
+
+    def item(self, repo, number):
+        return self.items[number]
+
     def create_issue(self, title, body, labels):
         if self.error is not None:
             raise self.error
@@ -239,6 +247,7 @@ def make_bot(tmp_path, *, decision_value=None, github=None, config=None, matrix=
     bot = fish_bot.Bot(config, store, fake_matrix, FakeGemini(decision_value, act=act), github,
                        fish_bot.State(tmp_path / "state.json"))
     bot._pace = 0.0
+    bot._call_pause = 0.0
     return bot, fake_matrix, store
 
 
@@ -670,8 +679,9 @@ def test_config_without_a_bot_table_uses_the_defaults(tmp_path):
     assert fish_bot.Config.load(path).room_ids == ()
 
 
-def act(*lines, react_to=None, react="", issue=False, sticker="", interest=0):
-    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker, interest=interest)
+def act(*lines, react_to=None, react="", issue=False, sticker="", interest=0, feedback=False, pr=False):
+    return fish_bot.Act(say=tuple(lines), react_to=react_to, react=react, issue=issue, sticker=sticker, interest=interest,
+                        feedback=feedback, pr=pr)
 
 
 def test_reads_a_call_by_a_han_alias_inside_a_sentence():
@@ -757,6 +767,256 @@ def test_a_chat_that_asks_for_an_issue_reaches_the_issue_desk(tmp_path):
     bot.answer(ROOM, trigger)
     assert len(github.created) == 1
     assert store.outcome("$call")[0] == "opened"
+
+
+def sent_texts(matrix):
+    return [sent[1]["body"] for sent in matrix.sent]
+
+
+def noticing_bot(tmp_path, decision_value, *, issues=None, config=None):
+    github = FakeGitHub(issues=issues)
+    bot, matrix, store = make_bot(tmp_path, decision_value=decision_value, github=github, config=config,
+                                  act=act("欸真的耶", feedback=True))
+    return bot, matrix, store, github
+
+
+def forget_rooms_read(bot):
+    read = bot._feedback_read()
+    bot.store.set_setting("feedback-read", json.dumps({**read, "rooms": {}}))
+
+
+def report(bot, event_id="$bug", text="大肥魚 搜尋頁按下一頁會跳回第一頁"):
+    trigger = event(text, event_id=event_id)
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+
+
+def test_feedback_nobody_asked_to_file_is_filed_and_linked(tmp_path):
+    bot, matrix, store, github = noticing_bot(tmp_path, decision(confidence=0.9, reply="記下來了～"))
+    report(bot)
+    assert len(github.created) == 1 and bot.gemini.calls[0][4].mode == "noticed"
+    assert [text for text in sent_texts(matrix) if "記下來了～" in text and "/issues/" in text]
+    assert store.outcome("$bug")[0] == "chatted"
+
+
+@pytest.mark.parametrize("value", [decision(open=False), decision(confidence=0.8)])
+def test_feedback_that_is_unclear_is_dropped_without_a_word(tmp_path, value):
+    bot, matrix, store, github = noticing_bot(tmp_path, value)
+    report(bot)
+    assert not github.created and sent_texts(matrix) == ["欸真的耶"]
+    assert store.pending(ROOM) is None
+
+
+def test_feedback_already_open_is_pointed_to_once(tmp_path):
+    known = fish_bot.IssueRef(number=12, title="Search pagination resets", labels=(), url="https://github.com/mkpoli/glyph-atlas/issues/12")
+    bot, matrix, _, github = noticing_bot(tmp_path, decision(duplicate_of=12, reply="這個有人記過了"), issues=[known])
+    report(bot)
+    forget_rooms_read(bot)
+    report(bot, "$again")
+    assert not github.created
+    assert len([text for text in sent_texts(matrix) if "/issues/12" in text]) == 1
+
+
+def test_feedback_is_read_seldom_and_leaves_issues_for_those_who_ask(tmp_path):
+    bot, _, store, github = noticing_bot(tmp_path, decision(open=False))
+    report(bot)
+    report(bot, "$second")
+    assert len(bot.gemini.calls) == 1
+    forget_rooms_read(bot)
+    for number in range(3):
+        store.add_issue("mkpoli/glyph-atlas", 100 + number, "t", "https://example/1", ROOM, f"$old{number}")
+    store.db.execute("UPDATE issues SET created_at=?", (fish_bot.now_ms() - 3_600_000,))
+    store.db.commit()
+    report(bot, "$third")
+    assert len(bot.gemini.calls) == 1 and not github.created
+
+
+def test_the_limits_on_reading_feedback_outlive_a_restart(tmp_path):
+    bot, _, store, github = noticing_bot(tmp_path, decision(open=False))
+    report(bot)
+    again = fish_bot.Bot(bot.config, store, FakeMatrix(), FakeGemini(decision(), act=act("嗯", feedback=True)), github)
+    report(again, "$second")
+    assert not again.gemini.calls and not github.created
+
+
+def test_an_issue_whose_answer_was_lost_is_looked_up_before_the_next(tmp_path):
+    bot, _, _, github = noticing_bot(tmp_path, decision(confidence=0.95))
+    github.issues = [fish_bot.IssueRef(number=1, title="Other", labels=(), url="https://example/1")]
+    github.error = fish_bot.GitHubError("timed out")
+    bot.github._issues = list(github.issues)
+    report(bot)
+    assert bot.github._issues == []
+
+
+def test_a_failing_look_at_the_limits_leaves_the_chat_answered(tmp_path, monkeypatch):
+    bot, _, store, _ = noticing_bot(tmp_path, decision())
+    monkeypatch.setattr(store, "last_issue_at", lambda: (_ for _ in ()).throw(sqlite3.DatabaseError("broken")))
+    report(bot)
+    assert store.outcome("$bug")[0] == "chatted"
+
+
+def test_feedback_is_not_filed_when_switched_off(tmp_path):
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, file_feedback=False)
+    bot, _, _, github = noticing_bot(tmp_path, decision(), config=config)
+    report(bot)
+    assert not bot.gemini.calls and not github.created
+
+
+def test_a_visit_that_finds_feedback_reads_the_lines_after_the_first_unread(tmp_path, monkeypatch):
+    bot, _, store, github = noticing_bot(tmp_path, decision(confidence=0.95, reply="記下來了～"))
+    store.add_event("$first", ROOM, "@a:example", fish_bot.now_ms() - 5000, "早", "m.text", backfilled=False)
+    store.add_event("$bug", ROOM, "@a:example", fish_bot.now_ms() - 1000, "搜尋頁按下一頁會跳回第一頁", "m.text", backfilled=False)
+    bot._notice(ROOM, "$first", "")
+    assert len(github.created) == 1
+    assert "搜尋頁按下一頁會跳回第一頁" in [str(row["body"]) for row in bot.gemini.calls[0][2]]
+
+
+def drafting_bot(tmp_path, decision_value, *, issues=None, config=None):
+    github = FakeGitHub(issues=issues)
+    bot, matrix, store = make_bot(tmp_path, decision_value=decision_value, github=github, config=config,
+                                  act=act("好，本鯨排進去～", pr=True))
+    return bot, matrix, store, github
+
+
+def ask_for_a_draft(bot, event_id="$pr", text="大肥魚 這個幫忙做個 PR", sender="@reader:example"):
+    trigger = event(text, event_id=event_id, sender=sender)
+    bot.ingest(ROOM, trigger, backfilled=False)
+    bot.answer(ROOM, trigger)
+
+
+def test_a_pull_request_asked_for_in_chat_files_its_issue_and_labels_it(tmp_path):
+    bot, matrix, store, github = drafting_bot(tmp_path, decision(reply="記下來了"))
+    ask_for_a_draft(bot)
+    assert len(github.created) == 1 and github.labelled == [(42, "fish-pr")]
+    assert bot.gemini.calls[0][4].mode == "draft"
+    told = [text for text in sent_texts(matrix) if "/issues/42" in text]
+    assert len(told) == 1 and "A draft pull request is queued" in told[0] and "記下來了" in told[0]
+    assert store.drafts_since(0) == 1 and store.outcome("$pr")[0] == "opened"
+
+
+def test_a_pull_request_asked_for_an_open_issue_labels_that_one(tmp_path):
+    known = fish_bot.IssueRef(number=12, title="Search pagination resets", labels=("bug",), url="https://github.com/mkpoli/glyph-atlas/issues/12")
+    bot, matrix, _, github = drafting_bot(tmp_path, decision(duplicate_of=12), issues=[known])
+    ask_for_a_draft(bot)
+    assert not github.created and github.labelled == [(12, "fish-pr")]
+    assert [text for text in sent_texts(matrix) if "queued for #12" in text]
+
+
+@pytest.mark.parametrize("label", ["fish-pr", "fish-pr-opened", "fish-pr-declined"])
+def test_an_issue_a_draft_was_asked_for_is_not_asked_again(tmp_path, label):
+    known = fish_bot.IssueRef(number=12, title="Search pagination resets", labels=(label,), url="https://github.com/mkpoli/glyph-atlas/issues/12")
+    bot, matrix, store, github = drafting_bot(tmp_path, decision(duplicate_of=12), issues=[known])
+    ask_for_a_draft(bot)
+    assert not getattr(github, "labelled", []) and store.drafts_since(0) == 0
+    assert [text for text in sent_texts(matrix) if "asked for already" in text]
+
+
+def test_one_person_asks_for_one_draft_a_day_and_all_for_a_few(tmp_path):
+    issues = [fish_bot.IssueRef(number=number, title=f"Thing {number}", labels=(), url=f"https://github.com/mkpoli/glyph-atlas/issues/{number}")
+              for number in (1, 2, 3)]
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, max_drafts_per_day=2)
+    bot, matrix, _, github = drafting_bot(tmp_path, decision(duplicate_of=1), issues=issues, config=config)
+    ask_for_a_draft(bot, "$a", sender="@one:example")
+    bot.gemini.decision = decision(duplicate_of=2)
+    ask_for_a_draft(bot, "$b", sender="@one:example")
+    assert github.labelled == [(1, "fish-pr")] and "waits as an issue" in sent_texts(matrix)[-1]
+    ask_for_a_draft(bot, "$c", sender="@two:example")
+    bot.gemini.decision = decision(duplicate_of=3)
+    ask_for_a_draft(bot, "$d", sender="@three:example")
+    assert github.labelled == [(1, "fish-pr"), (2, "fish-pr")] and "waits as an issue" in sent_texts(matrix)[-1]
+
+
+def test_a_label_that_cannot_be_put_leaves_the_issue_and_says_so(tmp_path):
+    known = fish_bot.IssueRef(number=12, title="Search pagination resets", labels=(), url="https://github.com/mkpoli/glyph-atlas/issues/12")
+    bot, matrix, store, github = drafting_bot(tmp_path, decision(duplicate_of=12), issues=[known])
+    github.error = fish_bot.GitHubError("timed out")
+    ask_for_a_draft(bot)
+    assert store.drafts_since(0) == 1 and len(store.drafts_waiting()) == 1
+    assert "may not have been queued" in sent_texts(matrix)[-1]
+
+
+def test_asking_again_for_an_issue_takes_nothing_from_the_count(tmp_path):
+    _, _, store, _ = drafting_bot(tmp_path, decision())
+    store.add_draft("mkpoli/glyph-atlas", 1, ROOM, "@one:example")
+    store.add_draft("mkpoli/glyph-atlas", 1, ROOM, "@two:example")
+    day_ago = fish_bot.now_ms() - 86_400_000
+    assert (store.drafts_since(day_ago), store.drafts_since(day_ago, "@one:example")) == (2, 1)
+
+
+def test_a_room_that_cannot_be_reached_does_not_hold_up_the_others(tmp_path, monkeypatch):
+    bot, matrix, store, github = drafting_bot(tmp_path, decision())
+    store.add_draft("mkpoli/glyph-atlas", 1, "!gone:example", "@one:example")
+    store.add_draft("mkpoli/glyph-atlas", 2, ROOM, "@two:example")
+    github.items = {number: {"labels": ["fish-pr-failed"], "comments": [], "url": f"https://github.com/mkpoli/glyph-atlas/issues/{number}"}
+                    for number in (1, 2)}
+    post = bot._post
+
+    def posting(room_id, *args, **kwargs):
+        if room_id == "!gone:example":
+            raise fish_bot.MatrixError(403, "not in the room")
+        return post(room_id, *args, **kwargs)
+
+    monkeypatch.setattr(bot, "_post", posting)
+    bot.drafts()
+    assert len(sent_texts(matrix)) == 1 and "#2" in sent_texts(matrix)[0]
+    assert [int(row["number"]) for row in store.drafts_waiting()] == [1]
+
+
+def test_drafts_are_off_without_a_label(tmp_path):
+    known = fish_bot.IssueRef(number=12, title="Search pagination resets", labels=(), url="https://github.com/mkpoli/glyph-atlas/issues/12")
+    config = fish_bot.Config(user_id=USER, room_cooldown_seconds=0, context_messages=20, draft_label="")
+    bot, matrix, _, github = drafting_bot(tmp_path, decision(duplicate_of=12), issues=[known], config=config)
+    ask_for_a_draft(bot)
+    assert not getattr(github, "labelled", []) and "not set up" in sent_texts(matrix)[-1]
+
+
+@pytest.mark.parametrize("labels, comments, said", [
+    (["fish-pr-opened"], [{"author": "mkpoli", "body": "Draft pull request: https://github.com/mkpoli/glyph-atlas/pull/77"}],
+     "#12: a draft pull request is up for review. https://github.com/mkpoli/glyph-atlas/pull/77"),
+    (["fish-pr-opened"], [{"author": "x", "body": "see https://github.com/other/repo/pull/1"}],
+     "#12: a draft pull request is up for review. https://github.com/mkpoli/glyph-atlas/issues/12"),
+    (["fish-pr-opened"], [{"author": "mkpoli", "body": "Draft pull request: https://github.com/mkpoli/glyph-atlas/pull/77"},
+                          {"author": "stranger", "body": "no, https://github.com/mkpoli/glyph-atlas/pull/999"}],
+     "#12: a draft pull request is up for review. https://github.com/mkpoli/glyph-atlas/pull/77"),
+    (["fish-pr-declined"], [], "#12: no draft came of it; the reason is on the issue. https://github.com/mkpoli/glyph-atlas/issues/12"),
+    (["fish-pr-failed"], [], "#12: no draft came of it; the reason is on the issue. https://github.com/mkpoli/glyph-atlas/issues/12"),
+])
+def test_the_room_hears_once_what_became_of_its_draft(tmp_path, labels, comments, said):
+    bot, matrix, store, github = drafting_bot(tmp_path, decision())
+    store.add_draft("mkpoli/glyph-atlas", 12, ROOM, "@reader:example")
+    github.items = {12: {"labels": ["fish-pr-working"], "comments": [], "url": "https://github.com/mkpoli/glyph-atlas/issues/12"}}
+    bot.drafts()
+    assert not matrix.sent
+    github.items[12] = {"labels": labels, "comments": comments, "url": "https://github.com/mkpoli/glyph-atlas/issues/12"}
+    bot.drafts()
+    assert not matrix.sent
+    bot._drafts_due = 0.0
+    bot.drafts()
+    bot._drafts_due = 0.0
+    bot.drafts()
+    assert sent_texts(matrix) == [said]
+
+
+def test_a_draft_nobody_made_in_a_week_is_let_go_and_one_made_meanwhile_is_told(tmp_path):
+    bot, matrix, store, github = drafting_bot(tmp_path, decision())
+    store.add_draft("mkpoli/glyph-atlas", 12, ROOM, "@reader:example")
+    store.add_draft("mkpoli/glyph-atlas", 13, ROOM, "@other:example")
+    store.db.execute("UPDATE drafts SET asked_at=?", (fish_bot.now_ms() - 8 * 86_400_000,))
+    github.items = {12: {"labels": ["fish-pr"], "comments": [], "url": "https://github.com/mkpoli/glyph-atlas/issues/12"},
+                    13: {"labels": ["fish-pr-opened"], "comments": [], "url": "https://github.com/mkpoli/glyph-atlas/issues/13"}}
+    bot.drafts()
+    assert [text[:3] for text in sent_texts(matrix)] == ["#13"] and not store.drafts_waiting()
+
+
+def test_the_draft_label_is_a_plain_name(tmp_path):
+    assert fish_bot.parse_act('{"say": "好", "pr": true}', 1).pr
+    path = tmp_path / "config.toml"
+    path.write_text('[github]\ndraft_label = ""\n[limits]\nmax_drafts_per_day = 99\n')
+    config = fish_bot.Config.load(path)
+    assert (config.draft_label, config.max_drafts_per_day) == ("", 20)
+    path.write_text('[github]\ndraft_label = "a b"\n')
+    with pytest.raises(ValueError):
+        fish_bot.Config.load(path)
 
 
 def test_reacts_to_the_message_the_model_picks(tmp_path):
@@ -1089,6 +1349,79 @@ def test_carries_on_a_conversation_without_being_named_again(tmp_path, monkeypat
     assert [turn[0] for turn in bot.gemini.turns] == ["called", "follow", "follow"]
 
 
+def test_a_call_waits_for_what_its_caller_sends_right_after(tmp_path, monkeypatch):
+    bot, matrix, store, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "大肥魚 那加唄", "$call", after=1.0)
+    assert bot.gemini.turns == [] and matrix.typed == [ROOM]
+    hear(bot, clock, "[群聊的聊天记录] https://example.org/post", "$post", after=1.0)
+    hear(bot, clock, "scan.jpeg", "$scan", after=1.0, msgtype="m.image", url="mxc://example/scan")
+    assert bot.gemini.turns == []
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    assert bot.gemini.turns == [("called", 0, ["$call", "$post", "$scan"])]
+    assert matrix.sent[0][1]["m.relates_to"] == {"m.in_reply_to": {"event_id": "$call"}}
+    assert store.outcome("$call")[0] == "chatted"
+    clock["now"] += fish_bot.TALK_PAUSE_LIMIT
+    bot.tick()
+    assert len(bot.gemini.turns) == 1
+
+
+def test_a_held_call_is_answered_by_its_limit_and_before_another_persons(tmp_path, monkeypatch):
+    bot, _, store, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "大肥魚 look", "$call", after=2.0)
+    for number in range(6):
+        hear(bot, clock, f"part {number}", f"$p{number}", after=2.0)
+    assert bot.gemini.turns[0] == ("called", 0, ["$call", "$p0", "$p1", "$p2", "$p3"])
+    bot, _, store, clock = reading_bot(tmp_path / "two", monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "大肥魚 one", "$one", after=1.0)
+    hear(bot, clock, "大肥魚 one more thing", "$more", after=1.0)
+    assert bot.gemini.turns == [] and store.outcome("$one")[0] == "joined"
+    hear(bot, clock, "大肥魚 two", "$two", sender="@other:example", after=0.0)
+    assert [turn[:2] for turn in bot.gemini.turns] == [("called", 1)]
+    assert bot._sync_wait_ms() == int(fish_bot.CALL_PAUSE * 1000)
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    assert [turn[:2] for turn in bot.gemini.turns] == [("called", 1), ("called", 2)]
+
+
+def test_a_held_call_keeps_the_room_from_other_turns_and_goes_with_its_message(tmp_path, monkeypatch):
+    bot, _, _, clock = talking(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    hear(bot, clock, "I mean the other one", "$more", after=0.0)
+    hear(bot, clock, "大肥魚 I mean the other one", "$again", after=2.5)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    clock["now"] += fish_bot.CALL_PAUSE
+    bot.tick()
+    clock["now"] += fish_bot.TALK_PAUSE_LIMIT
+    bot.tick()
+    assert [turn[0] for turn in bot.gemini.turns] == ["called", "called"]
+    hear(bot, clock, "大肥魚 never mind", "$gone", after=1.0)
+    bot.redact({"type": "m.room.redaction", "redacts": "$gone"})
+    clock["now"] += fish_bot.CALL_PAUSE_LIMIT
+    bot.tick()
+    assert len(bot.gemini.turns) == 2 and bot._held == {}
+
+
+def test_a_line_after_the_call_that_says_not_to_add_shuts_the_tools(tmp_path, monkeypatch):
+    bot, _, _, clock = reading_bot(tmp_path, monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    bot.lookup = fish_bot.Lookup(bot.gemini, None, bot.store, owner="mkpoli", compendium=object())
+    hear(bot, clock, "大肥魚 把這個字加進珍字集覽", "$call", after=1.0)
+    hear(bot, clock, "啊不要加了", "$no", after=1.0)
+    hear(bot, clock, "謝謝", "$thanks", after=fish_bot.CALL_PAUSE)
+    assert [turn[0] for turn in bot.gemini.turns] == ["called"]
+    assert bot.lookup.offer_compendium and not bot.lookup.may_write
+    bot, _, _, clock = reading_bot(tmp_path / "yes", monkeypatch)
+    bot._call_pause = fish_bot.CALL_PAUSE
+    bot.lookup = fish_bot.Lookup(bot.gemini, None, bot.store, owner="mkpoli", compendium=object())
+    hear(bot, clock, "大肥魚 幫個忙", "$call", after=1.0)
+    hear(bot, clock, "把這個字加進珍字集覽", "$what", after=fish_bot.CALL_PAUSE)
+    assert bot.lookup.may_write and bot.lookup.caller == "@reader:example"
+
+
 def test_waits_for_someone_to_finish_before_following(tmp_path, monkeypatch):
     bot, _, _, clock = talking(tmp_path, monkeypatch)
     for number in range(3):
@@ -1161,7 +1494,7 @@ def test_only_the_partner_can_have_an_issue_filed_by_a_follow_up(tmp_path, monke
     bot, _, _, clock = talking(tmp_path, monkeypatch)
     bot.gemini.act_value = act("ok", issue=True)
     desk = []
-    bot._to_desk = lambda *args: desk.append(args)
+    bot._to_desk = lambda *args, draft=False: desk.append(args)
     hear(bot, clock, "file it", "$x", sender="@other:example")
     assert desk == []
     bot._listen(ROOM, "@reader:example")
@@ -3938,13 +4271,19 @@ def test_an_unreachable_compendium_leaves_the_other_tools(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize(("lines", "offered", "adds"), [
     (["大肥魚，把這個加進珍字集覽"], True, True), (["大肥魚 這個 via 也加上 https://x.com/a/status/1"], True, True),
-    (["大肥魚 R+06C2 是什麼字"], True, False), (["大肥魚 早安"], False, False),
-    (["今天收錄了好多", "大肥魚 你覺得呢"], True, True), (["大肥魚 珍字集覽裡有沒有這個字"], True, False),
+    (["大肥魚 R+06C2 是什麼字"], True, True), (["大肥魚 早安"], False, False),
+    (["今天收錄了好多", "大肥魚 你覺得呢"], True, True), (["大肥魚 珍字集覽裡有沒有這個字"], True, True),
     (["大肥魚 不要加進珍字集覽"], True, False), (["大肥魚 這個要不要收錄到珍字集覽"], True, False),
-    (["大肥魚 看看珍字集覽 R+06C2", "把這個 via 加上"], True, True), (["Fish, how is this record in the compendium?"], True, False),
+    (["大肥魚 別把這個放進珍字集覽"], True, False), (["大肥魚 別的字也加進去"], True, True),
+    (["大肥魚，不要再幫我加進珍字集覽"], True, False), (["大肥魚、珍字集覽への追加はやめてください"], True, False),
+    (["Fish, no need to add this to the compendium"], True, False), (["大肥魚，別把這個字的出處忘了加進珍字集覽"], True, True),
+    (["大肥魚 別忘了加進去"], True, True),
+    (["大肥魚 看看珍字集覽 R+06C2", "把這個 via 加上"], True, True), (["Fish, how is this record in the compendium?"], True, True),
     (["Fish, add this to the compendium please"], True, True), (["Fish, don't add this to the compendium"], True, False),
+    (["大肥魚我現在應該已經給你權限了，幫我加好不好喵"], True, True), (["大肥魚 能不能幫我加一下"], True, True),
+    (["大肥魚 可不可以放上去，補一下"], True, True), (["大肥魚 不要加進珍字集覽", "大肥魚 好啦還是加吧"], True, True),
 ])
-def test_the_compendium_opens_when_asked_about_and_takes_additions_when_asked_for(tmp_path, lines, offered, adds):
+def test_a_call_that_speaks_of_the_compendium_or_of_adding_may_add_unless_told_not_to(tmp_path, lines, offered, adds):
     bot, _, store = make_bot(tmp_path)
     bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
                                  compendium=fish_bot.Compendium("https://rare.example/mcp", store))
@@ -3957,7 +4296,31 @@ def test_the_compendium_opens_when_asked_about_and_takes_additions_when_asked_fo
     assert not bot.lookup.may_write and bot.lookup.caller == ""
 
 
-def test_a_quoted_request_is_not_the_repliers(tmp_path):
+def test_a_yes_to_her_own_question_may_add(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    start = fish_bot.now_ms() - 60_000
+    store.add_event("$offer", ROOM, USER, start, "要本鯨把它放到珍字集覽嗎？", "m.text", backfilled=False)
+    store.add_event("$yes", ROOM, "@asker:example", start + 1, "大肥魚 好", "m.text", backfilled=False)
+    bot.turn(ROOM, "$yes", task="called")
+    assert (bot.lookup.offer_compendium, bot.lookup.may_write, bot.lookup.caller) == (True, True, "@asker:example")
+
+
+def test_talk_long_before_a_call_does_not_open_the_compendium(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    start = fish_bot.now_ms() - 60_000
+    store.add_event("$old", ROOM, "@other:example", start, "珍字集覽今天更新了", "m.text", backfilled=False)
+    for number in range(fish_bot.COMPENDIUM_RECENT):
+        store.add_event(f"$chat{number}", ROOM, "@other:example", start + 1 + number, "哈哈", "m.text", backfilled=False)
+    store.add_event("$hi", ROOM, "@asker:example", start + 20, "大肥魚 早安", "m.text", backfilled=False)
+    bot.turn(ROOM, "$hi", task="called")
+    assert not bot.lookup.offer_compendium and not bot.lookup.may_write
+
+
+def test_an_answer_to_a_line_about_the_compendium_opens_it_for_the_replier(tmp_path):
     bot, _, store = make_bot(tmp_path)
     bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
                                  compendium=fish_bot.Compendium("https://rare.example/mcp", store))
@@ -3965,7 +4328,18 @@ def test_a_quoted_request_is_not_the_repliers(tmp_path):
     store.add_event("$ask", ROOM, "@asker:example", start, "把這個加進珍字集覽", "m.text", backfilled=False)
     store.add_event("$what", ROOM, "@other:example", start + 1, "大肥魚 這是什麼意思？", "m.text", backfilled=False, reply_to="$ask")
     bot.turn(ROOM, "$what", task="called")
-    assert bot.lookup.offer_compendium and not bot.lookup.may_write and bot.lookup.caller == "@other:example"
+    assert bot.lookup.offer_compendium and bot.lookup.caller == "@other:example"
+
+
+def test_a_catch_up_counts_an_addition_against_who_asked_to_add(tmp_path, monkeypatch):
+    bot, _, store, wake = sleeper(tmp_path, monkeypatch)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    call_her(bot, "$has", "大肥魚 珍字集覽裡有沒有這個字", sender="@other:example")
+    call_her(bot, "$add", "大肥魚 把這個加進珍字集覽 https://x.com/a/status/1", sender="@asker:example")
+    wake()
+    bot.catch_up()
+    assert (bot.lookup.may_write, bot.lookup.caller) == (True, "@asker:example")
 
 
 def test_a_catch_up_asks_on_behalf_of_who_asked_for_the_addition(tmp_path, monkeypatch):

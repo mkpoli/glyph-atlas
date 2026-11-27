@@ -13,6 +13,7 @@ from test_atlas3_publish import (  # noqa: F401 -- the fixture
     crops,
     ids,
     layout,
+    media_url,
     run,
     unit,
 )
@@ -21,6 +22,10 @@ from glyph_atlas import withdrawn
 
 # A pack named by its content (`pack_names`).
 PACK = f"packs/{'1' * 64}.bin"
+
+
+def media_key(seed):
+    return media_url(seed).rsplit("/", 1)[-1].removesuffix(".webp")
 
 
 @pytest.fixture
@@ -54,19 +59,21 @@ def test_a_withdrawal_names_every_crop_on_the_documents_pages_at_its_revision(la
 
 def test_a_withdrawn_crop_leaves_the_site_with_its_record_runs_and_images(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp"), ("exa2", PACK, 10, 10, "image/webp"),
-                             ("keep", PACK, 20, 10, "image/webp")])
+    k1, k2, kb1, keep = media_key("ex:a1"), media_key("ex:a2"), media_key("ex:b1"), media_key("keep")
+    publish.media_map.merge([(k1, PACK, 0, 10, "image/webp"), (k2, PACK, 10, 10, "image/webp"),
+                             (keep, PACK, 20, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
     gone = {ids(root)[i] for i in ("ex:a1", "ex:a2", "ex:b1")}
     assert not gone & set(crops(remote)) and ids(root)["codh:g1"] in crops(remote)
     assert remote.query("glyph-atlas-v3-runs", "SELECT * FROM runs") == []
     assert entry_of(root, "ex:a2") == {"slot": 1, "id": "ex:a2", "retired": True, "withdrawn": True, "cut": 0}
-    shard = json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))
-    assert shard["keys"] == {} and shard["objects"] == [PACK]
-    assert set(json.loads(gzip.decompress((root / "out" / "media" / "kee.json.gz").read_bytes()))["keys"]) == {"p"}
-    assert remote.uploaded.count("exa.json.gz") == 2
-    assert json.loads((max((root / "out" / "publish").glob("*-w")) / "unmapped.json").read_text()) == ["exa1", "exa2", "exb1"]
+    for key in (k1, k2):
+        shard = json.loads(gzip.decompress((root / "out" / "media" / f"{key[:3]}.json.gz").read_bytes()))
+        assert shard["keys"] == {} and shard["objects"] == [PACK]
+        assert remote.uploaded.count(f"{key[:3]}.json.gz") == 2
+    assert set(json.loads(gzip.decompress((root / "out" / "media" / f"{keep[:3]}.json.gz").read_bytes()))["keys"]) == {keep[3:]}
+    assert json.loads((max((root / "out" / "publish").glob("*-w")) / "unmapped.json").read_text()) == sorted([k1, k2, kb1])
     # Run again, the same withdrawal finds nothing to change.
     uploaded = list(remote.uploaded)
     run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "again.sqlite"))
@@ -97,7 +104,8 @@ def test_a_crop_retired_before_its_document_was_withdrawn_gives_up_its_record(la
 
 def test_a_crop_reviewed_on_the_site_since_keeps_its_row_record_and_images(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp"), ("exa2", PACK, 10, 10, "image/webp")])
+    k1, k2 = media_key("ex:a1"), media_key("ex:a2")
+    publish.media_map.merge([(k1, PACK, 0, 10, "image/webp"), (k2, PACK, 10, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
     a2 = ids(root)["ex:a2"]
@@ -108,9 +116,10 @@ def test_a_crop_reviewed_on_the_site_since_keeps_its_row_record_and_images(layou
     assert a2 in crops(remote) and crops(remote)[a2]["revision"] == 4
     assert sqlite3.connect(root / "out" / "atlas.sqlite").execute("SELECT revision FROM crops WHERE id=?", (a2,)).fetchone() == (4,)
     kept = entry_of(root, "ex:a2")
-    assert not kept.get("retired") and "withdrawn" not in kept and kept["image"].endswith("exa2.webp")
-    shard = json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))
-    assert set(shard["keys"]) == {"2"}
+    assert not kept.get("retired") and "withdrawn" not in kept and kept["image"] == media_url("ex:a2")
+    shard = json.loads(gzip.decompress((root / "out" / "media" / f"{k2[:3]}.json.gz").read_bytes()))
+    assert set(shard["keys"]) == {k2[3:]}
+    assert json.loads(gzip.decompress((root / "out" / "media" / f"{k1[:3]}.json.gz").read_bytes()))["keys"] == {}
     assert entry_of(root, "ex:a1")["withdrawn"] is True and ids(root)["ex:a1"] not in crops(remote)
     refused = max((root / "out" / "publish").glob("*-w")) / "refused-withdrawals.txt"
     assert refused.read_text() == "ex:a2\n"
@@ -118,16 +127,17 @@ def test_a_crop_reviewed_on_the_site_since_keeps_its_row_record_and_images(layou
 
 def test_an_image_another_crop_names_stays_mapped(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp"), ("exa2", PACK, 10, 10, "image/webp")])
+    k1, k2, kb1 = media_key("ex:a1"), media_key("ex:a2"), media_key("ex:b1")
+    publish.media_map.merge([(k1, PACK, 0, 10, "image/webp"), (k2, PACK, 10, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     twin = list(unit("ex:z1", "hl:z1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ", document="book:z"))
     twin[UNITS.index("data")] = json.dumps({"page_id": "hl:z1", "box": {"x": 0, "y": 0, "w": 10, "h": 10},
-                                            "image": "/atlas/media/exa1.webp", "label": "あ"})
+                                            "image": media_url("ex:a1"), "label": "あ"})
     run(publish, monkeypatch, catalogue(tmp_path / "z.sqlite", [tuple(twin)]))
     run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "w.sqlite"))
-    shard = json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))
-    assert set(shard["keys"]) == {"1"}
-    assert json.loads((max((root / "out" / "publish").glob("*-w")) / "unmapped.json").read_text()) == ["exa2", "exb1"]
+    shard = json.loads(gzip.decompress((root / "out" / "media" / f"{k1[:3]}.json.gz").read_bytes()))
+    assert set(shard["keys"]) == {k1[3:]}
+    assert json.loads((max((root / "out" / "publish").glob("*-w")) / "unmapped.json").read_text()) == sorted([k2, kb1])
 
 
 def test_a_replacement_never_ends_at_a_withdrawn_crop(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
@@ -153,7 +163,8 @@ def test_a_replacement_never_ends_at_a_withdrawn_crop(layout, withdraw, monkeypa
 
 def test_the_image_map_changes_only_in_a_run_that_is_pending(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811
     root, publish, remote = layout
-    publish.media_map.merge([("exa1", PACK, 0, 10, "image/webp")])
+    k1 = media_key("ex:a1")
+    publish.media_map.merge([(k1, PACK, 0, 10, "image/webp")])
     publish.media_map.send(remote.upload)
     path = write(withdraw, monkeypatch, tmp_path / "w.sqlite")
     run(publish, monkeypatch, path, "--dry-run")
@@ -165,11 +176,11 @@ def test_the_image_map_changes_only_in_a_run_that_is_pending(layout, withdraw, m
     with pytest.raises(SystemExit, match="stopped"):
         run(publish, monkeypatch, path)
     assert not (root / "out" / "media" / "unsent").exists()
-    assert set(json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))["keys"]) == {"1"}
+    assert set(json.loads(gzip.decompress((root / "out" / "media" / f"{k1[:3]}.json.gz").read_bytes()))["keys"]) == {k1[3:]}
     # The next publish finishes the pending run, and the keys go then.
     monkeypatch.setattr(publish, "deliver", deliver)
     run(publish, monkeypatch, write(withdraw, monkeypatch, tmp_path / "again.sqlite"))
-    assert json.loads(gzip.decompress((root / "out" / "media" / "exa.json.gz").read_bytes()))["keys"] == {}
+    assert json.loads(gzip.decompress((root / "out" / "media" / f"{k1[:3]}.json.gz").read_bytes()))["keys"] == {}
 
 
 def test_a_withdrawal_catalogue_holds_withdrawals_alone(layout, withdraw, monkeypatch, tmp_path):  # noqa: F811

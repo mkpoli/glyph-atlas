@@ -425,7 +425,7 @@ describe('the browse page', () => {
 
   it('show each crop with its form, dating, suspect mark and shape order', async () => {
     const { env, db, a, crop } = await setup();
-    db.exec(`INSERT INTO suspects VALUES(${crop(a, 0)},0.9,'ほ','は','{"x":0,"y":0,"w":1,"h":1}'),(${crop(a, 1)},0.8,'ほ','あ',NULL);
+    db.exec(`INSERT INTO suspects(crop,p,reads_as,label,box) VALUES(${crop(a, 0)},0.9,'ほ','は','{"x":0,"y":0,"w":1,"h":1}'),(${crop(a, 1)},0.8,'ほ','あ',NULL);
       INSERT INTO shapes VALUES(${crop(a, 0)},4);
       INSERT INTO representations(id,scheme,value) VALUES('r:1','unicode','𛂞');
       INSERT INTO forms(id,anchor,created_by,created_at) VALUES('f:1','r:1','u1','');
@@ -463,7 +463,7 @@ describe('the browse page', () => {
     };
     const cut = (slot: number) => ({ x: slot, y: 0, w: 1, h: 1 });
     const marks = [[0, 'は', cut(0)], [1, 'は', cut(1)], [2, 'は', { x: 9, y: 9, w: 3, h: 3 }], [3, 'ハ', cut(3)]] as const;
-    for (const [slot, label, box] of marks) db.query('INSERT INTO suspects VALUES(?,0.7,?,?,?)').run(crop(a, slot), 'ほ', label, JSON.stringify(box));
+    for (const [slot, label, box] of marks) db.query('INSERT INTO suspects(crop,p,reads_as,label,box) VALUES(?,0.7,?,?,?)').run(crop(a, slot), 'ほ', label, JSON.stringify(box));
     // a0 relabelled 処; a1 redrawn elsewhere; a2 redrawn onto the box the classifier was shown; a3 as cut.
     db.exec(`UPDATE crops SET char=6, revision=1 WHERE id=${crop(a, 0)};
       INSERT INTO reviews(crop,gen,at,char,state,x,y,w,h) VALUES(${crop(a, 1)},1,0,1,0,5,5,2,2),(${crop(a, 2)},1,0,1,1,9,9,3,3);`);
@@ -475,6 +475,22 @@ describe('the browse page', () => {
     expect([0, 1, 2, 3].map(slot => shown(slot).suspect === null)).toEqual([true, true, false, false]);
     expect(shown(1)).toMatchObject({ box: { x: 5, y: 5, w: 2, h: 2 }, box_pending: true });
     expect(shown(3).box_pending).toBeUndefined();
+  });
+
+  it('hold a doubt from a crop\'s neighbours while it keeps its label and its cut', async () => {
+    const { env, db, a, crop } = await setup();
+    for (const slot of [0, 1, 2, 3]) db.query("INSERT INTO suspects(crop,p,reads_as,label,box,basis) VALUES(?,0,'𛂞',?,NULL,'form')").run(crop(a, slot), slot === 3 ? 'ハ' : 'は');
+    // a0 relabelled 処; a1 as cut, with the box its record gives; a2 redrawn by a reviewer; a3 cut again.
+    db.exec(`UPDATE crops SET char=6, revision=1 WHERE id=${crop(a, 0)}; UPDATE crops SET cut=cut+1 WHERE id=${crop(a, 3)};
+      INSERT INTO reviews(crop,gen,at,char,state,x,y,w,h) VALUES(${crop(a, 2)},1,0,1,0,5,5,2,2);`);
+    const items = (await get(env, '/atlas?document=hk:a&withheld=show&limit=20')).items;
+    const shown = (slot: number) => items.find((i: any) => i.id === publicId(crop(a, slot)));
+    expect(shown(1).box).not.toBeNull();
+    expect([0, 1, 2, 3].map(slot => shown(slot).suspect)).toEqual([null, { p: 0, reads_as: '𛂞', basis: 'form' }, null, null]);
+    expect(db.query('SELECT crop FROM suspects ORDER BY crop').all().map((r: any) => r.crop)).toEqual([crop(a, 0), crop(a, 1), crop(a, 2)]);
+    // A round of doubted crops alone deals the crop its neighbours doubt.
+    const round = (await get(env, '/atlas?purpose=review&state=pending&grapheme=U%2B306F&suspects=only&seed=1&limit=20')).items;
+    expect(round.map((i: any) => i.id)).toContain(publicId(crop(a, 1)));
   });
 
   it('show a flagged crop with the issue its last review gave it', async () => {
@@ -664,10 +680,10 @@ describe('rounds of doubted crops', () => {
   const marked = async () => {
     const found = await setup(), { db, a, b, c, crop } = found;
     const text = (id: number) => (db.query('SELECT g.text FROM crops k JOIN graphemes g ON g.id=k.char WHERE k.id=?').get(id) as { text: string }).text;
-    for (const id of [crop(a, 1), crop(b, 0), crop(c, 1)]) db.query('INSERT INTO suspects VALUES(?,0.01,NULL,?,NULL)').run(id, text(id));
-    db.query('INSERT INTO suspects VALUES(?,0.01,NULL,?,NULL)').run(crop(a, 0), '別');
+    for (const id of [crop(a, 1), crop(b, 0), crop(c, 1)]) db.query('INSERT INTO suspects(crop,p,reads_as,label,box) VALUES(?,0.01,NULL,?,NULL)').run(id, text(id));
+    db.query('INSERT INTO suspects(crop,p,reads_as,label,box) VALUES(?,0.01,NULL,?,NULL)').run(crop(a, 0), '別');
     // A doubted crop nobody may be dealt: one flagged, one withheld.
-    for (const id of [crop(a, 6), crop(a, 10)]) db.query('INSERT INTO suspects VALUES(?,0.01,NULL,?,NULL)').run(id, text(id));
+    for (const id of [crop(a, 6), crop(a, 10)]) db.query('INSERT INTO suspects(crop,p,reads_as,label,box) VALUES(?,0.01,NULL,?,NULL)').run(id, text(id));
     return found;
   };
   const path = '/atlas?purpose=review&grapheme=U%2B306F&state=pending';
@@ -685,6 +701,29 @@ describe('rounds of doubted crops', () => {
     expect(new Set(together.seen).size).toBe(8);
     // The marks change no count: one of the nine is a corpus glyph whose image may not be shown.
     expect((await every(env, `${path}&seed=11`, 20)).body.total).toBe(9);
+  });
+  it('deal the agreed crops last on every seed, a doubted one still first, and count them all', async () => {
+    const { env, db, a, b, crop } = await marked();
+    const text = (id: number) => (db.query('SELECT g.text FROM crops k JOIN graphemes g ON g.id=k.char WHERE k.id=?').get(id) as { text: string }).text;
+    // a0 and the doubted a1 are agreed; b0 is agreed under a label it no longer holds.
+    for (const id of [crop(a, 0), crop(a, 1)]) db.query('INSERT INTO agreed VALUES(?,?)').run(id, text(id));
+    db.query('INSERT INTO agreed VALUES(?,?)').run(crop(b, 0), '別');
+    // A crop whose box is repaired loses its mark.
+    db.query('INSERT INTO agreed VALUES(?,?)').run(crop(a, 6), text(crop(a, 6)));
+    db.query('UPDATE crops SET cut=cut+1 WHERE id=?').run(crop(a, 6));
+    expect(db.query('SELECT count(*) AS n FROM agreed WHERE crop=?').get(crop(a, 6))).toEqual({ n: 0 });
+    for (const seed of [10, 11, 12]) for (const limit of [1, 3, 20]) {
+      const { seen, body } = await every(env, `${path}&seed=${seed}`, limit);
+      expect(seen.length).toBe(8);
+      expect(new Set(seen).size).toBe(8);
+      expect(body.total).toBe(9);
+      // The fifth seed deals the doubted with the rest, so its agreed a1 comes last beside a0.
+      if (seed === 10) expect(seen.slice(-2).sort()).toEqual([crop(a, 0), crop(a, 1)].map(publicId).sort());
+      else {
+        expect(seen.at(-1)).toBe(publicId(crop(a, 0)));
+        expect(seen.slice(0, 2).sort()).toEqual([crop(a, 1), crop(b, 0)].map(publicId).sort());
+      }
+    }
   });
   it('deal them alone when asked, uncounted, under the marks their characters hold', async () => {
     const { env, a, b, c, crop } = await marked();
@@ -762,7 +801,8 @@ describe('the queries', () => {
       [{ ...base, book: 3 }, 0, 'crop_book', false]] as [Filter, 0 | 1, string, boolean][]) {
       const texts = new Map([[1, 'は']]);
       for (const range of [...ranges(filter, kind, [2, 3, 5], tier ? [0] : [0, 1, 2], tier, filter.book === 3),
-        ...(filter.chars ? [true, false].flatMap(marked => ranges(filter, kind, [2, 3, 5], [0, 1, 2], tier, false, { marked, texts })) : [])]) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
+        ...(filter.chars ? ([[true, null], [false, null], [false, false], [false, true], [null, false], [null, true]] as const)
+          .flatMap(([marked, agreed]) => ranges(filter, kind, [2, 3, 5], [0, 1, 2], tier, false, { marked, agreed, texts })) : [])]) for (const [side, after] of [['>=', false], ['<', true], ['>=', true]] as const) {
         const detail = plan(sideQuery(range, side, after), [...range.values, 0, ...(after ? [5, 9] : []), 10]);
         expect(detail).toContain(`USING ${index === 'crop_book' ? 'INDEX' : 'COVERING INDEX'} ${index}`);
         expect(detail).not.toContain('TEMP B-TREE');

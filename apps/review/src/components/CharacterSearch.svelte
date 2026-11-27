@@ -63,7 +63,7 @@
   let pending = null, composing = false, quiet = false, list = $state(null)
   // The list takes the side of the box with room for it: the box under a selection sits at the bottom
   // edge of the window, where a list below it would run off the page.
-  let flipped = $state(false), room = $state(null)
+  let flipped = $state(false), room = $state(null), inlineRoom = $state(null), inlineStart = $state(0)
   const MIN_BELOW = 200   // less than this under the box shows too few rows to choose from
 
   // A card's other forms, offered under it (`more`): those its grapheme is written with that the card does
@@ -284,31 +284,44 @@
   function visibleBounds() {
     const view = window.visualViewport
     const top = view?.offsetTop ?? 0
-    const bounds = { top, bottom: top + (view?.height ?? window.innerHeight) }
+    const left = view?.offsetLeft ?? 0
+    const width = Math.min(view?.width ?? window.innerWidth, document.documentElement.clientWidth || window.innerWidth)
+    const bounds = { top, bottom: top + (view?.height ?? window.innerHeight), left, right: left + width }
     for (let node = root?.parentElement; node && node !== document.body; node = node.parentElement) {
       const style = getComputedStyle(node)
       if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
       const rect = node.getBoundingClientRect()
-      bounds.top = Math.max(bounds.top, rect.top)
-      bounds.bottom = Math.min(bounds.bottom, rect.bottom)
+      if (style.overflowY !== 'visible') {
+        bounds.top = Math.max(bounds.top, rect.top)
+        bounds.bottom = Math.min(bounds.bottom, rect.bottom)
+      }
+      if (style.overflowX !== 'visible') {
+        bounds.left = Math.max(bounds.left, rect.left)
+        bounds.right = Math.min(bounds.right, rect.right)
+      }
     }
     return bounds
   }
 
-  /** Open the list above the box when the window leaves too little below it, and cap its height to
-   * the space that side has. */
+  /** Open the list above the box when the window leaves too little below it, and cap its height and
+   * width to the space the viewport has. */
   function place() {
     if (!open || !root) return
     const box = root.getBoundingClientRect(), bounds = visibleBounds()
     const below = bounds.bottom - box.bottom - 8, above = box.top - bounds.top - 8
     flipped = below < MIN_BELOW && above > below
     room = Math.max(0, Math.floor(flipped ? above : below))
+    const rtl = getComputedStyle(root).direction === 'rtl'
+    const shift = Math.max(0, Math.ceil(rtl ? box.right - bounds.right : bounds.left - box.left))
+    const edge = Math.max(0, (rtl ? box.right - bounds.left : bounds.right - box.left) - shift)
+    inlineStart = shift
+    inlineRoom = Math.max(0, Math.floor(Math.min(edge, Math.max(Math.min(box.width, edge), edge - 8))))
   }
 
   // The window changes under an open list (a phone keyboard, a resize, a panel scrolled), so the side
   // is chosen again.
   $effect(() => {
-    if (!open || !root) { flipped = false; room = null; return }
+    if (!open || !root) { flipped = false; room = null; inlineRoom = null; inlineStart = 0; return }
     place()
     const view = window.visualViewport
     let frame = 0
@@ -365,7 +378,7 @@
   {#each unheld as group (group.key)}<div class="search-card"><GraphemeCard {group} onform={form => chose(onform, form)} /></div>{/each}
 {/snippet}
 
-<div class="character-search" class:compact class:flipped style={room == null ? undefined : `--candidate-room:${room}px`} bind:this={root} onfocusout={blurred}>
+<div class="character-search" class:compact class:flipped style={[room == null ? '' : `--candidate-room:${room}px`, inlineRoom == null ? '' : `--candidate-inline:${inlineRoom}px`, inlineStart ? `--candidate-start:${inlineStart}px` : ''].filter(Boolean).join(';') || undefined} bind:this={root} onfocusout={blurred}>
   <form class="find" role="search" onsubmit={e => { e.preventDefault(); if (onsubmit) onsubmit(value); else choose() }}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
     {#if token}<button type="button" class="find-token" aria-label={tokenLabel} onclick={() => { ontokenclear(); input?.focus() }}><ScriptText {...labelParts(token)} /> ×</button>{/if}

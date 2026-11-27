@@ -267,8 +267,34 @@ try {
   })
   await check('mobile context and controls fit the viewport', async () => {
     await browser.setViewport(390, 844)
-    assert(await browser.evaluate('document.documentElement.scrollWidth <= 392'), 'horizontal overflow')
+    assert(await browser.evaluate('document.documentElement.scrollWidth <= 390 && innerWidth <= 390'), 'horizontal overflow')
     await browser.setViewport(1440, 1000)
+  })
+  await check('many selected crops keep mobile review within the viewport', async () => {
+    await click('.focus-back')
+    await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length >= 8')
+    const added = await browser.evaluate(`(() => {
+      const picks = [...document.querySelectorAll('.quiz-tile:not(.selected):not(.skipped) .quiz-choice:not(:disabled)')].slice(0, 7)
+      for (const b of picks) b.click()
+      return picks.map(b => b.closest('.quiz-tile').dataset.unit)
+    })()`)
+    await click('.review-selected')
+    await browser.waitFor(`document.querySelectorAll('.focus-thumb').length >= ${3 + added.length}`)
+    for (const width of [390, 320]) {
+      await browser.setViewport(width, 844)
+      const fit = await browser.evaluate(`(() => {
+        const nav = document.querySelector('.focus-nav').getBoundingClientRect()
+        const strip = document.querySelector('.focus-strip')
+        return { vw: innerWidth, sw: document.documentElement.scrollWidth, navRight: nav.right, scrollable: strip.scrollWidth > strip.clientWidth }
+      })()`)
+      assert(fit.vw <= width && fit.sw <= width && fit.navRight <= width + 1 && fit.scrollable, `mobile overflow with many selected crops at ${width}px: ${JSON.stringify(fit)}`)
+    }
+    await browser.setViewport(1440, 1000)
+    await click('.focus-back')
+    await browser.waitFor('document.querySelectorAll(".quiz-choice:not(:disabled)").length > 0')
+    await browser.evaluate(`for (const id of ${JSON.stringify(added)}) document.querySelector('.quiz-tile[data-unit="' + id + '"] .quiz-choice')?.click()`)
+    await click('.review-selected')
+    await browser.waitFor('document.querySelectorAll(".focus-thumb").length === 3')
   })
   await check('final save sends only explicit problems', async () => {
     await click('.save-round')

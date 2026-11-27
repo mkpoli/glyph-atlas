@@ -26,6 +26,8 @@ TABLE = Path(__file__).resolve().parents[2] / "data" / "vocab" / "custom-parts.t
 #: digits, an entity, a stroke chain.
 TOKEN = re.compile(r"\{[0-9]{1,4}\}|&[A-Za-z][A-Za-z0-9+_-]{0,45};|#\([^\s()\[\]{}#&;]{1,44}\)")
 #: A drawing in BabelStone Han PUA's private-use characters, which only that font draws.
+#: The tables' mark for a part they cannot write.
+UNWRITTEN = "？"
 PRIVATE = re.compile(r"[-]")
 IDENTIFIER = re.compile(r"&(X-[0-9]{5});")
 #: One unit of a description in its one spelling: a part written as its identifier, or one character
@@ -97,8 +99,10 @@ class Table:
         def written(found: re.Match[str]) -> str:
             nonlocal missing
             key = self.identifier(found.group())
-            out = next((out for draw in (self.parts[key].draws if key else ())
-                        if not PRIVATE.search(draw) and (out := self.drawn(draw, depth + 1)) is not None), None)
+            part = self.parts[key] if key else None
+            out = next((out for draw in (part.draws if part else ())
+                        if not PRIVATE.search(draw) and UNWRITTEN not in draw and draw not in part.approximate
+                        and (out := self.drawn(draw, depth + 1)) is not None), None)
             if out is None:
                 missing = True
                 return found.group()
@@ -177,6 +181,7 @@ def unknown(text: str) -> list[str]:
 
 def drawn(text: str) -> str | None:
     """`text` with each such part written as the first of its drawings that comes out in encoded
-    characters only, or None where none does (BabelStone Han PUA's private-use glyph is none). A
+    characters only, or None where none does (BabelStone Han PUA's private-use glyph is none, and nor
+    is a drawing that is close only or holds ？, the tables' mark for a part they cannot write). A
     drawing may itself name such a part, so it is written out again."""
     return table().drawn(text)

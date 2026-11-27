@@ -104,16 +104,19 @@
     if (!term) return
     // The run on show searched again is the run without its filters, under a fresh box with no rows.
     if (term === text) { query = ''; searchRound += 1; choose({ work: '', form: '', hand: '', sort: '' }); return }
-    const found = runText(term) ? await runOccurrences(term, { limit: 1 }).catch(() => null) : null
+    const [found, nearFound] = runText(term)
+      ? await Promise.all([runOccurrences(term, { limit: 1 }).catch(() => null), runRelated(term).catch(() => null)])
+      : [null, null]
     if (id !== searchId) return
-    goto(localize(found?.total ? runAddress(term) : collectionAddress({ q: term })))
+    goto(localize(found?.total || nearFound?.iteration?.length ? runAddress(term) : collectionAddress({ q: term })))
   }
   function openCharacter(item) { goto(localize(characterAddress(item.code_point))) }
   const near = $derived([
-    [() => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
-    [() => t('run.near.longer'), related?.longer ?? []],
-    [() => t('run.near.siblings', { lead: related?.lead }), related?.siblings ?? []],
-  ].filter(([, runs]) => runs.length))
+    ['iteration', () => t('run.near.iteration'), related?.iteration ?? []],
+    ['inside', () => t('run.near.inside'), related?.inside?.map(run => ({ text: run })) ?? []],
+    ['longer', () => t('run.near.longer'), related?.longer ?? []],
+    ['siblings', () => t('run.near.siblings', { lead: related?.lead }), related?.siblings ?? []],
+  ].filter(([, , runs]) => runs.length))
 
   // An occurrence whose record cannot be read is left off its page, so the pages run on by the rows read.
   const hasMore = $derived(total !== null && offset < total && !ended)
@@ -166,7 +169,7 @@
   </div>
   {#if near.length}
     <nav class="run-near" aria-label={t('run.near.label')}>
-      {#each near as [label, runs] (runs[0].text)}
+      {#each near as [id, label, runs] (id)}
         <div class="near-row"><span class="near-label">{label()}</span>
           <ul>{#each runs as run (run.text)}
             <li><a href={localize(runAddress(run.text, { work, hand, sort }))}><ScriptText text={run.text} />{#if run.n}<small>{number(run.n)}</small>{/if}</a></li>

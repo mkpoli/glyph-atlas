@@ -299,16 +299,6 @@ def test_an_export_leaves_out_the_units_the_site_holds(scripts, tmp_path):
         assert export.held(db) == {"hl:b:1"}
 
 
-def test_holder_images_point_at_the_holders_region_of_the_box(scripts):
-    export = importlib.import_module("export_cloudflare_corpus")
-    box = {"x": 10, "y": 20, "w": 30, "h": 40}
-    served = {"image_service": "https://iiif.example/page1"}
-    assert export.holder_image(served, box, True) == "https://iiif.example/page1/10,20,30,40/480,/0/default.jpg"
-    assert export.holder_image(served, box, False) is None
-    assert export.holder_image({"image_service": None}, box, True) is None
-    assert export.holder_image(served, None, True) is None
-
-
 def test_the_ainu_records_the_site_publishes_as_its_own_crops_are_not_exported_as_corpus_glyphs(scripts, monkeypatch):
     export = importlib.import_module("export_cloudflare_corpus")
     monkeypatch.setattr(export.sources, "discover",
@@ -335,20 +325,104 @@ def test_an_export_or_seal_drops_the_glyphs_the_site_publishes_as_its_own_crops(
     assert [i for i, in db.execute("SELECT id FROM corpus_units")] == ["codh:1"]
 
 
-def test_a_glyph_on_a_holder_page_takes_the_holders_region_as_its_context(scripts):
-    """A page the holder serves at full size shows the holder's region at the full reach; no service, no
-    page size to clamp to, or a scaled rendition leaves the context to the local cut."""
+def test_corpus_export_packs_cached_pages_locally_and_skips_uncached_remote_iiif(scripts, tmp_path, monkeypatch):
+    """Exported corpus glyphs pack image and context_image under /atlas/media/; uncached IIIF pages
+    are skipped."""
+    from PIL import Image
+
+    from glyph_atlas import images, tables
+    from glyph_atlas.schema import Box, Document, Page, Rights, Unit
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(cache))
+    monkeypatch.chdir(tmp_path)
+
+    # Seed a cached full-size page for one IIIF service, leaving a second service uncached.
+    scan = tmp_path / "scan.png"
+    Image.new("RGB", (200, 200), (240, 235, 220)).save(scan)
+    cached_url = "https://iiif.example/cached/p1"
+    uncached_url = "https://gallica.bnf.fr/iiif/ark:/12148/btv1b00000000/f1"
+    images.register(scan, cached_url, service=cached_url)
+
+    corpus_dir = tmp_path / "work" / "honkoku-lines"
+    corpus_dir.mkdir(parents=True)
+    tables.write(corpus_dir / "documents.parquet", [
+        Document(id="hl:d1", title="Cached Book", holder="Holder",
+                 image_rights=Rights(licence="PD", attribution="Holder")),
+    ], Document)
+    tables.write(corpus_dir / "pages.parquet", [
+        Page(id="hl:d1:0", document_id="hl:d1", seq=0, image=cached_url, width=200, height=200),
+        Page(id="hl:d1:1", document_id="hl:d1", seq=1, image=uncached_url, width=200, height=200),
+    ], Page)
+    tables.write(corpus_dir / "units.parquet", [
+        Unit(id="hl:d1:0:1", document_id="hl:d1", page_id="hl:d1:0", kind="char", granularity="char",
+             box=Box(x=20, y=20, w=40, h=40), unicode="U+4E00", text_source="一", method="import"),
+        Unit(id="hl:d1:1:1", document_id="hl:d1", page_id="hl:d1:1", kind="char", granularity="char",
+             box=Box(x=20, y=20, w=40, h=40), unicode="U+4E8C", text_source="二", method="import"),
+    ], Unit)
+
     export = importlib.import_module("export_cloudflare_corpus")
-    service = "https://codh.rois.ac.jp/char-shape/iiif/100241706/100241706_00004_2.tif"
-    box, page = {"x": 1852, "y": 1736, "w": 104, "h": 219}, {"width": 2404, "height": 3874, "image": service}
-    window, url = export.holder_context({"image_service": service}, box, page)
-    assert window == {"x": 1195, "y": 641, "w": 1209, "h": 2409}
-    assert url == f"{service}/1195,641,1209,2409/900,/0/default.jpg"
-    assert export.holder_context({"image_service": None}, box, page) == (None, None)
-    assert export.holder_context({"image_service": service}, box, {"image": service}) == (None, None)
-    # A page registered at a scaled rendition has boxes in that rendition's pixels, not the service's.
-    scaled = {"width": 1495, "height": 1050, "image": f"{service}/full/1495,/0/default.jpg"}
-    assert export.holder_context({"image_service": service}, box, scaled) == (None, None)
+    assert not hasattr(export, "holder_image")
+    assert not hasattr(export, "holder_context")
+    out = tmp_path / "out"
+    export.export(out, corpora=["honkoku-lines"])
+
+    with sqlite3.connect(out / "corpus.sqlite") as db:
+        rows = db.execute("SELECT id, object, offset, size FROM corpus_units").fetchall()
+        media_keys = {r[0] for r in db.execute("SELECT key FROM media")}
+    assert [r[0] for r in rows] == ["hl:d1:0:1"]
+    _, obj, offset, size = rows[0]
+    record = json.loads((out / obj).read_bytes()[offset:offset + size])
+    assert record["image"].startswith("/atlas/media/")
+    assert record["context_image"].startswith("/atlas/media/")
+    assert record["image"].rsplit("/", 1)[-1].removesuffix(".webp") in media_keys
+    assert record["context_image"].rsplit("/", 1)[-1].removesuffix(".webp") in media_keys
+    progress = json.loads((out / "progress.json").read_text())
+    assert progress["honkoku-lines"] == 1
+    assert progress["uncached"] == 1
+
+
+def test_anchor_export_skips_non_proxyable_and_clears_stale_rows(scripts, tmp_path, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image
+
+    anchors = importlib.import_module("export_cloudflare_anchors")
+    buf = BytesIO()
+    Image.new("RGB", (40, 40), (240, 235, 220)).save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    class FakeResp:
+        content = png_bytes
+
+        def raise_for_status(self):
+            pass
+
+    entries = {
+        "a1": {"id": "a1", "proxyable": True, "image": "https://example.org/a1.png",
+               "written_character": "一", "grapheme": "U+4E00", "source": {"document_id": "d1"}},
+        "a2": {"id": "a2", "proxyable": False, "image": "https://example.org/a2.png",
+               "written_character": "二", "grapheme": "U+4E8C", "source": {"document_id": "d2"}},
+    }
+    fake_api = SimpleNamespace(root=tmp_path, index=SimpleNamespace(glyphs=SimpleNamespace(entries=entries)))
+    monkeypatch.setattr(anchors.FrozenResolver, "_from_anchor", lambda self, entry: dict(entry))
+
+    # Seed a stale anchor row from a prior run to verify it is cleared when anchors-records.bin is rewritten.
+    catalogue_schema = importlib.import_module("catalogue_schema")
+    out = tmp_path / "anchors"
+    out.mkdir()
+    with sqlite3.connect(out / "corpus.sqlite") as db:
+        catalogue_schema.schema(db)
+        db.execute("INSERT INTO corpus_units(id,character,shuffle,object,offset,size) VALUES('a2','二',1,'anchors-records.bin',0,99)")
+        db.execute("INSERT INTO media VALUES('oldkey','anchors-images.bin',0,10,'image/webp')")
+
+    result = anchors.export(out, api=fake_api, fetch=lambda *a, **kw: FakeResp())
+    assert result == {"anchors": 1, "hosted_images": 1, "skipped": 1}
+    with sqlite3.connect(out / "corpus.sqlite") as db:
+        ids = [r[0] for r in db.execute("SELECT id FROM corpus_units")]
+        media_keys = [r[0] for r in db.execute("SELECT key FROM media")]
+    assert ids == ["a1"]
+    assert "oldkey" not in media_keys and len(media_keys) == 1
 
 
 def test_a_corpus_glyph_carries_its_sources_credit_line(scripts):

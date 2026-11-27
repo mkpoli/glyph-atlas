@@ -148,7 +148,8 @@ export function descriptionEnd(chars, at = 0) {
   const char = chars[at]
   if (char === undefined) return -1
   const n = arity(char)
-  if (!n) return isComponent(char) ? (isSelector(chars[at + 1]) ? at + 2 : at + 1) : -1
+  // A part no code point names takes no variation selector (`parse`).
+  if (!n) return !isComponent(char) ? -1 : !isSelector(chars[at + 1]) ? at + 1 : isPart(char) ? -1 : at + 2
   let end = at + 1
   for (let k = 0; k < n && end >= 0; k++) end = descriptionEnd(chars, end)
   return end

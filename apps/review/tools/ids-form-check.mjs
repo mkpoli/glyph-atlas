@@ -20,6 +20,7 @@
  * `export-web` folder), which the browser is served in place of /atlas/composer/. Without it the
  * composed step is skipped.
  *
+ * Build the review UI with VITE_COMPOSER_BASE=/atlas/composer/ so the fixture controls the export.
  * Run through devrun:
  *   devrun bun apps/review/tools/ids-form-check.mjs [--shots DIR]
  */
@@ -278,7 +279,8 @@ try {
   await fieldText('⿰木口a')
   await browser.waitFor(`!!document.querySelector('dialog[open] .ids-problem')`)
   assert(!await usable(), 'unreadable text can be used, saving the tree before it')
-  await fieldText('⿰木L')
+  // A lone L in an empty slot is a previewable Latin part. After a complete IDS it is an unfinished operator name.
+  await fieldText('⿰木口L')
   await browser.waitFor(`document.querySelector('dialog[open] .ids-problem')?.textContent.includes('ASCII')`)
   await fieldText('lr木')
   await browser.evaluate(`document.querySelector('dialog[open] .ids-field input').blur()`)
@@ -518,6 +520,38 @@ try {
   console.log('PASS ⿰⿱匕失⿱コ疋 is saved as the crop\'s written form, the character kept')
 
   assert(!errors.length, 'page errors: ' + errors.join('; '))
+  // Switch a nested 率 between its two center forms and two dot settings, then save
+  // the standalone registered figure and reopen the editor on its exact spelling.
+  async function reopenComposer() {
+    await browser.goto(service.base + '/en/crop/' + encodeURIComponent(id), { waitFor: ready, timeout: 90000 })
+    await browser.waitFor('document.querySelector(".form-add") && !document.querySelector(".form-add").disabled')
+    await browser.evaluate('document.querySelector(".form-add").click()')
+    await browser.waitFor('!!document.querySelector(".form-compose")')
+    await browser.evaluate('document.querySelector(".form-compose").click()')
+    await browser.waitFor('!!document.querySelector(".ids-field input")')
+  }
+  await reopenComposer()
+  await typeSequence('⿰率率')
+  await focusPath('1')
+  for (const face of ['sans', 'serif']) {
+    await browser.waitFor(`new Set([...document.querySelectorAll('.ids-rate-option .rate-${face}')].map(path => path.getAttribute('d')).filter(Boolean)).size === 4`)
+  }
+  const spellings = ['⿱亠⿱⿲冫幺⿱丿丶十', '⿱亠⿱⿲𰀪幺⺀十', '率󠄀', '率󠄁']
+  for (const [i, form] of spellings.entries()) {
+    await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].click()`)
+    await becomes('⿰率' + form)
+    assert(await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].getAttribute('aria-pressed') === 'true'`), form + ' is not selected')
+  }
+  await typeSequence(spellings[3])
+  await becomes(spellings[3])
+  await browser.evaluate('document.querySelector(".ids-use").click()')
+  await browser.waitFor('[...document.querySelectorAll(".crop-form .form-chip")].some(chip => chip.getAttribute("aria-pressed") === "true" && chip.textContent.includes("率"))')
+  await browser.evaluate('document.querySelector(".save-character").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
+  assert(claimed(id).includes(spellings[3]), 'the selector was lost in the saved claim')
+  await reopenComposer()
+  await becomes(spellings[3])
+  console.log('PASS independent 率 forms, nesting, and persisted IVS')
   console.log('PASS ids form')
 } finally {
   await browser?.close()

@@ -1052,6 +1052,48 @@ describe('a crop\'s style', () => {
     expect(back.body).toMatchObject({ style: 'seal', style_basis: 'none' });
   });
 
+  it('is given to a batch of crops, each one revision on, reporting those changed or gone', async () => {
+    const { db, env, ids } = styledSetup();
+    await send(env, `/atlas/characters/${publicId(ids[2])}/style`, { id: uuid(930), revision: 0, style: 'seal' });
+    const sent = { id: uuid(931), style: 'regular', crops: [{ id: publicId(ids[0]), revision: 0 }, { id: publicId(ids[1]), revision: 0 },
+      { id: publicId(ids[2]), revision: 0 }, { id: 'zzzzzzzz', revision: 0 }] };
+    const saved = await send(env, '/atlas/styles', sent);
+    expect(saved.status).toBe(200);
+    expect(saved.body.crops).toEqual([
+      { id: publicId(ids[0]), revision: 1, style: 'regular', style_basis: 'unit', style_editable: true, style_inherited: 'cursive', was: null },
+      { id: publicId(ids[1]), revision: 1, style: 'regular', style_basis: 'unit', style_editable: true, style_inherited: 'cursive', was: null }]);
+    expect(saved.body.refused).toEqual([{ id: publicId(ids[2]), reason: 'changed' }, { id: 'zzzzzzzz', reason: 'missing' }]);
+    expect([styleOf(db, ids[0]), styleOf(db, ids[2])].map(r => r.style)).toEqual(['regular', 'seal']);
+    expect(styles(db)).toEqual({ cursive: -3, regular: 2, seal: 1 });
+    // A retry answers the same, writing nothing more.
+    const events = () => (db.query('SELECT count(*) AS n FROM events').get() as any).n, before = events();
+    expect((await send(env, '/atlas/styles', sent)).body.crops.map((c: any) => [c.id, c.revision])).toEqual([[publicId(ids[0]), 1], [publicId(ids[1]), 1]]);
+    expect(events()).toBe(before);
+    // Each crop is its own style submission, as one saved on its own.
+    expect(db.query(`SELECT count(*) AS n FROM submissions WHERE key LIKE ?`).get(`u1:${uuid(931)}:%`)).toEqual({ n: 2 });
+    // Taken back at the revisions the batch left, each crop takes its publication's style again.
+    const back = await send(env, '/atlas/styles', { id: uuid(932), style: 'unassessed', crops: saved.body.crops.map((c: any) => ({ id: c.id, revision: c.revision })) });
+    expect(back.body.crops.map((c: any) => [c.style, c.style_basis, c.revision])).toEqual([['cursive', 'none', 2], ['cursive', 'none', 2]]);
+    expect(styles(db)).toEqual({ cursive: -1, seal: 1 });    // A crop named with no revision is given the style as it stands, and says the style it had of its own.
+    const loose = await send(env, '/atlas/styles', { id: uuid(937), style: 'running', crops: [{ id: publicId(ids[2]) }] });
+    expect(loose.body.crops.map((c: any) => [c.style, c.revision, c.was])).toEqual([['running', 2, 'seal']]);
+    // A retry after someone else changed the crop answers the revision the batch left, so an undo from it is refused.
+    await send(env, `/atlas/characters/${publicId(ids[2])}/style`, { id: uuid(938), revision: 2, style: 'regular' }, 'u2');
+    const again = await send(env, '/atlas/styles', { id: uuid(937), style: 'running', crops: [{ id: publicId(ids[2]) }] });
+    expect(again.body.crops.map((c: any) => [c.revision, c.was])).toEqual([[2, 'seal']]);
+    expect((await send(env, '/atlas/styles', { id: uuid(939), style: 'seal', crops: [{ id: publicId(ids[2]), revision: 2 }] })).body.refused)
+      .toEqual([{ id: publicId(ids[2]), reason: 'changed' }]);
+  });
+
+  it('refuses a batch of no crops, too many, a crop twice, or a style not numbered', async () => {
+    const { env, ids } = styledSetup();
+    const one = { id: publicId(ids[0]), revision: 0 };
+    expect((await send(env, '/atlas/styles', { id: uuid(933), style: 'regular', crops: [] })).status).toBe(422);
+    expect((await send(env, '/atlas/styles', { id: uuid(934), style: 'regular', crops: Array(49).fill(one) })).status).toBe(422);
+    expect((await send(env, '/atlas/styles', { id: uuid(935), style: 'regular', crops: [one, one] })).status).toBe(422);
+    expect((await send(env, '/atlas/styles', { id: uuid(936), style: 'clerical', crops: [one] })).status).toBe(422);
+  });
+
   it('is no submission its reviewer can undo, and leaves an earlier review undoable', async () => {
     const { db, env, ids } = styledSetup();
     expect((await send(env, `/atlas/characters/${publicId(ids[1])}`, { ...local(ids[1]), id: uuid(920), verdict: 'wrong', issue: 'character', character: 'あ' })).status).toBe(200);

@@ -55,21 +55,28 @@ def test_a_shard_left_unsent_goes_with_the_next_send(layout):  # noqa: F811
 
 
 def test_a_publish_maps_its_catalogues_images_before_its_bundles(layout, monkeypatch, tmp_path):  # noqa: F811
+    from test_atlas3_publish import media_url
+
     root, publish, remote = layout
+    unit_key = media_url("ex:new").rsplit("/", 1)[-1].removesuffix(".webp")
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10})])
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE media(key, object, offset, size, content_type)")
     db.execute("INSERT INTO media VALUES(?, ?, 0, 9, 'image/webp')", (KEY, N))
+    db.execute("INSERT INTO media VALUES(?, ?, 9, 9, 'image/webp')", (unit_key, N))
     db.commit()
     run(publish, monkeypatch, path)
-    assert remote.prefixes[0] == "v3/media/" and remote.uploaded[0] == "abc.json.gz"
-    assert "v3/pages/" in remote.prefixes[1:]
+    first_page = remote.prefixes.index("v3/pages/")
+    assert first_page > 0 and all(p == "v3/media/" for p in remote.prefixes[:first_page])
+    assert "abc.json.gz" in remote.uploaded[:first_page]
     assert shard(root)["keys"]["1" * 61] == [0, 0, 9]
 
 
 def test_a_page_exported_again_names_its_images_where_the_map_serves_them(layout, monkeypatch, tmp_path):  # noqa: F811
+    from test_atlas3_publish import media_url
+
     root, publish, _remote = layout
-    image = "exnew"  # the key `unit` names ex:new's image by
+    image = media_url("ex:new").rsplit("/", 1)[-1].removesuffix(".webp")  # the key `unit` names ex:new's image by
     publish.media_map.merge([(image, A, 10, 9, "image/webp")])
     path = catalogue(tmp_path / "c.sqlite", [unit("ex:new", "hl:p3", {"x": 0, "y": 0, "w": 10, "h": 10})])
     db = sqlite3.connect(path)
@@ -77,7 +84,7 @@ def test_a_page_exported_again_names_its_images_where_the_map_serves_them(layout
     db.execute("INSERT INTO media VALUES(?, ?, 0, 9, 'image/webp')", (image, N))
     db.commit()
     run(publish, monkeypatch, path)
-    assert shard(root, "exn") == {"objects": [A], "keys": {"ew": [0, 10, 9]}}
+    assert shard(root, image[:3]) == {"objects": [A], "keys": {image[3:]: [0, 10, 9]}}
     # The run's own copy of the one page it wrote.
     [page] = (root / "out" / "publish").glob("*/pages/*.json.gz")
     bundle = json.loads(gzip.decompress(page.read_bytes()))

@@ -103,6 +103,8 @@
   // The forms a key or a click assigns: the encoded ones, then the descriptions already in use.
   const palette = $derived(paletteOf(current))
   const pickedClusters = $derived((current?.items ?? []).filter(c => picked.has(c.id)))
+  const composerTarget = $derived(JSON.stringify(chosen.size ? ['glyphs', ...chosen]
+    : ['clusters', ...(pickedClusters.length ? pickedClusters.map(c => c.id) : [cluster?.id])]))
   const target = $derived(chosen.size ? t('forms.target.selectedGlyphs', { count: chosen.size })
     : pickedClusters.length > 1 ? t('forms.target.clusters', { clusters: pickedClusters.length, glyphs: number(pickedClusters.reduce((n, c) => n + c.count, 0)) })
     : pickedClusters.length === 1 ? t('forms.target.clusterGlyphs', { label: pickedClusters[0].label, count: pickedClusters[0].count })
@@ -594,7 +596,9 @@
           </div>
           {#if composing}
             <div class="palette-composer">
-              <IdsComposer disabled={busy || !target} char={current.char} onuse={form => { composing = false; apply(form) }} />
+              {#key composerTarget}
+                <IdsComposer disabled={busy || !target} start={!chosen.size && pickedClusters.length <= 1 ? (pickedClusters[0] ?? cluster)?.form ?? '' : ''} char={current.char} onuse={form => { composing = false; apply(form) }} />
+              {/key}
             </div>
           {/if}
         </div>

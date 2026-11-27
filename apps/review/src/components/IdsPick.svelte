@@ -11,7 +11,7 @@
 <div class="ids-pick">
   <button type="button" class="ids-open" {disabled} {title} aria-expanded={open} onclick={() => open = !open}>{t('form.ids.compose')}</button>
   {#if open && !disabled}
-    <div class="ids-panel"><IdsComposer {disabled} {char} onuse={sequence => { open = false; onuse(sequence) }} /></div>
+    <div class="ids-panel"><IdsComposer {disabled} {char} start={char} onuse={sequence => { open = false; onuse(sequence) }} /></div>
   {/if}
 </div>
 

@@ -74,6 +74,19 @@ def test_needs_a_complete_description():
     assert ids_bot.sequences("⿰ 木 木") == []
 
 
+def test_leaves_fragments_of_an_incomplete_operator_run_alone():
+    for text in ("按⿰⿱⿴排字", "⿰⿱⿴排字", "（⿰⿱⿴排字）", "⿰⿾木"):
+        assert ids_bot.sequences(text) == []
+        assert ids_bot.wanted(message(text), USER) == []
+
+
+def test_reads_separate_descriptions_around_an_incomplete_operator_run():
+    for separator in (" ", "?", "\n"):
+        text = "⿰木木" + separator + "⿰⿱⿴排字" + separator + "⿱日月"
+        assert ids_bot.sequences(text) == ["⿰木木", "⿱日月"]
+    assert ids_bot.sequences("⿰⿱⿴排字木木⿱日月") == ["⿰⿱⿴排字木木", "⿱日月"]
+
+
 def test_leaves_descriptions_whose_components_would_cut_their_url_alone():
     assert ids_bot.sequences("⿰木.木") == []
     assert ids_bot.sequences("⿰木/木") == []

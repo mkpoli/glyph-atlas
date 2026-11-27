@@ -17,6 +17,7 @@ import { honkokuPage } from '../honkoku';
 import { MARKS, WRITTEN, redrawLimits, underHeads, writtenRecord } from '../cropRecords';
 import { integer, text } from '../input';
 import { keyHeads, keyText } from '../ledger';
+import { odorijiVariants } from '../odoriji';
 import { readRecords, recordKey } from '../records';
 import { Timing } from '../timing';
 
@@ -386,6 +387,15 @@ async function runOccurrences(env: Env, ctx: ExecutionContext, url: URL, timing:
 export const runRangeQuery = () => `SELECT graphemes AS text,n,2*down>=n AS vertical FROM run_stats
   WHERE size=? AND graphemes>=? AND graphemes<? AND graphemes<>? AND graphemes<>'' ORDER BY n DESC,graphemes LIMIT ${RUN_NEAR_MAX}`;
 export const runHasQuery = () => 'SELECT graphemes AS text FROM run_stats WHERE size=? AND graphemes=?';
+// Exact key lookups for iteration-mark (踊り字) equivalents and pre-checking 3-grams of longer ones.
+export const runStatsInQuery = () => 'SELECT graphemes AS text,n,2*down>=n AS vertical FROM run_stats WHERE size=? AND graphemes IN (SELECT value FROM json_each(?))';
+// Cap anchor rows BEFORE joining so a frequent trigram with zero matching extensions never scans past RUN_COUNT_MAX + 1 rows.
+export function runLongCountQuery(size: number, anchor: number) {
+  const { from } = runFrom(size, anchor);
+  const bounded = from.replace(/^FROM runs a\b/, `FROM (SELECT first,second,third FROM runs WHERE size=3 AND graphemes=? LIMIT ${RUN_COUNT_MAX + 1}) a`);
+  return `SELECT count(*) AS n FROM (SELECT 1 ${bounded} LIMIT ${RUN_COUNT_MAX + 1})`;
+}
+const RUN_LONG_ITERATION_MAX = 4;
 async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const value = text(url.searchParams.get('text'), 96, 'text', true)!;
   const parts = runCharacters(value);
@@ -400,15 +410,63 @@ async function runRelated(env: Env, ctx: ExecutionContext, url: URL) {
   const whole = join(0, size);
   const lead = size === 2 ? join(0, 1) : join(0, 2);
   const inside = size === 3 || size === 4 ? [join(0, size - 1), join(1, size)] : [];
-  const [longer, siblings, ...held] = await db.batch([
-    size === 2 ? near(3, whole) : db.prepare('SELECT 1 WHERE 0'),
-    size === 2 || size === 3 ? near(size, lead, whole) : db.prepare('SELECT 1 WHERE 0'),
+  const variants = odorijiVariants(folded, { maxLength: RUN_MAX }).map(v => ({ text: v, chars: runCharacters(v) }));
+  const short2 = variants.filter(v => v.chars.length === 2).map(v => v.text);
+  const short3 = variants.filter(v => v.chars.length === 3).map(v => v.text);
+  const longVars = variants.filter(v => v.chars.length >= 4 && v.chars.length <= RUN_MAX);
+  const longTris = [...new Set(longVars.flatMap(v => Array.from({ length: v.chars.length - 2 }, (_, i) => v.chars.slice(i, i + 3).join(''))))];
+  const empty = db.prepare('SELECT 1 WHERE 0');
+  const batch = await db.batch([
+    size === 2 ? near(3, whole) : empty,
+    size === 2 || size === 3 ? near(size, lead, whole) : empty,
+    short2.length ? db.prepare(runStatsInQuery()).bind(2, JSON.stringify(short2)) : empty,
+    short3.length ? db.prepare(runStatsInQuery()).bind(3, JSON.stringify(short3)) : empty,
+    longTris.length ? db.prepare(runStatsInQuery()).bind(3, JSON.stringify(longTris)) : empty,
     ...inside.map(part => db.prepare(runHasQuery()).bind(size - 1, part)),
   ]) as D1Result<any>[];
-  const [longerForms, siblingForms] = await Promise.all([size === 2 ? runAnswer(env, formsShard(3, whole)) : null,
-    size === 2 || size === 3 ? runAnswer(env, formsShard(size, lead)) : null]);
+  const [longer, siblings, iter2, iter3, triStats, ...held] = batch;
+  // Longer iteration-mark equivalents (e.g. つれ〲 → つれづれ) are counted only when every constituent
+  // 3-gram exists in `run_stats`, anchored on its rarest 3-gram (with anchor reads bounded to RUN_COUNT_MAX + 1).
+  const triCount = new Map((triStats.results as { text: string; n: number }[]).map(row => [row.text, row.n]));
+  const longCandidates = longVars.flatMap(v => {
+    const tris = Array.from({ length: v.chars.length - 2 }, (_, i) => v.chars.slice(i, i + 3).join(''));
+    if (!tris.every(tri => triCount.has(tri))) return [];
+    const counts = tris.map(tri => triCount.get(tri)!);
+    const anchor = counts.indexOf(Math.min(...counts));
+    return [{ ...v, anchor }];
+  }).slice(0, RUN_LONG_ITERATION_MAX);
+  const longCounts = longCandidates.length
+    ? await db.batch(longCandidates.map(c => {
+      const { links } = runFrom(c.chars.length, c.anchor);
+      const span = (from: number, len: number) => c.chars.slice(from, from + len).join('');
+      return db.prepare(runLongCountQuery(c.chars.length, c.anchor)).bind(span(c.anchor, 3), ...links.map(i => span(i, 2)));
+    })) as D1Result<{ n: number }>[]
+    : [];
+  // Deduplicate R2 form-shard reads across longer, siblings, and short iteration-mark hits.
+  const shards = new Map<string, Promise<Json | null>>();
+  const readShard = (name: string) => {
+    let pending = shards.get(name);
+    if (!pending) shards.set(name, pending = runAnswer(env, name));
+    return pending;
+  };
+  const iter2Rows = iter2.results as { text: string; n: number; vertical: number }[];
+  const iter3Rows = iter3.results as { text: string; n: number; vertical: number }[];
+  const [longerForms, siblingForms, iter2Shards, iter3Shards] = await Promise.all([
+    size === 2 ? readShard(formsShard(3, whole)) : null,
+    size === 2 || size === 3 ? readShard(formsShard(size, lead)) : null,
+    Promise.all(iter2Rows.map(row => readShard(formsShard(2, row.text)))),
+    Promise.all(iter3Rows.map(row => readShard(formsShard(3, row.text)))),
+  ]);
   const shown = (rows: Json[], shard: Json | null) => rows.map(row => ({ ...row, vertical: Boolean(row.vertical), forms: shard?.[row.text]?.[0] ?? 0 }));
-  const body = { text: value, size, lead, inside: held.flatMap(result => result.results.map((row: Json) => row.text as string)),
+  const iteration = [
+    ...iter2Rows.map((row, i) => ({ text: row.text, n: row.n, vertical: Boolean(row.vertical), forms: iter2Shards[i]?.[row.text]?.[0] ?? 0 })),
+    ...iter3Rows.map((row, i) => ({ text: row.text, n: row.n, vertical: Boolean(row.vertical), forms: iter3Shards[i]?.[row.text]?.[0] ?? 0 })),
+    ...longCandidates.flatMap((c, i) => {
+      const n = longCounts[i]?.results?.[0]?.n ?? 0;
+      return n > 0 ? [{ text: c.text, n: Math.min(n, RUN_COUNT_MAX), ...(n > RUN_COUNT_MAX ? { more: true } : {}), vertical: true, forms: 0 }] : [];
+    }),
+  ].sort((a, b) => b.n - a.n || byCodePoint(a.text, b.text)).slice(0, RUN_NEAR_MAX);
+  const body = { text: value, size, lead, iteration, inside: held.flatMap(result => result.results.map((row: Json) => row.text as string)),
     longer: size === 2 ? shown(longer.results, longerForms) : [], siblings: size === 2 || size === 3 ? shown(siblings.results, siblingForms) : [], limit: RUN_NEAR_MAX };
   ctx.waitUntil(caches.default.put(key, Response.json(body, { headers: { 'cache-control': `public, max-age=${FACETS_TTL}` } })));
   return body;

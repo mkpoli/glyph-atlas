@@ -77,7 +77,7 @@ async function cardsOf(env: Env, codes: string[], held: Map<string, Json>, ctx?:
 // names: とき finds 𛄤, then 時 and 刻. A reading lists its kanji most attested first, so a list takes
 // only the ones it can show, whose cards come in the reading's shard. A query in historical kana also
 // reads the modern spellings it may stand for (`kanaSpelling.ts`): さふらふ finds 候 by そうろう.
-const KANA_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u;
+const KANA_TERM = /^[\p{Script=Hiragana}\p{Script=Katakana}ー〱〲〳〴〵]+$/u;
 async function readingKanji(env: Env, index: NameIndex, term: string, found: Hit[], limit: number, ctx?: ExecutionContext) {
   if (!KANA_TERM.test(term)) return { hits: [] as Hit[], unread: 0, cards: new Map<string, Json>() };
   const typed = hira(term);

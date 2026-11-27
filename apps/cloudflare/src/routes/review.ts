@@ -12,7 +12,7 @@ import { drawnHeads, formed } from '../forms';
 import { drawnForm } from '../representation';
 import { cropNow, filedRuns, planFormUndo, planReviewForm } from './claims';
 import { inspected } from './crop';
-import { FORM_COLUMNS, FORM_JOINS, STYLE_KIND, STYLE_TARGET, codePoints, foundCrop, formRow, redrawLimits, type FormColumns } from '../cropRecords';
+import { FORM_COLUMNS, FORM_JOINS, STYLE_KIND, STYLE_TARGET, codePoints, foundCrop, formRow, recordQuery, redrawLimits, styleFields, type FormColumns, type RecordRow } from '../cropRecords';
 import { resolveCrops } from '../ledger';
 import { body, canonical, compose, graphemeKey, graphemeText, text, unified, writtenCharacter } from '../input';
 import { readRecords, recordKey } from '../records';
@@ -438,6 +438,18 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
   if (style !== 'unassessed' && !await env.ATLAS.prepare(`SELECT 1 FROM codes WHERE field='style' AND key=?`).bind(style).first())
     throw new Problem(422, 'No crop in the collection has this style yet, so it cannot be chosen here.');
   const actor = await actorFor(env, user), at = Date.now();
+  try { await env.ATLAS.batch(styleStatements(env, { crop, key, signature, actor, at, revision: found.row.revision, style })) }
+  catch (error) {
+    if ((await previous())?.request === signature) return await answer();
+    if (conflict(error)) throw new Problem(409, 'This character changed. Reload it.');
+    throw error;
+  }
+  return await answer();
+}
+/** The statements that give `crop` the style, as one submission (`key`) of `actor`, one revision on from the one read. A
+ *  revision that moved since it was read fails the batch. */
+function styleStatements(env: Env, { crop, key, signature, actor, at, revision, style, was }:
+  { crop: number; key: string; signature: string; actor: number; at: number; revision: number; style: string; was?: string | null }): D1PreparedStatement[] {
   // The style the crop's publication gave it: while a reviewer's style stands, the overlay's from before it
   // was given; otherwise the crop's own, which publications keep.
   const published = `CASE WHEN coalesce((SELECT p.style IS NOT NULL FROM events p WHERE p.crop=c.id AND p.kind=${STYLE_KIND} AND p.revision<=c.revision
@@ -448,16 +460,16 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
   const cell = 'c.kind,coalesce(c.char,-1),coalesce(c.family,-1),c.book,coalesce(c.production,-1),coalesce(c.style,-1),c.state,c.quiz,coalesce((c.year-CASE WHEN c.year<0 THEN 9 ELSE 0 END)/10*10,-1)';
   const tally = (sign: string, where: string) => `INSERT INTO tally(gen,kind,char,family,book,production,style,state,quiz,decade,n)
     SELECT ${GEN},${cell},${sign}1 FROM crops c WHERE c.id=?1 AND ${where} ON CONFLICT DO UPDATE SET n=n+excluded.n`;
-  const statements = [
+  return [
     env.ATLAS.prepare('INSERT INTO submissions(key,actor,request,response,at,evidence) VALUES (?,?,?,?,?,NULL)')
-      .bind(key, actor, signature, JSON.stringify({ target_id: publicId(crop), field: 'style', style }), at),
+      .bind(key, actor, signature, JSON.stringify({ target_id: publicId(crop), field: 'style', style, ...(was === undefined ? {} : { was }) }), at),
     // A revision that moved since it was read leaves the event's revision null, which fails the batch.
     // It holds the crop's values as they stand, its open issue among them, as every event holds them after it.
     env.ATLAS.prepare(`INSERT INTO events(crop,revision,cut,gen,actor,submission,at,kind,label,state,style,quiz,kept_issue)
       SELECT c.id,(SELECT x.revision+1 FROM crops x WHERE x.id=c.id AND x.revision=?4),c.cut,${GEN},${actor},
         (SELECT id FROM submissions WHERE key=?2),?3,${STYLE_KIND},c.char,c.state,${chosen},c.quiz,
         (SELECT coalesce(p.kept_issue,p.issue) FROM events p WHERE p.crop=c.id ORDER BY p.revision DESC LIMIT 1) FROM crops c WHERE c.id=?1`)
-      .bind(crop, key, at, found.row.revision, style),
+      .bind(crop, key, at, revision, style),
     env.ATLAS.prepare(tally('-', moved)).bind(crop, key),
     env.ATLAS.prepare(`INSERT INTO reviews(crop,gen,at,char,state,style,quiz,base_char,base_state,base_style,base_quiz)
       SELECT c.id,${GEN},?3,c.char,c.state,coalesce(${chosen.replaceAll('?5', '?4')},${published}),c.quiz,c.char,c.state,${published},c.quiz
@@ -468,16 +480,62 @@ export async function setStyle(env: Env, sent: Json, user: string, raw: string):
       .bind(crop, key),
     // The crop, once it has moved on, is listed for the next publication.
     env.ATLAS.prepare(`INSERT INTO touched(crop,gen) SELECT c.id,${GEN} FROM crops c WHERE c.id=?1 AND c.revision=?2 ${LISTED}`)
-      .bind(crop, found.row.revision + 1),
-    env.ATLAS.prepare(tally('', 'c.revision=?2')).bind(crop, found.row.revision + 1),
+      .bind(crop, revision + 1),
+    env.ATLAS.prepare(tally('', 'c.revision=?2')).bind(crop, revision + 1),
   ];
-  try { await env.ATLAS.batch(statements) }
-  catch (error) {
-    if ((await previous())?.request === signature) return await answer();
-    if (conflict(error)) throw new Problem(409, 'This character changed. Reload it.');
-    throw error;
+}
+
+// A selection given one style is a batch of crops, each saved as `setStyle` saves one: its own submission
+// (the batch's id and the crop's), one revision on from the one the reader saw. A crop changed since, or
+// gone, is reported and the rest are saved. A crop named with no revision, by a view that holds none
+// (the forms tool), is given the style as it stands: a style is no review, so it overwrites no decision.
+export const STYLE_BATCH_MAX = 48;
+/** Give each crop of `sent.crops` (`{ id, revision }`) the style, or with `unassessed` the one it inherits.
+ *  Answers each crop saved with its style, the revision the save left it at and `was`, the style it had of its
+ *  own before (null for none), which taking the batch back returns to; and those refused with the reason. A
+ *  retry with the same id answers the same revision and `was`, so a later change by someone else refuses
+ *  the undo. */
+export async function setStyles(env: Env, sent: Json, user: string): Promise<Json> {
+  const id = text(sent.id, 64, 'submission id', true)!;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Problem(422, 'Invalid submission id.');
+  const style = text(sent.style, 32, 'style', true)!;
+  if (style !== 'unassessed' && !STYLES.includes(style)) throw new Problem(422, 'Unknown style.');
+  const crops: Json[] = Array.isArray(sent.crops) ? sent.crops : [];
+  if (crops.length < 1 || crops.length > STYLE_BATCH_MAX) throw new Problem(422, `A batch names 1–${STYLE_BATCH_MAX} crops.`);
+  if (style !== 'unassessed' && !await env.ATLAS.prepare(`SELECT 1 FROM codes WHERE field='style' AND key=?`).bind(style).first())
+    throw new Problem(422, 'No crop in the collection has this style yet, so it cannot be chosen here.');
+  const actor = await actorFor(env, user), at = Date.now();
+  const styled: Json[] = [], refused: Json[] = [], seen = new Set<number>();
+  const now = async (crop: number, key: string) => {
+    const [row, saved] = await Promise.all([env.ATLAS.prepare(recordQuery()).bind(crop).first<RecordRow>(),
+      env.ATLAS.prepare(`SELECT s.response,e.revision FROM submissions s JOIN events e ON e.submission=s.id AND e.crop=? WHERE s.key=?`)
+        .bind(crop, key).first<{ response: string; revision: number }>()]);
+    if (!row || !saved) return null;
+    return { id: publicId(crop), ...styleFields(row), revision: saved.revision, was: JSON.parse(saved.response).was ?? null };
+  };
+  for (const entry of crops) {
+    const crop = await cropNamed(env, entry?.id, 'character id');
+    if (crop === null) { refused.push({ id: String(entry?.id ?? ''), reason: 'missing' }); continue }
+    if (seen.has(crop)) throw new Problem(422, 'A batch names each crop once.');
+    seen.add(crop);
+    const key = `${user}:${id}:${publicId(crop)}`, signature = canonical({ target: STYLE_TARGET, crop: publicId(crop), input: { revision: entry.revision ?? null, style } });
+    const previous = async () => (await env.ATLAS.prepare('SELECT request FROM submissions WHERE key=?').bind(key).first<{ request: string }>())?.request;
+    const done = async () => { const record = await now(crop, key); if (record) styled.push(record); else refused.push({ id: publicId(crop), reason: 'missing' }) };
+    const before = await previous();
+    if (before) { if (before === signature) await done(); else refused.push({ id: publicId(crop), reason: 'changed' }); continue }
+    const row = await env.ATLAS.prepare(recordQuery()).bind(crop).first<RecordRow>();
+    if (!row) { refused.push({ id: publicId(crop), reason: 'missing' }); continue }
+    if (entry.revision != null && !standing(row, entry.revision)) { refused.push({ id: publicId(crop), reason: 'changed' }); continue }
+    const own = styleFields(row), was = own.style_basis === 'unit' ? own.style : null;
+    try { await env.ATLAS.batch(styleStatements(env, { crop, key, signature, actor, at, revision: row.revision, style, was })) }
+    catch (error) {
+      if (await previous() === signature) { await done(); continue }
+      if (conflict(error)) { refused.push({ id: publicId(crop), reason: 'changed' }); continue }
+      throw error;
+    }
+    await done();
   }
-  return await answer();
+  return { id, style, crops: styled, refused };
 }
 // Mark events for crops a round showed or skipped, or a round's undo stopped counting: a crop a review
 // left pending (pending, seen or hard) takes its mark when that changed. A round's own event is of the
@@ -841,6 +899,11 @@ export async function reviewRoute(env: Env, request: Request, path: string, user
     }
     const undone = path.match(/^\/atlas\/(?:rounds|corrections)\/([^/]+)\/undo$/);
     if (undone) return json(await undo(env, request, user, decodeURIComponent(undone[1])));
+    if (path === '/atlas/styles') {
+      const { success } = await env.CORRECTIONS.limit({ key: addressKey(request.headers.get('cf-connecting-ip')) });
+      if (!success) throw new Problem(429, 'Too many corrections at once. Wait a minute and try again.');
+      return json(await setStyles(env, await body(request), user));
+    }
     const styled = path.match(/^\/atlas\/characters\/([^/]+)\/style$/);
     if (styled) return json(await setStyle(env, await body(request), user, decodeURIComponent(styled[1])));
     const edit = path.match(/^\/(?:atlas\/characters|layers\/units)\/([^/]+)$/);

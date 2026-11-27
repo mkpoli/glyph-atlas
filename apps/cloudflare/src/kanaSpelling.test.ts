@@ -33,12 +33,16 @@ describe('a reading in historical kana', () => {
     expect(modernSpellings('はゝ')).toContain('はは');
     expect(modernSpellings('つゞみ')).toContain('つづみ');
   });
-  it('writes out ゝ and ゞ', () => {
+  it('writes out ゝ, ゞ, and くの字点 (〱 〲 〳〵 〴〵)', () => {
     expect(modernSpellings('すヾ')).toContain('すず');
     expect(modernSpellings('さヽ')).toContain('ささ');
     expect(modernSpellings('さゝ')).toContain('ささ');
     expect(modernSpellings('すゞ')).toContain('すず');
     expect(modernSpellings('はゞかる')).toContain('はばかる');
+    expect(modernSpellings('つれ〱')).toContain('つれつれ');
+    expect(modernSpellings('つれ〲')).toContain('つれづれ');
+    expect(modernSpellings('つれ〳〵')).toContain('つれつれ');
+    expect(modernSpellings('つれ〴〵')).toContain('つれづれ');
   });
   it('offers nothing new for a modern reading with no historical spelling', () => {
     expect(modernSpellings('とき')).toEqual([]);

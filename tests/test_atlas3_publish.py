@@ -1,5 +1,6 @@
 import gc
 import gzip
+import hashlib
 import importlib
 import json
 import re
@@ -17,8 +18,21 @@ PAGE = 1 << 24
 # Record packs named by their content (`pack_names`).
 PACK = {n: f"packs/{str(n) * 64}.bin" for n in (1, 2, 3)}
 
+
+def media_url(seed):
+    return f"/atlas/media/{hashlib.sha256(seed.encode()).hexdigest()}.webp"
+
+
+def write_pack(directory, pack_name, record=None, *, offset=0):
+    raw = json.dumps(record or {"id": "rec", "proxyable": True, "image": media_url(pack_name)}).encode()
+    path = directory / pack_name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * offset + raw)
+    return offset, len(raw)
+
+
 def unit(id, page, box, character="あ", state="pending", revision=0, quiz=1, document="book:a", priority=1):
-    data = {"page_id": page, "box": box, "image": f"/atlas/media/{id.replace(':', '')}.webp", "label": character}
+    data = {"page_id": page, "box": box, "image": media_url(id), "label": character}
     return (id, "local", character, None, None, "printed", "kana", state, revision, quiz, priority, 1, document, "unassessed", None,
             json.dumps(data))
 
@@ -565,15 +579,16 @@ def test_a_corpus_catalogue_keeps_the_review_of_a_corpus_glyph(layout, monkeypat
     g1 = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT text, id FROM ids"))["codh:g1"]
     before = crops(remote)[g1]
     path = tmp_path / "corpus.sqlite"
+    off, sz = write_pack(tmp_path, PACK[2], {"id": "codh:g1", "label": "が", "proxyable": True, "image": media_url("codh:g1")})
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[2]}',0,120,'printed',0,'unassessed','codh:b',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[2]}',{off},{sz},'printed',0,'unassessed','codh:b',NULL)")
     db.commit()
     run(publish, monkeypatch, path)
     after = crops(remote)[g1]
     assert (after["char"], after["state"], after["quiz"], after["revision"]) == (before["char"], before["state"], before["quiz"], 2)
     body = json.loads(gzip.decompress((root / "out" / "pages" / f"{g1 // PAGE}-2.json.gz").read_bytes()))
-    assert body["crops"][0]["record_place"] == [PACK[2], 0, 120]
+    assert body["crops"][0]["record_place"] == [PACK[2], off, sz]
 
 
 def test_a_retirement_older_than_a_review_is_refused(layout, monkeypatch, tmp_path):
@@ -1013,11 +1028,14 @@ def test_published_credits_take_the_words_a_reader_should_see(layout, monkeypatc
 def test_a_corpus_record_is_written_again_with_the_credit_a_reader_should_see(layout, monkeypatch, tmp_path, capsys):
     root, publish, remote = layout
     noted = "橋本雄太, Honkoku-Lines v2.0; transcriptions from みんなで翻刻 (CC BY-SA 4.0); images per holder"
-    old = {"id": "codh:g1", "label": "が", "attribution": "国立国会図書館", "text_attribution": noted, "box": {"x": 1}}
+    old = {"id": "codh:g1", "label": "が", "proxyable": True, "image": media_url("codh:g1"),
+           "attribution": "国立国会図書館", "text_attribution": noted, "box": {"x": 1}}
     raw = json.dumps(old, ensure_ascii=False).encode()
     fetched = tmp_path / "fetched"
     fetched.mkdir()
     (fetched / PACK[1].removeprefix("packs/")).write_bytes(b"x" * 40 + raw)
+    (tmp_path / "packs").mkdir(exist_ok=True)
+    (tmp_path / PACK[1]).write_bytes(b"x" * 40 + raw)
     db = sqlite3.connect(tmp_path / "c.sqlite")
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
     db.execute(f"INSERT INTO corpus_units VALUES('codh:g1','が',NULL,NULL,7,'{PACK[1]}',40,{len(raw)},'printed',0,'unassessed','codh:b',NULL)")
@@ -1047,13 +1065,14 @@ def test_a_corpus_record_is_written_again_with_the_credit_a_reader_should_see(la
     run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
     assert "nothing changed" in capsys.readouterr().out
     # A record published since the catalogue was written is kept, not put back.
+    off_other, sz_other = write_pack(tmp_path / "out2", PACK[2], old)
     with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
-        db.execute("UPDATE record_places SET offset = 7, old_offset = 41")
+        db.execute("UPDATE record_places SET object=?, offset=?, size=?, old_offset=41", (PACK[2], off_other, sz_other))
     with pytest.raises(SystemExit, match="published since the catalogue was written, e.g. codh:g1"):
         run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
     with sqlite3.connect(tmp_path / "out2" / "records.sqlite") as db:
         db.execute("DELETE FROM record_places")
-        db.execute(f"INSERT INTO record_places VALUES('ex:a1', '{PACK[2]}', 0, 1, '{PACK[1]}', 0, 1)")
+        db.execute(f"INSERT INTO record_places VALUES('ex:a1', '{PACK[2]}', {off_other}, {sz_other}, '{PACK[1]}', 0, 1)")
     with pytest.raises(SystemExit, match="no published record, e.g. ex:a1"):
         run(publish, monkeypatch, tmp_path / "out2" / "records.sqlite")
 
@@ -1205,9 +1224,10 @@ def test_a_page_never_splits_across_parts(layout, monkeypatch, tmp_path):
 def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path):
     root, publish, _remote = layout
     path = tmp_path / "corpus.sqlite"
+    off, sz = write_pack(tmp_path, PACK[3], {"id": "codh:x1", "label": "き", "proxyable": True, "image": media_url("codh:x1")})
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute(f"INSERT INTO corpus_units VALUES('codh:x1','き',NULL,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','codh:b:x',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('codh:x1','き',NULL,NULL,7,'{PACK[3]}',{off},{sz},'printed',0,'unassessed','codh:b:x',NULL)")
     db.commit()
     run(publish, monkeypatch, path)
     pages = dict(sqlite3.connect(root / "out" / "mirror.sqlite").execute("SELECT id, key FROM pages"))
@@ -1217,9 +1237,10 @@ def test_a_new_corpus_glyph_stays_in_its_own_book(layout, monkeypatch, tmp_path)
 def test_a_corpus_book_takes_the_title_its_catalogue_gives(layout, monkeypatch, tmp_path, capsys):
     root, publish, remote = layout
     path = tmp_path / "corpus.sqlite"
+    off, sz = write_pack(tmp_path, PACK[3], {"id": "gy:x1", "label": "き", "proxyable": True, "image": media_url("gy:x1")})
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.execute(f"INSERT INTO corpus_units VALUES('gy:x1','き',NULL,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','gy:1',NULL)")
+    db.execute(f"INSERT INTO corpus_units VALUES('gy:x1','き',NULL,NULL,7,'{PACK[3]}',{off},{sz},'printed',0,'unassessed','gy:1',NULL)")
     db.execute("CREATE TABLE corpus_documents(document PRIMARY KEY, n, title)")
     db.execute("INSERT INTO corpus_documents VALUES('gy:1', 0, '廣韻 卷一')")
     db.commit()
@@ -1499,9 +1520,10 @@ def test_a_publish_needing_a_statement_over_d1s_limit_allocates_nothing(layout, 
 
 
 def corpus_catalogue(path, rows):
+    off, sz = write_pack(path.parent, PACK[3])
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
-    db.executemany(f"INSERT INTO corpus_units VALUES(?,?,?,NULL,7,'{PACK[3]}',0,100,'printed',0,'unassessed','codh:b',?)", rows)
+    db.executemany(f"INSERT INTO corpus_units VALUES(?,?,?,NULL,7,'{PACK[3]}',{off},{sz},'printed',0,'unassessed','codh:b',?)", rows)
     db.commit()
     return path
 
@@ -2055,3 +2077,215 @@ def test_a_reviewer_style_taken_back_after_a_read_back_takes_the_next_publicatio
     for name in ("first", "second"):
         run(publish, monkeypatch, catalogue(tmp_path / f"{name}.sqlite", [styled("ex:a1", "regular")]))
     assert crops(remote)[a1]["style"] == code("regular")
+
+
+def test_publish_refuses_external_non_proxyable_or_unmapped_images(layout, monkeypatch, tmp_path):
+    _root, publish, _remote = layout
+    # 1. Local unit with an external image URL or malformed /atlas/media/ path is refused.
+    for bad_url in (
+        "https://gallica.bnf.fr/iiif/ark:/12148/btv1b83018108/f1/1,2,3,4/480,/0/default.jpg",
+        "/atlas/media/invalid.webp",
+    ):
+        bad_local = dict(json.loads(unit("ex:ext1", "hl:p1", {"x": 50, "y": 50, "w": 10, "h": 10})[-1]))
+        bad_local["image"] = bad_url
+        bad_row = (*unit("ex:ext1", "hl:p1", {"x": 50, "y": 50, "w": 10, "h": 10})[:-1], json.dumps(bad_local))
+        with pytest.raises(SystemExit, match="non-proxyable or unhosted images"):
+            run(publish, monkeypatch, catalogue(tmp_path / f"bad-local-{hashlib.sha256(bad_url.encode()).hexdigest()[:6]}.sqlite", [bad_row]))
+
+    # 2. Corpus unit pack containing an external image URL or external context_image is refused.
+    for tag, rec in (
+        ("ext-img", {"id": "hng:x1", "label": "一", "proxyable": True,
+                     "image": "https://raw.githubusercontent.com/chise/hng-basic-data/rev/a.bmp"}),
+        ("ext-ctx", {"id": "hng:x2", "label": "一", "proxyable": True,
+                     "image": media_url("hng:x2"), "context_image": "https://codh.rois.ac.jp/iiif/p/1,2,3,4/900,/0/default.jpg"}),
+        ("non-proxy", {"id": "hp:x1", "label": "一", "proxyable": False,
+                       "image": media_url("hp:x1")}),
+    ):
+        cdir = tmp_path / tag
+        off, sz = write_pack(cdir, PACK[2], rec)
+        db = sqlite3.connect(cdir / "c.sqlite")
+        db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+        db.execute(f"INSERT INTO corpus_units VALUES(?,'一',NULL,NULL,1,'{PACK[2]}',{off},{sz},'printed',0,'unassessed','hng:x',NULL)",
+                   (rec["id"],))
+        db.commit()
+        with pytest.raises(SystemExit, match="non-proxyable or unhosted images"):
+            run(publish, monkeypatch, cdir / "c.sqlite")
+
+    # 3. Missing pack file beside the catalogue refuses to publish rather than skipping validation.
+    miss_dir = tmp_path / "missing-pack"
+    miss_dir.mkdir()
+    db = sqlite3.connect(miss_dir / "c.sqlite")
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute(f"INSERT INTO corpus_units VALUES('hng:missing','一',NULL,NULL,1,'{PACK[2]}',0,10,'printed',0,'unassessed','hng:x',NULL)")
+    db.commit()
+    with pytest.raises(SystemExit, match="record packs are missing"):
+        run(publish, monkeypatch, miss_dir / "c.sqlite")
+
+    # 4. A record pointing at a 64-hex /atlas/media/ key absent from the media map is refused when media is checked.
+    um_dir = tmp_path / "unmapped"
+    off, sz = write_pack(um_dir, PACK[2], {"id": "hng:x3", "label": "一", "proxyable": True, "image": f"/atlas/media/{'b' * 64}.webp"})
+    db = sqlite3.connect(um_dir / "c.sqlite")
+    db.execute("CREATE TABLE corpus_units(id,character,family,visual_group,shuffle,object,offset,size,production,named,style,document,label)")
+    db.execute("CREATE TABLE media(key,object,offset,size,content_type)")
+    db.execute(f"INSERT INTO corpus_units VALUES('hng:x3','一',NULL,NULL,1,'{PACK[2]}',{off},{sz},'printed',0,'unassessed','hng:x',NULL)")
+    db.commit()
+    with pytest.raises(SystemExit, match="absent from the media map"):
+        run(publish, monkeypatch, um_dir / "c.sqlite")
+
+
+def test_pack_corpus_images_repacks_external_crops_and_publishes_with_media(monkeypatch, tmp_path, capsys):
+    from PIL import Image
+
+    from glyph_atlas import images, tables
+    from glyph_atlas.corpus import crops as crops_mod
+    from glyph_atlas.schema import Page
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("GLYPH_ATLAS_CACHE", str(cache))
+    monkeypatch.setenv("ATLAS3_DIR", str(tmp_path))
+
+    # Create a local HNG standalone BMP, a matching cached page scan, and a mismatched-dimension scan.
+    hng_dir = cache / "hng-basic-data" / "03_book" / "glyphs" / "BMP"
+    hng_dir.mkdir(parents=True)
+    Image.new("RGB", (64, 64), (245, 240, 230)).save(hng_dir / "dng0001.bmp")
+    hng_url = f"{crops_mod._hng_crop_prefix()}03_book/glyphs/BMP/dng0001.bmp"
+
+    scan = tmp_path / "page.png"
+    Image.new("RGB", (300, 300), (235, 230, 215)).save(scan)
+    hl_service = "https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000346%2FL000346_0001.tif"
+    images.register(scan, hl_service, service=hl_service)
+    scaled_service = "https://iiif.dl.itc.u-tokyo.ac.jp/iiif/2/erilibsc%2FL000346%2FL000346_0002.tif"
+    images.register(scan, scaled_service, service=scaled_service)
+    gallica_service = "https://gallica.bnf.fr/iiif/ark:/12148/btv1b83018108/f1"
+
+    work = tmp_path / "work"
+    (work / "honkoku-lines").mkdir(parents=True)
+    tables.write(work / "honkoku-lines" / "pages.parquet", [
+        Page(id="hl:book1:0", document_id="hl:book1", seq=0, image=hl_service, width=300, height=300),
+        Page(id="hl:book1:1", document_id="hl:book1", seq=1, image=scaled_service, width=150, height=150),
+    ], Page)
+
+    rec_hng = {
+        "id": "hng:dng:0001", "label": "一", "proxyable": True, "licence": "CC-BY-SA-4.0",
+        "image": hng_url, "image_is_served_by_this_api": False, "box": None,
+        "source": {"corpus": "hng", "document_id": "hng:dng", "image_service": None},
+        "source_revision": "rev-hng",
+    }
+    rec_hl = {
+        "id": "hl:book1:0:1", "label": "二", "proxyable": True, "licence": "PD",
+        "image": f"{hl_service}/40,50,60,70/480,/0/default.jpg", "image_is_served_by_this_api": False,
+        "box": {"x": 40, "y": 50, "w": 60, "h": 70}, "context_image": None, "context_box": None,
+        "source": {"corpus": "honkoku-lines", "document_id": "hl:book1", "page_id": "hl:book1:0", "image_service": hl_service},
+        "source_revision": "rev-hl",
+    }
+    rec_mismatch = {
+        "id": "hl:book1:1:1", "label": "四", "proxyable": True, "licence": "PD",
+        "image": f"{scaled_service}/10,20,30,40/480,/0/default.jpg", "image_is_served_by_this_api": False,
+        "box": {"x": 10, "y": 20, "w": 30, "h": 40}, "context_image": None, "context_box": None,
+        "source": {"corpus": "honkoku-lines", "document_id": "hl:book1", "page_id": "hl:book1:1", "image_service": scaled_service},
+        "source_revision": "rev-mis",
+    }
+    rec_gallica = {
+        "id": "hng-kiridashi:fhs:1", "label": "三", "proxyable": True, "licence": "PD",
+        "image": f"{gallica_service}/10,20,30,40/480,/0/default.jpg", "image_is_served_by_this_api": False,
+        "box": {"x": 10, "y": 20, "w": 30, "h": 40},
+        "source": {"corpus": "hng-kiridashi", "document_id": "hng-kiridashi:fhs", "image_service": gallica_service},
+        "source_revision": "rev-gal",
+    }
+
+    # Build a layout holding these pre-existing external corpus records (before the publish guard).
+    fetched = tmp_path / "fetched"
+    fetched.mkdir()
+    buf = bytearray()
+    places = {}
+    for rec in (rec_hng, rec_hl, rec_mismatch, rec_gallica):
+        raw = json.dumps(rec, ensure_ascii=False).encode()
+        places[rec["id"]] = (len(buf), len(raw))
+        buf.extend(raw)
+    old_pack = f"packs/{hashlib.sha256(buf).hexdigest()}.bin"
+    (fetched / old_pack.removeprefix("packs/")).write_bytes(buf)
+
+    write_source(tmp_path, "units", UNITS, [unit("ex:a1", "hl:p1", {"x": 0, "y": 0, "w": 10, "h": 10}, "あ")])
+    write_source(tmp_path, "corpus_units", ("id", "character", "family", "visual_group", "shuffle", "object", "offset",
+                                            "size", "production", "named", "style", "document", "label"), [
+        (rec["id"], rec["label"], None, None, 7, old_pack, *places[rec["id"]], "printed", 0, "unassessed", doc, None)
+        for rec, doc in ((rec_hng, "hng:dng"), (rec_hl, "hl:book1"), (rec_mismatch, "hl:book1"), (rec_gallica, "hng-kiridashi:fhs"))
+    ])
+    for name, cols in (
+        ("media", ("key", "object", "offset", "size", "content_type")),
+        ("unit_ngrams", ("first", "size", "second", "third", "text", "document", "vertical", "hand_order", "shuffle", "graphemes")),
+        ("pages", ("id", "document", "data")),
+        ("document_dating", ("document", "axis", "kind", "start", "end", "precision", "label", "status")),
+        ("characters", ("code_point", "character", "name", "head")),
+        ("aliases", ("query", "code_point", "rank")),
+    ):
+        write_source(tmp_path, name, cols, [])
+    for mod in ("build", "publish", "media_map", "run_answers", "pack_corpus_images"):
+        sys.modules.pop(mod, None)
+    importlib.import_module("build").main()
+    publish = importlib.import_module("publish")
+    remote = FakeD1(tmp_path)
+    monkeypatch.setattr(publish, "send", remote.send)
+    monkeypatch.setattr(publish, "query", remote.query)
+    monkeypatch.setattr(publish, "upload", remote.upload)
+    monkeypatch.setattr(publish, "answer", lambda: None)
+    before_crops = remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id")
+
+    # Run pack_corpus_images.py --list and then repack from --packs.
+    packer = importlib.import_module("pack_corpus_images")
+    capsys.readouterr()
+    packer.main([str(tmp_path / "repack"), "--books", "hng:", "--books", "hl:book1", "--books", "hng-kiridashi:", "--list"])
+    assert capsys.readouterr().out.split() == [old_pack.removeprefix("packs/")]
+
+    packer.main([str(tmp_path / "repack"), "--books", "hng:", "--books", "hl:book1", "--books", "hng-kiridashi:",
+                 "--packs", str(fetched), "--corpus-root", str(work)])
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["rewritten"] == 2
+    assert summary["uncached"] == 1
+    assert summary["mismatch"] == 1
+    assert summary["missing_hosts"] == {"gallica.bnf.fr": 1}
+    assert summary["media_packed"] == 3  # hng crop + hl crop + hl context
+    assert not (tmp_path / "repack" / ".render").exists()
+    uncached = json.loads((tmp_path / "repack" / "uncached.json").read_text())
+    assert {c["id"]: c["reason"] for c in uncached["crops"]} == {
+        "hng-kiridashi:fhs:1": "uncached",
+        "hl:book1:1:1": "dimension_mismatch",
+    }
+
+    repack_db = sqlite3.connect(tmp_path / "repack" / "records.sqlite")
+    rp_rows = {r[0]: r[1:] for r in repack_db.execute("SELECT * FROM record_places")}
+    assert set(rp_rows) == {"hng:dng:0001", "hl:book1:0:1"}
+    media_rows = {r[0]: r[1:] for r in repack_db.execute("SELECT * FROM media")}
+
+    # Verify rewritten record JSONs keep source_revision and point at mapped /atlas/media/ keys.
+    hng_obj, hng_off, hng_sz, *_ = rp_rows["hng:dng:0001"]
+    new_hng = json.loads((tmp_path / "repack" / hng_obj).read_bytes()[hng_off:hng_off + hng_sz])
+    assert new_hng["source_revision"] == "rev-hng"
+    assert publish.hosted_media_key(new_hng["image"]) in media_rows
+    assert new_hng["image_is_served_by_this_api"] is True
+
+    hl_obj, hl_off, hl_sz, *_ = rp_rows["hl:book1:0:1"]
+    new_hl = json.loads((tmp_path / "repack" / hl_obj).read_bytes()[hl_off:hl_off + hl_sz])
+    assert new_hl["source_revision"] == "rev-hl"
+    assert publish.hosted_media_key(new_hl["image"]) in media_rows
+    assert publish.hosted_media_key(new_hl["context_image"]) in media_rows
+    assert new_hl["context_box"] is not None
+
+    # Publish records.sqlite (with both media and record_places) atomically!
+    remote.uploaded.clear()
+    remote.prefixes = []
+    run(publish, monkeypatch, tmp_path / "repack" / "records.sqlite")
+    assert remote.query("glyph-atlas-v3", "SELECT * FROM crops ORDER BY id") == before_crops
+    first_page = remote.prefixes.index("v3/pages/")
+    assert all(p == "v3/media/" for p in remote.prefixes[:first_page])
+    assert first_page > 0
+
+    for gid, (obj, off, sz, *_) in rp_rows.items():
+        pid = ids(tmp_path)[gid] // publish.PAGE
+        rev = remote.query("glyph-atlas-v3", f"SELECT rev FROM pages WHERE id={pid}")[0]["rev"]
+        crops_in_page = {e["id"]: e for e in json.loads(gzip.decompress((tmp_path / "out" / "pages" / f"{pid}-{rev}.json.gz").read_bytes()))["crops"]}
+        assert crops_in_page[gid]["record_place"] == [obj, off, sz]
+
+    capsys.readouterr()
+    run(publish, monkeypatch, tmp_path / "repack" / "records.sqlite")
+    assert "nothing changed" in capsys.readouterr().out

@@ -1,0 +1,21 @@
+# The pull request worker, on the maintainer's own machine: ~/.config/fish-pr/config.toml.
+# Where each repository's fresh worktrees go, and where the worker keeps its count, lock and logs.
+worktrees = "~/projects/worktrees"
+state = "~/.local/state/fish-pr"
+
+# The label that asks for a draft. `pr_worker.py --labels` creates it and the four it moves to.
+label = "fish-pr"
+# Attempts a day, declined and failed ones included, and how long one may take.
+per_day = 3
+minutes = 40
+
+# The agent: the Codex binary itself, not a launcher script, and the login it uses.
+codex = "~/.local/bin/codex"
+codex_home = "~/.codex"
+model = "gpt-6-astra"
+effort = "high"
+
+# A repository and its checkout here. Only `origin/main` and `.git` of the checkout are used.
+[[repos]]
+name = "mkpoli/glyph-atlas"
+path = "~/projects/glyph-atlas"
