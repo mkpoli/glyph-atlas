@@ -14,6 +14,8 @@
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
   import { isFigure } from '../lib/mjFigures.js'
+  import { selectYao, yaoOccurrences } from 'han-compose/yao-occurrences'
+  import { yaoFamily } from 'han-compose/yao-catalogue'
   import { rateFormsFor } from 'han-compose/rate-forms'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPreview from './IdsPreview.svelte'
@@ -33,6 +35,8 @@
   // The key that puts each operator, and its name.
   const KEY = Object.fromEntries(Object.entries(KEYS).map(([key, op]) => [op, key]))
   const name = op => t(`form.ids.op.${OP_NAMES[op]}`)
+  const yaoDrawings = new Map(yaoFamily.forms.flatMap(form => [form.text, ...form.aliases].map(text => [text, form.outline])))
+  const hasReviewedForms = text => Boolean(text && (rateFormsFor(text).length || yaoOccurrences(text).length))
   const HISTORY = 100
   const GRASS_FORMS = [grassIVS.connected, grassIVS.split, grassIVS.inward]
   const grassLabel = form => form === grassIVS.connected ? t('form.ids.grass.connected') : form === grassIVS.split ? t('form.ids.grass.split') : t('form.ids.grass.inward')
@@ -96,8 +100,8 @@
   $effect(() => {
     const of = char
     untrack(() => {
-      const typed = isSequence(start) || isFigure(start) || rateFormsFor(start).length ? start
-        : !start && rateFormsFor(of).length ? of : ''
+      const typed = isSequence(start) || isFigure(start) || hasReviewedForms(start) ? start
+        : !start && hasReviewedForms(of) ? of : ''
       const initial = !typed ? (startCharacter(start) || startCharacter(of)) : ''
       past = []; future = []; note = ''
       source = initial; startQuery = ''; startPicked = false
@@ -128,11 +132,11 @@
     startPicked = true
     const seq = ++startSeq
     const token = raw.trim()
-    const reviewed = rateFormsFor(token)
-    if (!again && reviewed.length && (whole !== token || chosen !== null)) change(parse(token, { open: true }).tree, null)
+    const reviewed = hasReviewedForms(token)
+    if (!again && reviewed && (whole !== token || chosen !== null)) change(parse(token, { open: true }).tree, null)
     const rev = draftRev
     const found = await read(c, { again })
-    if (seq !== startSeq || rev !== draftRev || disabled || reviewed.length) return
+    if (seq !== startSeq || rev !== draftRev || disabled || reviewed) return
     const list = variants(found).filter(v => v.tree)
     if (list.length && (whole !== list[0].text || chosen !== null)) change(list[0].tree, null)
   }
@@ -154,7 +158,7 @@
   const pending = $derived(gap ? t('form.ids.problem.empty', { n: gap.at(-1) + 1, name: name(partAt(tree, gap.slice(0, -1)).op) })
     : leaves(tree).some(leaf => !isComponent(leaf.char)) ? t('form.ids.problem.component') : '')
   const rootForms = $derived(rateFormsFor(whole))
-  const usable = $derived(!gap && !typed.problem && (isDescription(whole) || (isFigure(whole) && isComponent(whole))))
+  const usable = $derived(!gap && !typed.problem && (isDescription(whole) || whole === '幺' || (isFigure(whole) && isComponent(whole))))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
   const grass = $derived(chosen ? grassForm(picked, chosen, tree) : null)
   const text = part => part === null || part === undefined ? '' : write(part)
@@ -270,6 +274,12 @@
   // The descriptions a component can be split into, those the editor can read.
   const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
   const rateToken = $derived(chosen === null ? whole : text(picked))
+  const yaoSites = $derived(yaoOccurrences(rateToken))
+  function chooseYao(path, id) {
+    if (disabled || draftBlocked()) return
+    const next = parse(selectYao(rateToken, path, id), { open: true })
+    if (!next.problem && next.tree !== null) change(replaceAt(tree, chosen ?? [], next.tree), chosen)
+  }
   const rateForms = $derived(chosen === null ? rootForms : rateFormsFor(rateToken))
   // The picked part as its other figures, the bare character among them once it carries a selector.
   const figured = $derived.by(() => {
@@ -631,6 +641,7 @@
   {:else}
     {@const label = part === null ? t('form.ids.empty') : part}
     {@const partForms = formsFor(part)}
+    {@const yao = yaoDrawings.get(part)}
     <button type="button" class="ids-part" class:empty={part === null} class:chosen={selected} class:dragged class:carried
       class:over={overKind(path) === 'move'} class:swap={overKind(path) === 'swap'} aria-pressed={selected} aria-keyshortcuts="Space"
       data-path={pathKey(path)} data-hover-path={pathKey(path)} draggable={!disabled && path.length > 0} {disabled}
@@ -638,7 +649,7 @@
       aria-label={parent ? t('form.ids.part', { part: label, n: parent.n, name: name(parent.op) }) : label}
       onclick={() => choose(path)} oncontextmenu={event => { event.preventDefault(); openMenu(path, event.clientX, event.clientY) }}
       onkeydown={event => partKey(event, path)} ondragstart={event => startDrag(event, path)} ondragend={endDrag}
-      ondragover={event => dragover(event, path)} ondragleave={() => { overPath = null; overSwap = false }} ondrop={event => drop(event, path)}>{#if part === null}{EMPTY}{:else}<FigureText text={part} />{/if}</button>
+      ondragover={event => dragover(event, path)} ondragleave={() => { overPath = null; overSwap = false }} ondrop={event => drop(event, path)}>{#if part === null}{EMPTY}{:else if yao}<svg class="ids-yao-glyph" viewBox={yao.viewBox} aria-hidden="true"><path d={yao.d} /></svg>{:else}<FigureText text={part} />{/if}</button>
     {#if partForms.length}
       {@const isOpen = variantMenu !== null && samePath(variantMenu.path, path)}
       <button type="button" class="ids-forms-toggle" class:varied={isVaried(part)} {disabled}
@@ -774,6 +785,22 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
+  {#each yaoSites as site (site.path.join('.'))}
+    <fieldset class="ids-rate-forms ids-yao-forms">
+      <legend class="ids-title">{t('chips.forms')} · 幺 {yaoSites.length > 1 ? '[' + site.path.join(', ') + ']' : ''}</legend>
+      <div class="ids-rate-options">
+        {#each yaoFamily.forms as form (form.id)}
+          <button class="ids-rate-option" type="button" {disabled} data-yao={form.id}
+            aria-pressed={site.form === form.id} title={form.text} aria-label={form.text} onclick={() => chooseYao(site.path, form.id)}>
+            <svg viewBox={form.outline.viewBox} aria-hidden="true"><path d={form.outline.d} /></svg>
+          </button>
+        {/each}
+        {#if site.form}
+          <button class="ids-rate-option" type="button" {disabled} aria-label={t('form.ids.clear')} onclick={() => chooseYao(site.path, null)}>幺</button>
+        {/if}
+      </div>
+    </fieldset>
+  {/each}
   {#if rateForms.length}
     <fieldset class="ids-rate-forms">
       <legend class="ids-title">{t('chips.forms')} · {rateForms[0].host}</legend>
@@ -996,6 +1023,8 @@
   .ids-rate-forms{border:0;margin:0;padding:0;min-width:0}
   .ids-rate-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-width:11em;margin-top:4px}
   .ids-rate-option{display:grid;place-items:center;min-height:52px;padding:3px;font-size:14px;overflow-wrap:anywhere}
+  .ids-yao-glyph{width:1em;height:1em;fill:currentColor}
+  .ids-yao-forms .ids-rate-options{grid-template-columns:repeat(4,minmax(0,1fr));max-width:15em}
   .ids-rate-option svg{width:44px;height:44px;fill:currentColor}
   .rate-serif,:global(:root[data-typeface=serif]) .rate-sans{display:none}
   :global(:root[data-typeface=serif]) .rate-serif{display:inline}

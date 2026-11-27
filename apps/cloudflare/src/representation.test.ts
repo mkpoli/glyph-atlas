@@ -111,3 +111,10 @@ test('a part takes no variation selector, and a long form fits a request', () =>
   expect(formProblem(longest)).toBeNull();
   expect(longest.length).toBeLessThanOrEqual(FORM_TEXT_LONGEST);
 });
+
+test('writes a registered 幺 design as an atomic IDS and preserves each operand', () => {
+  expect(typed('&GW-u5e7a-j;')).toMatchObject({scheme:'ivs', value:'幺󠄀'})
+  expect(typed('&VR-5E7A-03;')).toMatchObject({scheme:'ids', value:'&VR-5E7A-03;'})
+  expect(typed('⿰𦃃⿳亠⿴{11}&GW-u5e7a-t;十')).toMatchObject({scheme:'ids', value:'⿰𦃃⿳亠⿴&X-00011;&VR-5E7A-02;十'})
+  expect(typed('⿰木&VR-unknown;')).toBe('component')
+})

@@ -14,12 +14,17 @@ only by BabelStone Han PUA's private-use glyph.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
 from .han_components import BINARY, TERNARY, UNARY
+
+YAO_SPELLINGS: dict[str, str] = json.loads(
+    (Path(__file__).resolve().parents[2] / "data/vocab/yao-spellings.json").read_text(encoding="utf-8")
+)
 
 TABLE = Path(__file__).resolve().parents[2] / "data" / "vocab" / "custom-parts.tsv"
 #: One part no code point names, in ids-input's grammar (src/core/custom.js): a number of up to four
@@ -30,7 +35,7 @@ PRIVATE = re.compile(r"[-]")
 IDENTIFIER = re.compile(r"&(X-[0-9]{5});")
 #: One unit of a description in its one spelling: a part written as its identifier, or one character
 #: with the variation selector it may carry.
-UNIT = re.compile(r"&X-[0-9]{5};|.[︀-️\U000E0100-\U000E01EF]?", re.DOTALL)
+UNIT = re.compile(r"&[A-Za-z][A-Za-z0-9+_-]{0,45};|.[︀-️\U000E0100-\U000E01EF]?", re.DOTALL)
 
 
 def _arity(char: str) -> int:
@@ -78,10 +83,12 @@ class Table:
         return key
 
     def unknown(self, text: str) -> list[str]:
-        return [token for token in TOKEN.findall(text) if self.identifier(token) is None]
+        return [token for token in TOKEN.findall(text) if token not in YAO_SPELLINGS and self.identifier(token) is None]
 
     def spelt(self, text: str) -> str:
         def written(found: re.Match[str]) -> str:
+            if found.group() in YAO_SPELLINGS:
+                return YAO_SPELLINGS[found.group()]
             key = self.identifier(found.group())
             if key is None:
                 return found.group()

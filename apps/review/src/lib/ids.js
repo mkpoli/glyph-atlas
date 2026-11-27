@@ -1,3 +1,6 @@
+import { units, yaoSpelling } from '../../../cloudflare/src/idsOperators.ts'
+import { customPart } from '../../../cloudflare/src/customParts.ts'
+
 // Ideographic description sequences as the form picker reads and writes them, by the rules of the
 // Worker's `representation.ts` and `glyph_atlas.representation`: each operator takes its own number of
 // descriptions, and a component is an ideograph, a radical, a stroke, a katakana letter standing for a
@@ -38,10 +41,11 @@ export const EMPTY = '⬚'
 /** Read as an empty slot too, as drafts were once written: ＋ reads as the component 十 in CJK text. */
 const EMPTY_READ = new Set([EMPTY, '＋'])
 
+const namedPart = text => Boolean(text && (yaoSpelling(text) || customPart(text)))
 const isSelector = char => char !== undefined && /^[︀-️\u{E0100}-\u{E01EF}]$/u.test(char)
 export const isComponent = char => {
   const point = char?.codePointAt(0)
-  return point !== undefined && COMPONENTS.some(([low, high]) => point >= low && point <= high)
+  return namedPart(char) || point !== undefined && COMPONENTS.some(([low, high]) => point >= low && point <= high)
 }
 /**
  * The letters and digits a draft may hold beyond a saved form's components, so the preview draws a
@@ -75,7 +79,7 @@ export const isLetter = char => {
 export const arity = char => ARITY.get(char) ?? 0
 
 /** Whether `text` is written as a description, which starts with an operator. */
-export const isSequence = text => arity([...text ?? ''][0]) > 0
+export const isSequence = text => arity([...text ?? ''][0]) > 0 || Boolean(yaoSpelling(text))
 
 /**
  * A description as a tree: a component is its text (with its selector), a node `{ op, parts }`.
@@ -90,7 +94,7 @@ export const isSequence = text => arity([...text ?? ''][0]) > 0
  * digits (`isLetter`), which the preview draws but no saved form names.
  */
 export function parse(text, { open = false } = {}) {
-  const chars = [...text ?? '']
+  const chars = units(text ?? '')
   if (open && !chars.length) return { tree: null }
   if (!chars.length || chars.length > LONGEST || (!open && !isSequence(text)) || /[\p{Cc}\p{Cf}\p{Z}]/u.test(text)) return { problem: 'character' }
   let at = 0
@@ -101,7 +105,7 @@ export function parse(text, { open = false } = {}) {
     if (!n) {
       if (open && EMPTY_READ.has(char)) return null
       if (!isComponent(char) && !(open && isLetter(char))) throw 'component'
-      return isSelector(chars[at]) ? char + chars[at++] : char
+      return !namedPart(char) && isSelector(chars[at]) ? char + chars[at++] : char
     }
     return { op: char, parts: Array.from({ length: n }, read) }
   }
@@ -126,7 +130,8 @@ export const ALIASES = {
 const ALIAS = new RegExp(Object.keys(ALIASES).join('|'), 'g')
 /** `text` with the ASCII operator names in it written as operators. A run of capitals is read in
  *  pairs from the left (LLR is ⿲R); a run in any case is read when it is made of names only (lr, Ud). */
-export const unalias = text => (text ?? '').replace(/[A-Za-z]+/g, run => {
+export const unalias = text => (text ?? '').replace(/&[A-Za-z][A-Za-z0-9+_-]*;|[A-Za-z]+/g, run => {
+  if (run.startsWith('&')) return run
   const upper = run.toUpperCase()
   if (upper.length % 2 === 0 && upper.match(/../g).every(name => name in ALIASES)) return upper.replace(ALIAS, name => ALIASES[name])
   return run === upper ? run.replace(ALIAS, name => ALIASES[name]) : run
@@ -140,6 +145,10 @@ export function descriptionEnd(chars, at = 0) {
   const char = chars[at]
   if (char === undefined) return -1
   const n = arity(char)
+  if (!n && (char === '&' || char === '{')) {
+    const first = units(chars.slice(at, at + 48).join(''))[0]
+    return namedPart(first) ? at + first.length : -1
+  }
   if (!n) return isComponent(char) ? (isSelector(chars[at + 1]) ? at + 2 : at + 1) : -1
   let end = at + 1
   for (let k = 0; k < n && end >= 0; k++) end = descriptionEnd(chars, end)
@@ -267,7 +276,7 @@ export function swapParts(tree, from, to) {
 export function tokenize(text) {
   if (!text) return []
   if (parse(text, { open: true }).problem) return []
-  const chars = [...text]
+  const chars = units(text)
   const out = []
   let ci = 0, offset = 0
   function read(path) {

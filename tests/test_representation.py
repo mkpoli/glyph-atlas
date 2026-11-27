@@ -113,3 +113,13 @@ def test_a_part_takes_no_variation_selector_and_a_long_form_fits_a_request():
     assert representation.typed("⿱⿵𠆢一木︀").value == "⿱&X-00087;木︀"
     longest = "⿰" * 31 + "&X-00087;" * 32
     assert representation.described(longest) and len(longest) <= representation.TEXT_LONGEST
+
+
+def test_written_yao_forms_preserve_each_operand():
+    assert representation.typed("&GW-u5e7a-j;") == Representation("ivs", "幺󠄀")
+    assert representation.typed("&VR-5E7A-03;") == Representation("ids", "&VR-5E7A-03;")
+    text = "⿰𦃃⿳亠⿴&X-00011;&VR-5E7A-02;十"
+    assert representation.typed("⿰𦃃⿳亠⿴{11}&GW-u5e7a-t;十") == Representation("ids", text)
+    assert representation.written("水" + text + "木") == ["水", text, "木"]
+    with pytest.raises(ValueError):
+        representation.typed("⿰木&VR-unknown;")

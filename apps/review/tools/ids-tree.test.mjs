@@ -152,3 +152,11 @@ describe('operator keys', () => {
     expect(Object.values(CODES).sort()).toEqual(Object.values(KEYS).sort())
   })
 })
+
+it('keeps each named 幺 and numbered operand together at its UTF-16 path', () => {
+  const text = '⿰𦃃⿳亠⿴{11}&VR-5E7A-02;十'
+  expect(write(tree(text))).toBe(text)
+  const part = tokenize(text).find(t => t.path.join('.') === '1.1.1')
+  expect(text.slice(part.start, part.end)).toBe('&VR-5E7A-02;')
+  expect(parse('⿱&VR-missing;木').problem).toBe('component')
+})

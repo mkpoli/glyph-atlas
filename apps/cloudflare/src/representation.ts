@@ -11,7 +11,7 @@
 import { MOJI_JOHO } from './compatibilityData';
 import { customPart, spelt, unknownParts } from './customParts';
 import { DRAWN, DRAWN_NAMESPACE, DRAWN_VERSION } from './drawnFormsData';
-import { arity, units } from './idsOperators';
+import { arity, units, yaoSpelling } from './idsOperators';
 
 export const FORM_LONGEST = 64;
 /** The longest text a request may name a form with: every component a part's identifier, nine code
@@ -22,7 +22,7 @@ export const FORM_TEXT_LONGEST = 10 * FORM_LONGEST;
 const COMPONENTS: [number, number][] = [[0x2E80, 0x2FDF], [0x30A1, 0x30FA], [0x31C0, 0x31EE], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],
   [0xE000, 0xF8FF], [0xF900, 0xFAFF], [0xFF1F, 0xFF1F], [0x20000, 0x3FFFD], [0xF0000, 0x10FFFD]];
 const component = (c: string) => {
-  if (c.length > 2) return customPart(c) === c.slice(1, -1);
+  if (c.length > 2) return Boolean(yaoSpelling(c)) || customPart(c) === c.slice(1, -1);
   const n = c.codePointAt(0)!;
   return COMPONENTS.some(([low, high]) => n >= low && n <= high);
 };
@@ -30,7 +30,7 @@ const selector = (c: string | undefined) => c !== undefined && /^[︀-️\u{E010
 // One character: one base, and after it only combining marks and variation selectors, as Python counts it.
 const single = (value: string) => /^\P{M}[\p{M}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]*$/u.test(value);
 /** Whether a value is written as a description, which starts with an operator. */
-export const isSequence = (value: string) => arity([...value][0] ?? '') > 0;
+export const isSequence = (value: string) => arity([...value][0] ?? '') > 0 || Boolean(yaoSpelling(value));
 /** The characters and descriptions a text names one after another: a description ends where its
  *  operators are satisfied, so 說⿰月兊説 names three. What follows a description cut short, or one
  *  longer than a form may be, is left out. */
