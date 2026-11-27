@@ -94,6 +94,9 @@ context_messages = 120
 backfill_messages = 200
 min_confidence = 0.7
 max_issues_per_day = 5
+# Feedback about the community's sites and tools is filed without anyone asking, at most three of
+# the day's issues.
+file_feedback = true
 room_cooldown_seconds = 60
 call_window_seconds = 86400
 max_rooms = 200
