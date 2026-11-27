@@ -755,6 +755,19 @@ def review_neighbour_agreement(
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
+@review_app.command("agreed-marks")
+def review_agreed_marks(
+    similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
+    mirror: Annotated[Path, typer.Option(help="v3 migration mirror mapping source ids to crops")] = Path("work/atlas-v3/out/mirror.sqlite"),
+    atlas: Annotated[Path, typer.Option(help="local copy of the site's database, for each crop's label, 字種, book and state")] = Path("work/atlas-v3/out/atlas.sqlite"),
+    k: Annotated[int, typer.Option(help="nearest crops of the 字種 a written form is judged by")] = 10,
+) -> None:
+    """Mark the pending crops agreed on character and written form, and those whose neighbours carry another form."""
+    from .review import agreed_marks
+
+    typer.echo(json.dumps(agreed_marks.run(similar.resolve(), mirror=mirror, atlas=atlas, k=k), ensure_ascii=False))
+
+
 @review_app.command("written-forms")
 def review_written_forms(
     similar: Annotated[Path, typer.Option(help="similar-crop index revision (`atlas similar index`)")] = Path("work/similar/current"),
