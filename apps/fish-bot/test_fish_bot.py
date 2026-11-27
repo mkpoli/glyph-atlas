@@ -4453,13 +4453,21 @@ def test_non_additive_compendium_tools_can_toggle_without_hitting_repeat_cache(t
 
 def test_compendium_writes_stamp_bot_agent_and_hide_it_from_model(tmp_path, monkeypatch):
     server = FakeCompendium()
+    agent_prop = {"type": "object", "properties": {"harness": {"type": "string"}, "model": {"type": "string"}}}
     server_tools = [
-        *COMPENDIUM_TOOLS,
+        COMPENDIUM_TOOLS[0],
+        COMPENDIUM_TOOLS[1],
+        {"name": "add_sighting", "description": "Add evidence", "annotations": {"readOnlyHint": False},
+         "inputSchema": {"type": "object", "required": ["record", "agent"], "properties": {
+             "record": {"type": "string"}, "url": {"type": "string"}, "agent": agent_prop,
+         }}},
         {"name": "edit_record", "description": "Edit a record", "annotations": {"readOnlyHint": False},
          "inputSchema": {"type": "object", "required": ["record", "rev", "agent"], "properties": {
-             "record": {"type": "string"},
-             "rev": {"type": "integer"},
-             "agent": {"type": "object", "properties": {"harness": {"type": "string"}, "model": {"type": "string"}}},
+             "record": {"type": "string"}, "rev": {"type": "integer"}, "agent": agent_prop,
+         }}},
+        {"name": "set_hidden", "description": "Hide or unhide", "annotations": {"readOnlyHint": False},
+         "inputSchema": {"type": "object", "required": ["record", "hidden", "agent"], "properties": {
+             "record": {"type": "string"}, "hidden": {"type": "boolean"}, "agent": agent_prop,
          }}},
     ]
     orig = server.__call__
@@ -4476,7 +4484,11 @@ def test_compendium_writes_stamp_bot_agent_and_hide_it_from_model(tmp_path, monk
     agent = fish_bot._compendium_agent("大肥魚", "gemini-4-hydrogen")
     assert agent == {"harness": "大肥魚", "model": "Gemini 4 Hydrogen"}
     assert fish_bot._agent_model_name("gemini-2.5-flash") == "Gemini 2.5 Flash"
+    assert fish_bot._agent_model_name("models/gemini-4-hydrogen") == "Gemini 4 Hydrogen"
+    assert fish_bot._agent_model_name("gemini--4") == "Gemini 4"
     assert fish_bot._agent_model_name("Gemini 4 Hydrogen") == "Gemini 4 Hydrogen"
+    assert fish_bot._agent_model_name("   ") == ""
+    assert len(fish_bot._clean_agent_label("🐳" * 60).encode("utf-16-le")) // 2 == 80
 
     compendium = fish_bot.Compendium("https://rare.example/mcp", store, agent=agent)
     lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False, compendium=compendium)
@@ -4496,11 +4508,38 @@ def test_compendium_writes_stamp_bot_agent_and_hide_it_from_model(tmp_path, monk
     sent_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
     assert sent_args["agent"] == {"harness": "大肥魚", "model": "Gemini 4 Hydrogen"}
 
-    # Tools whose schema does not declare agent are left untouched.
+    # Dedupe ignores the stamped agent so changing model or display name does not re-add within 24h.
+    assert "result" in lookup.run("rare_add_sighting", {"record": "R+0009", "url": "https://example.com/1"})
+    compendium.agent = fish_bot._compendium_agent("大肥魚", "gemini-5-helium")
+    again = lookup.run("rare_add_sighting", {"record": "R+0009", "url": "https://example.com/1"})
+    assert "already_added" in again
+
+    # Moderator write tools also receive the stamped agent.
+    assert "result" in lookup.run("rare_set_hidden", {"record": "R+0009", "hidden": True})
+    mod_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
+    assert mod_args["agent"] == {"harness": "大肥魚", "model": "Gemini 5 Helium"}
+
+    # Read-only tools without an agent property are left untouched.
     assert "result" in lookup.run("rare_get_record", {"record": "9"})
     get_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
     assert "agent" not in get_args
-    assert "result" in lookup.run("rare_add_sighting", {"record": "9"})
-    sighting_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
-    assert "agent" not in sighting_args
+
+    # Without configured agent metadata, the parameter stays visible and passes through.
+    plain = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                            compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    plain.offer_compendium, plain.may_write, plain.caller, plain.here = True, True, "@asker:example", ROOM
+    plain_edit = {t["name"]: t for t in plain.specs()}["rare_edit_record"]["parameters"]
+    assert "agent" in plain_edit["properties"] and "agent" in plain_edit["required"]
+    assert "result" in plain.run("rare_edit_record", {"record": "9", "rev": 2, "agent": {"harness": "Custom"}})
+    plain_args = [params["arguments"] for method, params, _ in server.requests if method == "tools/call"][-1]
+    assert plain_args["agent"] == {"harness": "Custom"}
+
+    # Bot.__init__ wires display_name and gemini_model into Compendium.agent.
+    bot = fish_bot.Bot(
+        fish_bot.Config(compendium_endpoint="https://rare.example/mcp", display_name="大肥魚", gemini_model="gemini-4-hydrogen"),
+        store, FakeMatrix(), FakeGemini(),
+    )
+    assert bot.lookup is not None and bot.lookup.compendium is not None
+    assert bot.lookup.compendium.agent == {"harness": "大肥魚", "model": "Gemini 4 Hydrogen"}
+
 

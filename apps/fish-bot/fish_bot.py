@@ -3797,9 +3797,26 @@ def _function_schema(schema: Any) -> dict[str, Any]:
     return out
 
 
+def _clean_agent_label(text: str, limit: int = 80) -> str:
+    """Normalize and cap an agent attribution label to the compendium's UTF-16 length limit."""
+    cleaned = "".join(ch for ch in unicodedata.normalize("NFC", text) if unicodedata.category(ch) not in ("Cc", "Cf"))
+    cleaned = " ".join(cleaned.split()).strip()
+    out: list[str] = []
+    units = 0
+    for ch in cleaned:
+        step = 2 if ord(ch) > 0xFFFF else 1
+        if units + step > limit:
+            break
+        out.append(ch)
+        units += step
+    return "".join(out).strip()
+
+
 def _agent_model_name(model: str) -> str:
     """Turn a lowercase hyphenated model id such as 'gemini-4-hydrogen' into 'Gemini 4 Hydrogen'."""
     slug = " ".join(model.split()).strip()
+    if slug.startswith("models/"):
+        slug = slug.removeprefix("models/").strip()
     if not slug:
         return ""
     if re.fullmatch(r"[a-z0-9][a-z0-9.-]*", slug):
@@ -3809,11 +3826,11 @@ def _agent_model_name(model: str) -> str:
 
 def _compendium_agent(display_name: str, model: str) -> dict[str, str]:
     """The agent attribution object sent on 珍字集覽 writes: the bot's own name and model."""
-    harness = " ".join(display_name.split()).strip()[:80]
+    harness = _clean_agent_label(display_name)
     if not harness:
         return {}
     agent = {"harness": harness}
-    label = _agent_model_name(model)[:80]
+    label = _clean_agent_label(_agent_model_name(model))
     if label:
         agent["model"] = label
     return agent
@@ -4028,14 +4045,15 @@ class Lookup:
         self.compendium.tools()
         if name in COMPENDIUM_MODERATOR_TOOLS and not self.may_write:
             return {"error": "moderator tools on 珍字集覽 are only available when someone asks you directly"}
-        if self.compendium.agent and self.compendium.takes_agent(name):
-            args = {**args, "agent": dict(self.compendium.agent)}
         if self.compendium.writes(name):
             hour_ago = now_ms() - 3_600_000
             if not self.may_write:
                 return {"error": "you may add to or change 珍字集覽 only when someone asks you to"}
+            dedupe_args = {key: value for key, value in args.items() if key != "agent"}
+            key = hashlib.sha256(f"{name} {json.dumps(dedupe_args, ensure_ascii=False, sort_keys=True)}".encode()).hexdigest()
+            if self.compendium.agent and self.compendium.takes_agent(name):
+                args = {**args, "agent": dict(self.compendium.agent)}
             written = json.dumps(args, ensure_ascii=False, sort_keys=True)
-            key = hashlib.sha256(f"{name} {written}".encode()).hexdigest()
             if name in COMPENDIUM_DEDUPE_TOOLS:
                 done = self.store.compendium_done(key, now_ms() - COMPENDIUM_REPEAT_HOURS * 3_600_000)
                 if done is not None:
