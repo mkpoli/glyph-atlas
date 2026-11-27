@@ -21,6 +21,7 @@
   import { page } from '$app/state'
   import { t, withText, formatNumber, localize } from '../lib/i18n.svelte.js'
   import { characterAddress, graphemeAddress } from '../lib/addresses.js'
+  import { roundAddress } from '../lib/reviewRounds.js'
   import { runAddress } from '../lib/ngrams.js'
   import { originTitle } from '../lib/origin.js'
   import { familyCodeSet } from '../lib/forms.js'
@@ -242,6 +243,7 @@
       <span>{#if whole}<ScriptLine line={{ ...withText('cite.label.grapheme', 'char', { char: card.char, codePoint: card.code_point }), ...labelParts(card.char) }} />{:else}<ScriptText text={card.char} script={card.script} />{/if}</span>
       {#if formsFamily}<a class="forms-link" href={localize('/forms/' + formsFamily)}>{t('nav.forms')} →</a>{/if}
       {#if card.code_point}<a class="forms-link" href={localize(chronologyAddress(card.code_point, { scope: whole ? 'grapheme' : '' }))}>{t('nav.chronology')} →</a>{/if}
+      {#if grapheme?.code_point}<a class="forms-link" href={localize(roundAddress(grapheme.code_point))}>{t('nav.quickReview')} →</a>{/if}
       {#if entry}<Cite {entry} class="cite-link" />{/if}
       {#if !whole && card.candidates?.known && matchesLabel(card.candidates)}<small>{matchesLabel(card.candidates)}</small>{/if}
     </div>

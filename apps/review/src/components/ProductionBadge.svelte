@@ -17,12 +17,12 @@
 </script>
 
 <script>
-  let { item = null } = $props()
+  let { item = null, hideUnknown = false } = $props()
   const kind = $derived(productionKind(item))
   const label = $derived(productionLabel(item) ?? t('production.kind.unknown'))
 </script>
 
-<span class="production-badge" data-production={kind} aria-label={t('production.aria', { label })}>{label}</span>
+{#if !(hideUnknown && kind === 'unknown')}<span class="production-badge" data-production={kind} aria-label={t('production.aria', { label })}>{label}</span>{/if}
 
 <style>
   .production-badge{display:inline-block;font-size:10px;line-height:1.5;font-weight:400;white-space:nowrap;color:var(--muted);letter-spacing:.01em}

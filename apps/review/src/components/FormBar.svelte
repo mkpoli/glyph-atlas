@@ -10,18 +10,19 @@
   import { CROP_STYLES } from '../lib/cropStyle.js'
   import { t } from '../lib/i18n.svelte.js'
   let { count = 0, forms = [], grapheme = '', busy = false, error = '', done = null, style = $bindable(null),
-    onassign, onstyle, onclear, onundo, ondismiss } = $props()
+    onconfirm = null, onassign, onstyle, onclear, onundo, ondismiss } = $props()
   let query = $state(''), target = $state('')
 </script>
 
 <div class="form-bar" role="region" aria-label={t('bulk.label')}>
   {#if done}
-    <span class="form-done" role="status">{#if done.kind !== 'style'}{t('bulk.done', { count: done.count, char: done.char })}{#if done.kept}{' · '}{t('bulk.kept', { count: done.kept })}{/if}{/if}{#if done.styled?.length}{done.kind !== 'style' ? ' · ' : ''}{t('bulk.styled', { count: done.styled.length, style: t(`style.kind.${done.style}`) })}{/if}</span>
+    <span class="form-done" role="status">{#if done.kind === 'confirm'}{t('bulk.confirmed', { count: done.count })}{:else if done.kind !== 'style'}{t('bulk.done', { count: done.count, char: done.char })}{#if done.kept}{' · '}{t('bulk.kept', { count: done.kept })}{/if}{/if}{#if done.styled?.length}{done.kind !== 'style' ? ' · ' : ''}{t('bulk.styled', { count: done.styled.length, style: t(`style.kind.${done.style}`) })}{/if}</span>
     <button class="quiet" disabled={busy} onclick={onundo}>{t('bulk.undo')}</button>
     {#if !count}<button class="quiet" onclick={ondismiss} aria-label={t('bulk.dismiss')}>×</button>{/if}
   {/if}
   {#if count}
     <b class="selection-count">{t('bulk.selected', { count })}</b>
+    {#if onconfirm}<button type="button" class="primary bulk-confirm" disabled={busy} onclick={onconfirm} title={t('bulk.looksRight.about')}><span aria-hidden="true">✓</span> {t('bulk.looksRight')}</button>{/if}
     <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: graphemeLabel(grapheme) })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
     <div class="form-assign">
       <CharacterSearch compact bind:value={query} label={t('bulk.character.label')} placeholder={t('bulk.character.placeholder')}
@@ -43,7 +44,9 @@
 <style>
   .form-bar{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 14px;
     background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px var(--shadow-menu);font-size:13px}
-  .selection-count{font-weight:600;white-space:nowrap}
+  .selection-count{font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .bulk-confirm{white-space:nowrap;min-width:0;gap:7px;justify-content:center;padding:8px 14px;font-size:12px}
+  .bulk-confirm span{font-size:13px}
   .form-assign{display:flex;align-items:center;gap:8px;flex:1 1 280px;min-width:0}
   .form-assign :global(.character-search){flex:1;min-width:0}
   .form-assign button{white-space:nowrap}
