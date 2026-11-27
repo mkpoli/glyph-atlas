@@ -9,7 +9,8 @@
   // The preview only shows: a sequence with an empty slot is never saved (`IdsComposer`).
   import { fade } from 'svelte/transition'
   import { composerDrawer } from '../lib/composer/config.js'
-  import { tooLarge } from 'han-compose'
+  import { composerText } from '../lib/composer/parts.js'
+  import { parseDescription, tooLarge } from 'han-compose'
   import { FACE, STROKE, badge, placeholder } from '../lib/composer/preview.js'
   import { roughLayout } from '../lib/composer/rough.js'
   import { OP_NAMES, leaves, loadDrawing, samePath, EMPTY } from '../lib/ids.js'
@@ -42,24 +43,35 @@
         shown = { key: ++shownCount, url }
         step = 'final'
       })
-      composerDrawer().draw(text, sketch => { if (live) sketched = { text, leaves: sketch } }).then(answer => {
-        if (!live || final) return
+      // A part no code point names is drawn by its drawing, or as an empty slot where it has none (`parts.js`); a
+      // table that cannot be read fails without the composer. The drawing can make the description too large to compose.
+      composerText(text).catch(() => null).then(drawable => {
+        if (!live) return null
+        if (drawable === null) return { status: 'failed' }
+        const expanded = drawable === text ? null : (() => { try { return parseDescription(drawable) } catch { return null } })()
+        if (expanded && tooLarge(expanded)) return { status: 'capped' }
+        return composerDrawer().draw(drawable, sketch => { if (live) sketched = { text, leaves: sketch } })
+      }).then(answer => {
+        if (!answer || !live || final) return
         if (answer.status === 'composed') { shown = { key: ++shownCount, drawn: answer.drawn, text }; step = 'composed' }
-        else { shown = null; step = 'failed' }
+        else { shown = null; step = answer.status === 'capped' ? 'capped' : 'failed' }
       })
     }, 150)
     return () => { live = false; clearTimeout(timer); composerDrawer().cancel() }
   })
 
-  const said = $derived(badge(step, shown?.drawn))
+  // An operator the composer only approximates is named where the reader wrote it: one inside a part's
+  // drawing (`parts.js`) is not theirs to change.
+  const said = $derived(badge(step, shown?.drawn && { ...shown.drawn, approximate: (shown.drawn.approximate ?? []).filter(op => (shown.text ?? '').includes(op)) }))
   // The badge says it in a word; its note, in a line under the preview and on hover.
   const NOTES = { approximate: 'form.ids.preview.approximateNote', failed: 'form.ids.preview.failedNote', tooLarge: 'form.ids.preview.tooLargeNote' }
   const noted = $derived(said.label in NOTES)
   // The operators named in words: their characters are too new for most fonts to show.
   const named = $derived(said.params.ops ? { ops: said.params.ops.split(' ').map(op => t(`form.ids.op.${OP_NAMES[op]}`)).join(' · ') } : {})
   const note = $derived(t(NOTES[said.label] ?? `form.ids.preview.${said.label}`, named))
-  // The placeholders shown in place of a drawing: where the layout puts each part, else even shares.
-  const boxes = $derived(sketched?.text === sequence && !capped ? sketched.leaves : even)
+  // The placeholders shown in place of a drawing: where the layout puts each part, else even shares. A part
+  // drawn from several characters (`parts.js`) gives the layout more leaves than the tree, which keeps even shares.
+  const boxes = $derived(sketched?.text === sequence && sketched.leaves.length === parts.length && !capped ? sketched.leaves : even)
   // Whether the part at a leaf lies in the part being edited.
   const inChosen = index => Boolean(chosen && parts[index] && (samePath(parts[index].path, chosen)
     || parts[index].path.length > chosen.length && chosen.every((x, i) => x === parts[index].path[i])))

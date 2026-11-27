@@ -7,15 +7,21 @@ composer draws in its place. The file is fetched at a pinned commit and checked 
 
     uv run scripts/build_custom_parts.py
 
-Writes data/vocab/custom-parts.tsv, which `glyph_atlas.custom_parts` reads, and
-apps/cloudflare/src/customPartsData.ts, which the Worker reads.
+Reads data/vocab/custom-part-donors.tsv, the drawing chosen for each part. Writes
+data/vocab/custom-parts.tsv, which `glyph_atlas.custom_parts` reads,
+apps/cloudflare/src/customPartsData.ts, which the Worker reads, and
+apps/review/src/lib/customPartDrawings.js, which the site's composer reads, with the forms that are exactly a
+character's description in BabelStone IDS or CHISE IDS.
 """
 
 from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
+import re
+import tarfile
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
@@ -27,6 +33,15 @@ SHA256 = "22c430de0326d61d05cd868341acecadd320fa2528dd2e1f7f734cc099d50d3f"
 CACHE = ROOT / "cache" / "ids-input" / f"custom-components-{COMMIT[:12]}.json.gz"
 TABLE = ROOT / "data" / "vocab" / "custom-parts.tsv"
 MODULE = ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts"
+DRAWINGS = ROOT / "apps" / "review" / "src" / "lib" / "customPartDrawings.js"
+#: What the composer draws a part with, where a choice was made (scripts/part_donor_candidates.py).
+DONORS = ROOT / "data" / "vocab" / "custom-part-donors.tsv"
+#: The parts the site's composer holds cuts of, in the han-compose package the review app pins.
+COMPOSER_CUTS = ROOT / "apps" / "review" / "node_modules" / "han-compose" / "data" / "custom-forms.json.gz"
+COMPOSER_NUMBERED = COMPOSER_CUTS.with_name("numbered-sans-outlines.json.gz")
+#: The IDS tables ids-input bundles, at the same commit: what characters hold each part, and which character a
+#: description in parts is.
+TABLES = {"babelstone": "data/babelstone-ids.tsv.gz", "chise": "data/ids-corpus-sources.tar.gz"}
 #: Numbered parts whose fragment is ids-input's reading, not BabelStone's note 6 (its build_open_ids.mjs).
 EDITORIAL = {"{12}", "{82}"}
 _SETTLED: dict[int, tuple[dict[str, str], dict[str, list[str]]]] = {}
@@ -169,7 +184,7 @@ def module(data: dict) -> str:
     for key, names, *_ in rows(data):
         for name in names:
             named.setdefault(name, key)
-    drawn = {key: draws for key, _, draws, *_ in rows(data) if draws}
+    drawn = {key: kept for key, _, draws, approximate, *_ in rows(data) if (kept := [draw for draw in draws if draw not in approximate])}
     spelling, folds = _spellings(data)
     folded = {text: key for key, texts in folds.items() for text in texts}
     return (
@@ -180,8 +195,8 @@ def module(data: dict) -> str:
         f"export const CUSTOM_PART_RETIRED: Record<string, string> = {json.dumps(dict(retired(data)), separators=(',', ':'))};\n"
         "/** Every identifier in use. */\n"
         f"export const CUSTOM_PARTS: readonly string[] = {json.dumps([key for key, *_ in rows(data)], separators=(',', ':'))};\n"
-        "/** What a composer may draw in a part's place, in ids-input's order: descriptions, some with the private-use\n"
-        " *  glyph of BabelStone Han PUA that alone draws 69 numbered parts. */\n"
+        "/** What a composer may draw in a part's place, in ids-input's order, less those that are close only: descriptions,\n"
+        " *  some with the private-use glyph of BabelStone Han PUA that alone draws 69 numbered parts. */\n"
         f"export const CUSTOM_PART_DRAWN: Record<string, string[]> = {json.dumps(drawn, ensure_ascii=False, separators=(',', ':'))};\n"
         "/** The description a part ids-input knows only as one is written as. */\n"
         f"export const CUSTOM_PART_SPELLING: Record<string, string> = {json.dumps(spelling, ensure_ascii=False, separators=(',', ':'))};\n"
@@ -190,10 +205,127 @@ def module(data: dict) -> str:
     )
 
 
+def bundled(path: str) -> bytes:
+    """A file of ids-input at the pinned commit, from the cache when present."""
+    cache = ROOT / "cache" / "ids-input" / f"{COMMIT[:12]}-{Path(path).name}"
+    if not cache.exists():
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(f"https://raw.githubusercontent.com/mkpoli/ids-input/{COMMIT}/{path}", timeout=60) as answer:
+            cache.write_bytes(answer.read())
+    return cache.read_bytes()
+
+
+def descriptions() -> list[tuple[str, str, str]]:
+    """Every (character, description, table) of BabelStone IDS and CHISE IDS."""
+    found = []
+    for line in gzip.decompress(bundled(TABLES["babelstone"])).decode().splitlines():
+        if line.startswith("#"):
+            continue
+        char, _, rest = line.partition("\t")
+        found += [(char, re.sub(r"\(.*$", "", text), "babelstone") for text in rest.split()]
+    with tarfile.open(fileobj=io.BytesIO(bundled(TABLES["chise"]))) as tar:
+        for member in tar.getmembers():
+            if not re.fullmatch(r"IDS-UCS-.*\.txt", member.name):
+                continue
+            for line in tar.extractfile(member).read().decode().splitlines():  # type: ignore[union-attr]
+                cols = line.split("\t")
+                if len(cols) >= 3 and not line.startswith(";"):
+                    # A description may come as `@apparent=…`, the shape as drawn, and carry source tags (`[J]`).
+                    found += [(cols[1], re.sub(r"\[[A-Z]+\]", "", text.removeprefix("@").removeprefix("apparent=")), "chise")
+                              for text in cols[2:]]
+    return found
+
+
+def characters() -> dict[str, str]:
+    """Each saved form that is exactly how BabelStone IDS or CHISE IDS describe one character, with that character:
+    `⿱⿰&X-00067;犬灬` is 黙. The site draws such a form, or such a piece of a form, as the character's own glyph,
+    as the composer draws ⿰女子 as 好. A form two characters share is left out. Reads the table just written."""
+    from glyph_atlas import custom_parts
+
+    custom_parts.table.cache_clear()
+    written = custom_parts.table()
+    found: dict[str, set[str]] = defaultdict(set)
+    for char, text, _ in descriptions():
+        if len(char) != 1 or not custom_parts.TOKEN.search(text) or written.unknown(text):
+            continue
+        form = written.spelt(text)
+        # Only operators, encoded characters and identifiers: a part spelt otherwise, a private-use glyph or ？ is none.
+        if (custom_parts.IDENTIFIER.search(form) and custom_parts._arity(form[0])
+                and all(custom_parts.IDENTIFIER.fullmatch(token) for token in custom_parts.TOKEN.findall(form))
+                and not custom_parts.PRIVATE.search(form) and custom_parts.UNWRITTEN not in form):
+            found[form].add(char)
+    return {form: next(iter(chars)) for form, chars in sorted(found.items()) if len(chars) == 1}
+
+
+def donors() -> dict[str, str]:
+    """The drawing chosen for each part that has one, empty where every candidate drew badly."""
+    chosen: dict[str, str] = {}
+    for line in DONORS.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            key, drawing, *_ = line.split("\t")
+            chosen[key] = drawing
+    return chosen
+
+
+def composer_cuts() -> set[str]:
+    """The parts the site's composer holds a cut of, from a real glyph, in its sans face: han-compose's custom
+    forms by name (`&CDP-8CB8;`), and its numbered outlines by BabelStone Han PUA character."""
+    for path in (COMPOSER_CUTS, COMPOSER_NUMBERED):
+        if not path.exists():
+            raise SystemExit(f"{path} is missing: run `bun install` in apps/review")
+    return set(json.loads(gzip.decompress(COMPOSER_CUTS.read_bytes()))["forms"]["sans"]) \
+        | set(json.loads(gzip.decompress(COMPOSER_NUMBERED.read_bytes()))["records"])
+
+
+def composer_names(data: dict) -> dict[str, str]:
+    """What the site's composer (han-compose) is given in place of each part a form may hold, the first that
+    applies: a name of the part the composer holds a cut of, from a real glyph (`&CDP-8CB8;`); the drawing chosen
+    for it in `custom-part-donors.tsv`, which composed well in the characters tried, their own glyphs excluded
+    (a description, a cut from another character, a single character the tables confirm the part as, or
+    BabelStone's own private-use glyph of the part, which the composer holds an outline of). Any other part has
+    none, and a form holding it shows as text."""
+    from glyph_atlas import custom_parts
+
+    spelling, _ = _spellings(data)
+    live = {key for key, *_ in rows(data)} - set(spelling)
+    cuts = composer_cuts()
+    chosen = donors()
+    names: dict[str, list[str]] = defaultdict(list)
+    for component in data["components"]:
+        if component.get("id") in live:
+            names[component["id"]].append(component["text"])
+    named: dict[str, str] = {}
+    for key in sorted(live):
+        drawing = chosen.get(key, "")
+        if drawing and drawing not in cuts and (custom_parts.TOKEN.search(drawing) or custom_parts.PRIVATE.search(drawing)
+                                                or custom_parts.UNWRITTEN in drawing):
+            raise SystemExit(f"{DONORS}: {key} is drawn with {drawing}, which is not in encoded characters only")
+        found = next((name for name in names[key] if name in cuts), None) or drawing
+        if found:
+            named[key] = found
+    return named
+
+
+def drawings(data: dict) -> str:
+    same = characters()
+    return (
+        "// Written by scripts/build_custom_parts.py from ids-input's table of parts no code point names; do not edit.\n"
+        "/** What the composer is given in place of a part a saved form may hold (`&X-00087;`): a name of the part it holds\n"
+        " *  a cut of, or the drawing chosen for it (data/vocab/custom-part-donors.tsv). A part not listed has none: its\n"
+        " *  form is text. */\n"
+        f"export default {json.dumps(composer_names(data), ensure_ascii=False, separators=(',', ':'))}\n"
+        "/** Each form that is exactly how BabelStone IDS or CHISE IDS describe one character, with that character: the\n"
+        " *  composer draws such a form, or such a piece of one, as the character's own glyph. */\n"
+        f"export const characters = {json.dumps(same, ensure_ascii=False, separators=(',', ':'))}\n"
+    )
+
+
 def main() -> int:
     data = fetched()
     TABLE.write_text(table(data), encoding="utf-8")
     MODULE.write_text(module(data), encoding="utf-8")
+    DRAWINGS.write_text(drawings(data), encoding="utf-8")
+    same = characters()
     from glyph_atlas import custom_parts
 
     found = rows(data)
@@ -202,7 +334,8 @@ def main() -> int:
     print(f"{len(found)} parts, {encoded} drawn in encoded characters, {sum(1 for row in found if row[2]) - encoded} only with a "
           f"private-use glyph, {sum(len(row[1]) for row in found)} names, {len(retired(data))} retired; "
           f"{len(spelling)} written as their description, {sum(map(len, folds.values()))} descriptions written as "
-          f"{len(folds)} named parts")
+          f"{len(folds)} named parts; the composer is given {len(composer_names(data))} of them, and {len(same)} forms as the "
+          f"character they describe")
     return 0
 
 

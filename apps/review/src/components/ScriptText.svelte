@@ -20,6 +20,9 @@
   // The font can differ with the face the reader chose, so the part carries one for each, and a
   // sequence no font maps keeps the fonts around it. A description shown as text sets each part
   // that is a figure the same way.
+  // A part no code point names (`&X-00087;`) in a description shown as text is drawn inline, the size of
+  // a character beside it, where it has a drawing; it keeps its identifier inside, so a selection copies
+  // the text, and one with no drawing stays its identifier.
   // A drawn form is set in the site's own font, the only one with a glyph at its code point: its sans
   // cut or its serif one, with the face the reader chose.
   // `simplified` is a 简体字 that ends a grapheme's label (`labelParts`), drawn the Chinese way.
@@ -34,6 +37,13 @@
   // Bumped as a drawing loads, so the parts read the cache again.
   let loaded = $state(0)
   const drawings = $derived((void loaded, parts.map(part => part.described ? drawn(part.text) || paintedDrawing(part.text) || null : null)))
+  const PART = /^&X-[0-9]{5};$/
+  const pieces = part => part.described ? tokens(part.text) : [part.text]
+  const partDrawing = token => (void loaded, PART.test(token) ? paintedDrawing(token) : null)
+  $effect(() => {
+    for (const [index, part] of parts.entries()) if (!drawings[index]) for (const token of pieces(part))
+      if (PART.test(token) && paintedDrawing(token) === undefined) paintDrawing(token).then(url => { if (url) loaded++ })
+  })
   const show = text => loadDrawing(text).then(url => url ?? paintDrawing(text)).then(url => { if (url) loaded++ })
   $effect(() => {
     for (const part of parts) if (part.described && !drawn(part.text) && paintedDrawing(part.text) === undefined) show(part.text)
@@ -44,7 +54,7 @@
   const language = ({ key, lang: own }) => own || lang || (key === 'hangul' || key === 'gugyeol' ? 'ko' : key === 'tangut' ? 'txg' : key === 'seal' ? 'lzh' : 'ja')
 </script>
 
-<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} class:figure={figured[part.text]} style:--figure-sans={face(figured[part.text]?.sans)} style:--figure-serif={face(figured[part.text]?.serif)} style:font-family={part.drawn ? DRAWN_FONT : null} data-script={part.key} lang={language(part)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true">{#if part.described}{#each tokens(part.text) as token, at (at)}{#if isFigure(token)}<FigureText text={token} />{:else}{token}{/if}{/each}{:else}{part.text}{/if}</span>{/if}{/each}</span>
+<span class="script-text" role="img" aria-label={description}>{#each parts as part, index (index)}{#if drawings[index]}<span class="script-char ids-drawing" data-script={part.key} lang={language(part)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true" style:--drawing={`url("${drawings[index]}")`}><span class="ids-copy">{part.text}</span></span>{:else}<span class="script-char" class:ids-text={part.described} class:figure={figured[part.text]} style:--figure-sans={face(figured[part.text]?.sans)} style:--figure-serif={face(figured[part.text]?.serif)} style:font-family={part.drawn ? DRAWN_FONT : null} data-script={part.key} lang={language(part)} title={titled ? `${part.said} · ${part.label}` : undefined} aria-hidden="true">{#each pieces(part) as token, at (at)}{#if partDrawing(token)}<span class="ids-drawing ids-part" style:--drawing={`url("${partDrawing(token)}")`}><span class="ids-copy">{token}</span></span>{:else if part.described && isFigure(token)}<FigureText text={token} />{:else}{token}{/if}{/each}</span>{/if}{/each}</span>
 
 <style>
   /* A figure in the font that maps its sequence under the reader's face, then the fonts around it. */

@@ -26,6 +26,8 @@ TABLE = Path(__file__).resolve().parents[2] / "data" / "vocab" / "custom-parts.t
 #: digits, an entity, a stroke chain.
 TOKEN = re.compile(r"\{[0-9]{1,4}\}|&[A-Za-z][A-Za-z0-9+_-]{0,45};|#\([^\s()\[\]{}#&;]{1,44}\)")
 #: A drawing in BabelStone Han PUA's private-use characters, which only that font draws.
+#: The tables' mark for a part they cannot write.
+UNWRITTEN = "？"
 PRIVATE = re.compile(r"[-]")
 IDENTIFIER = re.compile(r"&(X-[0-9]{5});")
 #: One unit of a description in its one spelling: a part written as its identifier, or one character
@@ -88,6 +90,26 @@ class Table:
             return self.parts[key].spelling or f"&{key};"
 
         return self.fold(TOKEN.sub(written, text))
+
+    def drawn(self, text: str, depth: int = 0) -> str | None:
+        if depth > 8:
+            return None
+        missing = False
+
+        def written(found: re.Match[str]) -> str:
+            nonlocal missing
+            key = self.identifier(found.group())
+            part = self.parts[key] if key else None
+            out = next((out for draw in (part.draws if part else ())
+                        if not PRIVATE.search(draw) and UNWRITTEN not in draw and draw not in part.approximate
+                        and (out := self.drawn(draw, depth + 1)) is not None), None)
+            if out is None:
+                missing = True
+                return found.group()
+            return out
+
+        out = TOKEN.sub(written, text)
+        return None if missing else out
 
     def fold(self, text: str) -> str:
         """`text` with every part of it that draws one named part written as that part; the whole text
@@ -157,23 +179,9 @@ def unknown(text: str) -> list[str]:
     return table().unknown(text)
 
 
-def drawn(text: str, depth: int = 0) -> str | None:
+def drawn(text: str) -> str | None:
     """`text` with each such part written as the first of its drawings that comes out in encoded
-    characters only, or None where none does (BabelStone Han PUA's private-use glyph is none). A
+    characters only, or None where none does (BabelStone Han PUA's private-use glyph is none, and nor
+    is a drawing that is close only or holds ？, the tables' mark for a part they cannot write). A
     drawing may itself name such a part, so it is written out again."""
-    if depth > 8:
-        return None
-    missing = False
-
-    def written(found: re.Match[str]) -> str:
-        nonlocal missing
-        key = identifier(found.group())
-        out = next((out for draw in (parts()[key].draws if key else ())
-                    if not PRIVATE.search(draw) and (out := drawn(draw, depth + 1)) is not None), None)
-        if out is None:
-            missing = True
-            return found.group()
-        return out
-
-    out = TOKEN.sub(written, text)
-    return None if missing else out
+    return table().drawn(text)

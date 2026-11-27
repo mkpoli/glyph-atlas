@@ -54,14 +54,15 @@ function folded(text: string): string {
 export const unknownParts = (text: string) => [...text.matchAll(CUSTOM_PART)].map(found => found[0]).filter(name => customPart(name) === null);
 
 /** `text` with each such part written as the first of its drawings that comes out in encoded characters only,
- *  or null where none does (BabelStone Han PUA's private-use glyph is none); a drawing may name such a part. */
+ *  or null where none does (BabelStone Han PUA's private-use glyph is none, nor is a drawing holding ？, the tables'
+ *  mark for a part they cannot write); a drawing may name such a part. */
 export function drawnWith(text: string, depth = 0): string | null {
   if (depth > 8) return null;
   let missing = false;
   const out = text.replace(CUSTOM_PART, name => {
     const key = customPart(name), draws = key && Object.hasOwn(CUSTOM_PART_DRAWN, key) ? CUSTOM_PART_DRAWN[key] : [];
     for (const draw of draws) {
-      const written = PRIVATE.test(draw) ? null : drawnWith(draw, depth + 1);
+      const written = PRIVATE.test(draw) || draw.includes('？') ? null : drawnWith(draw, depth + 1);
       if (written !== null) return written;
     }
     missing = true;
