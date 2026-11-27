@@ -198,3 +198,36 @@ def test_agreed_crops_load_with_their_labels_and_leave_the_other_tables(layout, 
     agreed.write_text(json.dumps({"agreed": {"ex:b1": {"label": "い"}}}))
     with pytest.raises(SystemExit, match="names the label and the cut"):
         quiz(remote, monkeypatch, "--agreed", agreed)
+
+
+def test_flagged_crops_load_as_suspects_of_their_own_basis_beside_the_classifier_s(layout, monkeypatch, tmp_path):  # noqa: F811
+    root, _publish, remote = layout
+    crop = ids(root)
+    db = remote.dbs["glyph-atlas-v3"]
+    rows = lambda held: held.execute("SELECT crop, p, reads_as, label, box, basis FROM suspects ORDER BY crop").fetchall()
+    classifier = marks(tmp_path / "m.json", {"ex:a1": {"p": 0.2, "reads_as": None, "label": "あ", "box": None}})
+    quiz(remote, monkeypatch, "--suspects", classifier, "--send")
+    flagged = tmp_path / "agreed-marks.json"
+    flagged.write_text(json.dumps({"agreed": {}, "flagged": {
+        "ex:a1": {"label": "あ", "form": "𛀂", "cut": 0}, "ex:b1": {"label": "い", "form": "𛀆", "cut": 0},
+        "ex:a2": {"label": "う", "form": "𛀋", "cut": 1}, "ex:gone": {"label": "え", "form": "𛀁", "cut": 0}}}))
+    quiz(remote, monkeypatch, "--forms", flagged, "--send")
+    both = sorted([(crop["ex:a1"], 0.2, None, "あ", None, None), (crop["ex:b1"], 0.0, "𛀆", "い", None, "form")])
+    assert rows(db) == both
+    assert rows(sqlite3.connect(root / "out" / "atlas.sqlite")) == both
+    report = (root / "out" / "quiz-marks-report.txt").read_text()
+    assert "forms\t1\t0\t1\t0\t1\n" in report
+    for reason in ("the mirror lacks", "cut again since", "the classifier marks"):
+        assert f"1 forms on crops {reason}, left out" in report
+    # The classifier's marks replaced whole leave the neighbours' marks, and take a crop both name.
+    quiz(remote, monkeypatch, "--suspects", marks(tmp_path / "n.json", {"ex:b1": {"p": 0.1, "reads_as": "え", "label": "い", "box": None}}),
+         "--forms", flagged, "--send")
+    assert rows(db) == sorted([(crop["ex:a1"], 0.0, "𛀂", "あ", None, "form"), (crop["ex:b1"], 0.1, "え", "い", None, None)])
+    quiz(remote, monkeypatch, "--suspects", marks(tmp_path / "o.json", {}), "--send")
+    quiz(remote, monkeypatch, "--forms", flagged, "--send")
+    assert rows(db) == sorted([(crop["ex:a1"], 0.0, "𛀂", "あ", None, "form"), (crop["ex:b1"], 0.0, "𛀆", "い", None, "form")])
+    quiz(remote, monkeypatch, "--suspects", classifier, "--send")
+    assert rows(db) == sorted([(crop["ex:a1"], 0.2, None, "あ", None, None), (crop["ex:b1"], 0.0, "𛀆", "い", None, "form")])
+    flagged.write_text(json.dumps({"flagged": {"ex:b1": {"label": "い", "form": "い", "cut": 0}}}))
+    with pytest.raises(SystemExit, match="names its label, another form and the cut"):
+        quiz(remote, monkeypatch, "--forms", flagged)
