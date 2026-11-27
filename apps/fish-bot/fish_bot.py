@@ -254,12 +254,12 @@ COMPENDIUM_ROUNDS = 2
 # to her own question ("好") has none of its words.
 COMPENDIUM_RECENT = 6
 # A caller whose newest line says not to add or change, or asks whether to, gets neither.
-COMPENDIUM_NOT = re.compile(r"(?:不要|不用|不必|[別别勿甭])(?:再|[幫帮給给]我)*(?:把[^，。,.!?！？忘]{0,10})?(?:[加添補补收登放寫写改修訂订動动]|追加|更正)"
-                            r"|[該该]不[該该]|やめて|しないで|入れないで"
-                            r"|\b(?:don'?t|do not|never|no need to)\s+(?:\w+\s+){0,2}?(?:add|record|log|put|edit|change|fix|correct|update)\b",
+COMPENDIUM_NOT = re.compile(r"(?:不要|不用|不必|[別别勿甭])(?:再|[幫帮給给]我)*(?:把[^，。,.!?！？忘]{0,10})?(?:[加添補补收登放寫写改修訂订]|追加|更[正改新])"
+                            r"|[該该]不[該该]|やめて|しないで|入れないで|しなくて(?:も)?(?:いい|よい|結構|大丈夫)"
+                            r"|\b(?:don['’]?t|do not|never|no need to)\s+(?!forget\b)(?:\w+\s+){0,2}?(?:add|record|log|put|edit|change|fix|correct|update)\b",
                             re.IGNORECASE)
 # Of several callers answered at once, the one whose words ask to add or change is the one it counts against.
-COMPENDIUM_ADD = re.compile(r"[加添補补收錄录登改修訂订]|追加|更正|\b(?:add|record|log|edit|fix|correct|change|update)\b", re.IGNORECASE)
+COMPENDIUM_ADD = re.compile(r"[加添補补收錄录登改]|追加|更正|修[正訂订]|[訂订]正|\b(?:add|record|log|edit|fix|change|update)\b", re.IGNORECASE)
 # The same addition is never made twice within this long, whatever retried it.
 COMPENDIUM_REPEAT_HOURS = 24
 # What opens the compendium in a call: its name, a record, or any word of adding or changing. It is wide
