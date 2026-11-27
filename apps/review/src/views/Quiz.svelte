@@ -33,6 +33,7 @@
   import { ROUND_MAX } from '../../../cloudflare/src/rounds.ts'
   import { arrowTarget } from '../lib/selection.js'
   import { isDescription } from '../lib/ids.js'
+  import { isFigure } from '../lib/mjFigures.js'
   import { offersSuggestions, isSingle, greetSuggestions, skipLabel, skipHint, toggleIssue, issueFields } from '../lib/issues.js'
   import {
     dealtRound, firstCrops, nextGrapheme, roundGraphemes, graphemeText, roundAddress,
@@ -433,8 +434,8 @@
   const CORRECTION_BATCH = 144
   async function assignForm(form, chosen, claims = {}, relabel = false) {
     if (!chosen.length) return
-    const named = relabel || members.includes(form)
-    const characterOf = i => named ? form : i.written_character || i.label
+    const namesCharacter = relabel || (members.includes(form) && !isFigure(form) && !isDescription(form))
+    const characterOf = i => namesCharacter ? form : i.written_character || i.label
     const crops = chosen.filter(i => !((i.written_character || i.label) === characterOf(i) && i.state === 'checked'))
     // One run of batches for each character the crops are corrected to.
     const byCharacter = new Map()
@@ -513,13 +514,10 @@
   async function markSelection(form) {
     if (saving || loading || step !== 'select') return
     const chosen = markable.map(id => items.find(i => i.id === id)).filter(i => i && selectable(i.id)), style = formStyle
-    if (members.includes(form)) await assignForm(form, chosen)
-    // A character found by search is what the crops are written as, as in the collection view's bar.
-    else if (!isDescription(form)) await assignForm(form, chosen, {}, true)
-    else {
+    if (isDescription(form) || isFigure(form)) {
       const failure = await markClaimed(form, chosen)
       if (failure) formError = failure.status === 429 ? t('bulk.tooMany') : failure.status === 409 ? t('bulk.changed') : failure.message
-    }
+    } else await assignForm(form, chosen, {}, true)
     // The style goes to the crops the form was given, as they now stand.
     const marked = chosen.filter(i => markedAs[i.id] === form).map(i => ({ ...i, revision: null }))
     if (style && !formError) await styleChosen(marked, style, formDone)

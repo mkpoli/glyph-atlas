@@ -13,6 +13,8 @@
   // directly on its box, and a selected grass radical offers its Connected, Split and Inward forms.
   // Every change can be undone, a hundred steps back.
   import { tick, untrack } from 'svelte'
+  import { isFigure } from '../lib/mjFigures.js'
+  import { rateFormsFor } from 'han-compose/rate-forms'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPreview from './IdsPreview.svelte'
   import IdsFrom from './IdsFrom.svelte'
@@ -94,7 +96,8 @@
   $effect(() => {
     const of = char
     untrack(() => {
-      const typed = isSequence(start) ? start : ''
+      const typed = isSequence(start) || isFigure(start) || rateFormsFor(start).length ? start
+        : !start && rateFormsFor(of).length ? of : ''
       const initial = !typed ? (startCharacter(start) || startCharacter(of)) : ''
       past = []; future = []; note = ''
       source = initial; startQuery = ''; startPicked = false
@@ -124,9 +127,12 @@
     startQuery = c
     startPicked = true
     const seq = ++startSeq
+    const token = raw.trim()
+    const reviewed = rateFormsFor(token)
+    if (!again && reviewed.length && (whole !== token || chosen !== null)) change(parse(token, { open: true }).tree, null)
     const rev = draftRev
     const found = await read(c, { again })
-    if (seq !== startSeq || rev !== draftRev || disabled) return
+    if (seq !== startSeq || rev !== draftRev || disabled || reviewed.length) return
     const list = variants(found).filter(v => v.tree)
     if (list.length && (whole !== list[0].text || chosen !== null)) change(list[0].tree, null)
   }
@@ -147,7 +153,8 @@
   // A whole draft holding a letter (⿸广⿰KO) is drawn but cannot be saved as a form.
   const pending = $derived(gap ? t('form.ids.problem.empty', { n: gap.at(-1) + 1, name: name(partAt(tree, gap.slice(0, -1)).op) })
     : leaves(tree).some(leaf => !isComponent(leaf.char)) ? t('form.ids.problem.component') : '')
-  const usable = $derived(isNode(tree) && !gap && !typed.problem && isDescription(whole))
+  const rootForms = $derived(rateFormsFor(whole))
+  const usable = $derived(!gap && !typed.problem && (isDescription(whole) || (isFigure(whole) && isComponent(whole))))
   const picked = $derived(chosen ? partAt(tree, chosen) : undefined)
   const grass = $derived(chosen ? grassForm(picked, chosen, tree) : null)
   const text = part => part === null || part === undefined ? '' : write(part)
@@ -262,12 +269,27 @@
   }
   // The descriptions a component can be split into, those the editor can read.
   const splits = $derived(typeof picked === 'string' ? sequencesOf(lookupChar(picked)).filter(sequence => !parse(sequence, { open: true }).problem) : [])
+  const rateToken = $derived(chosen === null ? whole : text(picked))
+  const rateForms = $derived(chosen === null ? rootForms : rateFormsFor(rateToken))
   // The picked part as its other figures, the bare character among them once it carries a selector.
   const figured = $derived.by(() => {
     if (typeof picked !== 'string') return []
     const base = lookupChar(picked), found = figures[base] ?? []
-    return [...(picked !== base && found.length ? [{ char: base, mj: null }] : []), ...found.filter(figure => figure.char !== picked)]
+    return [...(picked !== base && found.length ? [{ char: base, mj: null }] : []), ...found.filter(figure => figure.char !== picked && !rateForms.some(form => form.text === figure.char))]
   })
+  let rateDrawing = $state(null)
+  $effect(() => {
+    if (rateForms.length && !rateDrawing) {
+      import('han-compose/rate-drawing').then(module => { rateDrawing = module.rateDrawing }, () => {})
+    }
+  })
+  function selectRateForm(form) {
+    if (disabled || draftBlocked() || form.text === rateToken) return
+    const next = parse(form.text, { open: true })
+    if (next.problem || next.tree === null) return
+    const path = chosen ?? []
+    change(replaceAt(tree, path, next.tree), path)
+  }
   const point = text => [...text].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')
   function choose(path, { toggle = true } = {}) {
     chosen = path && toggle && samePath(chosen, path) ? null : path
@@ -642,7 +664,7 @@
     <div class="ids-start-row">
       <CharacterSearch bind:this={startSearch} compact codePoints bind:value={startQuery} label={t('form.ids.start')} placeholder={t('search.placeholder')}
         onselect={item => loadChar(item.char)} onsubmit={text => loadChar(text)} />
-      <button type="button" class="ids-start-load" disabled={disabled || !startCandidate} onclick={() => loadChar(startCandidate)}>{t('form.ids.start.load')}</button>
+      <button type="button" class="ids-start-load" disabled={disabled || !startCandidate} onclick={() => loadChar(startQuery)}>{t('form.ids.start.load')}</button>
     </div>
     {#if startStatus === 'loading' && startPicked}
       <p class="ids-start-note">{t('form.ids.from.loading', { char: source })}</p>
@@ -752,6 +774,27 @@
   </div>
   {#if problem}<p class="ids-problem" role="status">{problem}</p>
   {:else if pending}<p class="ids-pending" role="status">{pending}</p>{/if}
+  {#if rateForms.length}
+    <fieldset class="ids-rate-forms">
+      <legend class="ids-title">{t('chips.forms')} · {rateForms[0].host}</legend>
+      <div class="ids-rate-options">
+        {#each rateForms as form (form.id)}
+          {@const spelling = form.text.replace(/[\u{E0100}-\u{E01EF}]/gu, selector => " " + point(selector) + " ").trim()}
+          <button type="button" class="ids-rate-option" {disabled} aria-pressed={rateToken === form.text}
+            title={spelling} aria-label={spelling} onclick={() => selectRateForm(form)}>
+            {#if rateDrawing}
+              <svg viewBox="0 0 1000 1000" aria-hidden="true">
+                <path class="rate-sans" d={rateDrawing(form.text, 'sans')} />
+                <path class="rate-serif" d={rateDrawing(form.text, 'serif')} />
+              </svg>
+            {:else}
+              <span>{spelling}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </fieldset>
+  {/if}
   {#if grass || (typeof picked === 'string' && ((swaps[lookupChar(picked)] ?? []).length || splits.length || figured.length))}
     <div class="ids-swaps" role="group" aria-label={t('form.ids.swaps', { part: text(picked) })}>
       {#if grass}
@@ -950,6 +993,13 @@
   .ids-slot input:not(:placeholder-shown){font-size:18px;padding:5px 8px;font-family:var(--ids-font)}
   .ids-apply{flex:none;min-height:38px;padding:5px 11px;font-size:13px;white-space:nowrap}
   .ids-tools > button{min-height:38px;padding:5px 9px;font-size:13px}
+  .ids-rate-forms{border:0;margin:0;padding:0;min-width:0}
+  .ids-rate-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-width:11em;margin-top:4px}
+  .ids-rate-option{display:grid;place-items:center;min-height:52px;padding:3px;font-size:14px;overflow-wrap:anywhere}
+  .ids-rate-option svg{width:44px;height:44px;fill:currentColor}
+  .rate-serif,:global(:root[data-typeface=serif]) .rate-sans{display:none}
+  :global(:root[data-typeface=serif]) .rate-serif{display:inline}
+  .ids-rate-option[aria-pressed=true]{border-color:var(--accent);background:var(--surface-selected)}
   .ids-swaps,.ids-grass-group{display:flex;flex-direction:column;gap:4px}
   .ids-options{display:flex;flex-wrap:wrap;gap:6px}
   .ids-grass{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;font-size:13px}

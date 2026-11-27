@@ -10,7 +10,8 @@ name, whose SHA-1 the source pins. Each half-leaf's boxes are placed along its c
 (`glyph_atlas.tape`), in the order the table gives, and the table page it shows is the one that fits best.
 
 A headword is kept when its pair has a probability of `POSTERIOR` over all order-preserving pairings and is the
-most likely pairing's, its crop is at least `ALIKE` like the character drawn in a font, and its half-leaf is borne
+most likely pairing's, its crop is at least `ALIKE` like the character drawn in a font, or at least `FLOOR` and
+likest its own headword of the page's, ahead of the `NEAR` headwords either side by `LEAD`, and its half-leaf is borne
 out: the page costs `COST` a headword or less and beats the next page by `MARGIN`, and the pages of the volume
 run in order. The label is the table's headword; the print may show a variant of it. A headword the table leaves
 blank is placed with the rest and not kept, and so is one whose row `longkan.unsettled` names.
@@ -62,6 +63,10 @@ RUN = Path("models/align/runs/collection-v2.yaml")
 SEGMENTATION = "tape-anchors-v1"
 POSTERIOR = 0.9
 ALIKE = 0.65
+#: A crop less like its headword than `ALIKE` is kept from `FLOOR` up when no other headword of the page rivals it.
+FLOOR = 0.5
+LEAD = 0.1
+NEAR = 4
 COST = -0.3
 MARGIN = 0.3
 #: The table pages searched either side of the one a half-leaf is expected to show.
@@ -259,7 +264,9 @@ def main() -> int:
                 char = slot.char
                 if j is None or slot.entry < 0 or char is None or np.isnan(f["alike"][n, j]):
                     continue
-                if chance[n, j] < POSTERIOR or f["alike"][n, j] < ALIKE:
+                if chance[n, j] < POSTERIOR or f["alike"][n, j] < FLOOR:
+                    continue
+                if f["alike"][n, j] < ALIKE and not tape.unrivalled(slots, f["alike"], n, j, LEAD, NEAR):
                     continue
                 if (slot.entry, slot.sub) in unsettled:
                     doubtful += 1
