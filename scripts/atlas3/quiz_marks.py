@@ -205,7 +205,7 @@ def main():
             sys.exit(f"glyph-atlas-v3 was not loaded from build {build}; the local copy does not describe it")
     if args.agreed and not has(atlas, "agreed"):
         sys.exit("the local copy has no agreed table; apply migrations-atlas/0022_agreed.sql to it and to glyph-atlas-v3 first")
-    if "basis" not in {r[1] for r in atlas.execute("PRAGMA table_info(suspects)")}:
+    if (args.suspects or args.forms) and "basis" not in {r[1] for r in atlas.execute("PRAGMA table_info(suspects)")}:
         sys.exit("the local copy's suspects have no basis; apply migrations-atlas/0023_suspect_basis.sql to it and to glyph-atlas-v3 first")
     catch_up(atlas, keep=args.send)
     ids = dict(mirror.execute("SELECT text, id FROM ids"))

@@ -479,14 +479,18 @@ describe('the browse page', () => {
 
   it('hold a doubt from a crop\'s neighbours while it keeps its label and its cut', async () => {
     const { env, db, a, crop } = await setup();
-    for (const slot of [0, 1, 3]) db.query("INSERT INTO suspects(crop,p,reads_as,label,box,basis) VALUES(?,0,'𛂞',?,NULL,'form')").run(crop(a, slot), slot === 3 ? 'ハ' : 'は');
-    // a0 relabelled 処; a1 as cut, with the box its record gives; a3 cut again.
-    db.exec(`UPDATE crops SET char=6, revision=1 WHERE id=${crop(a, 0)}; UPDATE crops SET cut=cut+1 WHERE id=${crop(a, 3)};`);
+    for (const slot of [0, 1, 2, 3]) db.query("INSERT INTO suspects(crop,p,reads_as,label,box,basis) VALUES(?,0,'𛂞',?,NULL,'form')").run(crop(a, slot), slot === 3 ? 'ハ' : 'は');
+    // a0 relabelled 処; a1 as cut, with the box its record gives; a2 redrawn by a reviewer; a3 cut again.
+    db.exec(`UPDATE crops SET char=6, revision=1 WHERE id=${crop(a, 0)}; UPDATE crops SET cut=cut+1 WHERE id=${crop(a, 3)};
+      INSERT INTO reviews(crop,gen,at,char,state,x,y,w,h) VALUES(${crop(a, 2)},1,0,1,0,5,5,2,2);`);
     const items = (await get(env, '/atlas?document=hk:a&withheld=show&limit=20')).items;
     const shown = (slot: number) => items.find((i: any) => i.id === publicId(crop(a, slot)));
     expect(shown(1).box).not.toBeNull();
-    expect([0, 1, 3].map(slot => shown(slot).suspect)).toEqual([null, { p: 0, reads_as: '𛂞', basis: 'form' }, null]);
-    expect(db.query('SELECT crop FROM suspects ORDER BY crop').all().map((r: any) => r.crop)).toEqual([crop(a, 0), crop(a, 1)]);
+    expect([0, 1, 2, 3].map(slot => shown(slot).suspect)).toEqual([null, { p: 0, reads_as: '𛂞', basis: 'form' }, null, null]);
+    expect(db.query('SELECT crop FROM suspects ORDER BY crop').all().map((r: any) => r.crop)).toEqual([crop(a, 0), crop(a, 1), crop(a, 2)]);
+    // A round of doubted crops alone deals the crop its neighbours doubt.
+    const round = (await get(env, '/atlas?purpose=review&state=pending&grapheme=U%2B306F&suspects=only&seed=1&limit=20')).items;
+    expect(round.map((i: any) => i.id)).toContain(publicId(crop(a, 1)));
   });
 
   it('show a flagged crop with the issue its last review gave it', async () => {

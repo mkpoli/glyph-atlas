@@ -95,10 +95,11 @@ export const marksQuery = () => `SELECT j.value AS crop,s.p,s.reads_as,s.label,s
 export type Suspect = { p: number; reads_as: string | null; label: string; box: Json | null; basis?: string | null };
 // A mark holds while the crop keeps the label and box the classifier was shown; a crop relabelled,
 // re-cut or redrawn since is no longer what it judged. A mark from the crop's neighbours (`form`)
-// names no box: the table drops it when the crop is cut again.
+// names no box: it is given on a first cut, the table drops it when the crop is cut again, and a box a
+// reviewer has redrawn (`box_pending`) hides it until then.
 export function suspectOf(mark: Suspect | null | undefined, item: Json): Json | null {
   if (!mark || mark.label !== item.label) return null;
-  if (mark.basis === 'form') return { p: mark.p, reads_as: mark.reads_as, basis: 'form' };
+  if (mark.basis === 'form') return item.box_pending ? null : { p: mark.p, reads_as: mark.reads_as, basis: 'form' };
   const a = mark.box, b = item.box ?? null;
   const same = a === null || b === null ? a === b : ['x', 'y', 'w', 'h'].every(k => Math.abs(Number(a[k]) - Number(b[k])) < 1e-6);
   return same ? { p: mark.p, reads_as: mark.reads_as } : null;
