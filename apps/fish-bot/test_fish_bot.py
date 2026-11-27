@@ -4282,6 +4282,12 @@ def test_an_unreachable_compendium_leaves_the_other_tools(tmp_path, monkeypatch)
     (["Fish, add this to the compendium please"], True, True), (["Fish, don't add this to the compendium"], True, False),
     (["大肥魚我現在應該已經給你權限了，幫我加好不好喵"], True, True), (["大肥魚 能不能幫我加一下"], True, True),
     (["大肥魚 可不可以放上去，補一下"], True, True), (["大肥魚 不要加進珍字集覽", "大肥魚 好啦還是加吧"], True, True),
+    (["大肥魚 那個字的出處寫錯了，幫我改一下"], True, True), (["大肥魚 把讀音更正為 kau3"], True, True),
+    (["Fish, please fix the reading on that one"], True, True), (["大肥魚 不要改那條記錄"], True, False),
+    (["Fish, don't change that record"], True, False), (["大肥魚 別動它"], False, False),
+    (["大肥魚 不要更改那個字的讀音"], True, False), (["大肥魚、その読みは訂正しなくていいです"], True, False),
+    (["Fish, don’t change that reading"], True, False), (["Fish, don't forget to fix the reading"], True, True),
+    (["大肥魚 把讀音改成 kau3，不要動字形"], True, True),
 ])
 def test_a_call_that_speaks_of_the_compendium_or_of_adding_may_add_unless_told_not_to(tmp_path, lines, offered, adds):
     bot, _, store = make_bot(tmp_path)
@@ -4379,3 +4385,10 @@ def test_the_compendium_is_configured_by_its_endpoint(tmp_path):
     path.write_text('[compendium]\nendpoint = "http://rare.glyphatlas.org/mcp"\n')
     with pytest.raises(ValueError):
         fish_bot.Config.load(path)
+
+
+def test_only_words_of_adding_or_changing_say_whose_write_it_is():
+    for line in ("Fish, is that correct?", "大肥魚 我訂了晚餐", "大肥魚 今日は研修です", "大肥魚 早安"):
+        assert not fish_bot.COMPENDIUM_ADD.search(line), line
+    for line in ("大肥魚 幫我改一下", "大肥魚 修正讀音", "大肥魚 訂正一下出處", "Fish, fix the reading", "大肥魚 把這個加進去"):
+        assert fish_bot.COMPENDIUM_ADD.search(line), line
