@@ -162,7 +162,8 @@ def held() -> dict[str, str]:
         if b"not found" in read.stderr.lower() or b"directory not found" in read.stderr.lower():
             return {}
         sys.exit(f"reading {PREFIX}{MANIFEST} failed: {read.stderr.decode().strip()}")
-    return json.loads(gzip.decompress(read.stdout))
+    # rclone cat prints nothing and exits 0 for an object R2 does not hold.
+    return json.loads(gzip.decompress(read.stdout)) if read.stdout else {}
 
 
 def plan(before: dict[str, str], manifest: dict[str, str]) -> tuple[list[str], list[str], dict[str, str]]:
