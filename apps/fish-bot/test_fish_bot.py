@@ -4390,5 +4390,62 @@ def test_the_compendium_is_configured_by_its_endpoint(tmp_path):
 def test_only_words_of_adding_or_changing_say_whose_write_it_is():
     for line in ("Fish, is that correct?", "大肥魚 我訂了晚餐", "大肥魚 今日は研修です", "大肥魚 早安"):
         assert not fish_bot.COMPENDIUM_ADD.search(line), line
-    for line in ("大肥魚 幫我改一下", "大肥魚 修正讀音", "大肥魚 訂正一下出處", "Fish, fix the reading", "大肥魚 把這個加進去"):
+    for line in ("大肥魚 幫我改一下", "大肥魚 修正讀音", "大肥魚 訂正一下出處", "Fish, fix the reading", "大肥魚 把這個加進去",
+                 "大肥魚 把這兩條合併一下", "大肥魚 隱藏這條垃圾記錄", "Fish, please remove that sighting and resolve report 3"):
         assert fish_bot.COMPENDIUM_ADD.search(line), line
+
+
+def test_moderation_and_wiki_requests_open_compendium_unless_told_not_to(tmp_path):
+    bot, _, store = make_bot(tmp_path)
+    bot.lookup = fish_bot.Lookup(None, None, store, owner="mkpoli", memory=False,
+                                 compendium=fish_bot.Compendium("https://rare.example/mcp", store))
+    cases = [
+        ("大肥魚 把這兩條重複的合併起來", True, True),
+        ("大肥魚 隱藏那條垃圾記錄", True, True),
+        ("大肥魚 不要隱藏那條記錄", True, False),
+        ("大肥魚 不要還原那個版本", True, False),
+        ("大肥魚 別解除隱藏", True, False),
+        ("Fish, don't merge those records", True, False),
+        ("Fish, don't restore it", True, False),
+        ("Fish, don't unhide that record", True, False),
+        ("大肥魚 幫我把錯誤的證據移除", True, True),
+        ("Fish, check the open reports on the compendium", True, True),
+    ]
+    start = fish_bot.now_ms() - 60_000
+    for index, (line, offered, writes) in enumerate(cases):
+        room = f"!mod{index}:example"
+        store.add_event(f"$m{index}", room, "@asker:example", start + index, line, "m.text", backfilled=False)
+        bot.turn(room, f"$m{index}", task="called")
+        assert (bot.lookup.offer_compendium, bot.lookup.may_write) == (offered, writes), line
+
+
+def test_non_additive_compendium_tools_can_toggle_without_hitting_repeat_cache(tmp_path, monkeypatch):
+    lookup, server, _ = compendium_lookup(tmp_path, monkeypatch)
+    server_tools = [
+        *COMPENDIUM_TOOLS,
+        {"name": "list_reports", "description": "List reports", "annotations": {"readOnlyHint": True},
+         "inputSchema": {"type": "object", "properties": {}}},
+        {"name": "set_hidden", "description": "Hide or unhide", "annotations": {"readOnlyHint": False},
+         "inputSchema": {"type": "object", "required": ["record", "hidden"], "properties": {"record": {"type": "string"}, "hidden": {"type": "boolean"}}}},
+    ]
+    orig = server.__call__
+
+    def with_mod(request, timeout=None):
+        body = json.loads(request.data)
+        if body["method"] == "tools/list":
+            payload = {"jsonrpc": "2.0", "id": body["id"], "result": {"tools": server_tools}}
+            return contextlib.nullcontext(type("R", (), {"headers": {}, "read": lambda self: json.dumps(payload).encode()})())
+        return orig(request, timeout)
+
+    monkeypatch.setattr(fish_bot.urllib.request, "urlopen", with_mod)
+    lookup.may_write = False
+    assert "rare_list_reports" not in {t["name"] for t in lookup.specs()}
+    assert "only available" in lookup.run("rare_list_reports", {})["error"]
+    lookup.may_write = True
+    assert "rare_list_reports" in {t["name"] for t in lookup.specs()}
+    assert "result" in lookup.run("rare_set_hidden", {"record": "R+0001", "hidden": True})
+    assert "result" in lookup.run("rare_set_hidden", {"record": "R+0001", "hidden": False})
+    third = lookup.run("rare_set_hidden", {"record": "R+0001", "hidden": True})
+    assert "result" in third and "already_added" not in third
+    assert lookup.compendium.check() == (5, True)
+    assert fish_bot.Compendium("https://rare.example/mcp", None, "tok").check() == (5, True)
