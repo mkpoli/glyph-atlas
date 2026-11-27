@@ -1,5 +1,5 @@
 # Parts no code point names, one row per identifier; see scripts/build_custom_parts.py.
-# source ids-input: mkpoli/ids-input data/custom-components.json.gz at c50e5a50f4a514ceae682f9143bedc186b818605, sha256:c35221d7b3032a7371bec070c437e15d6f9aafaf70ae1a0ef29ddb8550330fd3
+# source ids-input: mkpoli/ids-input data/custom-components.json.gz at b5f9b11d7c1f9bb38a8c08f638ef224c164ce785, sha256:c35221d7b3032a7371bec070c437e15d6f9aafaf70ae1a0ef29ddb8550330fd3
 #   drawing on BabelStone IDS (Public Domain, https://www.babelstone.co.uk/CJK/IDS.TXT); CHISE IDS (GPL-2.0-or-later, https://gitlab.chise.org/CHISE/ids); Yi Bai IDS, ids_lv1.txt (MIT, https://github.com/yi-bai/ids/blob/da1e9f8a09e2ec8faaf176bac99203f978282041/ids_lv1.txt); （白式）IDS 延展语法导论, §5.3 (MIT, https://nightfurysl2001.github.io/bai-ids/); IDS（漢字構成記述文字列）ガイド (no licence stated, https://note.com/midzchi_/n/n21737ee18736)
 # names: space-separated, every spelling the sources give the part: BabelStone {n}, CHISE &…;, zi.tools #(…) and
 #   descriptions of encoded characters that draw it; written &X-NNNNN; inside a description.

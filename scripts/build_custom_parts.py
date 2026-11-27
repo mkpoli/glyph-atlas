@@ -24,7 +24,7 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMIT = "c50e5a50f4a514ceae682f9143bedc186b818605"
+COMMIT = "b5f9b11d7c1f9bb38a8c08f638ef224c164ce785"
 URL = f"https://raw.githubusercontent.com/mkpoli/ids-input/{COMMIT}/data/custom-components.json.gz"
 SHA256 = "c35221d7b3032a7371bec070c437e15d6f9aafaf70ae1a0ef29ddb8550330fd3"
 CACHE = ROOT / "cache" / "ids-input" / f"custom-components-{COMMIT[:12]}.json.gz"
