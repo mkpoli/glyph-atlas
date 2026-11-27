@@ -423,6 +423,9 @@ def sequences(text: str) -> list[str]:
                 if long_end > at + LONGEST:
                     at = long_end
                     continue
+            # An operator run belongs to one description, even when it is incomplete.
+            while at + 1 < limit and text[at + 1] in OPERATORS:
+                at += 1
         at += 1
     return found
 
