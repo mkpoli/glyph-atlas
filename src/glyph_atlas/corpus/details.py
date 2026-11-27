@@ -15,6 +15,7 @@ from ..unit_scope import unit_scope
 from . import crops as crops_module
 from . import sources as corpus_sources
 from .api import PROXYABLE
+from .identity import label_scope
 from .index import (
     UNIT_CORPORA,
     _json,
@@ -412,6 +413,7 @@ class DetailResolver:
             extra={
                 "kind": "sequence" if unit_scope(row)["needs_segmentation"] else joined.get("kind"),
                 **unit_scope(row),
+                **({"source_label_scope": scope} if (scope := label_scope(row)) else {}),
                 "method": joined.get("method"),
                 "basis": "upstream_bbox" if box else "upstream_crop",
                 "review": joined.get("review") or "machine",
@@ -562,6 +564,7 @@ class DetailResolver:
                     "review",
                     "active",
                     "upstream",
+                    "meta",
                 )
                 if c in dataset.schema.names
             ]

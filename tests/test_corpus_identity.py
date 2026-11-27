@@ -202,3 +202,22 @@ def test_the_forms_table_names_one_of_the_several_code_points_of_each_jibo():
     assert len(forms) == 1895
     for row in forms.values():
         assert row["code_point"] in {candidate.unicode for candidate in kokatsuji.labels_of(row["kana"], row["jibo"]).candidates}
+
+
+def test_a_label_that_names_only_the_character_leaves_the_written_form_open():
+    # 龍龕手鏡's table writes 船's 俗 form 舩 beside it as 船: the crop is 船's, its printed form unnamed.
+    scoped = identity_fields({"unicode": "U+8239", "text_source": "船", "meta": '{"label": "table headword", "label_scope": "grapheme"}'}, "longkan-song")
+    assert (scoped["written_character"], scoped["identity_status"], scoped["requires_family_scope"]) == (None, "unassigned", True)
+    assert scoped["grapheme"] == "U+8239" and scoped["source_label"] == "船"
+    assert scoped["identity_basis"] == "normalized_transcription" and scoped["identity_evidence"] is None
+    # A detail record carries the scope by name; a label with none still names the printed form.
+    assert identity_fields({"unicode": "U+8239", "text_source": "船", "source_label_scope": "grapheme"}, "longkan-song")["written_character"] is None
+    assert identity_fields({"unicode": "U+8239", "text_source": "船", "meta": '{"label": "table headword"}'}, "longkan-song")["written_character"] == "船"
+    # Even a character with no other form is left open: the print may show a form Unicode lacks.
+    lone = identity_fields({"unicode": "U+9C0A", "text_source": "鰊", "source_label_scope": "grapheme"}, "longkan-song")
+    assert lone["written_character"] is None and lone["grapheme"]
+
+
+def test_an_unencoded_label_left_open_still_names_its_grapheme():
+    fields = identity_fields({"text_source": "⿰舟公", "source_label_scope": "grapheme"}, "longkan-song")
+    assert fields["written_character"] is None and fields["grapheme"] == "U+2FF0 U+821F U+516C"

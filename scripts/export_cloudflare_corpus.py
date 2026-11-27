@@ -19,6 +19,7 @@ from glyph_atlas import box_relabel, export_lock, ngrams, style, tone, withdrawn
 from glyph_atlas.corpus import sources
 from glyph_atlas.corpus.api import PROXYABLE, CorpusAPI
 from glyph_atlas.corpus.details import DetailResolver, unit_label
+from glyph_atlas.corpus.identity import label_scope
 from glyph_atlas.corpus.index import (
     UNIT_CORPORA,
     _char_of_codepoint,
@@ -372,7 +373,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
         db.commit()
         columns = [c for c in ("id", "document_id", "page_id", "line_id", "seq", "box", "crop", "crop_sha256",
                    "kind", "granularity", "text_source", "unicode", "method", "review", "active", "upstream",
-                   "style")
+                   "style", "meta")
                    if c in dataset.schema.names]
         for batch in dataset.scanner(columns=columns, batch_size=2048, use_threads=False).to_batches():
             for row in batch.to_pylist():
@@ -443,6 +444,7 @@ def export(output, *, resume=False, published=None, corpora=None, skip=frozenset
                     context_basis="derived_viewport" if context_box else None, crop_box=box,
                     record_url=resolver._record_url(corpus, joined, box),
                     extra={"kind": "char", "method": joined.get("method"), "basis": "upstream_bbox" if box else "upstream_crop",
+                    **({"source_label_scope": scope} if (scope := label_scope(row)) else {}),
                         "review": joined.get("review") or "machine", "confirmed_by_human": False,
                         "render_available": True, "attribution": attribution(joined),
                         "text_attribution": text_attribution(joined),

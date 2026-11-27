@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unicodedata
 from functools import lru_cache
 from typing import Any
@@ -52,6 +53,21 @@ def shape_of(identity: str | None, code_point: str | None, source_label: str | N
     return refs.to_char(row["code_point"]) if row and row["kana"] == source_label else None
 
 
+def label_scope(row: dict[str, Any]) -> str | None:
+    """What a unit's label names, where its source says: "grapheme" for the character and not its printed form.
+
+    A detail record carries it as `source_label_scope`, a dataset unit in its `meta` as `label_scope`."""
+    if row.get("source_label_scope"):
+        return row["source_label_scope"]
+    meta = row.get("meta")
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except ValueError:
+            return None
+    return meta.get("label_scope") if isinstance(meta, dict) else None
+
+
 def identity_fields(
     row: dict[str, Any], corpus: str | None, *, human_character: str | None = None,
     source_revision: str | None = None,
@@ -75,10 +91,13 @@ def identity_fields(
     if figure:
         encoded = unicodedata.normalize("NFC", encoded or source_label)
     family = family_of(" ".join(refs.to_code_points(encoded)) if figure else cp)
-    normalized = corpus in NORMALIZED_CORPORA
+    # A source may say of one glyph that its label names the character and not the form it is printed in: the
+    # table of 龍龕手鏡 writes a 俗 form and its 正 form beside it with one character.
+    scoped = label_scope(row) == "grapheme"
+    normalized = corpus in NORMALIZED_CORPORA or scoped
     # No corpus writes a small seal character for its Han character, so a label that is one names it.
-    ambiguous = (normalized and not figure and not refs.is_small_seal(encoded or source_label or "")
-                 and len(members_for(family, encoded or source_label)) > 1)
+    ambiguous = scoped or (normalized and not figure and not refs.is_small_seal(encoded or source_label or "")
+                           and len(members_for(family, encoded or source_label)) > 1)
     basis = "normalized_transcription" if normalized else "source_transcription"
     written = None if ambiguous else encoded or source_label
     assignment = None
@@ -122,16 +141,18 @@ def identity_fields(
                 # source labels unresolved; retain that result until reviewed.
                 written, basis = candidate, "visual_model"
                 ambiguous = ambiguous or (written is None and len(members) > 1)
+    # A label left open still names its grapheme: an unencoded one (an IDS) is its own.
+    named = written or (source_label if scoped else None)
     return {
         "source_label": source_label,
         "source_code_point": cp,
         "written_character": written,
         "identity_basis": basis,
         "identity_status": "assigned" if written else "unassigned",
-        "identity_evidence": SHAPE_EVIDENCE if basis == "glyph_shape" else NORMALIZATION_EVIDENCE if normalized else None,
+        "identity_evidence": SHAPE_EVIDENCE if basis == "glyph_shape" else NORMALIZATION_EVIDENCE if corpus in NORMALIZED_CORPORA else None,
         # A character with no family (one Unicode lacks, written as an IDS) is its own grapheme, as the
         # Worker files it.
-        "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(written)) if written else None),
+        "grapheme": family["code_point"] if family else cp or (" ".join(refs.to_code_points(named)) if named else None),
         "family_members": members_for(family, written or encoded or source_label),
         "requires_family_scope": ambiguous,
         "visual_assignment": assignment,
