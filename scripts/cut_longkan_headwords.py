@@ -14,7 +14,9 @@ most likely pairing's, its crop is at least `ALIKE` like the character drawn in 
 likest its own headword of the page's, ahead of the `NEAR` headwords either side by `LEAD`, and its half-leaf is borne
 out: the page costs `COST` a headword or less and beats the next page by `MARGIN`, and the pages of the volume
 run in order. The label is the table's headword; the print may show a variant of it. A headword the table leaves
-blank is placed with the rest and not kept, and so is one whose row `longkan.unsettled` names.
+blank is placed with the rest and not kept, and so is one whose row `longkan.unsettled` names. One it names only
+for a neighbour written with the same character is kept when its crop leads that run (`longkan.leads`): at least
+`KIN_ALIKE` like the character and ahead of every other crop of the run placed at `POSTERIOR` by `KIN_LEAD`.
 
 `OUTPUT` becomes a dataset: one document per volume, a page per scan page with a kept headword, a line and a unit
 per headword. `--report` says why each half-leaf was kept or not; `--leaves` bounds a run to these PDF pages.
@@ -67,6 +69,9 @@ ALIKE = 0.65
 FLOOR = 0.5
 LEAD = 0.1
 NEAR = 4
+#: Of a run of headwords written with one character, the crop kept as that character: how like it, and how far ahead.
+KIN_ALIKE = 0.7
+KIN_LEAD = 0.15
 COST = -0.3
 MARGIN = 0.3
 #: The table pages searched either side of the one a half-leaf is expected to show.
@@ -193,7 +198,8 @@ def main() -> int:
         raise SystemExit("the classifier export has no features")
     anchors = tape.Anchors(args.fonts.split(","), classifier.features)
     slots_of = {page: longkan.slots(rows) for page, rows in entries.items()}
-    unsettled = longkan.unsettled(entries)
+    unsettled, settled_but_kin = longkan.unsettled(entries), longkan.unsettled(entries, neighbours=False)
+    kin = longkan.kin(entries)
 
     found, last = [], None  # `last`: the half-leaf last borne out, as its index in the book (two to a scan page), and its table page
     for leaf, url, image in leaves(copy, args.pdf, only):
@@ -252,6 +258,38 @@ def main() -> int:
     lines: list[Line] = []
     units: list[Unit] = []
     report = []
+
+    def keep(f: dict, slot: tape.Slot, j: int, chance: float, alike: float) -> bool:
+        """Add the headword `slot` as box `j` of half-leaf `f`, paired at `chance` and `alike` its character; whether it was added."""
+        entry = next(e for e in entries[f["table_page"]] if e.row == slot.entry)
+        box = native(f["page"].candidates[j][2], copy["enlarge"])
+        volume = entry.volume
+        documents.setdefault(volume, document_of(source, copy, volume))
+        page_id = f"{CORPUS}-{copy['id']}:{f['leaf']}"
+        if f["leaf"] in pages and pages[f["leaf"]].document_id != documents[volume].id:
+            return False  # a scan page that a volume ends on belongs to the first of its two volumes
+        if f["leaf"] not in pages:
+            pages[f["leaf"]] = Page(id=page_id, document_id=documents[volume].id, seq=f["leaf"] - 1, image=f["url"],
+                                    width=f["size"][0], height=f["size"][1], image_kind=copy["image_kind"],
+                                    transcription={"source": SOURCE, "entry": str(f["table_page"]), "revision": source["revision"]})
+        char = slot.char
+        line_id = f"lk-{copy['id']}:{slot.entry}-{slot.sub}"
+        lines.append(Line(id=line_id, page_id=page_id, seq=len(lines), vertical=True, box=box, text_raw=entry.field, text=char, match_method="tape",
+                          match_confidence=float(min(chance, 1.0)),
+                          meta={"source": SOURCE, "row": slot.entry, "table_page": f["table_page"], "leaf": f["leaf"], "side": f["side"],
+                                "section": entry.section, "tone": entry.tone}))
+        one = len(char) == 1
+        units.append(Unit(id=f"{line_id}:0", document_id=documents[volume].id, page_id=page_id, line_id=line_id, seq=0, box=box, text_source=char,
+                          unicode=f"U+{ord(char):04X}" if one else None,
+                          classification=Classification.IDENTIFIED if one else Classification.UNIDENTIFIED, script=Script.HAN,
+                          method="detect-align", review=ReviewState.MACHINE, upstream={"source": SOURCE, "entry_id": str(slot.entry), "copy": copy["id"]},
+                          meta={"segmentation": SEGMENTATION, "posterior": round(float(chance), 4), "similarity": round(alike, 3),
+                                "page_cost": round(float(f["cost"]), 3), "label": "table headword"}))
+        return True
+
+    # A headword held only for a neighbour of its character waits until every crop of its run is placed.
+    placed: dict[tuple[int, int], float] = {}
+    waiting: list[tuple[dict, dict, tape.Slot, int, float, float]] = []
     for k, f in enumerate(found):
         row = {key: f[key] for key in ("leaf", "side", "skipped", "table_page", "cost", "margin") if key in f}
         if k in in_order:
@@ -264,41 +302,28 @@ def main() -> int:
                 char = slot.char
                 if j is None or slot.entry < 0 or char is None or np.isnan(f["alike"][n, j]):
                     continue
-                if chance[n, j] < POSTERIOR or f["alike"][n, j] < FLOOR:
+                if chance[n, j] < POSTERIOR:
+                    continue
+                placed[(slot.entry, slot.sub)] = float(f["alike"][n, j])
+                if f["alike"][n, j] < FLOOR:
                     continue
                 if f["alike"][n, j] < ALIKE and not tape.unrivalled(slots, f["alike"], n, j, LEAD, NEAR):
                     continue
                 if (slot.entry, slot.sub) in unsettled:
                     doubtful += 1
+                    if (slot.entry, slot.sub) not in settled_but_kin:
+                        waiting.append((f, row, slot, j, float(chance[n, j]), float(f["alike"][n, j])))
                     continue
-                entry = next(e for e in entries[f["table_page"]] if e.row == slot.entry)
-                box = native(f["page"].candidates[j][2], copy["enlarge"])
-                volume = entry.volume
-                documents.setdefault(volume, document_of(source, copy, volume))
-                page_id = f"{CORPUS}-{copy['id']}:{f['leaf']}"
-                if f["leaf"] in pages and pages[f["leaf"]].document_id != documents[volume].id:
-                    continue  # a scan page that a volume ends on belongs to the first of its two volumes
-                if f["leaf"] not in pages:
-                    pages[f["leaf"]] = Page(id=page_id, document_id=documents[volume].id, seq=f["leaf"] - 1, image=f["url"],
-                                            width=f["size"][0], height=f["size"][1], image_kind=copy["image_kind"],
-                                            transcription={"source": SOURCE, "entry": str(f["table_page"]), "revision": source["revision"]})
-                line_id = f"lk-{copy['id']}:{slot.entry}-{slot.sub}"
-                lines.append(Line(id=line_id, page_id=page_id, seq=len(lines), vertical=True, box=box, text_raw=entry.field, text=char, match_method="tape",
-                                  match_confidence=float(min(chance[n, j], 1.0)),
-                                  meta={"source": SOURCE, "row": slot.entry, "table_page": f["table_page"], "leaf": f["leaf"], "side": f["side"],
-                                        "section": entry.section, "tone": entry.tone}))
-                one = len(char) == 1
-                units.append(Unit(id=f"{line_id}:0", document_id=documents[volume].id, page_id=page_id, line_id=line_id, seq=0, box=box, text_source=char,
-                                  unicode=f"U+{ord(char):04X}" if one else None,
-                                  classification=Classification.IDENTIFIED if one else Classification.UNIDENTIFIED, script=Script.HAN,
-                                  method="detect-align", review=ReviewState.MACHINE, upstream={"source": SOURCE, "entry_id": str(slot.entry), "copy": copy["id"]},
-                                  meta={"segmentation": SEGMENTATION, "posterior": round(float(chance[n, j]), 4), "similarity": round(float(f["alike"][n, j]), 3),
-                                        "page_cost": round(float(f["cost"]), 3), "label": "table headword"}))
-                kept += 1
+                kept += keep(f, slot, j, float(chance[n, j]), float(f["alike"][n, j]))
             row["kept"], row["unsettled"] = kept, doubtful
         else:
             row.setdefault("skipped", "page not borne out" if not f.get("good") else "out of order")
         report.append(row)
+    for f, row, slot, j, chance, alike in waiting:
+        if longkan.leads((slot.entry, slot.sub), kin, placed, KIN_ALIKE, KIN_LEAD) and keep(f, slot, j, chance, alike):
+            row["kept"] += 1
+            row["unsettled"] -= 1
+            row["kin"] = row.get("kin", 0) + 1
 
     args.output.mkdir(parents=True, exist_ok=True)
     command = " ".join(["scripts/cut_longkan_headwords.py", *sys.argv[1:]])
@@ -308,6 +333,7 @@ def main() -> int:
     tables.write(args.output / "lines.parquet", lines, Line)
     tables.write(args.output / "units.parquet", units, Unit, command=command)
     totals = {"half_leaves": len(found), "used": len(in_order), "kept": len(units), "unsettled": sum(r.get("unsettled", 0) for r in report),
+              "kin": sum(r.get("kin", 0) for r in report),
               "headwords": sum(1 for k in in_order for s in slots_of[found[k]["table_page"]] if s.entry >= 0),
               "skipped": dict(Counter(r["skipped"] for r in report if "skipped" in r))}
     if args.report:

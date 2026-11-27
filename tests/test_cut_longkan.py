@@ -49,3 +49,34 @@ def test_a_headword_without_its_sections_radical_is_named():
     grass = [(40, "荃"), (44, "荷"), (48, "葉"), (52, "姜")]
     pages = {1: [entry(row, field, "口") for row, field in rows] + [entry(30, "菕", "雜"), entry(34, "坳", "雜")] + [entry(row, field, "草") for row, field in grass]}
     assert longkan.unsettled(pages) == {(9, 0), (13, 0), (52, 0)}, "聴 and 彊 hold no 口; 雜 names no radical; 草 is written 艹, which 姜 lacks"
+
+
+def test_a_neighbour_alone_can_be_left_to_the_run_test():
+    def entry(row, field, note=""):
+        return longkan.Entry(row, field, "", "1", "車", "去聲", 1, note)
+
+    pages = {1: [entry(2, "𨏥"), entry(3, "𨏥"), entry(6, "菕菕"), entry(12, "惘", "①〔Kimi〕字頭原空，據參考本《龍龕手鏡》補「惘」。")]}
+    assert longkan.unsettled(pages, neighbours=False) == {(12, 0)}, "only the filled headword stays named"
+
+
+def test_a_run_of_one_character_joins_headwords_within_two_rows_of_the_last():
+    def entry(row, field):
+        return longkan.Entry(row, field, "", "1", "金", "入聲", 1)
+
+    pages = {1: [entry(3, "鉀"), entry(5, "鉀"), entry(7, "鉀")], 2: [entry(10, "鉀"), entry(20, "鐵鐵"), entry(30, "鈞")]}
+    kin = longkan.kin(pages)
+    assert kin[(3, 0)] == {(5, 0), (7, 0)} and kin[(7, 0)] == {(3, 0), (5, 0)}, "a chain is one run"
+    assert (10, 0) not in kin, "three rows after the last is another run, here of one"
+    assert kin[(20, 0)] == {(20, 1)}, "one field written twice is a run"
+    assert (30, 0) not in kin
+
+
+def test_the_crop_that_alone_looks_like_its_character_leads_its_run():
+    kin = {(1, 0): {(2, 0), (3, 0)}, (2, 0): {(1, 0), (3, 0)}, (3, 0): {(1, 0), (2, 0)}}
+    alike = {(1, 0): 0.9, (2, 0): 0.7, (3, 0): 0.6}
+    assert longkan.leads((1, 0), kin, alike, 0.7, 0.15)
+    assert not longkan.leads((2, 0), kin, alike, 0.7, 0.15), "behind another crop of its run"
+    assert not longkan.leads((1, 0), kin, {(1, 0): 0.9, (2, 0): 0.8}, 0.7, 0.15), "ahead by less than the lead"
+    assert not longkan.leads((1, 0), kin, {(1, 0): 0.68, (3, 0): 0.4}, 0.7, 0.15), "too little like its character"
+    assert not longkan.leads((1, 0), kin, {(1, 0): 0.95}, 0.7, 0.15), "no other crop of its run to set it against"
+    assert not longkan.leads((4, 0), kin, {(4, 0): 0.95}, 0.7, 0.15), "no run"
