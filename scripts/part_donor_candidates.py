@@ -79,8 +79,9 @@ def descriptions() -> list[tuple[str, str, str]]:
 def candidates() -> list[dict]:
     data = build_custom_parts.fetched()
     spelling, _ = build_custom_parts._spellings(data)
-    parts = {key: {"names": names, "draws": [draw for draw in draws if encoded(draw)]}
-             for key, names, draws, *_ in build_custom_parts.rows(data) if key not in spelling}
+    # A drawing that is close only (`approximate`) is no candidate.
+    parts = {key: {"names": names, "draws": [draw for draw in draws if encoded(draw) and draw not in approximate]}
+             for key, names, draws, approximate, *_ in build_custom_parts.rows(data) if key not in spelling}
     owner = {name: key for key, part in parts.items() for name in part["names"]}
     cuts: dict[str, list[str]] = defaultdict(list)
     for component in data["components"]:
