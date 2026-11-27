@@ -18,14 +18,14 @@ X-00010		嬴巩羸	no candidate drew well in every character
 X-00011		兆函崡	no candidate drew well in every character
 X-00012		龍㡣𦢫	checked again: right component shrunken and displaced
 X-00013	㇯虍七	𠭗𣤝	Clean donor composition
-X-00014		侯候叏	checked again: second row has displaced upper strokes
+X-00014		侯候叏	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00015		玈祣覛	no candidate drew well in every character
 X-00016	㇯鼠臼	巤鬛	Clean matching lower strokes
 X-00017	㇯朗月	剆勆	Both hosts match closely
 X-00018	㇯既旡	匓即廄	Clean matching shapes
 X-00019	㇯更一	茰㤤	Clean strokes and proportions
 X-00020	丸	兿势勢	Both hosts match closely
-X-00021	㇯祭示	詧豋	Only clean usable candidate
+X-00021		詧豋	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00022	㇯与一	写考	Closest match across hosts
 X-00023		與㼂	Both candidates have broken strokes
 X-00024		水艮飞	checked again: detached and distorted strokes
@@ -44,7 +44,7 @@ X-00036		憂戞㥑	no candidate drew well in every character
 X-00037		敹睿肻	no candidate drew well in every character
 X-00038		嚢囊橐	checked again: third row upper strokes overlap
 X-00039		𠂎𡊂	checked again: unremoved donor strokes
-X-00040		𣇅𣒘	checked again: incorrect lower component strokes
+X-00040		𣇅𣒘	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00041		狦𠜂𠱡	checked again: internal horizontal strokes missing
 X-00042		夛录	checked again: stray central stroke
 X-00043		争亊事	no candidate drew well in every character
@@ -56,13 +56,14 @@ X-00048	㐄	夅年舛	Complete strokes and matching proportions
 X-00049	⿰丨丿	班辨帅	Clean strokes and balanced proportions
 X-00050		丣尸巨	no candidate drew well in every character
 X-00051		馬𣚝𩡧	checked again: broken strokes and stray fragments
+X-00052			BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00053		乌凫	All candidates have fragmented strokes
-X-00054		𠂶𱣠	checked again: upper strokes displaced
+X-00054		𠂶𱣠	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00055		慶𡦭	checked again: interior strokes crowded and distorted
 X-00056	㇯無灬	橆舞	Clean strokes and matching proportions
 X-00057	㇯在土	存𪙯	Closer upper component shape
 X-00058		劉斵	checked again: stray fragments and missing strokes
-X-00059	⿹勹灬	舄𠍶𡦗	Clean compositions across both hosts
+X-00059		舄𠍶𡦗	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00060		䆋𡤞	Drawable candidates have broken strokes
 X-00061		𫻶𮍐	checked again: lower strokes overlap in second row
 X-00062	㇯崋山	華𭏬	Clean strokes and matching proportions
@@ -76,12 +77,12 @@ X-00071		印裦	Broken strokes in both rows
 X-00072	⿴𠀃三	俱具惧	Complete strokes and balanced proportions
 X-00073		卿厩	All drawable candidates have broken strokes
 X-00074		嚼欝	All have missing strokes or fragments
-X-00075		𡕣𡿴	checked again: stray fragments along left edge
-X-00076	⿱⿸厂一一	㒫𧹉𡿰	Both compositions are clean and complete
+X-00075		𡕣𡿴	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
+X-00076		㒫𧹉𡿰	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00077	⿱⿻口⿰丨丨一	壷𢨖𣙶	Clean strokes in both hosts
 X-00078		壼𡔲	checked again: stray fragments and overlapping strokes
 X-00079	⿱冖八	滘罕罙	Clean and closest proportions
-X-00080		𠭶𥼡	Stray fragments in both rows
+X-00080		𠭶𥼡	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00081	聿	晝書畫	Both compositions closely match
 X-00082		帝旁𠆘	no candidate drew well in every character
 X-00083		皮𨬀𪭃	checked again: components displaced and compressed
@@ -90,8 +91,8 @@ X-00085		州糹㳤	no candidate drew well in every character
 X-00086	⿳亠口冖	亭亮亳	Complete strokes and matching proportions
 X-00087	⿵𠆢一	今令仱	Both hosts clean and faithful
 X-00088		𪚽𮧂	All retain stray stroke fragments
-X-00090		䆋	Fragmented left strokes
-X-00091		𤔞𧑴𮂪	checked again: component shapes substantially distorted
+X-00090		䆋	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
+X-00091		𤔞𧑴𮂪	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00092		亀竃縄	no candidate drew well in every character
 X-00093	㇯其八	甚𫞪	Clean composition of 甚
 X-00094		倉𢀞𦙪	no candidate drew well in every character
@@ -102,7 +103,7 @@ X-00098		𥥼𥹤	checked again: broken strokes in both rows
 X-00099		𤾤𧵐	checked again: first row structure distorted
 X-00101		𢄖𬞂	Broken strokes and stray fragments
 X-00103		𦧁𫞴	Missing strokes or incorrect structure
-X-00104		𩐔𭓽	checked again: fragmented and misplaced strokes
+X-00104		𩐔𭓽	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00105		𠭫𮣅	checked again: fragmented component strokes
 X-00107		冎骨	All have missing or misplaced strokes
 X-00108	⿻⿱㇒一丿	刋圱谸	Clean strokes across both hosts
@@ -112,7 +113,7 @@ X-00111		𤌵𤔘	checked again: broken strokes in both rows
 X-00112		奐幣弊	no candidate drew well in every character
 X-00113	⿱土八	坴夌燅	Complete strokes and balanced proportions
 X-00114		𦅳𫭣𠖣	checked again: component shapes substantially altered
-X-00115		䴡𤅯𧠀	checked again: missing and misplaced strokes
+X-00115		䴡𤅯𧠀	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00116	⿺𠃊⺊	延㢟𠣏	Complete and well proportioned
 X-00117		𮆔𮈺𮓟	checked again: extensive broken stroke fragments
 X-00118		𤕋𦒇𡄉	checked again: components distorted and overlapping
@@ -125,7 +126,7 @@ X-00125	⿻臼木	𦌆	Matches structure and proportions
 X-00127	⿻丶𬼂	𲋷	Clean and closely matched
 X-00130	癶	𭓽	Clean and reasonably close
 X-00132		𲌘	Fragmented left component
-X-00133		𭏬	Missing strokes and isolated fragments
+X-00133		𭏬	BabelStone's own glyph of the part, from the composer's outline; drew well, judged by eye
 X-00135		𬻵𭁐	checked again: strokes displaced and fragmented
 X-00136	⿱龷𰀠	𲓻	Structure matches despite weight difference
 X-00138	⿱⿱卝罒冖	薨蘉	Closest structure and proportions in both hosts
@@ -489,7 +490,7 @@ X-00778	㇯亙二	𡧧	Closest clean composition
 X-00779	匕	皍頃顷	Both hosts closely match
 X-00780	⿻丶𬼂	赱𠯁𦂵	Preserves strokes and proportions
 X-00781	⿻乚⿰丶丶	厯𠪱	Closest spacing and shape
-X-00783		𢳢𬻇𭁇	no candidate drew well in every character
+X-00783	⿰丨丨	𢳢𬻇𭁇	two strokes side by side; drew well over 一, judged by eye
 X-00784	己	𠃚	Close match throughout
 X-00785	羊	䍨䍩䍪	Correct component size
 X-00786		头𠂐𧊼	checked again: first row cannot draw

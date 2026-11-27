@@ -33,7 +33,11 @@ MODULE = ROOT / "apps" / "cloudflare" / "src" / "customPartsData.ts"
 DRAWINGS = ROOT / "apps" / "review" / "src" / "lib" / "customPartDrawings.js"
 #: What the composer draws a part with, where a choice was made (scripts/part_donor_candidates.py).
 DONORS = ROOT / "data" / "vocab" / "custom-part-donors.tsv"
-NUMBERED = re.compile(r"\{[0-9]{1,4}\}")
+#: The parts the site's composer holds cuts of, in the han-compose package the review app pins.
+COMPOSER_CUTS = ROOT / "apps" / "review" / "node_modules" / "han-compose" / "data" / "custom-forms.json.gz"
+COMPOSER_NUMBERED = COMPOSER_CUTS.with_name("numbered-sans-outlines.json.gz")
+#: A Han character or radical: a confirmed part drawn as one is drawn as that glyph.
+HAN = re.compile(r"[\u2E80-\u2FD5\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\U00020000-\U0003FFFF]")
 #: Numbered parts whose fragment is ids-input's reading, not BabelStone's note 6 (its build_open_ids.mjs).
 EDITORIAL = {"{12}", "{82}"}
 _SETTLED: dict[int, tuple[dict[str, str], dict[str, list[str]]]] = {}
@@ -207,30 +211,59 @@ def donors() -> dict[str, str]:
     return chosen
 
 
+def composer_cuts() -> set[str]:
+    """The parts the site's composer holds a cut of, from a real glyph, in its sans face: han-compose's custom
+    forms by name (`&CDP-8CB8;`), and its numbered outlines by BabelStone Han PUA character."""
+    for path in (COMPOSER_CUTS, COMPOSER_NUMBERED):
+        if not path.exists():
+            raise SystemExit(f"{path} is missing: run `bun install` in apps/review")
+    return set(json.loads(gzip.decompress(COMPOSER_CUTS.read_bytes()))["forms"]["sans"]) \
+        | set(json.loads(gzip.decompress(COMPOSER_NUMBERED.read_bytes()))["records"])
+
+
 def composer_names(data: dict) -> dict[str, str]:
-    """What the site's composer (han-compose) is given in place of each part a form may hold: only the
-    drawing chosen for it in `custom-part-donors.tsv`, a description in encoded characters or a cut from a
-    character holding it, which composed well in every character tried. Any other part has none, and a
-    form holding it shows as text."""
+    """What the site's composer (han-compose) is given in place of each part a form may hold, the first that
+    applies: a name of the part the composer holds a cut of, from a real glyph (`&CDP-8CB8;`); a single Han
+    character the tables confirm the part as (亼 for the top of 合); the drawing chosen for it in
+    `custom-part-donors.tsv`, which composed well in the characters tried (some BabelStone's own private-use glyph
+    of the part, which the composer holds an outline of). Any other part has none, and a form holding it shows as text."""
     from glyph_atlas import custom_parts
 
     spelling, _ = _spellings(data)
     live = {key for key, *_ in rows(data)} - set(spelling)
-    named: dict[str, str] = {}
-    for key, drawing in donors().items():
-        if not drawing or key not in live:
+    cuts = composer_cuts()
+    chosen = donors()
+    names: dict[str, list[str]] = defaultdict(list)
+    confirmed: dict[str, list[str]] = defaultdict(list)
+    for component in data["components"]:
+        key = component.get("id")
+        if key not in live:
             continue
-        if custom_parts.TOKEN.search(drawing) or custom_parts.PRIVATE.search(drawing) or custom_parts.UNWRITTEN in drawing:
+        names[key].append(component["text"])
+        for item in component.get("equivalents", []):
+            text = item["text"]
+            if item["status"] == "verified" and not custom_parts.TOKEN.search(text) and not custom_parts.PRIVATE.search(text) \
+                    and custom_parts.UNWRITTEN not in text and text not in confirmed[key]:
+                confirmed[key].append(text)
+    named: dict[str, str] = {}
+    for key in sorted(live):
+        drawing = chosen.get(key, "")
+        if drawing and drawing not in cuts and (custom_parts.TOKEN.search(drawing) or custom_parts.PRIVATE.search(drawing)
+                                                or custom_parts.UNWRITTEN in drawing):
             raise SystemExit(f"{DONORS}: {key} is drawn with {drawing}, which is not in encoded characters only")
-        named[key] = drawing
+        single = [text for text in confirmed[key] if len(text) == 1 and HAN.match(text)]
+        found = next((name for name in names[key] if name in cuts), None) or next(iter(single), None) or drawing
+        if found:
+            named[key] = found
     return named
 
 
 def drawings(data: dict) -> str:
     return (
         "// Written by scripts/build_custom_parts.py from ids-input's table of parts no code point names; do not edit.\n"
-        "/** What the composer is given in place of a part a saved form may hold (`&X-00087;`): the drawing chosen for it\n"
-        " *  (data/vocab/custom-part-donors.tsv). A part not listed has none, and a form holding it shows as text. */\n"
+        "/** What the composer is given in place of a part a saved form may hold (`&X-00087;`): a name of the part it holds\n"
+        " *  a cut of, a Han character the tables confirm the part as, the drawing chosen for it\n"
+        " *  (data/vocab/custom-part-donors.tsv), or a confirmed description. A part not listed has none: its form is text. */\n"
         f"export default {json.dumps(composer_names(data), ensure_ascii=False, separators=(',', ':'))}\n"
     )
 

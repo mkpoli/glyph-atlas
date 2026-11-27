@@ -9,6 +9,8 @@
 // the chosen drawing alone (`one`) in three.
 import { compose, drawingSvg, fromUrl } from 'han-compose'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import Browser from './browser.mjs'
 import { COMPOSER_VERSION } from '../../cloudflare/src/composerVersions.ts'
 const [input, dir, from = '0', to = '100000', per = '12', which = 'many', count = '2'] = process.argv.slice(2)
@@ -18,7 +20,11 @@ const rows = all.slice(Number(from), Number(to))
 const source = fromUrl(`https://ids-input-composer.mkpoli.workers.dev/${COMPOSER_VERSION}/`)
 const svg = async text => {
   for (let i = 0; i < 4; i++) {
-    try { return drawingSvg(await compose(source, text), { size: 72, padding: 2 }) }
+    try {
+      // A drawing the composer makes only approximately (an operator it does not draw) is no candidate.
+      const drawn = await compose(source, text)
+      return drawn.approximate?.length ? `<span style="color:#b00;font-size:10px">approximate: ${esc(drawn.approximate.join(' '))}</span>` : drawingSvg(drawn, { size: 72, padding: 2 })
+    }
     catch (e) { const m = String(e?.message ?? e); if (/No glyph|more components|fewer components|not a/i.test(m)) return null; await new Promise(r => setTimeout(r, 1500 * (i + 1))) }
   }
   return null
@@ -47,7 +53,7 @@ try {
     if (!index.length) continue
     const name = `${dir}/sheet-${String(Number(from) + start).padStart(4, '0')}`
     writeFileSync(name + '.html', html); writeFileSync(name + '.json', JSON.stringify(index))
-    await b.send('Page.navigate', { url: 'file://' + name + '.html' }); await new Promise(r => setTimeout(r, 1200))
+    await b.send('Page.navigate', { url: pathToFileURL(resolve(name + '.html')).href }); await new Promise(r => setTimeout(r, 1200))
     const { width, height } = JSON.parse(await b.evaluate('JSON.stringify({ width: document.body.scrollWidth, height: document.body.scrollHeight })'))
     await b.send('Emulation.setDeviceMetricsOverride', { width: Math.max(width, 300), height, deviceScaleFactor: 1, mobile: false })
     const s = await b.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: Math.max(width, 300), height, scale: 1 } })
