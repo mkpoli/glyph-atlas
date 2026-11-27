@@ -1,0 +1,10 @@
+[Unit]
+Description=Draft pull requests from labelled issues
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B %h/.local/share/fish-pr/pr_worker.py
+Environment=PATH=%h/.nix-profile/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Slice=batch.slice
+MemorySwapMax=0
+TimeoutStartSec=3h
