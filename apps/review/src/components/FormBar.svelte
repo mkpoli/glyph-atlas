@@ -1,17 +1,30 @@
 <script>
   // The bar over a round's selection: how many crops are chosen, the forms of the round's grapheme to
   // mark them as, any other character found by search, a form written as an ideographic description
-  // sequence instead, and the result of the last marking with its undo.
+  // sequence instead, and the result of the last marking with its undo. The grapheme's forms are those
+  // the inspector offers a crop of it (`listGrapheme`): its members with their registered figures and
+  // regional shapes, its variants and the forms its crops carry; until they are read, and where they
+  // cannot be, its members (`forms`).
   import { graphemeLabel } from '$worker/graphemeLabel.ts'
   import FormChips from './FormChips.svelte'
   import CharacterSearch from './CharacterSearch.svelte'
   import IdsPick from './IdsPick.svelte'
   import StyleOptions from './StyleOptions.svelte'
   import { CROP_STYLES } from '../lib/cropStyle.js'
+  import { listGrapheme } from '../lib/cropForms.js'
   import { t } from '../lib/i18n.svelte.js'
   let { count = 0, forms = [], grapheme = '', busy = false, error = '', done = null, style = $bindable(null),
     onassign, onstyle, onclear, onundo, ondismiss } = $props()
   let query = $state(''), target = $state('')
+  let read = $state({ of: '', forms: [] })
+  $effect(() => {
+    const char = grapheme
+    if (!char) return
+    let live = true
+    listGrapheme(char, [char]).then(found => { if (live) read = { of: char, forms: found.chips ?? [] } }, () => {})
+    return () => { live = false }
+  })
+  const offered = $derived(read.of === grapheme && read.forms.length ? read.forms : forms)
 </script>
 
 <div class="form-bar" role="region" aria-label={t('bulk.label')}>
@@ -22,7 +35,7 @@
   {/if}
   {#if count}
     <b class="selection-count">{t('bulk.selected', { count })}</b>
-    <FormChips {forms} disabled={busy} label={t('quiz.forms.label', { char: graphemeLabel(grapheme) })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
+    <FormChips forms={offered} disabled={busy} label={t('quiz.forms.label', { char: graphemeLabel(grapheme) })} title={char => t('bulk.apply', { char })} onchoose={onassign} />
     <div class="form-assign">
       <CharacterSearch compact bind:value={query} label={t('bulk.character.label')} placeholder={t('bulk.character.placeholder')}
         oninput={() => target = ''} onselect={item => { target = item.char; query = item.char }} />
