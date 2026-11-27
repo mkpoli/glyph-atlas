@@ -72,7 +72,9 @@ def descriptions() -> list[tuple[str, str, str]]:
             for line in tar.extractfile(member).read().decode().splitlines():  # type: ignore[union-attr]
                 cols = line.split("\t")
                 if len(cols) >= 3 and not line.startswith(";"):
-                    found += [(cols[1], text.lstrip("@"), "chise") for text in cols[2:]]
+                    # A description may come as `@apparent=…`, the shape as drawn, and carry source tags (`[J]`).
+                    found += [(cols[1], re.sub(r"\[[A-Z]+\]", "", text.removeprefix("@").removeprefix("apparent=")), "chise")
+                              for text in cols[2:]]
     return found
 
 
