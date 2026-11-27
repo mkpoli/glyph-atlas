@@ -15,36 +15,20 @@ built from: a description naming one part once, with encoded characters besides.
 
 from __future__ import annotations
 
-import gzip
-import io
 import json
 import re
 import sys
-import tarfile
 import unicodedata
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_custom_parts
 
-TABLES = {"babelstone": "data/babelstone-ids.tsv.gz", "chise": "data/ids-corpus-sources.tar.gz"}
 PART = re.compile(r"\{\d+\}|&[^;&\s]+;|#\([^)]*\)")
 SUBTRACT = "㇯"
 #: At most this many descriptions and cuts per part, and characters to try them in.
 DESCRIPTIONS, CUTS, HOSTS = 2, 4, 3
-
-
-def bundled(path: str) -> bytes:
-    """A file of ids-input at the pinned commit, from the cache when present."""
-    cache = build_custom_parts.ROOT / "cache" / "ids-input" / f"{build_custom_parts.COMMIT[:12]}-{Path(path).name}"
-    if not cache.exists():
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        url = f"https://raw.githubusercontent.com/mkpoli/ids-input/{build_custom_parts.COMMIT}/{path}"
-        with urllib.request.urlopen(url, timeout=60) as answer:
-            cache.write_bytes(answer.read())
-    return cache.read_bytes()
 
 
 def encoded(text: str) -> bool:
@@ -62,27 +46,6 @@ def rank(char: str) -> int:
     """Commoner blocks first: the URO, then Extension A, then the rest."""
     point = ord(char)
     return 0 if 0x4E00 <= point <= 0x9FFF else 1 if 0x3400 <= point <= 0x4DBF else 2
-
-
-def descriptions() -> list[tuple[str, str, str]]:
-    """Every (character, description, table) of the two tables."""
-    found = []
-    for line in gzip.decompress(bundled(TABLES["babelstone"])).decode().splitlines():
-        if line.startswith("#"):
-            continue
-        char, _, rest = line.partition("\t")
-        found += [(char, re.sub(r"\(.*$", "", text), "babelstone") for text in rest.split()]
-    with tarfile.open(fileobj=io.BytesIO(bundled(TABLES["chise"]))) as tar:
-        for member in tar.getmembers():
-            if not re.fullmatch(r"IDS-UCS-.*\.txt", member.name):
-                continue
-            for line in tar.extractfile(member).read().decode().splitlines():  # type: ignore[union-attr]
-                cols = line.split("\t")
-                if len(cols) >= 3 and not line.startswith(";"):
-                    # A description may come as `@apparent=…`, the shape as drawn, and carry source tags (`[J]`).
-                    found += [(cols[1], re.sub(r"\[[A-Z]+\]", "", text.removeprefix("@").removeprefix("apparent=")), "chise")
-                              for text in cols[2:]]
-    return found
 
 
 def candidates() -> list[dict]:
@@ -106,7 +69,7 @@ def candidates() -> list[dict]:
                         and text not in characters[component["id"]]:
                     characters[component["id"]].append(text)
     hosts: dict[str, dict[str, dict]] = defaultdict(dict)
-    for char, text, table in descriptions():
+    for char, text, table in build_custom_parts.descriptions():
         named = PART.findall(text)
         if len(char) == 1 and len(named) == 1 and named[0] in owner and encoded(text.replace(named[0], "")):
             hosts[owner[named[0]]].setdefault(char, {"char": char, "text": text, "name": named[0], "in": table})

@@ -32,11 +32,19 @@ describe('a saved form holding a part no code point names', () => {
   })
   it('gives the composer the best drawing it holds for the part, and nothing for a form holding a part with none', async () => {
     // The composer's own cut of the part from a real glyph, else the drawing checked in characters holding it.
-    expect(await composerText('⿹&X-00028;止')).toBe('⿹&CDP-8CB8;止')
-    expect(await composerText('⿱&X-00087;龴')).toBe('⿱亼龴')
+    expect(await composerText('⿹&X-00028;女')).toBe('⿹&CDP-8CB8;女')
+    expect(await composerText('⿱&X-00087;女')).toBe('⿱亼女')
     expect(await composerText('⿰&X-00865;木')).toBe('⿰勹木')
     expect(await composerText('⿺辶𦊷')).toBe('⿺辶𦊷')
     for (const text of ['⿰&X-00053;又', '⿱&X-00783;一', '⿱&X-99999;マ']) expect(await composerText(text)).toBeNull()
+  })
+  it('gives a form, or a piece of one, that is exactly a character\'s description as that character', async () => {
+    expect(await composerText('⿹&X-00028;止')).toBe('武')
+    expect(await composerText('⿱⿰&X-00067;犬灬')).toBe('黙')
+    // A part with no drawing of its own draws inside the character it describes.
+    expect(await composerText('⿱一⿻&X-00783;口')).toBe('𬻇')
+    expect(await composerText('⿰亻⿱⿰&X-00067;犬灬')).toBe('⿰亻黙')
+    expect(await composerText('⿰亻⿱&X-00783;一')).toBeNull()
   })
   it('measures a description as the composer is given it', async () => {
     // Each part draws as several components, so the description is too large only once they are written out.
