@@ -1,0 +1,9 @@
+[Unit]
+Description=Look for issues that ask for a draft pull request
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=false
+
+[Install]
+WantedBy=timers.target
