@@ -170,18 +170,24 @@ uv run scripts/cut_guangyun_headwords.py photographs work/guangyun-photographs -
 uv run scripts/cut_guangyun_headwords.py ioc work/guangyun-ioc --table cache/tshet-uinh-data --images cache/commons/guangyun-ioc --report work/guangyun-ioc.report.json
 ```
 
-龍龕手鏡's headwords are cut from the 宋刻本 (中國國家圖書館藏, 中華再造善本影印, on Wikimedia Commons) and labelled from 青雀古籍's
-table (`data/sources/longkan-shoujing.yaml`), which gives each entry's half-leaf and its order on it and no
-column. `glyph_atlas.tape` places the headwords of a half-leaf along its columns read as one tape, anchored on
-the likeness of each crop to its character drawn in a font, and the script says when one is kept. Headwords the
-table itself makes doubtful (`glyph_atlas.longkan.unsettled`) are left out, except that of a run written with one
-character the crop that alone looks like it is kept (`glyph_atlas.longkan.leads`):
+龍龕手鏡's headwords are cut from the 宋刻本 and 新修絫音引證群籍玉篇's from the 金刻本 (both 中國國家圖書館藏, 中華再造善本影印,
+on Wikimedia Commons), labelled from 青雀古籍's tables (`data/sources/longkan-shoujing.yaml`, `data/sources/xinxiu-yupian.yaml`),
+which give each entry's half-leaf and its order on it and no column. `glyph_atlas.tape` places the headwords of a
+half-leaf along its columns read as one tape, anchored on the likeness of each crop to its character drawn in a
+font, and `scripts/cut_table_headwords.py` says when one is kept. Each source names the module that reads its table
+(`glyph_atlas.longkan`, `glyph_atlas.yupian`) and the sizes its print is fitted at. Headwords the table itself makes
+doubtful (`glyph_atlas.longkan.unsettled`) are left out, except that of a run written with one character the crop
+that alone looks like it is kept (`glyph_atlas.longkan.leads`). The serif CJK font comes first: a headword with no
+drawing has no likeness to anchor it.
 
 ```sh
-mkdir -p cache/qingque-data/data/古辞书综合 && curl -L -o cache/qingque-data/data/古辞书综合/龙龛手镜.csv \
-  https://raw.githubusercontent.com/yingdazhao/qingque-data/2ca2e417a71038da2a34a3c9f0fba2991b4e57d5/data/古辞书综合/龙龛手镜.csv
-uv run scripts/cut_longkan_headwords.py song work/longkan-song --table cache/qingque-data --pdf <folder of the Commons PDF> \
-  --fonts <serif CJK font>,cache/fonts/PlangothicP1-Regular.ttf,cache/fonts/PlangothicP2-Regular.ttf --report work/longkan-song.report.json
+for t in 龙龛手镜 新修玉篇; do mkdir -p cache/qingque-data/data/古辞书综合 && curl -L -o "cache/qingque-data/data/古辞书综合/$t.csv" \
+  "https://raw.githubusercontent.com/yingdazhao/qingque-data/2ca2e417a71038da2a34a3c9f0fba2991b4e57d5/data/古辞书综合/$t.csv"; done
+F=<serif CJK font>,cache/fonts/PlangothicP1-Regular.ttf,cache/fonts/PlangothicP2-Regular.ttf
+uv run scripts/cut_table_headwords.py longkan-shoujing song work/longkan-song --table cache/qingque-data --pdf <folder of the Commons PDF> \
+  --fonts "$F" --report work/longkan-song.report.json
+uv run scripts/cut_table_headwords.py xinxiu-yupian jin work/yupian-jin --table cache/qingque-data --pdf <folder of the Commons PDF> \
+  --fonts "$F" --report work/yupian-jin.report.json
 ```
 
 ## 3. Images

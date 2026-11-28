@@ -28,8 +28,9 @@ WRITTEN = {"草": "艹", "四": "罒", "𠕀": "罒", "系": "糹", "䖝": "虫"
            "氣": "气", "凢": "凡"}
 #: A section is tested for its radical when this share of its headwords hold it.
 TESTED = 2 / 3
-#: A note's items are numbered ①②…; one that names the headword and says either of these fills it in or doubts it.
-_ITEMS = re.compile(r"[①-⑳]")
+#: A note's items are numbered ①②…, and a table that joins the notes of several rows puts each on its own line; an item that
+#: names the headword and says either of these fills it in or doubts it.
+_ITEMS = re.compile(r"[①-⑳\n]")
 _DOUBT = ("原空", "原錄", "疑", "待核")
 #: How many rows before and after a headword a second one written with the same character makes it doubtful.
 NEAR = 2
@@ -39,7 +40,9 @@ TITLE, HEADER = 4, 0
 
 @dataclass(frozen=True)
 class Entry:
-    """One table row: its number (the first data row is 1), headword field as written, gloss, volume, section."""
+    """One table row: its number (the first data row is 1), headword field as written, gloss, volume, section.
+
+    `heads` are the printed headwords where the table's reader has read them from the field itself (`fields`)."""
 
     row: int
     field: str
@@ -49,6 +52,7 @@ class Entry:
     tone: str
     page: int
     note: str = ""
+    heads: tuple[str | None, ...] | None = None
 
 
 def read(table: Path, edition: str) -> dict[int, list[Entry]]:
@@ -72,6 +76,8 @@ def fields(entry: Entry) -> list[str | None]:
 
     Several characters in one field are headwords printed one after another with a gloss after the last.
     """
+    if entry.heads is not None:
+        return list(entry.heads)
     if not entry.field:
         return [None]
     if _IDS.search(entry.field):
@@ -96,6 +102,11 @@ def slots(entries: list[Entry]) -> list[Slot]:
     return out
 
 
+def paged(pages: dict[int, list[Entry]]) -> dict[int, list[Slot]]:
+    """`slots` of each page."""
+    return {page: slots(entries) for page, entries in pages.items()}
+
+
 def _holds(char: str, section: str) -> bool:
     """Whether a character is its section's radical or names it at the top level of its description."""
     names = {section, WRITTEN.get(section, section)}
@@ -107,16 +118,19 @@ def _doubted(note: str) -> bool:
     return any("字頭" in item and any(word in item for word in _DOUBT) for item in _ITEMS.split(note))
 
 
-def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tuple[int, int]]:
+def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True, place: dict[int, int] | None = None) -> set[tuple[int, int]]:
     """The headwords, as row and place in it, whose character is no sure reading of what the print shows.
 
     - The table writes 俗, 正 and 通 forms that stand side by side with one character, although the print shows a
-      different shape for each. Without `neighbours`, a row is not named for this alone.
+      different shape for each. Without `neighbours`, a row is not named for this alone. Rows are `NEAR` apart by
+      their number, or by their `place` where a table gives one headword several rows.
     - A note on a headword says it was blank and filled in, or doubts it.
     - The character lacks the radical of its section (聴 under 口, where the print has 口 beside it). A section is
       tested when most of its headwords hold the radical; 雜部 and the like hold none.
     """
     entries = {entry.row: entry for group in pages.values() for entry in group}
+    at = place or {row: row for row in entries}
+    row_at = {at[row]: row for row in entries}
     heads = {row: fields(entry) for row, entry in entries.items()}
     described: dict[str, list[bool]] = {}
     for row, entry in entries.items():
@@ -125,7 +139,7 @@ def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tup
     out = set()
     for row, entry in entries.items():
         own = [c for c in heads[row] if c]
-        near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ()) if c}
+        near = {c for k in range(at[row] - NEAR, at[row] + NEAR + 1) if k != at[row] and k in row_at for c in heads[row_at[k]] if c}
         doubted = (neighbours and (len(set(own)) < len(own) or bool(near & set(own)))) or _doubted(entry.note)
         for sub, char in enumerate(heads[row]):
             foreign = char is not None and len(char) == 1 and entry.section in tested and not _holds(char, entry.section)
@@ -134,10 +148,11 @@ def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tup
     return out
 
 
-def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, int]]]:
+def kin(pages: dict[int, list[Entry]], place: dict[int, int] | None = None) -> dict[tuple[int, int], set[tuple[int, int]]]:
     """For each headword written with the same character as one within `NEAR` rows of it, the others of its run.
 
     The run goes on while the next one stands within `NEAR` rows of the last: 鉀 in rows 3, 5 and 7 is one run.
+    Rows are apart by their number, or by their `place` as in `unsettled`.
     """
     places: dict[str, list[tuple[int, int]]] = {}
     for entries in pages.values():
@@ -145,12 +160,13 @@ def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, i
             for sub, char in enumerate(fields(entry)):
                 if char:
                     places.setdefault(char, []).append((entry.row, sub))
+    at = place or {row: row for spots in places.values() for row, _ in spots}
     out: dict[tuple[int, int], set[tuple[int, int]]] = {}
     for spots in places.values():
         spots.sort()
         runs = [[spots[0]]]
         for spot in spots[1:]:
-            if spot[0] - runs[-1][-1][0] <= NEAR:
+            if at[spot[0]] - at[runs[-1][-1][0]] <= NEAR:
                 runs[-1].append(spot)
             else:
                 runs.append([spot])

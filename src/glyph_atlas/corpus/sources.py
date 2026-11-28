@@ -119,6 +119,29 @@ DERIVED_CORPORA = frozenset(
 #: excluded by declaring itself rather than by being added to the list above.
 DERIVED_MARKER = "derived_from"
 
+#: Unit id prefixes, from the importers. This is the real bound on a lookup: a
+#: well-formed id names its corpus, so exactly one unit table is opened instead of all.
+UNIT_ID_PREFIXES = {
+    "codh-omt:": "kokatsuji",
+    "codh:": "codh-full",
+    "hi:": "hilab",
+    "hl:": "honkoku-lines",
+    "hk:": "ainu-records",
+    "ws:": "wikisource",
+    "hng:": "hng",
+    "hng-kiridashi:": "hng-kiridashi",
+    "gl:": "glossary-headwords",
+    "krm:": "hdic-krm",
+    "eo:": "nogeoldae-eonhae",
+    "ks:": "wikisource-ko-glyphs",
+    "ktb:": "hdic-ktb",
+    "tsj:": "hdic-tsj",
+    "gy-photographs:": "guangyun-photographs",
+    "gy-ioc:": "guangyun-ioc",
+    "lk-song:": "longkan-song",
+    "yp-jin:": "yupian-jin",
+}
+
 #: Which page/line numbering convention a corpus publishes under. Two records are only
 #: ever merged inside one family. ``ainu-records`` numbers pages from 0 where the
 #: Honkoku platform numbers from 1 — a real off-by-one, confirmed by comparing page
@@ -143,6 +166,7 @@ ID_FAMILIES = {
     "guangyun-photographs": "guangyun-photographs",
     "guangyun-ioc": "guangyun-ioc",
     "longkan-song": "longkan-song",
+    "yupian-jin": "yupian-jin",
     "codh-tensho": "codh-tensho",
     "nogeoldae-eonhae": "nogeoldae-eonhae",
     "wikisource-ko-glyphs": "wikisource-ko-glyphs",
@@ -227,7 +251,12 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "longkan-song",
         "note": "龍龕手鏡 headwords on the 宋刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), labelled "
-                "from 青雀古籍's table of the book (scripts/cut_longkan_headwords.py). A label is the table's headword; the print may show a variant of it.",
+                "from 青雀古籍's table of the book (scripts/cut_table_headwords.py). A label is the table's headword; the print may show a variant of it.",
+    },
+    {
+        "name": "yupian-jin",
+        "note": "新修絫音引證群籍玉篇 headwords on the 金刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), "
+                "labelled from 青雀古籍's table of the book (scripts/cut_table_headwords.py). A label is the table's headword; the print may show a variant of it.",
     },
     {
         "name": "codh-tensho",

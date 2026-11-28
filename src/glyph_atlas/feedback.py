@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import recorded_terms
+from .corpus.sources import UNIT_ID_PREFIXES
 
 #: The export this understands.
 KIND = "atlas-character-reviews"
@@ -137,25 +138,7 @@ def source_corpus_of(unit_id: str | None) -> str | None:
     """The corpus a unit id belongs to, read from its prefix."""
     if not unit_id or ":" not in unit_id:
         return None
-    return {
-        "codh-omt:": "kokatsuji",
-        "codh:": "codh-full",
-        "hi:": "hilab",
-        "hl:": "honkoku-lines",
-        "hk:": "ainu-records",
-        "ws:": "wikisource",
-        "hng:": "hng",
-        "hng-kiridashi:": "hng-kiridashi",
-        "gl:": "glossary-headwords",
-        "krm:": "hdic-krm",
-        "eo:": "nogeoldae-eonhae",
-        "ks:": "wikisource-ko-glyphs",
-        "ktb:": "hdic-ktb",
-        "tsj:": "hdic-tsj",
-        "gy-photographs:": "guangyun-photographs",
-        "gy-ioc:": "guangyun-ioc",
-        "lk-song:": "longkan-song",
-    }.get(unit_id.split(":", 1)[0] + ":")
+    return UNIT_ID_PREFIXES.get(unit_id.split(":", 1)[0] + ":")
 
 
 @dataclass(frozen=True)

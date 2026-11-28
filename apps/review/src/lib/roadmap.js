@@ -51,7 +51,7 @@ export const STAGES = [
       { edition: '明萬曆己丑（1589）重刊本（芝山開元寺）', holder: NDL, href: ndl(2552924), status: 'planned' },
       { edition: '明萬曆十七年（1589）刊本（近衛文庫）', holder: '京都大学附属図書館', href: 'https://rmda.kulib.kyoto-u.ac.jp/item/rb00008716', status: 'planned' }] },
     { title: '新修累音引證群籍玉篇', by: '邢準', editions: [
-      { edition: '金刻本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY000526 新修絫音引證群籍玉篇 十二冊 金邢準撰 金刻本.pdf'), status: 'planned' }] },
+      { edition: '金刻本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY000526 新修絫音引證群籍玉篇 十二冊 金邢準撰 金刻本.pdf'), status: 'underway' }] },
     { title: '大廣益會玉篇', by: '顧野王撰、孫強增字、陳彭年等重修', editions: [
       { edition: '元延祐二年（1315）圓沙書院刻本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY000524 大廣益會玉篇 六冊 南朝·梁顧野生撰 唐孫強增字 宋陳彭年等重修 元延祐二年圓沙書院刻本.pdf'), status: 'planned' },
       { edition: '明宣德間清江書堂刊本', holder: NDL, href: ndl(2592019), status: 'planned' }] },

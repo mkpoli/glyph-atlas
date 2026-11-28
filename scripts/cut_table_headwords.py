@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Cut the headwords of 龍龕手鏡's 宋刻本 from its scan, labelled by 青雀古籍's table.
+"""Cut a dictionary's headwords from a scan of one printing, labelled by a table that gives each headword's half-leaf.
 
-    uv run scripts/cut_longkan_headwords.py song work/longkan-song --table cache/qingque-data --pdf <folder> \
-        --fonts cache/fonts/PlangothicP1-Regular.ttf,... --report work/longkan-song.report.json
+    uv run scripts/cut_table_headwords.py longkan-shoujing song work/longkan-song --table cache/qingque-data --pdf <folder> \
+        --fonts <serif CJK font>,cache/fonts/PlangothicP1-Regular.ttf,... --report work/longkan-song.report.json
 
-`COPY` is one `data/sources/longkan-shoujing.yaml` lists. `--table` is a checkout of the table's repository at
+`SOURCE` is a file of `data/sources` that names the table (`format.file`), the module of `glyph_atlas` that reads it
+(`format.reader`: `read`, `paged`, `unsettled`, `kin`), the corpus and the prefix of the ids it cuts, and its copies;
+`COPY` is one of them, with the sizes its print is fitted at. `--table` is a checkout of the table's repository at
 the pinned commit, or its folder with the one CSV file; `--pdf` the folder with the copy's PDF under its Commons
 name, whose SHA-1 the source pins. Each half-leaf's boxes are placed along its columns read as one tape
 (`glyph_atlas.tape`), in the order the table gives, and the table page it shows is the one that fits best.
@@ -14,7 +16,7 @@ most likely pairing's, its crop is at least `ALIKE` like the character drawn in 
 likest its own headword of the page's, ahead of the `NEAR` headwords either side by `LEAD`, and its half-leaf is borne
 out: the page costs `COST` a headword or less and beats the next page by `MARGIN`, and the pages of the volume
 run in order. The label is the table's headword; the print may show a variant of it. A headword the table leaves
-blank is placed with the rest and not kept, and so is one whose row `longkan.unsettled` names. One it names only
+blank is placed with the rest and not kept, and so is one whose row the reader's `unsettled` names. One it names only
 for a neighbour written with the same character is kept when its crop leads that run (`longkan.leads`): at least
 `KIN_ALIKE` like the character and ahead of every other crop of the run placed at `POSTERIOR` by `KIN_LEAD`. The
 others of the run are the 俗, 正 and 通 forms the dictionary lists beside it: each is kept with a label that names
@@ -28,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import io
 import json
 import sys
@@ -61,9 +64,6 @@ from glyph_atlas.schema import (
     Unit,
 )
 
-SOURCE = "longkan-shoujing"
-CORPUS = "longkan"
-TABLE = "data/古辞书综合/龙龛手镜.csv"
 RUN = Path("models/align/runs/collection-v2.yaml")
 SEGMENTATION = "tape-anchors-v1"
 POSTERIOR = 0.9
@@ -83,18 +83,13 @@ REACH, WIDE_REACH = 12, 40
 #: page the winner's margin does not outlast by this is fitted too (0.28 was the most in 250 fits on ten half-leaves).
 CANDIDATES = 4
 GAIN = 0.35
-#: A headword's height and a gloss row in half-column pitches: what the fit of a page tries.
-HEADS = (1.2, 1.35, 1.5, 1.65, 1.8, 1.95)
-ROWS = (0.72, 0.8, 0.88, 0.96, 1.04, 1.12)
-#: The sizes a page is first compared at.
-FIRST = (1.55, 0.9)
 
 
 def document_of(source: dict, copy: dict, volume: str) -> Document:
     return Document(
-        id=f"{CORPUS}-{copy['id']}:{volume}",
+        id=f"{source['corpus']}-{copy['id']}:{volume}",
         title=f"{source['work']}{source['volumes'][volume]}（{source['printing']}，{copy['of']}）",
-        source_refs={SOURCE: source["volumes"][volume], "images": copy["repository"]},
+        source_refs={source["id"]: source["volumes"][volume], "images": copy["repository"]},
         holder=copy["holder"],
         production="printed/woodblock",
         origin="china",
@@ -116,7 +111,7 @@ def leaves(copy: dict, folder: Path, only: set[int] | None) -> Iterator[tuple[in
 
     path = folder / copy["file"]
     if hashlib.sha1(path.read_bytes()).hexdigest() != copy["sha1"]:
-        raise SystemExit(f"{path} is not the file {SOURCE}.yaml pins")
+        raise SystemExit(f"{path} is not the file its source pins")
     document = pymupdf.open(path)
     for index in range(len(document)):
         if only is not None and index + 1 not in only:
@@ -141,9 +136,10 @@ def halves(image: Image.Image, boxes: list[Box]) -> list[tuple[str, list[Box]]]:
     return [("right", [b for b in boxes if b.x + b.w / 2 > image.width / 2]), ("left", [b for b in boxes if b.x + b.w / 2 <= image.width / 2])]
 
 
-def fitted(page: tape.Half, slots: list[tape.Slot], alike: np.ndarray) -> tuple[float, float, float]:
-    """The cost a headword, and the sizes, a page fits best at."""
-    best = min((tape.solve(slots, page, alike, h * page.pitch, r * page.pitch)[1], h, r) for h in HEADS for r in ROWS)
+def fitted(page: tape.Half, slots: list[tape.Slot], alike: np.ndarray, copy: dict) -> tuple[float, float, float]:
+    """The cost a headword, and the sizes, a page fits best at: a headword's height and a gloss row in half-column
+    pitches, of those the copy lists (`heads`, `rows`)."""
+    best = min((tape.solve(slots, page, alike, h * page.pitch, r * page.pitch)[1], h, r) for h in copy["heads"] for r in copy["rows"])
     return best[0] / len(slots), best[1], best[2]
 
 
@@ -179,6 +175,7 @@ def ordered(found: list[tuple[int, int, bool]]) -> set[int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("source")
     parser.add_argument("copy")
     parser.add_argument("output", type=Path)
     parser.add_argument("--table", type=Path, required=True)
@@ -187,12 +184,14 @@ def main() -> int:
     parser.add_argument("--leaves", help="comma-separated PDF page numbers")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
-    source = yaml.safe_load((SOURCES / f"{SOURCE}.yaml").read_text(encoding="utf-8"))
+    source = yaml.safe_load((SOURCES / f"{args.source}.yaml").read_text(encoding="utf-8"))
     copy = next((c for c in source["copies"] if c["id"] == args.copy), None)
     if copy is None:
-        raise SystemExit(f"{SOURCE}.yaml lists no copy {args.copy!r}")
-    table = args.table / TABLE if (args.table / TABLE).exists() else args.table / Path(TABLE).name
-    entries = longkan.read(table, source["format"]["edition"])
+        raise SystemExit(f"{args.source}.yaml lists no copy {args.copy!r}")
+    reader = importlib.import_module(f"glyph_atlas.{source['format']['reader']}")
+    name = source["format"]["file"]
+    table = args.table / name if (args.table / name).exists() else args.table / Path(name).name
+    entries = reader.read(table, source["format"]["edition"])
     only = {int(n) for n in args.leaves.split(",")} if args.leaves else None
     run = align.load_run(RUN)
     detector = Detector(run.detector, score=run.score, nms=run.nms, providers=["CUDAExecutionProvider"])
@@ -200,9 +199,10 @@ def main() -> int:
     if classifier.features(Image.new("L", (64, 64), 255)) is None:
         raise SystemExit("the classifier export has no features")
     anchors = tape.Anchors(args.fonts.split(","), classifier.features)
-    slots_of = {page: longkan.slots(rows) for page, rows in entries.items()}
-    unsettled, held = longkan.unsettled(entries), longkan.unsettled(entries, neighbours=False)
-    kin = longkan.kin(entries)
+    slots_of = reader.paged(entries)
+    unsettled, held = reader.unsettled(entries), reader.unsettled(entries, neighbours=False)
+    kin = reader.kin(entries)
+    first_head, first_row = copy["first"]
 
     found, last = [], None  # `last`: the half-leaf last borne out, as its index in the book (two to a scan page), and its table page
     for leaf, url, image in leaves(copy, args.pdf, only):
@@ -220,10 +220,10 @@ def main() -> int:
             for reach in (REACH, WIDE_REACH):
                 costs = {}
                 for number in range(centre - reach, centre + reach + 1):
-                    if number not in slots_of:
+                    if not slots_of.get(number):  # a page that prints no headword has nothing to fit
                         continue
                     alike = tape.similarity(slots_of[number], crops, anchors)
-                    costs[number] = tape.solve(slots_of[number], page, alike, FIRST[0] * page.pitch, FIRST[1] * page.pitch)[1] / len(slots_of[number])
+                    costs[number] = tape.solve(slots_of[number], page, alike, first_head * page.pitch, first_row * page.pitch)[1] / len(slots_of[number])
                 if costs and min(costs.values()) <= COST:
                     break
             if not costs:
@@ -234,7 +234,7 @@ def main() -> int:
             sized = {}
             for number in near:
                 alike = tape.similarity(slots_of[number], crops, anchors)
-                sized[number] = (*fitted(page, slots_of[number], alike), alike)
+                sized[number] = (*fitted(page, slots_of[number], alike, copy), alike)
             # A page left unfitted could still win if its first cost is less than a fitted one's and the most it may gain.
             while True:
                 rest = [n for n in costs if n not in sized and costs[n] - GAIN < min(v[0] for v in sized.values()) + MARGIN]
@@ -242,7 +242,7 @@ def main() -> int:
                     break
                 number = min(rest, key=costs.get)
                 alike = tape.similarity(slots_of[number], crops, anchors)
-                sized[number] = (*fitted(page, slots_of[number], alike), alike)
+                sized[number] = (*fitted(page, slots_of[number], alike, copy), alike)
             number = min(sized, key=lambda n: sized[n][0])
             cost, head, row, alike = sized[number]
             # An unfitted page is as good as its first cost less the most it may gain.
@@ -268,24 +268,24 @@ def main() -> int:
         box = native(f["page"].candidates[j][2], copy["enlarge"])
         volume = entry.volume
         documents.setdefault(volume, document_of(source, copy, volume))
-        page_id = f"{CORPUS}-{copy['id']}:{f['leaf']}"
+        page_id = f"{source['corpus']}-{copy['id']}:{f['leaf']}"
         if f["leaf"] in pages and pages[f["leaf"]].document_id != documents[volume].id:
             return False  # a scan page that a volume ends on belongs to the first of its two volumes
         if f["leaf"] not in pages:
             pages[f["leaf"]] = Page(id=page_id, document_id=documents[volume].id, seq=f["leaf"] - 1, image=f["url"],
                                     width=f["size"][0], height=f["size"][1], image_kind=copy["image_kind"],
-                                    transcription={"source": SOURCE, "entry": str(f["table_page"]), "revision": source["revision"]})
+                                    transcription={"source": source["id"], "entry": str(f["table_page"]), "revision": source["revision"]})
         char = slot.char
-        line_id = f"lk-{copy['id']}:{slot.entry}-{slot.sub}"
+        line_id = f"{source['prefix']}-{copy['id']}:{slot.entry}-{slot.sub}"
         lines.append(Line(id=line_id, page_id=page_id, seq=len(lines), vertical=True, box=box, text_raw=entry.field, text=char, match_method="tape",
                           match_confidence=float(min(chance, 1.0)),
-                          meta={"source": SOURCE, "row": slot.entry, "table_page": f["table_page"], "leaf": f["leaf"], "side": f["side"],
+                          meta={"source": source["id"], "row": slot.entry, "table_page": f["table_page"], "leaf": f["leaf"], "side": f["side"],
                                 "section": entry.section, "tone": entry.tone}))
         one = len(char) == 1
         units.append(Unit(id=f"{line_id}:0", document_id=documents[volume].id, page_id=page_id, line_id=line_id, seq=0, box=box, text_source=char,
                           unicode=f"U+{ord(char):04X}" if one else None,
                           classification=Classification.IDENTIFIED if one else Classification.UNIDENTIFIED, script=Script.HAN,
-                          method="detect-align", review=ReviewState.MACHINE, upstream={"source": SOURCE, "entry_id": str(slot.entry), "copy": copy["id"]},
+                          method="detect-align", review=ReviewState.MACHINE, upstream={"source": source["id"], "entry_id": str(slot.entry), "copy": copy["id"]},
                           meta={"segmentation": SEGMENTATION, "posterior": round(float(chance), 4), "similarity": round(alike, 3),
                                 "page_cost": round(float(f["cost"]), 3), "label": "table headword",
                                 **({"label_scope": scope} if scope else {})}))
@@ -335,8 +335,8 @@ def main() -> int:
             row["unsettled"] += 1
 
     args.output.mkdir(parents=True, exist_ok=True)
-    command = " ".join(["scripts/cut_longkan_headwords.py", *sys.argv[1:]])
-    order = sorted(documents)
+    command = " ".join(["scripts/cut_table_headwords.py", *sys.argv[1:]])
+    order = sorted(documents, key=lambda volume: (len(volume), volume))  # "2" before "10"
     tables.write(args.output / "documents.parquet", [documents[v] for v in order], Document)
     tables.write(args.output / "pages.parquet", [pages[leaf] for leaf in sorted(pages)], Page)
     tables.write(args.output / "lines.parquet", lines, Line)
