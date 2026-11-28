@@ -3797,14 +3797,55 @@ def _function_schema(schema: Any) -> dict[str, Any]:
     return out
 
 
+def _clean_agent_label(text: str, limit: int = 80) -> str:
+    """Normalize and cap an agent attribution label to the compendium's UTF-16 length limit."""
+    cleaned = "".join(ch for ch in unicodedata.normalize("NFC", text) if unicodedata.category(ch) not in ("Cc", "Cf"))
+    cleaned = " ".join(cleaned.split()).strip()
+    out: list[str] = []
+    units = 0
+    for ch in cleaned:
+        step = 2 if ord(ch) > 0xFFFF else 1
+        if units + step > limit:
+            break
+        out.append(ch)
+        units += step
+    return "".join(out).strip()
+
+
+def _agent_model_name(model: str) -> str:
+    """Turn a lowercase hyphenated model id such as 'gemini-4-hydrogen' into 'Gemini 4 Hydrogen'."""
+    slug = " ".join(model.split()).strip()
+    if slug.startswith("models/"):
+        slug = slug.removeprefix("models/").strip()
+    if not slug:
+        return ""
+    if re.fullmatch(r"[a-z0-9][a-z0-9.-]*", slug):
+        return " ".join(part[0].upper() + part[1:] if part[0].isalpha() else part for part in slug.split("-") if part)
+    return slug
+
+
+def _compendium_agent(display_name: str, model: str) -> dict[str, str]:
+    """The agent attribution object sent on 珍字集覽 writes: the bot's own name and model."""
+    harness = _clean_agent_label(display_name)
+    if not harness:
+        return {}
+    agent = {"harness": harness}
+    label = _clean_agent_label(_agent_model_name(model))
+    if label:
+        agent["model"] = label
+    return agent
+
+
 class Compendium:
     """珍字集覽 through its MCP endpoint: its tools, and calls to them under one kept writer's name."""
 
-    def __init__(self, endpoint: str, store: Store | None, token: str = "", timeout: float = COMPENDIUM_TIMEOUT):
+    def __init__(self, endpoint: str, store: Store | None, token: str = "", timeout: float = COMPENDIUM_TIMEOUT,
+                 agent: dict[str, str] | None = None):
         self.endpoint = endpoint
         self.store = store
         self.token = token
         self.timeout = timeout
+        self.agent = dict(agent) if agent else None
         self.instructions = ""
         self._tools: list[dict[str, Any]] = []
         self._tools_at = -float(COMPENDIUM_TOOLS_SECONDS)
@@ -3866,6 +3907,13 @@ class Compendium:
         tool = next((tool for tool in self._tools if tool["name"] == name), None)
         annotations = tool.get("annotations") if tool else None
         return not (isinstance(annotations, dict) and annotations.get("readOnlyHint") is True)
+
+    def takes_agent(self, name: str) -> bool:
+        """Whether a tool accepts the compendium's agent attribution object."""
+        tool = next((tool for tool in self._tools if tool["name"] == name), None)
+        schema = tool.get("inputSchema") if isinstance(tool, dict) else None
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        return isinstance(props, dict) and "agent" in props
 
     def check(self) -> tuple[int, bool]:
         """Contact the MCP endpoint and return (tool_count, has_moderator_tools)."""
@@ -3942,8 +3990,13 @@ class Lookup:
                     privileged = self.compendium.writes(tool["name"]) or tool["name"] in COMPENDIUM_MODERATOR_TOOLS
                     if self.may_write or not privileged:
                         schema = _function_schema(tool.get("inputSchema"))
+                        props = dict(schema.get("properties", {}))
+                        required = list(schema.get("required", []))
+                        if self.compendium.agent and "agent" in props:
+                            props.pop("agent", None)
+                            required = [field for field in required if field != "agent"]
                         tools.append(_tool(f"rare_{tool['name']}", f"珍字集覽: {tool.get('description', '')}",
-                                           schema.get("properties", {}), schema.get("required", [])))
+                                           props, required))
             except CompendiumError as error:
                 log.warning("reading the tools of 珍字集覽: %s", error)
         if self.github is not None:
@@ -3996,8 +4049,11 @@ class Lookup:
             hour_ago = now_ms() - 3_600_000
             if not self.may_write:
                 return {"error": "you may add to or change 珍字集覽 only when someone asks you to"}
+            dedupe_args = {key: value for key, value in args.items() if key != "agent"}
+            key = hashlib.sha256(f"{name} {json.dumps(dedupe_args, ensure_ascii=False, sort_keys=True)}".encode()).hexdigest()
+            if self.compendium.agent and self.compendium.takes_agent(name):
+                args = {**args, "agent": dict(self.compendium.agent)}
             written = json.dumps(args, ensure_ascii=False, sort_keys=True)
-            key = hashlib.sha256(f"{name} {written}".encode()).hexdigest()
             if name in COMPENDIUM_DEDUPE_TOOLS:
                 done = self.store.compendium_done(key, now_ms() - COMPENDIUM_REPEAT_HOURS * 3_600_000)
                 if done is not None:
@@ -4327,7 +4383,8 @@ class Bot:
         self.state = state or State()
         self.user_id = config.user_id
         compendium = (Compendium(config.compendium_endpoint, store,
-                                 _secret(config.compendium_token_file) if config.compendium_token_file else "")
+                                 _secret(config.compendium_token_file) if config.compendium_token_file else "",
+                                 agent=_compendium_agent(config.display_name, config.gemini_model))
                       if config.compendium_endpoint else None)
         self.community = Community(matrix, {config.user_id, *config.ignored_senders},
                                    rooms=lambda: self.active_rooms)
