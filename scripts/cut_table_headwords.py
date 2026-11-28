@@ -5,7 +5,7 @@
         --fonts <serif CJK font>,cache/fonts/PlangothicP1-Regular.ttf,... --report work/longkan-song.report.json
 
 `SOURCE` is a file of `data/sources` that names the table (`format.file`), the module of `glyph_atlas` that reads it
-(`format.reader`: `read`, `slots`, `unsettled`, `kin`), the corpus and the prefix of the ids it cuts, and its copies;
+(`format.reader`: `read`, `paged`, `unsettled`, `kin`), the corpus and the prefix of the ids it cuts, and its copies;
 `COPY` is one of them, with the sizes its print is fitted at. `--table` is a checkout of the table's repository at
 the pinned commit, or its folder with the one CSV file; `--pdf` the folder with the copy's PDF under its Commons
 name, whose SHA-1 the source pins. Each half-leaf's boxes are placed along its columns read as one tape
@@ -199,7 +199,7 @@ def main() -> int:
     if classifier.features(Image.new("L", (64, 64), 255)) is None:
         raise SystemExit("the classifier export has no features")
     anchors = tape.Anchors(args.fonts.split(","), classifier.features)
-    slots_of = {page: reader.slots(rows) for page, rows in entries.items()}
+    slots_of = reader.paged(entries)
     unsettled, held = reader.unsettled(entries), reader.unsettled(entries, neighbours=False)
     kin = reader.kin(entries)
     first_head, first_row = copy["first"]
@@ -336,7 +336,7 @@ def main() -> int:
 
     args.output.mkdir(parents=True, exist_ok=True)
     command = " ".join(["scripts/cut_table_headwords.py", *sys.argv[1:]])
-    order = sorted(documents)
+    order = sorted(documents, key=lambda volume: (len(volume), volume))  # "2" before "10"
     tables.write(args.output / "documents.parquet", [documents[v] for v in order], Document)
     tables.write(args.output / "pages.parquet", [pages[leaf] for leaf in sorted(pages)], Page)
     tables.write(args.output / "lines.parquet", lines, Line)

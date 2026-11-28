@@ -2,10 +2,11 @@
 
 The table (`data/sources/xinxiu-yupian.yaml`) has one row per reading: a headword printed once with several
 readings fills as many rows, which share the headword's place on its page (推导页内字序). A row without that
-place and without a headword is a section's opening note, printed as text before its first headword. The
-stroke count a section's headwords are grouped by (笔画（推导）) is printed in a cartouche where it changes.
-Every row's status is a first proofreading by a language model (AI初校), as in 龍龕手鏡's table, and the rules
-that hold a doubtful headword back are that table's (`longkan.unsettled`), counted in printed headwords.
+place and without a headword is a note printed as text: a section's opening note before its first headword, or
+a group's count (凡N字) within it. The stroke count a section's headwords are grouped by (笔画（推导）) is printed
+in a cartouche where it changes. Every row's status is a first proofreading by a language model (AI初校), as in
+龍龕手鏡's table, and the rules that hold a doubtful headword back are that table's (`longkan.unsettled`),
+counted in printed headwords.
 """
 from __future__ import annotations
 
@@ -21,22 +22,31 @@ from .tape import Slot
 TITLE, HEADER = 4, 0
 #: How the table writes a stroke group it found no mark for.
 UNMARKED = "〔無標記〕"
-#: An editor's note standing in a headword field: ［口部開頭缺］, [=此处版面残缺=].
-_NOTE = re.compile(r"[\[［]")
-#: Punctuation between headwords printed together: 歲勾，歲欠.
-_BETWEEN = re.compile(r"[，、。；\s]")
+#: Marks around a headword the table's conventions do not explain: an editor's note (［口部開頭缺］,
+#: [=此处版面残缺=]), 〖𠘲〗, 㜐（㛸）. The headword is placed and not labelled.
+_MARKED = re.compile(r"[\[［〖〗（）()]")
+#: What separates headwords printed one after another when one of them is written as its parts: 元失，元矢.
+_BETWEEN = re.compile(r"[，、]")
+#: A stroke count typed in a headword's place (十一).
+_NUMERALS = set("一二三四五六七八九十")
+_IDS = re.compile(r"[⿰-⿻]")
 
 
-def _field(text: str) -> str:
-    """The headwords a field names as printed: empty for an editor's note in its place."""
-    return "" if _NOTE.search(text) else _BETWEEN.sub("", text)
+def heads(field: str) -> tuple[str | None, ...] | None:
+    """The printed headwords a field names, None for one it does not name; None where `longkan.fields` reads it as is."""
+    if _MARKED.search(field) or (len(field) > 1 and set(field) <= _NUMERALS):
+        return (None,)
+    if not _BETWEEN.search(field):
+        return None
+    return tuple(group if _IDS.search(group) or len(group) == 1 else None for group in _BETWEEN.split(field) if group)
 
 
 def read(table: Path, edition: str = "金刻本") -> dict[int, list[Entry]]:
     """The printed headwords of the table by the half-leaf `edition` gives them, in the table's order.
 
-    An entry's `row` is the table row of its first reading, its gloss every reading's, and its `tone` the stroke
-    group. A section's opening note is an entry with an empty field and `tone` "note"."""
+    An entry's `row` is the table row of its first reading, its gloss every reading's, its note every reading's
+    on a line of its own, and its `tone` the stroke group. A note printed as text is an entry with an empty field
+    and `tone` "note"."""
     pages: dict[int, list[Entry]] = {}
     held: dict[tuple[int, str], int] = {}
     with table.open(encoding="utf-8-sig", newline="") as handle:
@@ -53,33 +63,41 @@ def read(table: Path, edition: str = "金刻本") -> dict[int, list[Entry]]:
             if (page, place) in held:
                 k = held[page, place]
                 first = entries[k]
+                note = "\n".join(n for n in (first.note, values["校勘记"]) if n)
                 entries[k] = Entry(first.row, first.field, first.gloss + values["注文"], first.volume, first.section, first.tone,
-                                   page, first.note + values["校勘记"])
+                                   page, note, first.heads)
                 continue
             held[page, place] = len(entries)
-            entries.append(Entry(row, _field(values["字头"].strip()), values["注文"], values["卷序"], values["部首"],
-                                 values["笔画（推导）"].strip(), page, values["校勘记"]))
+            field = values["字头"].strip()
+            entries.append(Entry(row, field, values["注文"], values["卷序"], values["部首"], values["笔画（推导）"].strip(), page,
+                                 values["校勘记"], heads(field)))
     return pages
 
 
-def slots(entries: list[Entry]) -> list[Slot]:
-    """What a page prints in order: its headwords, a place for each section's title and opening note, and a stroke count where it changes."""
-    out: list[Slot] = []
-    before: Entry | None = None
-    titled = None
-    for entry in entries:
-        if entry.tone == "note":
-            out.append(Slot(None, TITLE + longkan.length(entry.gloss), -1))
-            titled = entry.section
-            continue
-        if before is not None and entry.section != before.section and entry.section != titled:
-            out.append(Slot(None, TITLE, -1))
-        elif before is not None and entry.section == before.section and entry.tone != before.tone and entry.tone not in ("", UNMARKED):
-            out.append(Slot(None, HEADER, -1))
-        before = entry
-        characters = longkan.fields(entry)
-        for k, char in enumerate(characters):
-            out.append(Slot(char, longkan.length(entry.gloss) if k == len(characters) - 1 else 0, entry.row, k))
+def paged(pages: dict[int, list[Entry]]) -> dict[int, list[Slot]]:
+    """What each page prints in order: its headwords, a place for each section's title and note, and a stroke count
+    where it changes. A section or stroke count that changes at the top of a page is seen against the page before."""
+    out: dict[int, list[Slot]] = {}
+    section, titled, strokes = None, None, None
+    for page in sorted(pages):
+        slots = out[page] = []
+        for entry in pages[page]:
+            if entry.tone == "note":
+                opens = entry.section != section
+                slots.append(Slot(None, (TITLE if opens else 0) + longkan.length(entry.gloss), -1))
+                if opens:
+                    section, titled, strokes = entry.section, entry.section, None
+                continue
+            if entry.section != section:
+                if section is not None and entry.section != titled:
+                    slots.append(Slot(None, TITLE, -1))
+                section, strokes = entry.section, None
+            if entry.tone not in ("", UNMARKED) and entry.tone != strokes:
+                slots.append(Slot(None, HEADER, -1))
+                strokes = entry.tone
+            characters = longkan.fields(entry)
+            for k, char in enumerate(characters):
+                slots.append(Slot(char, longkan.length(entry.gloss) if k == len(characters) - 1 else 0, entry.row, k))
     return out
 
 
@@ -89,11 +107,15 @@ def places(pages: dict[int, list[Entry]]) -> dict[int, int]:
     return {row: k for k, row in enumerate(rows)}
 
 
+def _headwords(pages: dict[int, list[Entry]]) -> dict[int, list[Entry]]:
+    return {page: [e for e in group if e.tone != "note"] for page, group in pages.items()}
+
+
 def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tuple[int, int]]:
     """`longkan.unsettled`, with neighbours counted in printed headwords."""
-    return longkan.unsettled({page: [e for e in group if e.tone != "note"] for page, group in pages.items()}, neighbours, places(pages))
+    return longkan.unsettled(_headwords(pages), neighbours, places(pages))
 
 
 def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, int]]]:
     """`longkan.kin`, with neighbours counted in printed headwords."""
-    return longkan.kin({page: [e for e in group if e.tone != "note"] for page, group in pages.items()}, places(pages))
+    return longkan.kin(_headwords(pages), places(pages))

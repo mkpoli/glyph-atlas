@@ -28,8 +28,9 @@ WRITTEN = {"草": "艹", "四": "罒", "𠕀": "罒", "系": "糹", "䖝": "虫"
            "氣": "气", "凢": "凡"}
 #: A section is tested for its radical when this share of its headwords hold it.
 TESTED = 2 / 3
-#: A note's items are numbered ①②…; one that names the headword and says either of these fills it in or doubts it.
-_ITEMS = re.compile(r"[①-⑳]")
+#: A note's items are numbered ①②…, and a table that joins the notes of several rows puts each on its own line; an item that
+#: names the headword and says either of these fills it in or doubts it.
+_ITEMS = re.compile(r"[①-⑳\n]")
 _DOUBT = ("原空", "原錄", "疑", "待核")
 #: How many rows before and after a headword a second one written with the same character makes it doubtful.
 NEAR = 2
@@ -39,7 +40,9 @@ TITLE, HEADER = 4, 0
 
 @dataclass(frozen=True)
 class Entry:
-    """One table row: its number (the first data row is 1), headword field as written, gloss, volume, section."""
+    """One table row: its number (the first data row is 1), headword field as written, gloss, volume, section.
+
+    `heads` are the printed headwords where the table's reader has read them from the field itself (`fields`)."""
 
     row: int
     field: str
@@ -49,6 +52,7 @@ class Entry:
     tone: str
     page: int
     note: str = ""
+    heads: tuple[str | None, ...] | None = None
 
 
 def read(table: Path, edition: str) -> dict[int, list[Entry]]:
@@ -72,6 +76,8 @@ def fields(entry: Entry) -> list[str | None]:
 
     Several characters in one field are headwords printed one after another with a gloss after the last.
     """
+    if entry.heads is not None:
+        return list(entry.heads)
     if not entry.field:
         return [None]
     if _IDS.search(entry.field):
@@ -94,6 +100,11 @@ def slots(entries: list[Entry]) -> list[Slot]:
         for k, char in enumerate(characters):
             out.append(Slot(char, length(entry.gloss) if k == len(characters) - 1 else 0, entry.row, k))
     return out
+
+
+def paged(pages: dict[int, list[Entry]]) -> dict[int, list[Slot]]:
+    """`slots` of each page."""
+    return {page: slots(entries) for page, entries in pages.items()}
 
 
 def _holds(char: str, section: str) -> bool:
