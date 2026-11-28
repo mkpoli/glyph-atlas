@@ -769,6 +769,8 @@
   "reading.elsewhere": "本書別處",
   "reading.confirm": "核對",
   "reading.letters": "此假名的字體",
+  "reading.dictionary": "字書",
+  "reading.dictionaryOf": "字書中{char}的讀音",
   "reading.jibo": "字母「{char}」",
   "reading.needed": "請填寫旁註或讀音。",
   "reading.save": "儲存讀音",

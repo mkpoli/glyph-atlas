@@ -83,6 +83,8 @@
   "reading.elsewhere": "이 책의 다른 곳",
   "reading.confirm": "확인",
   "reading.letters": "이 가나의 자체",
+  "reading.dictionary": "자전",
+  "reading.dictionaryOf": "자전에 실린 {char}의 읽기",
   "reading.jibo": "유래 한자 {char}",
   "reading.needed": "후리가나나 읽기를 입력하세요.",
   "reading.save": "읽기 저장",

@@ -750,6 +750,8 @@
   "reading.elsewhere": "同書ノ他所",
   "reading.confirm": "確カム",
   "reading.letters": "此ノ假名ノ字體",
+  "reading.dictionary": "字書",
+  "reading.dictionaryOf": "{char}ノ字書ノ訓",
   "reading.jibo": "字母{char}",
   "reading.needed": "振リ假名又ハ讀ミヲ記スベシ。",
   "reading.save": "讀ミヲ保存",

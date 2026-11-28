@@ -757,6 +757,8 @@
   "reading.elsewhere": "別見",
   "reading.confirm": "覈",
   "reading.letters": "假名字體",
+  "reading.dictionary": "字書",
+  "reading.dictionaryOf": "{char}之字書音訓",
   "reading.jibo": "字母{char}",
   "reading.needed": "未書旁注與讀。",
   "reading.save": "存",

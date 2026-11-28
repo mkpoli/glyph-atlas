@@ -763,6 +763,8 @@
   "reading.elsewhere": "Nơi khác trong sách",
   "reading.confirm": "Kiểm tra",
   "reading.letters": "Các dạng của chữ này",
+  "reading.dictionary": "Từ điển",
+  "reading.dictionaryOf": "Cách đọc {char} trong từ điển",
   "reading.jibo": "Chữ gốc {char}",
   "reading.needed": "Hãy ghi chữ ghi cách đọc hoặc cách đọc.",
   "reading.save": "Lưu cách đọc",

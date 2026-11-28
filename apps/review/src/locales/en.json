@@ -801,6 +801,8 @@
   "reading.elsewhere": "Elsewhere in the book",
   "reading.confirm": "Check",
   "reading.letters": "Letters of this kana",
+  "reading.dictionary": "Dictionary",
+  "reading.dictionaryOf": "Readings of {char} in the dictionary",
   "reading.jibo": "Derived from {char}",
   "reading.needed": "Write the ruby or a reading.",
   "reading.save": "Save reading",

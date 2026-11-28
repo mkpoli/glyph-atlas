@@ -9,6 +9,7 @@
   import { toSource } from '../lib/cropBox.js'
   import { wordChoices } from '../lib/cropWords.js'
   import { lettersAt, plainKana } from '../lib/hentaigana.js'
+  import { kanjiReadings } from '../lib/kanjiReadings.js'
   import { t } from '../lib/i18n.svelte.js'
   import { sessionStarted, signedInUser } from '../lib/session.svelte.js'
   import Glyph from './Glyph.svelte'
@@ -31,6 +32,8 @@
   // The 左訓 over the run, and whether its row stands open.
   let left = $state(''), leftOpen = $state(false), leftWas = []
   let letters = $state.raw(null)
+  // The dictionary's readings of the run's characters, and the place whose reading is being written.
+  let dictionary = $state.raw(new Map()), noting = $state(null)
   let method = $state('context'), choices = $state([])
   // The dictionary word chosen here; `undefined` leaves the reader's word as it stands.
   let chosen = $state(undefined), probable = $state(false), changed = false
@@ -74,6 +77,24 @@
   const sourced = $derived(Boolean(line?.held) && line.parts.length === textParts(item.text).length && line.parts.join('') === textParts(item.text).join(''))
   const elsewhere = $derived(sourced ? readingsElsewhere(item, from, to) : [])
 
+  // The dictionary's readings of the run's characters, read as the run changes.
+  $effect(() => {
+    if (!editing) return
+    const chars = run, wanted = untrack(() => chars.filter(char => !dictionary.has(char)))
+    if (!wanted.length) return
+    let active = true
+    kanjiReadings(wanted).then(found => { if (active && found.size) dictionary = new Map([...untrack(() => dictionary), ...found]) }).catch(() => { /* No readings are offered. */ })
+    return () => { active = false }
+  })
+  const offers = $derived(!joined && noting !== null && places.includes(noting) ? dictionary.get(line.parts[noting]) ?? [] : [])
+  // A reading the dictionary gives a character is written over it, and the next character's field takes the caret.
+  function note(reading) {
+    const at = noting
+    wroteReading(at, reading)
+    const next = places[places.indexOf(at) + 1]
+    tick().then(() => root?.querySelectorAll('.reading-over.note input')[places.indexOf(next ?? at)]?.focus({ preventScroll: true }))
+  }
+
   // The run's other crops, outlined on the page while the editor is open.
   $effect(() => {
     if (!editing || !line) return
@@ -84,7 +105,7 @@
   async function open() {
     // Whose reading it opens with waits until the page knows who reads.
     await sessionStarted()
-    error = ''; chosen = undefined; changed = false; probable = held?.form === 'probable'; choices = []; letters = null; touched = false
+    error = ''; chosen = undefined; changed = false; probable = held?.form === 'probable'; choices = []; letters = null; noting = null; touched = false
     const said = opening(item.reading, signedInUser()?.id), nobody = !said.value && !item.reading
     let opened = nobody ? openingTranscribed(item) ?? said : said
     method = opened.method ?? untrack(() => method)
@@ -125,14 +146,14 @@
   }
   // A reading the book gives the run elsewhere is a note here, resting on that place: this line writes no ruby.
   function take(given) {
-    touched = true; error = ''; letters = null; method = 'parallel'
+    touched = true; error = ''; letters = null; noting = null; method = 'parallel'
     // A ruby written over the run as one stays as it is written: the reading then stands over the run as one too.
     if (given.reading.length === places.length && !(joined && wholeRuby.trim())) { whole = false; places.forEach((place, i) => { readings[place] = given.reading[i] }) }
     else { if (!whole) wholeRuby = ruby.join('') || wholeRuby; whole = true; wholeReading = given.reading.join('') }
   }
   const taken = given => reads === given.reading.join('')
   function press(at) {
-    touched = true; error = ''; letters = null
+    touched = true; error = ''; letters = null; noting = null
     // Another place of the same character, apart from the run, is where the crop stands instead.
     if (line.also.includes(at) && (at < from - 1 || at > to + 1 || at < within.from || at > within.to)) { line = { ...line, at, also: [...line.also.filter(each => each !== at), line.at] }; from = to = at }
     else ({ from, to } = pressed({ from, to }, line.at, at))
@@ -154,6 +175,7 @@
   // The letters the kana before the caret of a ruby may be written with. They stay until a reading is written or
   // the run changes, so the buttons below them never move under a press.
   function seek(at, input) {
+    noting = null
     const found = lettersAt(input.value, input.selectionEnd)
     letters = found && { ...found, at, input }
   }
@@ -168,7 +190,7 @@
   }
   // Read as one, a run keeps what was written over its characters, and back.
   function toggleWhole() {
-    touched = true; letters = null
+    touched = true; letters = null; noting = null
     if (!whole) { wholeReading = reading.join('') || wholeReading; wholeRuby = ruby.join('') || wholeRuby }
     whole = !whole
   }
@@ -285,9 +307,16 @@
         {:else}<span class="reading-row"><button type="button" class="reading-whole" disabled={busy} onclick={openLeft}>+{t('reading.left')}</button></span>{/if}
         <span class="reading-rule"></span>
         <span class="reading-row">{t('reading.label')}</span>
-        {#if joined}<span class="reading-over note whole"><input type="text" lang="ja" value={wholeReading} disabled={busy} aria-label={t('reading.of', { char: run.join('') })} oninput={e => wroteReading(null, e.currentTarget.value)} onfocus={() => letters = null} /></span>
-        {:else}{#each places as place (place)}<span class="reading-over note"><input type="text" lang="ja" value={readings[place] ?? ''} placeholder={(noted && kana(line.parts[place]) ? plainKana(line.parts[place]) : '')} disabled={busy} aria-label={t('reading.of', { char: line.parts[place] })} oninput={e => wroteReading(place, e.currentTarget.value)} onfocus={() => letters = null} /></span>{/each}{/if}
+        {#if joined}<span class="reading-over note whole"><input type="text" lang="ja" value={wholeReading} disabled={busy} aria-label={t('reading.of', { char: run.join('') })} oninput={e => wroteReading(null, e.currentTarget.value)} onfocus={() => { letters = null; noting = null }} /></span>
+        {:else}{#each places as place (place)}<span class="reading-over note"><input type="text" lang="ja" value={readings[place] ?? ''} placeholder={(noted && kana(line.parts[place]) ? plainKana(line.parts[place]) : '')} disabled={busy} aria-label={t('reading.of', { char: line.parts[place] })} oninput={e => wroteReading(place, e.currentTarget.value)} onfocus={() => { letters = null; noting = place }} /></span>{/each}{/if}
       </div>
+      {#if offers.length}
+        <div class="reading-words" role="group" aria-label={t('reading.dictionaryOf', { char: line.parts[noting] })}>
+          <span title="Unihan kJapanese">{t('reading.dictionary')}</span>
+          {#each offers as reading (reading)}<button type="button" lang="ja" aria-pressed={(readings[noting] ?? '').trim() === reading} disabled={busy}
+            onpointerdown={e => e.preventDefault()} onmousedown={e => e.preventDefault()} onclick={() => note(reading)}>{reading}</button>{/each}
+        </div>
+      {/if}
       {#if letters}
         <div class="reading-letters" role="group" aria-label={t('reading.letters')}>
           {#each letters.letters as one (one.letter)}
