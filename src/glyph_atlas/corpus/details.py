@@ -36,28 +36,6 @@ DETAIL_CACHE = 128
 #: Identities longer than this are not ids. Real ones are well under 200 characters.
 MAX_IDENTITY = 300
 
-#: Unit id prefixes, from the importers. This is the real bound on a lookup: a
-#: well-formed id names its corpus, so exactly one unit table is opened instead of all.
-UNIT_ID_PREFIXES = {
-    "codh-omt:": "kokatsuji",
-    "codh:": "codh-full",
-    "hi:": "hilab",
-    "hl:": "honkoku-lines",
-    "hk:": "ainu-records",
-    "ws:": "wikisource",
-    "hng:": "hng",
-    "hng-kiridashi:": "hng-kiridashi",
-    "gl:": "glossary-headwords",
-    "krm:": "hdic-krm",
-    "eo:": "nogeoldae-eonhae",
-    "ks:": "wikisource-ko-glyphs",
-    "ktb:": "hdic-ktb",
-    "tsj:": "hdic-tsj",
-    "gy-photographs:": "guangyun-photographs",
-    "gy-ioc:": "guangyun-ioc",
-    "lk-song:": "longkan-song",
-}
-
 #: Tables whose content a resolved detail depends on. A change to any of them, or to
 #: the glyph registry, invalidates the cache: the row a reader clicked may now describe
 #: something else, and a stale detail is worse than a slower one.
@@ -582,7 +560,7 @@ class DetailResolver:
         A registered prefix names one corpus, and only that one is opened. Anything
         else falls back to the full list, because guessing would be worse than looking.
         """
-        for prefix, name in UNIT_ID_PREFIXES.items():
+        for prefix, name in corpus_sources.UNIT_ID_PREFIXES.items():
             if identity.startswith(prefix) and name in self._corpora:
                 return [name]
         return list(UNIT_CORPORA)

@@ -119,6 +119,28 @@ DERIVED_CORPORA = frozenset(
 #: excluded by declaring itself rather than by being added to the list above.
 DERIVED_MARKER = "derived_from"
 
+#: Unit id prefixes, from the importers. This is the real bound on a lookup: a
+#: well-formed id names its corpus, so exactly one unit table is opened instead of all.
+UNIT_ID_PREFIXES = {
+    "codh-omt:": "kokatsuji",
+    "codh:": "codh-full",
+    "hi:": "hilab",
+    "hl:": "honkoku-lines",
+    "hk:": "ainu-records",
+    "ws:": "wikisource",
+    "hng:": "hng",
+    "hng-kiridashi:": "hng-kiridashi",
+    "gl:": "glossary-headwords",
+    "krm:": "hdic-krm",
+    "eo:": "nogeoldae-eonhae",
+    "ks:": "wikisource-ko-glyphs",
+    "ktb:": "hdic-ktb",
+    "tsj:": "hdic-tsj",
+    "gy-photographs:": "guangyun-photographs",
+    "gy-ioc:": "guangyun-ioc",
+    "lk-song:": "longkan-song",
+}
+
 #: Which page/line numbering convention a corpus publishes under. Two records are only
 #: ever merged inside one family. ``ainu-records`` numbers pages from 0 where the
 #: Honkoku platform numbers from 1 — a real off-by-one, confirmed by comparing page

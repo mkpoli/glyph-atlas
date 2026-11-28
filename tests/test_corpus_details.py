@@ -22,14 +22,13 @@ from glyph_atlas.corpus.crops import _hng_crop_prefix
 from glyph_atlas.corpus.details import (
     DETAIL_EDGE,
     UNIT_CORPORA,
-    UNIT_ID_PREFIXES,
     DetailResolver,
     detail,
     resolver_for,
 )
 from glyph_atlas.corpus.glyphs import GLYPHS_FILE
 from glyph_atlas.corpus.glyphs import build as build_registry
-from glyph_atlas.corpus.sources import ID_FAMILIES
+from glyph_atlas.corpus.sources import ID_FAMILIES, UNIT_ID_PREFIXES
 from glyph_atlas.schema import Box, Document, Line, Page, Unit
 
 #: The HNG mirror's real crop path (relative to a local clone) for one test unit.
