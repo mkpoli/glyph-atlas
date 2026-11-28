@@ -1,3 +1,4 @@
+import { yaoSpelling } from '../../../cloudflare/src/idsOperators.ts'
 import { drawnForm } from './drawnForms.js'
 import { arity, descriptionEnd, isDescription } from './ids.js'
 import { graphemeText } from './reviewRounds.js'
@@ -75,7 +76,8 @@ function segments(text) {
   const parts = []
   for (let k = 0; k < all.length;) {
     const { segment, index } = all[k]
-    const chars = arity(segment) ? [...text.slice(index)] : []
+    const named = segment === '&' && text.slice(index, index + 48).match(/^&[^;]+;/u)?.[0]
+    const chars = arity(segment) || (named && yaoSpelling(named)) ? [...text.slice(index)] : []
     const end = chars.length ? descriptionEnd(chars, 0) : -1
     const length = end > 0 && end <= 64 ? chars.slice(0, end).join('').length : 0
     const next = length ? all.findIndex(item => item.index >= index + length) : -1

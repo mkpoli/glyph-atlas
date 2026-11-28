@@ -67,7 +67,7 @@ COMPONENTS = (
 PRIVATE_USE = ((0xE000, 0xF8FF), (0xF0000, 0xFFFFD), (0x100000, 0x10FFFD))
 MJ = re.compile(r"MJ\d{6}")
 #: A part no code point names, in the one spelling a description holds it in.
-PART = re.compile(r"&X-[0-9]{5};")
+PART = re.compile(r"&(?:X-[0-9]{5}|(?:VR|GW)-[A-Za-z0-9-]+);")
 GLYPHWIKI = re.compile(r"[a-z0-9][a-z0-9_@-]{0,63}")
 
 
@@ -96,8 +96,8 @@ def _length(value: str) -> int:
 
 
 def is_sequence(value: str) -> bool:
-    """Whether `value` is written as a description, which starts with an operator."""
-    return bool(value) and _arity(value[0]) > 0
+    """Whether a value starts with an operator or names a registered variant operand on its own."""
+    return bool(value) and (_arity(value[0]) > 0 or value in custom_parts.YAO_SPELLINGS)
 
 
 def _described(value: str, at: int = 0) -> int:
@@ -106,7 +106,7 @@ def _described(value: str, at: int = 0) -> int:
         raise ValueError("This description is missing a component.")
     arity = _arity(value[at])
     if (part := PART.match(value, at)) is not None:
-        if custom_parts.identifier(part.group()) != part.group()[1:-1]:
+        if part.group() not in custom_parts.YAO_SPELLINGS and custom_parts.identifier(part.group()) != part.group()[1:-1]:
             raise ValueError(f"{part.group()} is no part in use.")
         if part.end() < len(value) and _selector(value[part.end()]):
             raise ValueError("A part no code point names takes no variation selector.")
@@ -138,7 +138,7 @@ def written(text: str) -> list[str]:
     longer than a form may be, is left out."""
     found, at = [], 0
     while at < len(text):
-        if _arity(text[at]):
+        if _arity(text[at]) or PART.match(text, at):
             try:
                 end = _described(text, at)
             except (ValueError, RecursionError):
@@ -233,7 +233,7 @@ def check(representation: Representation) -> Representation:
         raise ValueError(f"Unknown scheme {scheme!r}.")
     if scheme == "ids":
         if not is_sequence(value):
-            raise ValueError("A description starts with an operator.")
+            raise ValueError("A description starts with an operator or names a registered variant.")
         check_text(value)
     elif scheme in ("unicode", "ivs", "pua"):
         check_text(value)

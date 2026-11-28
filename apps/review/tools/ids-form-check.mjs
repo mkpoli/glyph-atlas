@@ -319,9 +319,9 @@ try {
   // Text an IME is still composing waits for the composition to end.
   await browser.evaluate(`(() => { const i = document.querySelector('dialog[open] .ids-field input'); i.focus(); i.value = '⿱日月'; i.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true })) })()`)
   await Bun.sleep(150)
-  assert(await browser.evaluate(`!document.querySelector('dialog[open] .ids-tree > [data-op="⿱"]')`), 'the tree followed text still being composed')
+  assert(await browser.evaluate(`!document.querySelector('dialog[open] .ids-tree-root > [data-op="⿱"]')`), 'the tree followed text still being composed')
   await browser.evaluate(`document.querySelector('dialog[open] .ids-field input').dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '月' }))`)
-  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-tree > [data-op="⿱"]')`)
+  await browser.waitFor(`!!document.querySelector('dialog[open] .ids-tree-root > [data-op="⿱"]')`)
   assert(!errors.length, 'page errors: ' + errors.join('; '))
   console.log('PASS operator keys by position, IME composition, a unary operator on an empty slot, Tab from the focus')
 
@@ -538,9 +538,9 @@ try {
   }
   const spellings = ['⿱亠⿱⿲冫幺⿱丿丶十', '⿱亠⿱⿲𰀪幺⺀十', '率󠄀', '率󠄁']
   for (const [i, form] of spellings.entries()) {
-    await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].click()`)
+    await browser.evaluate(`document.querySelectorAll('.ids-rate-forms:not(.ids-yao-forms) .ids-rate-option')[${i}].click()`)
     await becomes('⿰率' + form)
-    assert(await browser.evaluate(`document.querySelectorAll('.ids-rate-option')[${i}].getAttribute('aria-pressed') === 'true'`), form + ' is not selected')
+    assert(await browser.evaluate(`document.querySelectorAll('.ids-rate-forms:not(.ids-yao-forms) .ids-rate-option')[${i}].getAttribute('aria-pressed') === 'true'`), form + ' is not selected')
   }
   await typeSequence(spellings[3])
   await becomes(spellings[3])
@@ -552,6 +552,25 @@ try {
   await reopenComposer()
   await becomes(spellings[3])
   console.log('PASS independent 率 forms, nesting, and persisted IVS')
+  await typeSequence('&VR-5E7A-02;')
+  await browser.waitFor('document.querySelectorAll(".ids-yao-forms button").length === 4')
+  await browser.evaluate('document.querySelector(".ids-yao-forms button:last-child").click()')
+  await becomes('幺')
+  assert(await browser.evaluate('!document.querySelector(".ids-use").disabled'), 'clearing a standalone variant must allow saving 幺')
+  await typeSequence('⿰糸糸')
+  await browser.waitFor('document.querySelectorAll(".ids-yao-forms").length === 2')
+  await browser.evaluate('document.querySelectorAll(".ids-yao-forms")[1].querySelector("[data-yao=returning]").click()')
+  const returning = '⿰糸⿱&VR-5E7A-03;小'
+  await becomes(returning)
+  await browser.evaluate('document.querySelector(".ids-use").click()')
+  await browser.waitFor('[...document.querySelectorAll(".crop-form .form-chip")].some(chip => chip.getAttribute("aria-pressed") === "true" && chip.textContent.includes("VR-5E7A-03"))')
+  await browser.evaluate('document.querySelector(".save-character").click()')
+  await browser.waitFor('document.querySelector("dialog[open]") === null', 30000)
+  assert(claimed(id).includes(returning), 'the chosen 幺 was lost in the saved claim')
+  await reopenComposer()
+  await becomes(returning)
+  await browser.waitFor('document.querySelectorAll(".ids-yao-forms")[1]?.querySelector("[data-yao=returning]")?.getAttribute("aria-pressed") === "true"')
+  console.log('PASS independent 幺 occurrences and saved registry forms')
   console.log('PASS ids form')
 } finally {
   await browser?.close()

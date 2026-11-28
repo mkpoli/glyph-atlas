@@ -3,7 +3,7 @@
 // each written with the identifier ids-input gives the shape (`&X-00087;`), and a form holding one in
 // its one spelling.
 import { CUSTOM_PARTS, CUSTOM_PART_DRAWN, CUSTOM_PART_FOLDS, CUSTOM_PART_NAMES, CUSTOM_PART_RETIRED, CUSTOM_PART_SPELLING } from './customPartsData';
-import { arity } from './idsOperators';
+import { arity, yaoSpelling } from './idsOperators';
 
 const IN_USE = new Set(CUSTOM_PARTS);
 /** One part no code point names, in ids-input's grammar (src/core/custom.js): a number of up to four
@@ -28,6 +28,8 @@ export function customPart(name: string): string | null {
  *  part of the text that draws one named part as that part (`⿱{88}龴` and `⿱⿵𠆢一龴` are
  *  `⿱&X-00087;龴`). One the table does not know stays as it was typed. */
 export const spelt = (text: string) => folded(text.replace(CUSTOM_PART, name => {
+  const design = yaoSpelling(name);
+  if (design) return design;
   const key = customPart(name);
   return key ? (Object.hasOwn(CUSTOM_PART_SPELLING, key) ? CUSTOM_PART_SPELLING[key] : `&${key};`) : name;
 }));
@@ -35,7 +37,7 @@ export const spelt = (text: string) => folded(text.replace(CUSTOM_PART, name => 
 /** `text` with every part of it that draws one named part written as that part; the whole text is never
  *  replaced, and a text that is no one description is left as it is. */
 function folded(text: string): string {
-  const parts = text.match(/&X-[0-9]{5};|[\s\S][\uFE00-\uFE0F\u{E0100}-\u{E01EF}]?/gu) ?? [];
+  const parts = text.match(/&[A-Za-z][A-Za-z0-9+_-]{0,45};|[\s\S][\uFE00-\uFE0F\u{E0100}-\u{E01EF}]?/gu) ?? [];
   let at = 0;
   const read = (top: boolean): string | null => {
     const unit = parts[at++];
@@ -51,7 +53,7 @@ function folded(text: string): string {
 }
 
 /** The parts of `text` no code point names that the table does not know. */
-export const unknownParts = (text: string) => [...text.matchAll(CUSTOM_PART)].map(found => found[0]).filter(name => customPart(name) === null);
+export const unknownParts = (text: string) => [...text.matchAll(CUSTOM_PART)].map(found => found[0]).filter(name => !yaoSpelling(name) && customPart(name) === null);
 
 /** `text` with each such part written as the first of its drawings that comes out in encoded characters only,
  *  or null where none does (BabelStone Han PUA's private-use glyph is none); a drawing may name such a part. */
