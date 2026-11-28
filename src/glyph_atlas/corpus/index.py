@@ -1391,7 +1391,7 @@ def _char_of_codepoint(cp: str | None) -> str | None:
 #: Unit tables that carry a real box, and the corpus that owns each.
 UNIT_CORPORA = ("codh-full", "hilab", "kokatsuji", "honkoku-lines", "ainu-records", "hng", "hng-kiridashi",
                 "glossary-headwords", "hdic-krm", "hdic-ktb", "hdic-tsj", "nogeoldae-eonhae",
-                "wikisource-ko-glyphs", "guangyun-photographs", "guangyun-ioc", "longkan-song")
+                "wikisource-ko-glyphs", "guangyun-photographs", "guangyun-ioc", "longkan-song", "yupian-jin")
 
 #: Rows read per scanner batch. Small enough that a common character's scan stays
 #: flat in memory while still amortising the Arrow round trip.

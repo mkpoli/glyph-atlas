@@ -139,6 +139,7 @@ UNIT_ID_PREFIXES = {
     "gy-photographs:": "guangyun-photographs",
     "gy-ioc:": "guangyun-ioc",
     "lk-song:": "longkan-song",
+    "yp-jin:": "yupian-jin",
 }
 
 #: Which page/line numbering convention a corpus publishes under. Two records are only
@@ -165,6 +166,7 @@ ID_FAMILIES = {
     "guangyun-photographs": "guangyun-photographs",
     "guangyun-ioc": "guangyun-ioc",
     "longkan-song": "longkan-song",
+    "yupian-jin": "yupian-jin",
     "codh-tensho": "codh-tensho",
     "nogeoldae-eonhae": "nogeoldae-eonhae",
     "wikisource-ko-glyphs": "wikisource-ko-glyphs",
@@ -250,6 +252,11 @@ KNOWN: tuple[dict[str, Any], ...] = (
         "name": "longkan-song",
         "note": "龍龕手鏡 headwords on the 宋刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), labelled "
                 "from 青雀古籍's table of the book (scripts/cut_table_headwords.py). A label is the table's headword; the print may show a variant of it.",
+    },
+    {
+        "name": "yupian-jin",
+        "note": "新修絫音引證群籍玉篇 headwords on the 金刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), "
+                "labelled from 青雀古籍's table of the book (scripts/cut_table_headwords.py). A label is the table's headword; the print may show a variant of it.",
     },
     {
         "name": "codh-tensho",

@@ -1,0 +1,61 @@
+id: xinxiu-yupian
+name: 新修玉篇字頭表（青雀古籍）
+publisher: 青雀古籍（YingdaZhao）
+kind: transcription-corpus
+url: https://github.com/yingdazhao/qingque-data
+revision: 2ca2e417a71038da2a34a3c9f0fba2991b4e57d5
+licence: CC-BY-SA-4.0
+licence_evidence: https://github.com/yingdazhao/qingque-data/blob/2ca2e417a71038da2a34a3c9f0fba2991b4e57d5/LICENSE.md
+attribution: 青雀古籍（YingdaZhao）『古辞书综合/新修玉篇.csv』2ca2e417 (CC BY-SA 4.0)
+access:
+  repository: https://github.com/yingdazhao/qingque-data
+format:
+  table: "data/古辞书综合/新修玉篇.csv: one row per reading in the printed order: 字头, 注文, 笔画（推导） (the stroke group), 部首, 卷序, 篇, the half-leaf of the 金刻本 (金刻本), and the headword's place on that half-leaf (推导页内字序), which the readings of one printed headword share"
+  edition: 金刻本
+  file: data/古辞书综合/新修玉篇.csv
+  reader: yupian
+title: 新修絫音引證群籍玉篇
+work: 新修絫音引證群籍玉篇
+printing: 金刻本
+volumes: {"1": 卷一, "2": 卷二, "3": 卷三, "4": 卷四, "5": 卷五, "6": 卷六, "7": 卷七, "8": 卷八, "9": 卷九, "10": 卷十,
+          "11": 卷十一, "12": 卷十二, "13": 卷十三, "14": 卷十四, "15": 卷十五, "16": 卷十六, "17": 卷十七, "18": 卷十八, "19": 卷十九,
+          "20": 卷二十, "21": 卷二十一, "22": 卷二十二, "23": 卷二十三, "24": 卷二十四, "25": 卷二十五, "26": 卷二十六, "27": 卷二十七,
+          "28": 卷二十八, "29": 卷二十九, "30": 卷三十}
+register: kanbun
+# Documents and pages are `<corpus>-<copy>:<n>`, units `<prefix>-<copy>:<row>-<place>:0`.
+corpus: yupian
+prefix: yp
+copies:
+  # The scan the headwords are cut from: the embedded image of each PDF page, an opening of two half-leaves.
+  # `pitch` bounds the half-column's width on the image enlarged `enlarge` times.
+  - id: jin
+    title: 新修絫音引證群籍玉篇 十二冊 金刻本（中華再造善本影印）
+    kind: commons-pdf
+    repository: https://commons.wikimedia.org/wiki/File:ZHSY000526_新修絫音引證群籍玉篇_十二冊_金邢準撰_金刻本.pdf
+    file: ZHSY000526 新修絫音引證群籍玉篇 十二冊 金邢準撰 金刻本.pdf
+    sha1: a2d81f6231042b521a33246075bf0eff924c6a11
+    holder: 中國國家圖書館
+    of: 中國國家圖書館藏
+    attribution: 中國國家圖書館藏金刻本，中華再造善本影印（Wikimedia Commons ZHSY000526）
+    licence: PD
+    licence_evidence: https://commons.wikimedia.org/wiki/File:ZHSY000526_新修絫音引證群籍玉篇_十二冊_金邢準撰_金刻本.pdf
+    image_kind: flat-reproduction
+    enlarge: 2
+    scale: 0.8
+    pitch: [60, 95]
+    # A headword's height and a gloss row in half-column pitches: those a page is fitted at, and the pair it is first compared at.
+    # The gloss characters stand nearly as wide as a half-column, so a gloss row is taller than 龍龕手鏡's.
+    heads: [1.5, 1.7, 1.9, 2.1, 2.3, 2.5]
+    rows: [0.85, 0.95, 1.05, 1.15, 1.25]
+    first: [2.0, 1.1]
+dating:
+  - literal: 大定戊申秋七月望日序
+    start: 1188
+    end: 1188
+    kind: composition
+    evidence: 金刻本卷首 邢準序（中國國家圖書館藏，ZHSY000526 PDF第9頁）
+notes:
+  - The holder is the one the reproduction states on its first leaf, 據中國國家圖書館藏金刻本影印 (PDF page 3). 邢準's preface (PDF pages 8 and 9) ends 時大定戊申秋七月望日序, 大定 28 of the 金 (1188); no source read dates this impression, so it carries no printing date.
+  - The table is roughly proofread (粗校, each row marked AI初校); its README says the origin of the first transcription of 新修玉篇 could not be traced. The table places and labels crops and is not republished.
+  - A headword printed with several readings has a row for each; they share its place on the half-leaf (推导页内字序) and are read as one headword. A field the table fills with an editor's note (［口部開頭缺］, [=此处版面残缺=]) is a headword placed and not labelled.
+  - The circles before some headwords mark the work each was taken from (舊字号樣 and 新字号樣, PDF page 10). They are not modelled; the tape absorbs their height.

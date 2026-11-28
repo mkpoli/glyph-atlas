@@ -43,6 +43,7 @@ CORPORA = {
     "hilab": "hi-lab-kuzushiji", "hng": "hng-basic-data", "hng-kiridashi": "hng-kiridashi-data",
     "hdic-krm": "hdic-krm", "hdic-ktb": "hdic-ktb", "hdic-tsj": "hdic-tsj", "khs": "khs",
     "guangyun-photographs": "guangyun-zecuntang", "guangyun-ioc": "guangyun-zecuntang", "longkan-song": "longkan-shoujing",
+    "yupian-jin": "xinxiu-yupian",
     "codh-tensho": "codh-tensho", "hangeul-museum": "hangeul-museum", "nlk-sayeogwon": "nlk", "glossary-headwords": "nlk",
     "nogeoldae-eonhae": "nlk",
     "wikisource-zh-scans": "wikisource", "wikisource-ko-scans": "wikisource", "wikisource-ko-glyphs": "wikisource", "hunminjeongeum": "wikisource",
@@ -55,7 +56,7 @@ CORPORA = {
 #: from, a facsimile among them, so it is not read for these.
 OWN_DATING = frozenset({"hng", "hng-kiridashi", "hdic-krm", "hdic-ktb", "hdic-tsj", "khs", "hangeul-museum",
                         "nlk-sayeogwon", "glossary-headwords", "nogeoldae-eonhae", "guangyun-photographs",
-                        "guangyun-ioc", "longkan-song"})
+                        "guangyun-ioc", "longkan-song", "yupian-jin"})
 #: Origins whose dates may be written in the Japanese calendar.
 JAPANESE_ORIGINS = frozenset({"japan", "unknown", None})
 #: An importer's `dating.kind` as a claim's kind and scope.
