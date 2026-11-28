@@ -43,7 +43,7 @@ export const STAGES = [
       { edition: '乙種本（Инв. № 208, 209, 4775），《俄藏黑水城文獻》第7冊', holder: IOM, book: '音同（乙種本）', status: 'published' }] },
     { title: '龍龕手鏡', by: '釋行均', editions: [
       { edition: '高麗本（京城帝國大學法文學部影印，1929）', holder: NDL, href: ndl(1194507), status: 'planned' },
-      { edition: '宋刻本（中華再造善本影印）', holder: NLC, href: commons('ZHSY000072 龍龕手鑑四卷 (遼)釋行均 撰 宋刻本.pdf'), status: 'underway' },
+      { edition: '宋刻本（中華再造善本影印）', holder: NLC, href: commons('ZHSY000072 龍龕手鑑四卷 (遼)釋行均 撰 宋刻本.pdf'), status: 'published' },
       { edition: '宋本（日本古典全集刊行會影印，1934）', holder: NDL, href: ndl(1126592), status: 'planned' }] },
     { title: '改併五音類聚四聲篇海', by: '韓孝彥、韓道昭', editions: [
       { edition: '元前至元間刊本', holder: NCL, href: commons('NCL-01089 改併五音類聚四聲篇.pdf'), status: 'planned' },
@@ -51,7 +51,7 @@ export const STAGES = [
       { edition: '明萬曆己丑（1589）重刊本（芝山開元寺）', holder: NDL, href: ndl(2552924), status: 'planned' },
       { edition: '明萬曆十七年（1589）刊本（近衛文庫）', holder: '京都大学附属図書館', href: 'https://rmda.kulib.kyoto-u.ac.jp/item/rb00008716', status: 'planned' }] },
     { title: '新修累音引證群籍玉篇', by: '邢準', editions: [
-      { edition: '金刻本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY000526 新修絫音引證群籍玉篇 十二冊 金邢準撰 金刻本.pdf'), status: 'underway' }] },
+      { edition: '金刻本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY000526 新修絫音引證群籍玉篇 十二冊 金邢準撰 金刻本.pdf'), status: 'published' }] },
     { title: '大廣益會玉篇', by: '顧野王撰、孫強增字、陳彭年等重修', editions: [
       { edition: '元延祐二年（1315）圓沙書院刻本（中華再造善本影印）', holder: ZHSY, href: commons('ZHSY000524 大廣益會玉篇 六冊 南朝·梁顧野生撰 唐孫強增字 宋陳彭年等重修 元延祐二年圓沙書院刻本.pdf'), status: 'planned' },
       { edition: '明宣德間清江書堂刊本', holder: NDL, href: ndl(2592019), status: 'planned' }] },
@@ -68,8 +68,8 @@ export const STAGES = [
       { edition: '裴務齊正字本（王二）', holder: '故宮博物院', status: 'planned' },
       { edition: '宋濂跋本（王三）', holder: '故宮博物院', status: 'planned' }] },
     { title: '廣韻', by: '陳彭年、丘雍等', editions: [
-      { edition: '清康熙四十三年（1704）序張氏澤存堂刊本', holder: '東京大學東洋文化研究所', href: commons('IOC.UTokyo-000145 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷首.pdf'), status: 'underway' },
-      { edition: '張氏澤存堂刊本（韻典網照片）', holder: '', href: 'https://github.com/nk2028/tshet-uinh-images/tree/54ebf944fb7cb73eaafe563a68fc77f2d6740b24/廣韻/澤存堂本', status: 'underway' },
+      { edition: '清康熙四十三年（1704）序張氏澤存堂刊本', holder: '東京大學東洋文化研究所', href: commons('IOC.UTokyo-000145 廣韻五卷康熙四十三年序張氏澤存堂刊本 卷首.pdf'), status: 'published' },
+      { edition: '張氏澤存堂刊本（韻典網照片）', holder: '', href: 'https://github.com/nk2028/tshet-uinh-images/tree/54ebf944fb7cb73eaafe563a68fc77f2d6740b24/廣韻/澤存堂本', status: 'published' },
       { edition: '大宋重修廣韻 宋刊本', holder: NDL, href: ndl(2545272), status: 'planned' },
       { edition: '鉅宋廣韻 宋乾道五年（1169）建寧府黃三八郎刻本（中華再造善本影印）', holder: '上海圖書館', href: commons('ZHSY000074 鉅宋廣韻五卷 (宋)陳彭年等 撰 宋乾道五年建寧府黃三八郎刻本.pdf'), status: 'planned' }] },
     { title: '集韻', by: '丁度等', editions: [
