@@ -220,7 +220,7 @@ def main() -> int:
             for reach in (REACH, WIDE_REACH):
                 costs = {}
                 for number in range(centre - reach, centre + reach + 1):
-                    if number not in slots_of:
+                    if not slots_of.get(number):  # a page that prints no headword has nothing to fit
                         continue
                     alike = tape.similarity(slots_of[number], crops, anchors)
                     costs[number] = tape.solve(slots_of[number], page, alike, first_head * page.pitch, first_row * page.pitch)[1] / len(slots_of[number])

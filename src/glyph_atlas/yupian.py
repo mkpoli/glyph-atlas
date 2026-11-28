@@ -6,7 +6,7 @@ place and without a headword is a note printed as text: a section's opening note
 a group's count (凡N字) within it. The stroke count a section's headwords are grouped by (笔画（推导）) is printed
 in a cartouche where it changes. Every row's status is a first proofreading by a language model (AI初校), as in
 龍龕手鏡's table, and the rules that hold a doubtful headword back are that table's (`longkan.unsettled`),
-counted in printed headwords.
+counted in entries: one for each headword field, as 龍龕手鏡's are counted in rows.
 """
 from __future__ import annotations
 
@@ -55,18 +55,18 @@ def read(table: Path, edition: str = "金刻本") -> dict[int, list[Entry]]:
                 continue
             page = int(values[edition])
             place = values["推导页内字序"].strip()
-            entries = pages.setdefault(page, [])
             if not place:
                 if not values["字头"].strip() and values["注文"].strip():
-                    entries.append(Entry(row, "", values["注文"], values["卷序"], values["部首"], "note", page, values["校勘记"]))
+                    pages.setdefault(page, []).append(Entry(row, "", values["注文"], values["卷序"], values["部首"], "note", page, values["校勘记"]))
                 continue
             if (page, place) in held:
-                k = held[page, place]
+                entries, k = pages[page], held[page, place]
                 first = entries[k]
                 note = "\n".join(n for n in (first.note, values["校勘记"]) if n)
                 entries[k] = Entry(first.row, first.field, first.gloss + values["注文"], first.volume, first.section, first.tone,
                                    page, note, first.heads)
                 continue
+            entries = pages.setdefault(page, [])
             held[page, place] = len(entries)
             field = values["字头"].strip()
             entries.append(Entry(row, field, values["注文"], values["卷序"], values["部首"], values["笔画（推导）"].strip(), page,
@@ -102,7 +102,7 @@ def paged(pages: dict[int, list[Entry]]) -> dict[int, list[Slot]]:
 
 
 def places(pages: dict[int, list[Entry]]) -> dict[int, int]:
-    """Each headword's row by its place among the book's printed headwords."""
+    """Each entry's row by its place among the book's entries, one for each headword field."""
     rows = sorted(entry.row for group in pages.values() for entry in group if entry.tone != "note")
     return {row: k for k, row in enumerate(rows)}
 
@@ -112,10 +112,10 @@ def _headwords(pages: dict[int, list[Entry]]) -> dict[int, list[Entry]]:
 
 
 def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tuple[int, int]]:
-    """`longkan.unsettled`, with neighbours counted in printed headwords."""
+    """`longkan.unsettled`, with neighbours counted in entries."""
     return longkan.unsettled(_headwords(pages), neighbours, places(pages))
 
 
 def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, int]]]:
-    """`longkan.kin`, with neighbours counted in printed headwords."""
+    """`longkan.kin`, with neighbours counted in entries."""
     return longkan.kin(_headwords(pages), places(pages))
