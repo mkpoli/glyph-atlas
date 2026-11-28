@@ -107,16 +107,19 @@ def _doubted(note: str) -> bool:
     return any("字頭" in item and any(word in item for word in _DOUBT) for item in _ITEMS.split(note))
 
 
-def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tuple[int, int]]:
+def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True, place: dict[int, int] | None = None) -> set[tuple[int, int]]:
     """The headwords, as row and place in it, whose character is no sure reading of what the print shows.
 
     - The table writes 俗, 正 and 通 forms that stand side by side with one character, although the print shows a
-      different shape for each. Without `neighbours`, a row is not named for this alone.
+      different shape for each. Without `neighbours`, a row is not named for this alone. Rows are `NEAR` apart by
+      their number, or by their `place` where a table gives one headword several rows.
     - A note on a headword says it was blank and filled in, or doubts it.
     - The character lacks the radical of its section (聴 under 口, where the print has 口 beside it). A section is
       tested when most of its headwords hold the radical; 雜部 and the like hold none.
     """
     entries = {entry.row: entry for group in pages.values() for entry in group}
+    at = place or {row: row for row in entries}
+    row_at = {at[row]: row for row in entries}
     heads = {row: fields(entry) for row, entry in entries.items()}
     described: dict[str, list[bool]] = {}
     for row, entry in entries.items():
@@ -125,7 +128,7 @@ def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tup
     out = set()
     for row, entry in entries.items():
         own = [c for c in heads[row] if c]
-        near = {c for k in range(row - NEAR, row + NEAR + 1) if k != row for c in heads.get(k, ()) if c}
+        near = {c for k in range(at[row] - NEAR, at[row] + NEAR + 1) if k != at[row] and k in row_at for c in heads[row_at[k]] if c}
         doubted = (neighbours and (len(set(own)) < len(own) or bool(near & set(own)))) or _doubted(entry.note)
         for sub, char in enumerate(heads[row]):
             foreign = char is not None and len(char) == 1 and entry.section in tested and not _holds(char, entry.section)
@@ -134,10 +137,11 @@ def unsettled(pages: dict[int, list[Entry]], neighbours: bool = True) -> set[tup
     return out
 
 
-def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, int]]]:
+def kin(pages: dict[int, list[Entry]], place: dict[int, int] | None = None) -> dict[tuple[int, int], set[tuple[int, int]]]:
     """For each headword written with the same character as one within `NEAR` rows of it, the others of its run.
 
     The run goes on while the next one stands within `NEAR` rows of the last: 鉀 in rows 3, 5 and 7 is one run.
+    Rows are apart by their number, or by their `place` as in `unsettled`.
     """
     places: dict[str, list[tuple[int, int]]] = {}
     for entries in pages.values():
@@ -145,12 +149,13 @@ def kin(pages: dict[int, list[Entry]]) -> dict[tuple[int, int], set[tuple[int, i
             for sub, char in enumerate(fields(entry)):
                 if char:
                     places.setdefault(char, []).append((entry.row, sub))
+    at = place or {row: row for spots in places.values() for row, _ in spots}
     out: dict[tuple[int, int], set[tuple[int, int]]] = {}
     for spots in places.values():
         spots.sort()
         runs = [[spots[0]]]
         for spot in spots[1:]:
-            if spot[0] - runs[-1][-1][0] <= NEAR:
+            if at[spot[0]] - at[runs[-1][-1][0]] <= NEAR:
                 runs[-1].append(spot)
             else:
                 runs.append([spot])

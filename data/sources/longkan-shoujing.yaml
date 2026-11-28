@@ -12,11 +12,16 @@ access:
 format:
   table: "data/古辞书综合/龙龛手镜.csv: one row per entry in the printed order: 字头 (a headword, several printed one after another, or empty), 注文, 四声, 部首, 卷序, and the half-leaf of the entry in each edition"
   edition: 宋本（国图）
+  file: data/古辞书综合/龙龛手镜.csv
+  reader: longkan
 title: 龍龕手鏡
 work: 龍龕手鏡
 printing: 宋刻本
 volumes: {"1": 卷一　平聲, "2": 卷二　上聲, "3": 卷三　去聲, "4": 卷四　入聲}
 register: kanbun
+# Documents and pages are `<corpus>-<copy>:<n>`, units `<prefix>-<copy>:<row>-<place>:0`.
+corpus: longkan
+prefix: lk
 copies:
   # The scan of the printing the headwords are cut from: the embedded image of each PDF page, two half-leaves of ten columns,
   # or one half-leaf where the image is taller than wide. `pitch` bounds the half-column's width on the image enlarged `enlarge` times.
@@ -35,6 +40,10 @@ copies:
     enlarge: 2
     scale: 0.8
     pitch: [80, 95]
+    # A headword's height and a gloss row in half-column pitches: those a page is fitted at, and the pair it is first compared at.
+    heads: [1.2, 1.35, 1.5, 1.65, 1.8, 1.95]
+    rows: [0.72, 0.8, 0.88, 0.96, 1.04, 1.12]
+    first: [1.55, 0.9]
 dating:
   - literal: 統和十五年丁酉七月一日癸亥序
     start: 997

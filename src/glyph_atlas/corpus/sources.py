@@ -249,7 +249,7 @@ KNOWN: tuple[dict[str, Any], ...] = (
     {
         "name": "longkan-song",
         "note": "龍龕手鏡 headwords on the 宋刻本 of the National Library of China (中華再造善本影印, Wikimedia Commons), labelled "
-                "from 青雀古籍's table of the book (scripts/cut_longkan_headwords.py). A label is the table's headword; the print may show a variant of it.",
+                "from 青雀古籍's table of the book (scripts/cut_table_headwords.py). A label is the table's headword; the print may show a variant of it.",
     },
     {
         "name": "codh-tensho",

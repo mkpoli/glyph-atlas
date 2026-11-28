@@ -1,4 +1,4 @@
-"""Tests for how the 龍龕手鏡 cutter keeps its half-leaves and boxes."""
+"""Tests for how the dictionary cutter keeps its half-leaves and boxes, and for 龍龕手鏡's rules of doubt."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from glyph_atlas.schema import Box
 
 @pytest.fixture(scope="module")
 def cut():
-    spec = importlib.util.spec_from_file_location("cut_longkan_headwords", Path(__file__).parents[1] / "scripts" / "cut_longkan_headwords.py")
+    spec = importlib.util.spec_from_file_location("cut_table_headwords", Path(__file__).parents[1] / "scripts" / "cut_table_headwords.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
